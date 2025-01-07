@@ -5,7 +5,7 @@ import requests
 import time
 
 # Flask API URL
-API_URL = "http://127.0.0.1:5000"  # Replace with your Flask server URL
+API_URL = "https://bosbes.eu.pythonanywhere.com"  # Replace with your Flask server URL
 
 def clear_frame(frame):
     for widget in frame.winfo_children():
