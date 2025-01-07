@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning PTA's</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .task-list {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .task-item {
+            background-color: #fff;
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .task-item input[type="checkbox"] {
+            margin-left: 10px;
+        }
+
+        .task-item span {
+            flex-grow: 1;
+        }
+
+        .task-item input[type="checkbox"]:checked + span {
+            text-decoration: line-through;
+            color: #888;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .date-header {
+            background-color: #007BFF;
+            color: white;
+            padding: 5px;
+            font-weight: bold;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .task-item:hover {
+            background-color: #f1f1f1;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Planning PTA's</h1>
+        <div id="planning"></div>
+        <button onclick="downloadPDF()">Download PDF</button>
+    </div>
+
+    <script>
+        // Planning Data
+        const planning = [
+            { date: "21 december", tasks: ["Vrij"] },
+            { date: "22 december", tasks: ["Godsdienst: Hoofdstuk 4 (30 minuten) + Hoofdstuk 6 (30 minuten)."] },
+            { date: "23 december", tasks: ["Wiskunde: Hoofdstuk 2 Verbanden (1 uur).", "Geschiedenis: Hoofdstuk 2 Eerste Wereldoorlog (30 minuten)."] },
+            { date: "24 december", tasks: ["Nederlands: Kijk- en luistervaardigheid oefenen (20 minuten).", "Geschiedenis: Hoofdstuk 3 Interbellum (20 minuten)."] },
+            { date: "25 december", tasks: ["Godsdienst: Bijbelse geschiedenis herhalen (20 minuten)."] },
+            { date: "26 december", tasks: ["Wiskunde: Hoofdstuk 4 Grafieken en vergelijkingen (20 minuten)."] },
+            { date: "27 december", tasks: ["Geschiedenis: Hoofdstuk 2 en 3 samenvatten (30 minuten).", "Nederlands: Kijk- en luistervaardigheid oefenen (30 minuten)."] },
+            { date: "28 december", tasks: ["Wiskunde: Oefenvragen Hoofdstuk 2 (40 minuten).", "Nederlands: Begrijpend lezen en schrijven oefenen (30 minuten)."] },
+            { date: "29 december", tasks: ["Godsdienst: Hoofdstuk 4 en 6 herhalen (40 minuten)."] },
+            { date: "30 december", tasks: ["Geschiedenis: Oefenvragen Hoofdstuk 2 (40 minuten).", "Wiskunde: Oefenvragen Hoofdstuk 4 (40 minuten)."] },
+            { date: "31 december", tasks: ["Nederlands: Samenvatten en oefenen kijkvaardigheid (20 minuten)."] },
+            { date: "1 januari", tasks: ["Geschiedenis: Hoofdstuk 3 oefenen (20 minuten)."] },
+            { date: "2 januari", tasks: ["Wiskunde: Gecombineerde opdrachten Hoofdstuk 2 en 4 (40 minuten).", "Nederlands: Begrijpend luisteren oefenen (30 minuten)."] },
+            { date: "3 januari", tasks: ["Godsdienst: Hoofdstuk 4 en 6 toetsen oefenen (40 minuten).", "Geschiedenis: Hoofdstuk 2 en 3 herhalen (40 minuten)."] },
+            { date: "4 januari", tasks: ["Wiskunde: Toetsvragen oefenen en samenvatten (1 uur)."] },
+            { date: "5 januari", tasks: ["Godsdienst: Herhalen en vragen maken (30 minuten)."] },
+            { date: "6 januari", tasks: ["Nederlands: Samenvatting van kijk- en luistervaardigheid (30 minuten).", "Geschiedenis: Samenvatting bekijken (30 minuten)."] },
+            { date: "7 januari", tasks: ["Wiskunde: Herhalen en oefenen (40 minuten)."] },
+            { date: "8 januari", tasks: ["Geschiedenis: Hoofdstuk 2 en 3 snel herhalen (30 minuten)."] },
+            { date: "9 januari", tasks: ["Nederlands: Begrijpend luisteren oefenen (30 minuten)."] },
+            { date: "10 januari", tasks: ["Wiskunde: Moeilijke opgaven herhalen (40 minuten)."] },
+            { date: "11 januari", tasks: ["Godsdienst: Laatste herhaling (20 minuten).", "Geschiedenis: Overzicht van beide hoofdstukken doornemen (40 minuten)."] },
+            { date: "12 januari", tasks: ["Godsdienst: Rustige laatste doorloop (30 minuten)."] }
+        ];
+
+        // Load saved task completion states from localStorage
+        function loadTaskStates() {
+            const savedStates = JSON.parse(localStorage.getItem("taskStates")) || {};
+            planning.forEach((day, dayIndex) => {
+                day.tasks.forEach((task, taskIndex) => {
+                    const taskKey = `task-${dayIndex}-${taskIndex}`;
+                    const isChecked = savedStates[taskKey] || false;
+                    const checkbox = document.getElementById(taskKey);
+                    if (checkbox) {
+                        checkbox.checked = isChecked;
+                    }
+                });
+            });
+        }
+
+        // Save task completion states to localStorage
+        function saveTaskStates() {
+            const taskStates = {};
+            planning.forEach((day, dayIndex) => {
+                day.tasks.forEach((task, taskIndex) => {
+                    const taskKey = `task-${dayIndex}-${taskIndex}`;
+                    const checkbox = document.getElementById(taskKey);
+                    if (checkbox) {
+                        taskStates[taskKey] = checkbox.checked;
+                    }
+                });
+            });
+            localStorage.setItem("taskStates", JSON.stringify(taskStates));
+        }
+
+        // Generate and download the PDF
+        function downloadPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            let yOffset = 10;
+
+            planning.forEach(day => {
+                doc.setFontSize(14);
+                doc.text(day.date, 10, yOffset);
+                yOffset += 10;
+
+                doc.setFontSize(12);
+                day.tasks.forEach(task => {
+                    const checkboxSymbol = document.getElementById(`task-${planning.indexOf(day)}-${day.tasks.indexOf(task)}`).checked ? "[X]" : "[ ]";
+                    doc.text(`${checkboxSymbol} ${task}`, 10, yOffset);
+                    yOffset += 10;
+                });
+
+                yOffset += 5;
+            });
+
+            doc.save("PTA_Planning.pdf");
+        }
+
+        // Render tasks in the HTML
+        function renderTasks() {
+            const planningContainer = document.getElementById("planning");
+            planning.forEach((day, dayIndex) => {
+                const dateHeader = document.createElement("div");
+                dateHeader.classList.add("date-header");
+                dateHeader.innerText = day.date;
+                planningContainer.appendChild(dateHeader);
+
+                const taskList = document.createElement("ul");
+                taskList.classList.add("task-list");
+
+                day.tasks.forEach((task, taskIndex) => {
+                    const taskItem = document.createElement("li");
+                    taskItem.classList.add("task-item");
+
+                    const checkbox = document.createElement("input");
+                    checkbox.type = "checkbox";
+                    checkbox.id = `task-${dayIndex}-${taskIndex}`;
+                    checkbox.addEventListener('change', saveTaskStates);
+
+                    const taskText = document.createElement("span");
+                    taskText.innerText = task;
+
+                    taskItem.appendChild(checkbox);
+                    taskItem.appendChild(taskText);
+                    taskList.appendChild(taskItem);
+                });
+
+                planningContainer.appendChild(taskList);
+            });
+
+            loadTaskStates(); // Load saved states
+        }
+
+        // Initialize the tasks and functionality
+        renderTasks();
+    </script>
+
+</body>
+</html>
