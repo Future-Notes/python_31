@@ -1,0 +1,21 @@
+{
+    "name": "flask-python-project",
+    "version": "1.0.0",
+    "description": "A Flask project with Python dependencies for backend and GUI.",
+    "main": "app.py",
+    "scripts": {
+      "start": "python app.py",
+      "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "author": "Your Name",
+    "license": "MIT",
+    "dependencies": {
+      "Flask": "^2.3.2",
+      "Flask-SQLAlchemy": "^3.0.5",
+      "Flask-Bcrypt": "^1.0.1",
+      "Flask-Cors": "^3.0.10",
+      "requests": "^2.31.0",
+      "customtkinter": "^5.1.4"
+    }
+  }
+  
