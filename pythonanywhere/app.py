@@ -164,9 +164,13 @@ def update_username():
 @app.route('/delete-account', methods=['DELETE'])
 @require_session_key
 def delete_account():
+    data = request.json
     user = User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
+
+    if not bcrypt.check_password_hash(user.password, data['password']):
+        return jsonify({"error": "Incorrect password"}), 400
 
     try:
         Note.query.filter_by(user_id=user.id).delete()

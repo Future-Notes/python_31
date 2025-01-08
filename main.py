@@ -5,6 +5,7 @@ import requests
 
 # Flask API URL
 API_URL = "https://bosbes.eu.pythonanywhere.com"
+ALTERNATE_API_URL = "http://localhost:5000"
 
 session_key = {}
 
@@ -40,10 +41,20 @@ class App(ctk.CTk):
         self.title("ToDo App")
         self.current_user = None
 
+        self.center_window()
+
         self.container = ctk.CTkFrame(self)
         self.container.pack(fill="both", expand=True)
 
         self.show_login_screen()
+
+    def center_window(self):
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
 
     def show_login_screen(self):
         clear_frame(self.container)
@@ -251,6 +262,7 @@ class App(ctk.CTk):
     def show_account_screen(self):
         clear_frame(self.container)
         self.geometry("600x720")
+        self.center_window()
         # Main frame setup
         frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
         frame.pack(pady=20, padx=20, fill="both", expand=True)
@@ -453,11 +465,10 @@ class App(ctk.CTk):
         # Update window size after widget packing
         self.update_idletasks()
 
-
-
     def show_main_screen(self):
         clear_frame(self.container)
         self.geometry("600x450")
+        self.center_window()
         frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=0)
         frame.pack(pady=20, padx=20, fill="both", expand=True)
 
