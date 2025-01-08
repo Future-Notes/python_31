@@ -410,9 +410,23 @@ class App(ctk.CTk):
         scrollbar.pack(side="right", fill="y")
         canvas.configure(yscrollcommand=scrollbar.set)
 
+        # Add a temporary loading message
+        loading_label = ctk.CTkLabel(
+            notes_frame,
+            text="Loading notes...",
+            font=("Helvetica", 16, "bold"),
+            text_color="gray",
+        )
+        loading_label.pack(pady=20)
+
+        # Fetch the notes
         show_loading_screen(self)
         response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user})
         hide_loading_screen(self)
+
+        # Remove the loading message
+        loading_label.pack_forget()
+
         todos = response.json() if response.status_code == 200 else []
 
         row, col = 0, 0
@@ -420,17 +434,23 @@ class App(ctk.CTk):
             for todo in todos:
                 note_id = todo["id"]
                 note_text = todo["note"]
+
+                # Check if the note is empty
+                display_text = note_text[:100] if note_text.strip() else "Empty Note"
+                text_color = "black" if note_text.strip() else "gray"  # Lighter color for empty notes
+
                 ctk.CTkButton(
                     notes_frame,
-                    text=note_text[:100],
+                    text=display_text,
                     fg_color="#ffeb3b",  # Yellow color for notes
-                    text_color="black",
+                    text_color=text_color,
                     hover_color="#fdd835",  # Darker yellow for hover effect
                     corner_radius=10,
                     anchor="nw",
                     height=150,
                     command=lambda id=note_id: self.show_add_edit_screen(todo_id=id),
                 ).grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+
                 col += 1
                 if col > 2:
                     col = 0
@@ -445,6 +465,7 @@ class App(ctk.CTk):
                 font=("Helvetica", 14, "bold"),
                 text_color="gray",
             ).pack(pady=20, padx=20)
+
 
     def show_add_edit_screen(self, todo_id=None):
         clear_frame(self.container)
