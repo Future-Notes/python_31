@@ -2,10 +2,10 @@ import threading
 import customtkinter as ctk
 from tkinter import messagebox
 import requests
-import time
 
 # Flask API URL
 API_URL = "https://bosbes.eu.pythonanywhere.com"
+ALTERNATE_API_URL = "http://localhost:5000"
 
 session_key = {}
 
@@ -37,13 +37,24 @@ class App(ctk.CTk):
         super().__init__()
 
         self.geometry("600x450")
+        self.resizable(True, True)
         self.title("ToDo App")
         self.current_user = None
+
+        self.center_window()
 
         self.container = ctk.CTkFrame(self)
         self.container.pack(fill="both", expand=True)
 
         self.show_login_screen()
+
+    def center_window(self):
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
 
     def show_login_screen(self):
         clear_frame(self.container)
@@ -83,6 +94,7 @@ class App(ctk.CTk):
             height=40
         )
         password_entry.pack(fill="x", pady=10)
+        
 
         def login():
             show_loading_screen(self)
@@ -127,6 +139,7 @@ class App(ctk.CTk):
             corner_radius=10,
             height=40
         ).pack(pady=5)
+        self.update_idletasks()
 
     def show_no_connection_screen(self):
         clear_frame(self.container)
@@ -150,6 +163,7 @@ class App(ctk.CTk):
             corner_radius=10,
             height=40
         ).pack(pady=10)
+        self.update_idletasks()
 
     def check_connection(self):
         try:
@@ -242,11 +256,13 @@ class App(ctk.CTk):
             corner_radius=10,
             height=40
         ).pack(pady=5)
+        self.update_idletasks()
 
     # Add this new method
     def show_account_screen(self):
         clear_frame(self.container)
-
+        self.geometry("600x720")
+        self.center_window()
         # Main frame setup
         frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
         frame.pack(pady=20, padx=20, fill="both", expand=True)
@@ -254,7 +270,7 @@ class App(ctk.CTk):
         # Header
         header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)
         header.pack(fill="x")
-        header.pack_propagate(False)
+        header.pack_propagate(False)  # Prevent header from shrinking
 
         ctk.CTkButton(
             header,
@@ -446,10 +462,13 @@ class App(ctk.CTk):
             height=40,
         ).pack(pady=10)
 
+        # Update window size after widget packing
+        self.update_idletasks()
 
     def show_main_screen(self):
         clear_frame(self.container)
-
+        self.geometry("600x450")
+        self.center_window()
         frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=0)
         frame.pack(pady=20, padx=20, fill="both", expand=True)
 
@@ -537,7 +556,7 @@ class App(ctk.CTk):
                 ).grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
 
                 col += 1
-                if col > 2:
+                if col > 6:
                     col = 0
                     row += 1
 
@@ -550,6 +569,7 @@ class App(ctk.CTk):
                 font=("Helvetica", 14, "bold"),
                 text_color="gray",
             ).pack(pady=20, padx=20)
+        self.update_idletasks()
 
 
     def show_add_edit_screen(self, todo_id=None):
@@ -655,6 +675,7 @@ class App(ctk.CTk):
                 width=100,
                 height=40
             ).pack(side="left", padx=10)
+        self.update_idletasks()
 
 if __name__ == "__main__":
     app = App()
