@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g, render_template
+from flask import Flask, request, jsonify, g
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
@@ -99,10 +99,6 @@ def logout():
     key = auth_header.split("Bearer ")[1]
     del session_keys[key]
     return jsonify({"message": "Logged out successfully!"}), 200
-
-@app.route('/')
-def home():
-    return render_template('index.html')
 
 @app.route('/notes', methods=['GET', 'POST'])
 @require_session_key
