@@ -241,14 +241,15 @@ class App(ctk.CTk):
     def show_account_screen(self):
         clear_frame(self.container)
 
+        # Main frame setup
         frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
         frame.pack(pady=20, padx=20, fill="both", expand=True)
 
-        header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)  # No rounded corners for header
+        # Header
+        header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)
         header.pack(fill="x")
         header.pack_propagate(False)
 
-        # Back button positioned at left
         ctk.CTkButton(
             header,
             text="Back",
@@ -256,7 +257,7 @@ class App(ctk.CTk):
             fg_color="#4c6ef5",
             text_color="white",
             corner_radius=10,
-            height=40
+            height=40,
         ).pack(side="left", padx=10, pady=5)
 
         ctk.CTkLabel(
@@ -266,24 +267,28 @@ class App(ctk.CTk):
             text_color="white",
         ).pack(side="left", padx=20)
 
+        # Content container
         content_frame = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
         content_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Update Username Section
+        # Section for updating username
+        username_section = ctk.CTkFrame(content_frame, fg_color="#f4f4f9", corner_radius=10)
+        username_section.pack(fill="x", pady=10, padx=20)
+
         ctk.CTkLabel(
-            content_frame,
+            username_section,
             text="Update Username",
             font=("Helvetica", 14, "bold"),
         ).pack(pady=10)
 
         username_entry = ctk.CTkEntry(
-            content_frame,
+            username_section,
             placeholder_text="New Username",
             fg_color="#f9f9f9",
             text_color="black",
             corner_radius=10,
         )
-        username_entry.pack(fill="x", pady=10)
+        username_entry.pack(fill="x", pady=10, padx=20)
 
         def update_username():
             new_username = username_entry.get()
@@ -299,7 +304,7 @@ class App(ctk.CTk):
                 messagebox.showerror("Error", response.json().get("error", "Error"))
 
         ctk.CTkButton(
-            content_frame,
+            username_section,
             text="Update Username",
             command=update_username,
             fg_color="#4caf50",
@@ -308,32 +313,35 @@ class App(ctk.CTk):
             height=40,
         ).pack(pady=10)
 
-        # Update Password Section
+        # Section for updating password
+        password_section = ctk.CTkFrame(content_frame, fg_color="#f4f4f9", corner_radius=10)
+        password_section.pack(fill="x", pady=10, padx=20)
+
         ctk.CTkLabel(
-            content_frame,
+            password_section,
             text="Update Password",
             font=("Helvetica", 14, "bold"),
-        ).pack(pady=20)
+        ).pack(pady=10)
 
         current_password_entry = ctk.CTkEntry(
-            content_frame,
+            password_section,
             placeholder_text="Current Password",
             show="*",
             fg_color="#f9f9f9",
             text_color="black",
             corner_radius=10,
         )
-        current_password_entry.pack(fill="x", pady=10)
+        current_password_entry.pack(fill="x", pady=10, padx=20)
 
         new_password_entry = ctk.CTkEntry(
-            content_frame,
+            password_section,
             placeholder_text="New Password",
             show="*",
             fg_color="#f9f9f9",
             text_color="black",
             corner_radius=10,
         )
-        new_password_entry.pack(fill="x", pady=10)
+        new_password_entry.pack(fill="x", pady=10, padx=20)
 
         def update_password():
             current_password = current_password_entry.get()
@@ -354,7 +362,7 @@ class App(ctk.CTk):
                 messagebox.showerror("Error", response.json().get("error", "Error"))
 
         ctk.CTkButton(
-            content_frame,
+            password_section,
             text="Update Password",
             command=update_password,
             fg_color="#4caf50",
@@ -362,6 +370,60 @@ class App(ctk.CTk):
             corner_radius=10,
             height=40,
         ).pack(pady=10)
+
+        # Section for deleting account
+        delete_section = ctk.CTkFrame(content_frame, fg_color="#f4f4f9", corner_radius=10)
+        delete_section.pack(fill="x", pady=20, padx=20)
+
+        ctk.CTkLabel(
+            delete_section,
+            text="Delete Account",
+            font=("Helvetica", 14, "bold"),
+            text_color="red",
+        ).pack(pady=10)
+
+        delete_password_entry = ctk.CTkEntry(
+            delete_section,
+            placeholder_text="Enter Password to Confirm",
+            show="*",
+            fg_color="#f9f9f9",
+            text_color="black",
+            corner_radius=10,
+        )
+        delete_password_entry.pack(fill="x", pady=10, padx=20)
+
+        def delete_account():
+            password = delete_password_entry.get()
+            if not messagebox.askyesno(
+                "Confirm Deletion", 
+                "Are you sure you want to delete your account? This action cannot be undone."
+            ):
+                return
+
+            show_loading_screen(self)
+            response = requests.delete(
+                f"{API_URL}/delete-account",
+                json={"user_id": self.current_user, "password": password},
+            )
+            hide_loading_screen(self)
+            if response.status_code == 200:
+                messagebox.showinfo("Success", "Account deleted successfully!")
+                self.current_user = None
+                self.show_login_screen()  # Redirect to login screen after account deletion
+            else:
+                messagebox.showerror("Error", response.json().get("error", "Error"))
+
+        ctk.CTkButton(
+            delete_section,
+            text="Delete Account",
+            command=delete_account,
+            fg_color="#f44336",  # Red button
+            text_color="white",
+            hover_color="#d32f2f",  # Darker red on hover
+            corner_radius=10,
+            height=40,
+        ).pack(pady=10)
+
 
     def show_main_screen(self):
         clear_frame(self.container)
@@ -410,9 +472,23 @@ class App(ctk.CTk):
         scrollbar.pack(side="right", fill="y")
         canvas.configure(yscrollcommand=scrollbar.set)
 
+        # Add a temporary loading message
+        loading_label = ctk.CTkLabel(
+            notes_frame,
+            text="Loading notes...",
+            font=("Helvetica", 16, "bold"),
+            text_color="gray",
+        )
+        loading_label.pack(pady=20)
+
+        # Fetch the notes
         show_loading_screen(self)
         response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user})
         hide_loading_screen(self)
+
+        # Remove the loading message
+        loading_label.pack_forget()
+
         todos = response.json() if response.status_code == 200 else []
 
         row, col = 0, 0
@@ -420,17 +496,23 @@ class App(ctk.CTk):
             for todo in todos:
                 note_id = todo["id"]
                 note_text = todo["note"]
+
+                # Check if the note is empty
+                display_text = note_text[:100] if note_text.strip() else "Empty Note"
+                text_color = "black" if note_text.strip() else "gray"  # Lighter color for empty notes
+
                 ctk.CTkButton(
                     notes_frame,
-                    text=note_text[:100],
+                    text=display_text,
                     fg_color="#ffeb3b",  # Yellow color for notes
-                    text_color="black",
+                    text_color=text_color,
                     hover_color="#fdd835",  # Darker yellow for hover effect
                     corner_radius=10,
                     anchor="nw",
                     height=150,
                     command=lambda id=note_id: self.show_add_edit_screen(todo_id=id),
                 ).grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+
                 col += 1
                 if col > 2:
                     col = 0
@@ -445,6 +527,7 @@ class App(ctk.CTk):
                 font=("Helvetica", 14, "bold"),
                 text_color="gray",
             ).pack(pady=20, padx=20)
+
 
     def show_add_edit_screen(self, todo_id=None):
         clear_frame(self.container)
