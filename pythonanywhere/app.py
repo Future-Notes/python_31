@@ -42,7 +42,6 @@ def login():
         return jsonify({"message": "Login successful!", "user_id": user.id}), 200
     return jsonify({"error": "Invalid credentials"}), 400
 
-# Route to update password
 @app.route('/update-password', methods=['PUT'])
 def update_password():
     data = request.json
@@ -50,9 +49,7 @@ def update_password():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Check if the current password is correct
     if bcrypt.check_password_hash(user.password, data['current_password']):
-        # Hash and update the new password
         hashed_password = bcrypt.generate_password_hash(data['new_password']).decode('utf-8')
         user.password = hashed_password
         db.session.commit()
@@ -60,7 +57,6 @@ def update_password():
     else:
         return jsonify({"error": "Current password is incorrect"}), 400
 
-# Route to update username
 @app.route('/update-username', methods=['PUT'])
 def update_username():
     data = request.json
@@ -68,15 +64,12 @@ def update_username():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Ensure the new username is unique
     if User.query.filter_by(username=data['new_username']).first():
         return jsonify({"error": "Username already exists"}), 400
 
-    # Update the username
     user.username = data['new_username']
     db.session.commit()
     return jsonify({"message": "Username updated successfully!"}), 200
-
 
 @app.route('/notes', methods=['GET', 'POST'])
 def manage_notes():
@@ -108,8 +101,26 @@ def update_delete_note(note_id):
         db.session.commit()
         return jsonify({"message": "Note deleted successfully!"}), 200
 
+@app.route('/delete-account', methods=['DELETE'])
+def delete_account():
+    data = request.json
+    user = User.query.filter_by(id=data['user_id']).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if not bcrypt.check_password_hash(user.password, data['password']):
+        return jsonify({"error": "Incorrect password"}), 400
+
+    try:
+        Note.query.filter_by(user_id=user.id).delete()
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({"message": "Account and all related data deleted successfully!"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()  # Ensures all database tables are created
+        db.create_all()
     app.run(debug=True)
-
