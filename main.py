@@ -266,6 +266,16 @@ class App(ctk.CTk):
             height=40,
         ).pack(side="left", padx=10, pady=5)
 
+        ctk.CTkButton(
+            header,
+            text="Logout",
+            command=self.show_login_screen,
+            fg_color="red",
+            text_color="white",
+            corner_radius=10,
+            height=40,
+        ).pack(side="right", padx=10, pady=5)
+
         ctk.CTkLabel(
             header,
             text="Account Settings",

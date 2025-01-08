@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
@@ -91,6 +91,18 @@ def login():
         key = generate_session_key(user.id)
         return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
     return jsonify({"error": "Invalid credentials"}), 400
+
+@app.route('/logout', methods=['POST'])
+@require_session_key
+def logout():
+    auth_header = request.headers.get("Authorization")
+    key = auth_header.split("Bearer ")[1]
+    del session_keys[key]
+    return jsonify({"message": "Logged out successfully!"}), 200
+
+@app.route('/')
+def home():
+    return render_template('index.html')
 
 @app.route('/notes', methods=['GET', 'POST'])
 @require_session_key
