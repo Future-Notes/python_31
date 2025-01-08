@@ -5,7 +5,7 @@ import requests
 import time
 
 # Flask API URL
-API_URL = "http://127.0.0.1:5000"
+API_URL = "https://bosbes.eu.pythonanywhere.com"
 
 session_key = {}
 
