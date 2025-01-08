@@ -5,7 +5,9 @@ import requests
 import time
 
 # Flask API URL
-API_URL = "https://bosbes.eu.pythonanywhere.com"
+API_URL = "http://127.0.0.1:5000"
+
+session_key = {}
 
 def clear_frame(frame):
     for widget in frame.winfo_children():
@@ -91,7 +93,11 @@ class App(ctk.CTk):
             )
             hide_loading_screen(self)
             if response.status_code == 200:
-                self.current_user = response.json()["user_id"]
+                response_json = response.json()
+                self.current_user = response_json["user_id"]
+                self.session_key = response_json["session_key"]
+                self.session_data = {self.current_user: self.session_key}
+                print(f"Session Key: {self.session_key}")  # Debug print
                 self.show_main_screen()
             else:
                 messagebox.showerror(
@@ -293,9 +299,11 @@ class App(ctk.CTk):
         def update_username():
             new_username = username_entry.get()
             show_loading_screen(self)
+            headers = {"Authorization": f"Bearer {self.session_key}"}
             response = requests.put(
                 f"{API_URL}/update-username",
                 json={"user_id": self.current_user, "new_username": new_username},
+                headers=headers
             )
             hide_loading_screen(self)
             if response.status_code == 200:
@@ -347,6 +355,7 @@ class App(ctk.CTk):
             current_password = current_password_entry.get()
             new_password = new_password_entry.get()
             show_loading_screen(self)
+            headers = {"Authorization": f"Bearer {self.session_key}"}
             response = requests.put(
                 f"{API_URL}/update-password",
                 json={
@@ -354,6 +363,7 @@ class App(ctk.CTk):
                     "current_password": current_password,
                     "new_password": new_password,
                 },
+                headers=headers
             )
             hide_loading_screen(self)
             if response.status_code == 200:
@@ -401,9 +411,11 @@ class App(ctk.CTk):
                 return
 
             show_loading_screen(self)
+            headers = {"Authorization": f"Bearer {self.session_key}"}
             response = requests.delete(
                 f"{API_URL}/delete-account",
                 json={"user_id": self.current_user, "password": password},
+                headers=headers
             )
             hide_loading_screen(self)
             if response.status_code == 200:
@@ -483,7 +495,8 @@ class App(ctk.CTk):
 
         # Fetch the notes
         show_loading_screen(self)
-        response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user})
+        headers = {"Authorization": f"Bearer {self.session_key}"}
+        response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user}, headers=headers)
         hide_loading_screen(self)
 
         # Remove the loading message
@@ -572,7 +585,8 @@ class App(ctk.CTk):
 
         if todo_id:
             show_loading_screen(self)
-            response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user})
+            headers = {"Authorization": f"Bearer {self.session_key}"}
+            response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user}, headers=headers)
             hide_loading_screen(self)
             notes = response.json()
             for note in notes:
@@ -585,11 +599,13 @@ class App(ctk.CTk):
         def save_note():
             show_loading_screen(self)
             note = note_entry.get()
+            headers = {"Authorization": f"Bearer {self.session_key}"}
             if todo_id:
-                response = requests.put(f"{API_URL}/notes/{todo_id}", json={"note": note})
+                response = requests.put(f"{API_URL}/notes/{todo_id}", json={"note": note}, headers=headers)
             else:
                 response = requests.post(
-                    f"{API_URL}/notes", json={"user_id": self.current_user, "note": note}
+                    f"{API_URL}/notes", json={"user_id": self.current_user, "note": note},
+                    headers=headers
                 )
             hide_loading_screen(self)
             if response.status_code in [200, 201]:
@@ -611,7 +627,8 @@ class App(ctk.CTk):
         if todo_id:
             def delete_note():
                 show_loading_screen(self)
-                response = requests.delete(f"{API_URL}/notes/{todo_id}")
+                headers = {"Authorization": f"Bearer {self.session_key}"}
+                response = requests.delete(f"{API_URL}/notes/{todo_id}", headers=headers)
                 hide_loading_screen(self)
                 if response.status_code == 200:
                     self.show_main_screen()
