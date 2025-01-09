@@ -17,6 +17,7 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            padding-top: 80px; /* Padding to prevent the content from being hidden behind the fixed header */
         }
 
         h1 {
@@ -97,13 +98,27 @@
             gap: 10px;
             align-items: center;
         }
-        header {     
+
+        header {
             background-color: #3a3a3a;
             padding: 20px;
             text-align: center;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100; /* Make sure the header stays on top */
+            padding-left: 20px;
+            padding-right: 20px;
+        }
+
+        header h1 {
+            flex: 1;
+            text-align: center;
+            margin: 0;
         }
 
         header a {
@@ -118,11 +133,10 @@
 </head>
 <body>
     <header>
+        <a href="/" id="back-home">Back to Home</a>
         <h1>Account</h1>
-        <a href="/">Back to Home</a> 
     </header>
     <!-- Account Page Content -->
-    <h1>Account</h1>
     <form id="update-username-form">
         <input type="text" id="new-username" placeholder="New Username" required>
         <button type="submit">Update Username</button>
@@ -146,7 +160,7 @@
         document.getElementById("update-username-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const newUsername = document.getElementById("new-username").value;
-            await fetch("http://localhost:5000/update-username", {
+            await fetch("https://bosbes.eu.pythonanywhere.com/update-username", {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
@@ -161,7 +175,7 @@
             e.preventDefault();
             const currentPassword = document.getElementById("current-password").value;
             const newPassword = document.getElementById("new-password").value;
-            await fetch("http://localhost:5000/update-password", {
+            await fetch("https://bosbes.eu.pythonanywhere.com/update-password", {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
@@ -175,7 +189,7 @@
         document.getElementById("delete-account").addEventListener("click", async () => {
             const password = prompt("Enter your password to confirm:");
             try {
-                const response = await fetch("http://localhost:5000/delete-account", {
+                const response = await fetch("https://bosbes.eu.pythonanywhere.com/delete-account", {
                     method: "DELETE",
                     headers: {
                         "Content-Type": "application/json",
