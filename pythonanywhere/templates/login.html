@@ -122,7 +122,7 @@
 
             if (response.ok) {
                 sessionStorage.setItem("session_key", data.session_key);
-                window.location.href = "/";
+                window.location.href = "/index";
             } else {
                 alert(data.error || "Login failed");
             }

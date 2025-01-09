@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes App</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #121212;
+            color: #f5f5f5;
+            overflow-x: hidden;
+        }
+
+        h1, h2 {
+            margin: 0;
+        }
+
+        header {
+            background-color: #1E1E2E;
+            padding: 20px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            color: #6C63FF;
+            animation: fadeIn 2s;
+        }
+
+        header p {
+            color: #c0c0c0;
+            margin-top: 10px;
+            font-size: 1.1rem;
+            animation: slideIn 2s;
+        }
+
+        section {
+            padding: 50px 20px;
+            text-align: center;
+        }
+
+        #features {
+            background-color: #24243e;
+        }
+
+        #features h2 {
+            color: #6C63FF;
+            animation: fadeIn 2s;
+        }
+
+        #features p {
+            margin-top: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #b3b3b3;
+            animation: fadeIn 3s;
+        }
+
+        #download {
+            background-color: #1f1f30;
+        }
+
+        #download h2 {
+            color: #4DC4FF;
+            animation: slideIn 2s;
+        }
+
+        #download button {
+            background-color: #4DC4FF;
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            animation: bounce 2s infinite;
+        }
+
+        #download button:hover {
+            background-color: #3baeea;
+        }
+
+        #login {
+            background-color: #28293e;
+        }
+
+        #login h2 {
+            color: #A86EFF;
+            animation: fadeIn 2s;
+        }
+
+        #login a {
+            text-decoration: none;
+            color: #A86EFF;
+            font-size: 1.2rem;
+            border: 1px solid #A86EFF;
+            padding: 10px 20px;
+            border-radius: 5px;
+            transition: background-color 0.3s, color 0.3s;
+            animation: fadeIn 3s;
+        }
+
+        #login a:hover {
+            background-color: #A86EFF;
+            color: #121212;
+        }
+
+        #about {
+            background-color: #2E4057;
+        }
+
+        #about h2 {
+            color: #FF6F61;
+            animation: fadeIn 2s;
+        }
+
+        #about p {
+            color: #e3e3e3;
+            margin-top: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            animation: fadeIn 3s;
+        }
+
+        #testimonials {
+            background-color: #37474F;
+        }
+
+        #testimonials h2 {
+            color: #FFC107;
+            animation: slideIn 2s;
+        }
+
+        #testimonials p {
+            color: #ececec;
+            margin-top: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            animation: fadeIn 3s;
+        }
+
+        footer {
+            background-color: #121212;
+            padding: 10px;
+            text-align: center;
+            color: #6c6c6c;
+            font-size: 0.9rem;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        #blank-screen {
+            position: fixed;
+            top: 0;
+            left: 100%;
+            width: 100%;
+            height: 100%;
+            background-color: #28293e;
+            z-index: 9999;
+            transition: left 1s ease-in-out;
+        }
+
+        #blank-screen.active {
+            left: 0;
+        }
+
+        #download-overlay {
+            position: fixed;
+            top: -100%;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background-color: #1f1f30;
+            z-index: 9998;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: top 1s ease-in-out;
+            overflow: hidden;
+        }
+
+        #download-overlay.active {
+            top: 0;
+        }
+
+        #download-overlay .content {
+            text-align: center;
+        }
+
+        #download-overlay .content img {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+        }
+
+        #download-overlay .content button {
+            background-color: #4DC4FF;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            font-size: 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #download-overlay .content button:hover {
+            background-color: #3baeea;
+        }
+
+        #download-overlay .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: transparent;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        #blur-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 9997;
+            display: none;
+        }
+
+        #blur-bg.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Future Notes</h1>
+    <p>The modern way to keep track of your ideas and plans.</p>
+</header>
+
+<section id="features">
+    <h2>Features</h2>
+    <p>Organize your thoughts with ease using tags, folders, and advanced search capabilities.<br>
+    Access your notes anytime, anywhere with real-time syncing.<br>
+    A sleek and modern interface designed for productivity.</p>
+</section>
+
+<section id="download">
+    <h2>Download for Windows</h2>
+    <p>Get the full desktop experience for your notes on Windows.</p>
+    <button id="download-button">Download</button>
+</section>
+
+<section id="login">
+    <h2>Login to Web App</h2>
+    <p>Access your notes from any device, right from your browser.</p>
+    <a href="javascript:void(0);" id="login-button">Login</a>
+</section>
+
+<section id="about">
+    <h2>About Us</h2>
+    <p>Future Notes is built for the modern era, designed to make note-taking seamless and efficient.<br>
+    Join thousands of users who rely on Future Notes for their daily productivity.</p>
+</section>
+
+<section id="testimonials">
+    <h2>What Our Users Say</h2>
+    <p>"Future Notes has revolutionized the way I organize my ideas. A must-have tool!" - Alex J.<br>
+    "The sleek interface and powerful features make it my favorite productivity app." - Sarah K.</p>
+</section>
+
+<div id="blank-screen"></div>
+<div id="blur-bg"></div>
+<div id="download-overlay">
+    <div class="content">
+        <button class="close-btn">&times;</button>
+        <img src="static/download-icon.png" alt="Download Icon">
+        <button onclick="window.location.href='download/notes-app-windows.exe'">Download Now</button>
+    </div>
+</div>
+
+<footer>
+    &copy; 2025 Future Notes. All Rights Reserved.
+</footer>
+
+<script>
+    const loginButton = document.getElementById('login-button');
+    const blankScreen = document.getElementById('blank-screen');
+    const downloadButton = document.getElementById('download-button');
+    const downloadOverlay = document.getElementById('download-overlay');
+    const blurBg = document.getElementById('blur-bg');
+    const closeBtn = document.querySelector('#download-overlay .close-btn');
+
+    loginButton.addEventListener('click', () => {
+        blankScreen.classList.add('active');
+        setTimeout(() => {
+            window.location.href = '/login';
+        }, 1000);
+    });
+
+    downloadButton.addEventListener('click', () => {
+        downloadOverlay.classList.add('active');
+        blurBg.classList.add('active');
+    });
+
+    closeBtn.addEventListener('click', () => {
+        downloadOverlay.classList.remove('active');
+        blurBg.classList.remove('active');
+    });
+</script>
+
+</body>
+</html>
