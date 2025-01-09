@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account</title>
+</head>
+<body>
+    <h1>Account</h1>
+    <form id="update-username-form">
+        <input type="text" id="new-username" placeholder="New Username" required>
+        <button type="submit">Update Username</button>
+    </form>
+    <form id="update-password-form">
+        <input type="password" id="current-password" placeholder="Current Password" required>
+        <input type="password" id="new-password" placeholder="New Password" required>
+        <button type="submit">Update Password</button>
+    </form>
+    <button id="delete-account">Delete Account</button>
+    <button id="logout">Logout</button>
+
+    <script>
+        const sessionKey = sessionStorage.getItem("session_key");
+        if (!sessionKey) {
+            window.location.href = "/login_page";
+        }
+
+        document.getElementById("update-username-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const newUsername = document.getElementById("new-username").value;
+            await fetch("http://localhost:5000/update-username", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ new_username: newUsername }),
+            });
+            alert("Username updated successfully!");
+        });
+
+        document.getElementById("update-password-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const currentPassword = document.getElementById("current-password").value;
+            const newPassword = document.getElementById("new-password").value;
+            await fetch("http://localhost:5000/update-password", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+            });
+            alert("Password updated successfully!");
+        });
+
+        document.getElementById("delete-account").addEventListener("click", async () => {
+            const password = prompt("Enter your password to confirm:");
+            try {
+            const response = await fetch("http://localhost:5000/delete-account", {
+                method: "DELETE",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ password }),
+            });
+            if (response.status === 200) {
+                alert("Account deleted successfully!");
+                sessionStorage.clear();
+                window.location.href = "/login_page";
+            } else if (response.status === 400) {
+                alert("Incorrect password. Please try again.");
+            } else {
+                alert("An error occurred. Please try again later.");
+            }
+            } catch (error) {
+            alert("An error occurred. Please try again later.");
+            }
+        });
+
+        document.getElementById("logout").addEventListener("click", () => {
+            sessionStorage.clear();
+            alert("Logged out successfully!");
+            window.location.href = "login.html";
+        });
+    </script>
+</body>
+</html>

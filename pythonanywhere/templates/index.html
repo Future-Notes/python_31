@@ -3,106 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notes Application</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-            color: #333;
-        }
-        .container {
-            width: 80%;
-            margin: auto;
-            overflow: hidden;
-        }
-        .hero-h1, .hero-p {
-            color:#333;
-            margin-top: 100px;
-            margin-bottom: 10px;
-        }
-        header {
-            background: #333;
-            color: #fff;
-            padding-top: 30px;
-            min-height: 70px;
-            border-bottom: #77aaff 3px solid;
-        }
-        header a {
-            color: #fff;
-            text-decoration: none;
-            text-transform: uppercase;
-            font-size: 16px;
-        }
-        header ul {
-            padding: 0;
-            list-style: none;
-        }
-        header li {
-            float: left;
-            display: inline;
-            padding: 0 20px 0 20px;
-        }
-        header #branding {
-            float: left;
-        }
-        header #branding h1 {
-            margin: 0;
-        }
-        header nav {
-            float: right;
-            margin-top: 10px;
-        }
-        #showcase {
-            min-height: 400px;
-            background: url('static/showcase.jpeg') no-repeat 0 -400px;
-            text-align: center;
-            color: #fff;
-        }
-        #showcase h1 {
-            margin-top: 100px;
-            font-size: 55px;
-            margin-bottom: 10px;
-        }
-        #showcase p {
-            font-size: 20px;
-        }
-        #main {
-            padding: 20px;
-            background: #fff;
-            margin-top: 20px;
-        }
-    </style>
+    <title>Notes</title>
 </head>
 <body>
     <header>
-        <div class="container">
-            <div id="branding">
-                <h1>Notes Application</h1>
-            </div>
-            <nav>
-                <ul>
-                    <li><a href="/">Home</a></li>
-                    <li><a href="/about">About</a></li>
-                    <li><a href="/contact">Contact</a></li>
-                </ul>
-            </nav>
-        </div>
+        <h1>Notes</h1>
+        <a href="/account_page">Account</a>
     </header>
+    <main>
+        <form id="add-note-form">
+            <textarea id="note-text" placeholder="Write a note..." required></textarea>
+            <button type="submit">Add Note</button>
+        </form>
+        <ul id="notes-list"></ul>
+    </main>
 
-    <section id="showcase">
-        <div class="container">
-            <h1 class="hero-h1">Welcome to Notes Application</h1>
-            <p class="hero-p">Organize your thoughts and ideas with ease.</p>
-        </div>
-    </section>
+    <script>
+        const sessionKey = sessionStorage.getItem("session_key");
+        if (!sessionKey) {
+            window.location.href = "/login_page";
+        }
 
-    <section id="main">
-        <div class="container">
-            <h2>About Our App</h2>
-            <p>Our Notes Application helps you keep track of your notes, ideas, and to-do lists. It's simple, efficient, and easy to use. Start organizing your life today!</p>
-        </div>
-    </section>
+        async function fetchNotes() {
+            const response = await fetch("http://localhost:5000/notes", {
+                headers: { Authorization: `Bearer ${sessionKey}` },
+            });
+            const notes = await response.json();
+            const notesList = document.getElementById("notes-list");
+            notesList.innerHTML = notes.map(note => `
+                <li>
+                    ${note.note}
+                    <button onclick="deleteNote(${note.id})">Delete</button>
+                </li>
+            `).join("");
+        }
+
+        async function addNote() {
+            const noteText = document.getElementById("note-text").value;
+            await fetch("http://localhost:5000/notes", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ note: noteText }),
+            });
+            fetchNotes();
+        }
+
+        async function deleteNote(noteId) {
+            await fetch(`http://localhost:5000/notes/${noteId}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${sessionKey}` },
+            });
+            fetchNotes();
+        }
+
+        document.getElementById("add-note-form").addEventListener("submit", (e) => {
+            e.preventDefault();
+            addNote();
+        });
+
+        fetchNotes();
+    </script>
 </body>
 </html>

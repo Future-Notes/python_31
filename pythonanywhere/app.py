@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
@@ -68,6 +68,22 @@ def require_session_key(func):
         return func(*args, **kwargs)
     wrapper.__name__ = func.__name__
     return wrapper
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/login_page')
+def login_page():
+    return render_template('login.html')
+
+@app.route('/signup_page')
+def signup_page():
+    return render_template('signup.html')
+
+@app.route('/account_page')
+def account_page():
+    return render_template('account.html')
 
 # Routes
 @app.route('/signup', methods=['POST'])
