@@ -3,11 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notes</title>
+    <title>Notes App</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #2c2c2c;
+            color: #e0e0e0;
+        }
+
+        header {
+            background-color: #3a3a3a;
+            padding: 20px;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header a {
+            text-decoration: none;
+            background-color: #4a4a4a;
+            color: #e0e0e0;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        header a:hover {
+            background-color: #5c5c5c;
+        }
+
+        main {
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        form {
+            display: flex;
+            margin-bottom: 20px;
+        }
+
+        textarea {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+            background-color: #4a4a4a;
+            color: #e0e0e0;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+
+        button {
+            background-color: #6a6a6a;
+            color: #e0e0e0;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #7a7a7a;
+        }
+
+        #notes-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #notes-list li {
+            background-color: #3a3a3a;
+            padding: 20px;
+            border-radius: 5px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        #notes-list li:hover {
+            background-color: #4a4a4a;
+        }
+
+        #notes-list li button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #b33a3a;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+
+        #notes-list li button:hover {
+            background-color: #cc4a4a;
+        }
+
+        #update-menu {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #4a4a4a;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+        }
+
+        #update-menu input, #update-menu button {
+            display: block;
+            margin: 10px 0;
+        }
+
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+    </style>
 </head>
 <body>
     <header>
-        <h1>Notes</h1>
+        <h1>Notes App</h1>
         <a href="/account_page">Account</a>
     </header>
     <main>
@@ -18,11 +151,21 @@
         <ul id="notes-list"></ul>
     </main>
 
+    <div id="overlay"></div>
+    <div id="update-menu">
+        <h3>Update Note</h3>
+        <input type="text" id="update-note-text" placeholder="Updated note text" required>
+        <button id="update-note-button">Update</button>
+        <button id="cancel-update">Cancel</button>
+    </div>
+
     <script>
         const sessionKey = sessionStorage.getItem("session_key");
         if (!sessionKey) {
             window.location.href = "/login_page";
         }
+
+        let currentNoteId = null;
 
         async function fetchNotes() {
             const response = await fetch("http://localhost:5000/notes", {
@@ -32,7 +175,7 @@
             const notesList = document.getElementById("notes-list");
             notesList.innerHTML = notes.map(note => `
                 <li>
-                    ${note.note}
+                    <span onclick="showUpdateMenu(${note.id}, '${note.note}')">${note.note}</span>
                     <button onclick="deleteNote(${note.id})">Delete</button>
                 </li>
             `).join("");
@@ -59,10 +202,43 @@
             fetchNotes();
         }
 
+        async function updateNote() {
+            const updatedText = document.getElementById("update-note-text").value;
+            if (currentNoteId) {
+                await fetch(`http://localhost:5000/notes/${currentNoteId}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({ note: updatedText }),
+                });
+                currentNoteId = null;
+                closeUpdateMenu();
+                fetchNotes();
+            }
+        }
+
+        function showUpdateMenu(noteId, noteText) {
+            currentNoteId = noteId;
+            document.getElementById("update-note-text").value = noteText;
+            document.getElementById("update-menu").style.display = "block";
+            document.getElementById("overlay").style.display = "block";
+        }
+
+        function closeUpdateMenu() {
+            document.getElementById("update-menu").style.display = "none";
+            document.getElementById("overlay").style.display = "none";
+        }
+
         document.getElementById("add-note-form").addEventListener("submit", (e) => {
             e.preventDefault();
             addNote();
         });
+
+        document.getElementById("update-note-button").addEventListener("click", updateNote);
+        document.getElementById("cancel-update").addEventListener("click", closeUpdateMenu);
+        document.getElementById("overlay").addEventListener("click", closeUpdateMenu);
 
         fetchNotes();
     </script>

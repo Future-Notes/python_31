@@ -4,17 +4,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login</title>
+    <style>
+        /* Global Styles */
+        body {
+            background-color: #2c2c2c;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            color: #e0e0e0;
+        }
+
+        /* Form Container */
+        .form-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        form {
+            background-color: #3a3a3a;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            width: 100%;
+        }
+
+        label {
+            display: block;
+            text-align: left;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: none;
+            border-radius: 3px;
+            background-color: #6a6a6a;
+            color: #e0e0e0;
+            box-sizing: border-box;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            background-color: #7a7a7a;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 3px;
+            background-color: #6a6a6ad5;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #5a5a5a;
+        }
+
+        p {
+            margin-top: 20px;
+        }
+
+        a {
+            color: #6a6a6a;
+            text-decoration: none;
+        }
+
+        a:hover {
+            color: #5a5a5a;
+        }
+    </style>
 </head>
 <body>
-    <h1>Login</h1>
-    <form id="login-form">
-        <label for="username">Username:</label>
-        <input type="text" id="username" required>
-        <label for="password">Password:</label>
-        <input type="password" id="password" required>
-        <button type="submit">Login</button>
-    </form>
-    <p>Don't have an account? <a href="/signup_page">Sign Up</a></p>
+    <div class="form-container">
+        <h1>Login</h1>
+        <form id="login-form">
+            <label for="username">Username:</label>
+            <input type="text" id="username" required>
+            <label for="password">Password:</label>
+            <input type="password" id="password" required>
+            <button type="submit">Login</button>
+        </form>
+        <p>Don't have an account? <a href="/signup_page">Sign Up</a></p>
+    </div>
 
     <script>
         document.getElementById("login-form").addEventListener("submit", async (e) => {
