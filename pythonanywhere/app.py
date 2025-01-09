@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
@@ -31,8 +31,8 @@ def generate_session_key(user_id):
     key = secrets.token_hex(32)
     session_keys[key] = {
         "user_id": user_id,
-        "expires_at": datetime.utcnow() + timedelta(minutes=30),
-        "last_active": datetime.utcnow()
+        "expires_at": datetime.now() + timedelta(minutes=30),
+        "last_active": datetime.now()
     }
     return key
 
@@ -47,7 +47,7 @@ def validate_session_key():
         return False, "Invalid or missing session API key"
 
     session = session_keys[key]
-    now = datetime.utcnow()
+    now = datetime.now()
 
     # Check if key is expired
     if session["expires_at"] < now:
@@ -68,6 +68,22 @@ def require_session_key(func):
         return func(*args, **kwargs)
     wrapper.__name__ = func.__name__
     return wrapper
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/login_page')
+def login_page():
+    return render_template('login.html')
+
+@app.route('/signup_page')
+def signup_page():
+    return render_template('signup.html')
+
+@app.route('/account_page')
+def account_page():
+    return render_template('account.html')
 
 # Routes
 @app.route('/signup', methods=['POST'])
@@ -184,4 +200,4 @@ def delete_account():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')

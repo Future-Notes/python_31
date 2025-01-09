@@ -274,7 +274,7 @@ class App(ctk.CTk):
 
         ctk.CTkButton(
             header,
-            text="Back",
+            text="🔙",
             command=self.show_main_screen,
             fg_color="#4c6ef5",
             text_color="white",
@@ -499,6 +499,13 @@ class App(ctk.CTk):
             height=40
         ).pack(side="right", padx=10, pady=5)
 
+        ctk.CTkLabel(
+            action_bar,
+            text="Notes app",
+            font=("Helvetica", 18, "bold"),
+            text_color="white",
+        ).pack(side="left", padx=20)
+
         notes_frame_container = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
         notes_frame_container.pack(fill="both", expand=True)
 
@@ -520,7 +527,7 @@ class App(ctk.CTk):
             font=("Helvetica", 16, "bold"),
             text_color="gray",
         )
-        loading_label.pack(pady=20)
+        loading_label.pack(pady=20, padx=20)
 
         # Fetch the notes
         show_loading_screen(self)
