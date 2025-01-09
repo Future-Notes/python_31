@@ -2,3 +2,4 @@ data.db
 test.py
 **/instance
 **/venv
+**/pythonanywhere_api
