@@ -175,8 +175,9 @@
             const notesList = document.getElementById("notes-list");
             notesList.innerHTML = notes.map(note => `
                 <li>
-                    <span onclick="showUpdateMenu(${note.id}, '${note.note}')">${note.note}</span>
+                    <span>${note.note}</span>
                     <button onclick="deleteNote(${note.id})">Delete</button>
+                    <button onclick="showUpdateMenu(${note.id}, '${note.note}')">Update</button>
                 </li>
             `).join("");
         }
