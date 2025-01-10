@@ -10,6 +10,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
+    <link rel="favicon" type ="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
     <script type="application/ld+json">
     {
@@ -43,7 +44,11 @@
             background-color: #1E1E2E;
             padding: 20px;
             text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000; /* Ensures the header stays above other elements */
         }
+
 
         header h1 {
             font-size: 2.5rem;
@@ -357,7 +362,7 @@
 <section id="about">
     <h2>About Us</h2>
     <p>Future Notes was build as a hobby project, but turned into a fully functional application very fast.<br>
-    Join Future Notes today and never forget anything important again!</p>
+    Join Future Notes today and never forget anything again!</p>
 </section>
 
 <section id="contact">
@@ -372,7 +377,7 @@
     <div class="content">
         <button class="close-btn">&times;</button>
         <img src="static/download-icon.png" alt="Download Icon">
-        <button onclick="window.location.href='download/notes-app-windows.exe'">Download Now</button>
+        <p>There are no downloads available at this time. Please try again later!</p>
     </div>
 </div>
 
