@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify, g, render_template  # type: ignore
-from flask_sqlalchemy import SQLAlchemy                        # type: ignore
-from flask_bcrypt import Bcrypt                                # type: ignore
-from flask_cors import CORS                                    # type: ignore
+from flask import Flask, request, jsonify, g, render_template  
+from flask_sqlalchemy import SQLAlchemy                        
+from flask_bcrypt import Bcrypt                                
+from flask_cors import CORS                                    
 from datetime import datetime, timedelta
 import secrets
 
@@ -154,7 +154,7 @@ def update_delete_note(note_id):
 @require_session_key
 def update_password():
     data = request.json
-    user = User.query.filter_by(id=data['user_id']).first()
+    user = User.query.get(g.user_id)  # Use g.user_id directly
     if not user:
         return jsonify({"error": "User not found"}), 404
 
@@ -170,7 +170,7 @@ def update_password():
 @require_session_key
 def update_username():
     data = request.json
-    user = User.query.filter_by(id=data['user_id']).first()
+    user = User.query.get(g.user_id)  # Use g.user_id directly
     if not user:
         return jsonify({"error": "User not found"}), 404
 

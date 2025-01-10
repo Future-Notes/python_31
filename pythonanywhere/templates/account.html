@@ -191,31 +191,58 @@
         document.getElementById("update-username-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const newUsername = document.getElementById("new-username").value;
-            await fetch("https://bosbes.eu.pythonanywhere.com/update-username", {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${sessionKey}`,
-                },
-                body: JSON.stringify({ new_username: newUsername }),
-            });
-            alert("Username updated successfully!");
+
+            try {
+                const response = await fetch("https://bosbes.eu.pythonanywhere.com/update-username", {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({ new_username: newUsername }),
+                });
+
+                if (response.ok) {
+                    alert("Username updated successfully!");
+                } else {
+                    const error = await response.json();
+                    alert(error.error || "An error occurred while updating the username.");
+                }
+            } catch (err) {
+                alert("Network error. Please try again later.");
+            }
         });
+
 
         document.getElementById("update-password-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const currentPassword = document.getElementById("current-password").value;
             const newPassword = document.getElementById("new-password").value;
-            await fetch("https://bosbes.eu.pythonanywhere.com/update-password", {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${sessionKey}`,
-                },
-                body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-            });
-            alert("Password updated successfully!");
+
+            try {
+                const response = await fetch("https://bosbes.eu.pythonanywhere.com/update-password", {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword,
+                    }),
+                });
+
+                if (response.ok) {
+                    alert("Password updated successfully!");
+                } else {
+                    const error = await response.json();
+                    alert(error.error || "An error occurred while updating the password.");
+                }
+            } catch (err) {
+                alert("Network error. Please try again later.");
+            }
         });
+
 
         document.getElementById("delete-account").addEventListener("click", async () => {
             const password = prompt("Enter your password to confirm:");
