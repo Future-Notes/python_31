@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify, g, render_template
-from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
-from flask_cors import CORS
+from flask import Flask, request, jsonify, g, render_template  # type: ignore
+from flask_sqlalchemy import SQLAlchemy                        # type: ignore
+from flask_bcrypt import Bcrypt                                # type: ignore
+from flask_cors import CORS                                    # type: ignore
 from datetime import datetime, timedelta
 import secrets
 
