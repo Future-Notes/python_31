@@ -1,7 +1,7 @@
-from flask import Flask, request, jsonify, g, render_template
-from flask_sqlalchemy import SQLAlchemy
-from flask_bcrypt import Bcrypt
-from flask_cors import CORS
+from flask import Flask, request, jsonify, g, render_template  # type: ignore
+from flask_sqlalchemy import SQLAlchemy                        # type: ignore
+from flask_bcrypt import Bcrypt                                # type: ignore
+from flask_cors import CORS                                    # type: ignore
 from datetime import datetime, timedelta
 import secrets
 
@@ -125,13 +125,18 @@ def logout():
 def manage_notes():
     if request.method == 'POST':
         data = request.json
-        note = Note(user_id=g.user_id, note=data['note'])
+        # Replace newlines with a space before saving to the database
+        sanitized_note = data['note'].replace('\n', ' ')
+        note = Note(user_id=g.user_id, note=sanitized_note)
         db.session.add(note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
-        return jsonify([{"id": note.id, "note": note.note} for note in notes])
+        # Replace newlines with a space before sending the response
+        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' ')} for note in notes]
+        return jsonify(sanitized_notes)
+
 
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
