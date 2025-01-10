@@ -107,9 +107,60 @@
         a:hover {
             color: #5a5a5a;
         }
+        /* Back Button */
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            background-color: #6a6a6ad5;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #e0e0e0;
+            text-decoration: none;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: background-color 0.3s, transform 0.2s;
+        }
+
+        .back-button:hover {
+            background-color: #5a5a5a;
+            transform: scale(1.1);
+        }
+        /* Large Title */
+        .page-title {
+            position: absolute;
+            top: 0; /* Start near the top */
+            left: 50%; /* Center horizontally */
+            transform: translate(-50%, -100%); /* Center horizontally and start above the viewport */
+            font-size: 36px;
+            font-weight: bold;
+            color: #e0e0e0;
+            opacity: 0; /* Start fully invisible */
+            animation: slideInFromTop 1s ease-out forwards; /* Slide down into position */
+            text-align: center;
+            margin: 0;
+        }
+
+        /* Keyframes for sliding in */
+        @keyframes slideInFromTop {
+            to {
+                transform: translate(-50%, 20px); /* Final position with a bit of padding */
+                opacity: 1; /* Fully visible */
+            }
+        }
+
     </style>
 </head>
 <body>
+    <h1 class="page-title">Future Notes</h1>
+
+    <a href="/" class="back-button" aria-label="Go back to homepage">←</a>
+
     <div class="form-container">
         <h1>Sign up</h1>
         <form id="login-form">
