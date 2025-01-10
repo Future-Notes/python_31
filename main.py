@@ -38,7 +38,7 @@ class App(ctk.CTk):
 
         self.geometry("600x450")
         self.resizable(True, True)
-        self.title("ToDo App")
+        self.title("Future Notes")
         self.current_user = None
 
         self.center_window()
@@ -501,7 +501,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(
             action_bar,
-            text="Notes app",
+            text="Future Notes",
             font=("Helvetica", 18, "bold"),
             text_color="white",
         ).pack(side="left", padx=20)
