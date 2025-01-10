@@ -126,19 +126,35 @@
             margin: 0;
         }
 
-        header a {
-            text-decoration: none;
-            background-color: #4a4a4a;
+        /* Back Button */
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            background-color: #6a6a6ad5;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             color: #e0e0e0;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-size: 16px;
+            text-decoration: none;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: background-color 0.3s, transform 0.2s;
+        }
+
+        .back-button:hover {
+            background-color: #5a5a5a;
+            transform: scale(1.1);
         }
     </style>
 </head>
 <body>
     <header>
-        <a href="/index" id="back-home">Back to Home</a>
+        <a href="/index" class="back-button" aria-label="Go back to web app">←</a>
         <h1>Account</h1>
     </header>
     <!-- Account Page Content -->
