@@ -169,11 +169,16 @@
 
         #about {
             background-color: #2E4057;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
         }
 
         #about h2 {
             color: #FF6F61;
             animation: fadeIn 2s;
+            font-size: 2rem;
         }
 
         #about p {
@@ -184,13 +189,80 @@
             animation: fadeIn 3s;
         }
 
+        #about .highlight {
+            color: #FF6F61;
+            font-weight: bold;
+        }
+
+        #about .interactive-text {
+            color: #FF6F61;
+            cursor: pointer;
+            text-decoration: underline;
+            transition: color 0.3s ease-in-out;
+        }
+
+        #about .interactive-text:hover {
+            color: #FFA07A;
+        }
+
+        #additional-info {
+            color: #e3e3e3;
+            margin-top: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            animation: fadeIn 2s;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Features Section */
+        #about-features {
+            margin-top: 40px;
+            text-align: left;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            color: #e3e3e3;
+        }
+
+        #about-features h3 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #FF6F61;
+        }
+
+        #about-features ul {
+            list-style-type: disc;
+            padding-left: 20px;
+            line-height: 1.8;
+            align-items: center;
+            justify-content: center;
+            display:flex;
+            flex-direction: column;
+        }
+
+        #about-features li {
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+
+        /* Contact Section */
         #contact {
             background-color: #37474F;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
         }
 
         #contact h2 {
             color: #FFC107;
             animation: slideIn 2s;
+            font-size: 2rem;
         }
 
         #contact p {
@@ -199,6 +271,72 @@
             font-size: 1rem;
             line-height: 1.6;
             animation: fadeIn 3s;
+        }
+
+        #email-link {
+            color: #FFC107;
+            text-decoration: underline;
+            transition: color 0.3s ease-in-out;
+        }
+
+        #email-link:hover {
+            color: #FFD54F;
+        }
+
+        /* Form Styles */
+        #contact-form {
+            margin-top: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #contact-form label {
+            color: #FFC107;
+            font-size: 1rem;
+            text-align: left;
+        }
+
+        #contact-form input,
+        #contact-form textarea {
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #contact-form input:focus,
+        #contact-form textarea:focus {
+            border-color: #FFC107;
+            outline: none;
+        }
+
+        #contact-form button {
+            background-color: #FFC107;
+            color: #37474F;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s ease-in-out;
+        }
+
+        #contact-form button:hover {
+            background-color: #FFD54F;
+        }
+
+        /* Success Message */
+        #success-message {
+            margin-top: 20px;
+            color: #8BC34A;
+            font-size: 1rem;
+            text-align: center;
         }
 
         footer {
@@ -567,15 +705,63 @@
 
     <section id="about">
         <h2>About Us</h2>
-        <p>Future Notes was build as a hobby project, but turned into a fully functional application very fast.<br>
-        Join Future Notes today and never forget anything again!</p>
+        <p>
+            Welcome to <a href="#" style="text-decoration: none;"><span class="highlight">Future Notes</span></a>, your ultimate tool for staying organized and never letting an idea slip away. 
+            <br><br>
+            What started as a passion project quickly transformed into a fully-fledged application trusted by thousands to keep their thoughts, tasks, and plans in one place.
+            <br><br>
+            <span class="interactive-text" id="learn-more">Click here</span> to discover more about our journey!
+        </p>
+        <div id="additional-info" class="hidden">
+            <p>
+                At Future Notes, we believe everyone deserves a simple, powerful tool to turn their ideas into action. With user-friendly design and features tailored for productivity, we’re here to help you achieve your goals, one note at a time.
+            </p>
+        </div>
+    
+        <!-- New Content Section -->
+        <div id="about-features">
+            <h3>Features You'll Love</h3>
+            <ul>
+                <li>Easy-to-use interface for seamless note-taking.</li>
+                <li>Organize your thoughts with tags and categories.</li>
+                <li>Access your notes anywhere with cloud syncing.</li>
+                <li>Secure and private – your data is always safe with us.</li>
+            </ul>
+        </div>
+    
+        <!-- Call-to-Action Button -->
+        <div id="cta">
+            <h3>Ready to Get Started?</h3>
+            <div class="center-items"><button id="login-button" class="login-btn">Join Future Notes Today</button></div>
+        </div>
     </section>
 
     <section id="contact">
         <h2>Contact Us</h2>
         <p>If you have any questions or feedback, feel free to reach out to us.<br>
-        Email: nathanvcappellen@solcon.nl<br></p>
+            Email: <a href="mailto:nathanvcappellen@solcon.nl" id="email-link">nathanvcappellen@solcon.nl</a>
+        </p>
+    
+        <!-- New Form for Direct Messages -->
+        <form id="contact-form">
+            <label for="name">Your Name:</label>
+            <input type="text" id="name" name="name" placeholder="Enter your name" required>
+    
+            <label for="email">Your Email:</label>
+            <input type="email" id="email" name="email" placeholder="Enter your email" required>
+    
+            <label for="message">Your Message:</label>
+            <textarea id="message" name="message" placeholder="Enter your message" rows="4" required></textarea>
+    
+            <button id="send-button" type="submit">Send Message</button>
+        </form>
+    
+        <!-- Success Message -->
+        <div id="success-message" class="hidden">
+            <p>Thank you! Your message has been sent successfully.</p>
+        </div>
     </section>
+    
 </div>
 
 <div id="blank-screen"></div>
@@ -593,7 +779,7 @@
 </footer>
 
 <script>
-    const loginButton = document.getElementById('login-button');
+    const loginButtons = document.querySelectorAll('#login-button'); // Fix selector with # for ID
     const blankScreen = document.getElementById('blank-screen');
     const downloadButton = document.getElementById('download-button');
     const downloadOverlay = document.getElementById('download-overlay');
@@ -601,30 +787,60 @@
     const closeBtn = document.querySelector('#download-overlay .close-btn');
     const sidebarLinks = document.querySelectorAll('.sidebar a');
     const sections = document.querySelectorAll('section');
+    const sendButton = document.getElementById('send-button');
+    const contactForm = document.getElementById('contact-form');
+    const successMessage = document.getElementById('success-message');
 
-    loginButton.addEventListener('click', () => {
-        blankScreen.classList.add('active');
+    contactForm.addEventListener('submit', (event) => {
+        event.preventDefault(); // Prevent default form submission
+
+        // Simulate form submission
+        successMessage.classList.remove('hidden'); // Show success message
+
+        // Clear form fields
+        contactForm.reset();
+
+        // Hide success message after 5 seconds
         setTimeout(() => {
-            window.location.href = '/login_page';
-        }, 1000);
+            successMessage.classList.add('hidden');
+        }, 5000);
     });
 
+    // Toggle additional info
+    document.getElementById('learn-more').addEventListener('click', function () {
+        const additionalInfo = document.getElementById('additional-info');
+        additionalInfo.classList.toggle('hidden');
+    });
+
+    // Attach event listeners to all login buttons
+    loginButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            blankScreen.classList.add('active');
+            setTimeout(() => {
+                window.location.href = '/login_page';
+            }, 1000);
+        });
+    });
+
+    // Blur background functionality
     blurBg.addEventListener('click', () => {
         downloadOverlay.classList.remove('active');
         blurBg.classList.remove('active');
     });
 
-
+    // Download button functionality
     downloadButton.addEventListener('click', () => {
         downloadOverlay.classList.add('active');
         blurBg.classList.add('active');
     });
 
+    // Close overlay functionality
     closeBtn.addEventListener('click', () => {
         downloadOverlay.classList.remove('active');
         blurBg.classList.remove('active');
     });
 
+    // Handle scroll animations
     function handleScrollAnimations() {
         sections.forEach((section, index) => {
             const rect = section.getBoundingClientRect();
@@ -640,7 +856,7 @@
         });
     }
 
-    // Function to update active link based on scroll position
+    // Update active link based on scroll position
     function updateActiveLink() {
         let index = sections.length;
 
@@ -650,26 +866,28 @@
         sidebarLinks[index].classList.add('active');
     }
 
-    // Function to enable smooth scrolling when clicking sidebar links
-    sidebarLinks.forEach(link => {
+    // Enable smooth scrolling for sidebar links
+    sidebarLinks.forEach((link) => {
         link.addEventListener('click', (event) => {
             event.preventDefault();
             const targetId = link.getAttribute('href').substring(1);
             const targetSection = document.getElementById(targetId);
 
             targetSection.scrollIntoView({
-                behavior: 'smooth'
+                behavior: 'smooth',
             });
         });
     });
 
-    // Combine multiple functions into one event listener
+    // Combine multiple functions into one scroll event listener
     window.addEventListener('scroll', () => {
         handleScrollAnimations();
         updateActiveLink();
     });
 
+    // Trigger scroll animations on DOM content load
     document.addEventListener('DOMContentLoaded', handleScrollAnimations);
+
 
 </script>
 
