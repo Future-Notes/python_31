@@ -340,7 +340,7 @@
         }
 
         footer {
-            background-color: #121212;
+            background-color: #1E1E2E;
             padding: 10px;
             text-align: center;
             color: #6c6c6c;
@@ -792,20 +792,52 @@
     const contactForm = document.getElementById('contact-form');
     const successMessage = document.getElementById('success-message');
 
-    contactForm.addEventListener('submit', (event) => {
+    contactForm.addEventListener('submit', async (event) => {
         event.preventDefault(); // Prevent default form submission
 
-        // Simulate form submission
-        successMessage.classList.remove('hidden'); // Show success message
+        // Gather form data
+        const email = document.getElementById('email').value;
+        const message = document.getElementById('message').value;
 
-        // Clear form fields
-        contactForm.reset();
+        try {
+            // Send data to the backend
+            const response = await fetch('/contact', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, message }),
+            });
 
-        // Hide success message after 5 seconds
+            const result = await response.json();
+
+            if (response.status === 201) {
+                // Update and show the success message
+                successMessage.textContent = result.success;
+                successMessage.style.color = '#8BC34A'; // Set success color
+                successMessage.classList.remove('hidden');
+
+                // Clear form fields
+                contactForm.reset();
+            } else {
+                // Update and show the error message
+                successMessage.textContent = `Error: ${result.error}`;
+                successMessage.style.color = '#FF5252'; // Set error color
+                successMessage.classList.remove('hidden');
+            }
+        } catch (error) {
+            // Update and show the error message for network issues
+            successMessage.textContent = 'An error occurred while submitting your message. Please try again.';
+            successMessage.style.color = '#FF5252'; // Set error color
+            successMessage.classList.remove('hidden');
+        }
+
+        // Hide the message after 5 seconds
         setTimeout(() => {
             successMessage.classList.add('hidden');
         }, 5000);
     });
+
 
     // Toggle additional info
     document.getElementById('learn-more').addEventListener('click', function () {

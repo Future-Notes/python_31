@@ -26,6 +26,11 @@ class Note(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     note = db.Column(db.Text, nullable=False)
 
+class Messages(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(100), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+
 # Helper function to generate and manage session keys
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
@@ -88,6 +93,19 @@ def signup_page():
 @app.route('/account_page')
 def account_page():
     return render_template('account.html')
+
+@app.route('/contact', methods=['POST'])
+def contact():
+    data = request.json
+    email = data['email']
+    message = data['message']
+    try:
+        message = Messages(email=email, message=message)
+        db.session.add(message)
+        db.session.commit()
+        return jsonify({"succes": "Message received successfully!"}), 201
+    except Exception as e:
+        return jsonify({"error": f"Message not received {e}"}), 400
 
 # Routes
 @app.route('/signup', methods=['POST'])
