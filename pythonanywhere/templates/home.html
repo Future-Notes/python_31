@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Future Notes: A modern app for organizing your thoughts, plans, and ideas. Access notes anywhere and stay productive.">
     <meta name="keywords" content="Notes App, Future Notes, Productivity App, Organize Thoughts, Notes on Windows">
-    <meta name="author" content="Nathan van Cappellen">
+    <meta name="author" content="Nathan Cappellen">
     <title>Future Notes</title>
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
@@ -44,9 +44,10 @@
             background-color: #1E1E2E;
             padding: 20px;
             text-align: center;
-            position: sticky;
             top: 0;
-            z-index: 1000; /* Ensures the header stays above other elements */
+            z-index: 10000; /* Ensures the header stays above other elements */
+            display:block;
+            clear:both;
         }
 
 
@@ -65,6 +66,8 @@
 
         section {
             padding: 50px 20px;
+            width: 100vw;
+            height: 100vh;
             text-align: center;
             opacity: 0;
             transform: translateX(0);
@@ -118,10 +121,6 @@
             animation: fadeIn 3s;
         }
 
-        #download {
-            background-color: #1f1f30;
-        }
-
         #download h2 {
             color: #4DC4FF;
             animation: slideIn 2s;
@@ -170,11 +169,16 @@
 
         #about {
             background-color: #2E4057;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
         }
 
         #about h2 {
             color: #FF6F61;
             animation: fadeIn 2s;
+            font-size: 2rem;
         }
 
         #about p {
@@ -185,13 +189,80 @@
             animation: fadeIn 3s;
         }
 
+        #about .highlight {
+            color: #FF6F61;
+            font-weight: bold;
+        }
+
+        #about .interactive-text {
+            color: #FF6F61;
+            cursor: pointer;
+            text-decoration: underline;
+            transition: color 0.3s ease-in-out;
+        }
+
+        #about .interactive-text:hover {
+            color: #FFA07A;
+        }
+
+        #additional-info {
+            color: #e3e3e3;
+            margin-top: 20px;
+            font-size: 1rem;
+            line-height: 1.6;
+            animation: fadeIn 2s;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Features Section */
+        #about-features {
+            margin-top: 40px;
+            text-align: left;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            color: #e3e3e3;
+        }
+
+        #about-features h3 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #FF6F61;
+        }
+
+        #about-features ul {
+            list-style-type: disc;
+            padding-left: 20px;
+            line-height: 1.8;
+            align-items: center;
+            justify-content: center;
+            display:flex;
+            flex-direction: column;
+        }
+
+        #about-features li {
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+
+        /* Contact Section */
         #contact {
             background-color: #37474F;
+            padding: 30px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
         }
 
         #contact h2 {
             color: #FFC107;
             animation: slideIn 2s;
+            font-size: 2rem;
         }
 
         #contact p {
@@ -202,8 +273,74 @@
             animation: fadeIn 3s;
         }
 
+        #email-link {
+            color: #FFC107;
+            text-decoration: underline;
+            transition: color 0.3s ease-in-out;
+        }
+
+        #email-link:hover {
+            color: #FFD54F;
+        }
+
+        /* Form Styles */
+        #contact-form {
+            margin-top: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #contact-form label {
+            color: #FFC107;
+            font-size: 1rem;
+            text-align: left;
+        }
+
+        #contact-form input,
+        #contact-form textarea {
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #contact-form input:focus,
+        #contact-form textarea:focus {
+            border-color: #FFC107;
+            outline: none;
+        }
+
+        #contact-form button {
+            background-color: #FFC107;
+            color: #37474F;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s ease-in-out;
+        }
+
+        #contact-form button:hover {
+            background-color: #FFD54F;
+        }
+
+        /* Success Message */
+        #success-message {
+            margin-top: 20px;
+            color: #8BC34A;
+            font-size: 1rem;
+            text-align: center;
+        }
+
         footer {
-            background-color: #121212;
+            background-color: #1E1E2E;
             padding: 10px;
             text-align: center;
             color: #6c6c6c;
@@ -330,51 +467,303 @@
         #blur-bg.active {
             display: block;
         }
-
-        #header-icon {
-            right: 10px;
+        .sidebar {
+            margin: 0;
+            padding-top: 400px;
+            width: 220px;
+            background-color: #1E1E2E;
+            position: fixed; /* Keeps the sidebar fixed on the screen */
+            height: 100%;
+            overflow: auto;
+            z-index: 6000; /* Ensures it appears above other content */
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2); /* Optional: adds a shadow effect for better visibility */
         }
+
+        .sidebar a {
+            display: block;
+            color: #f5f5f5;
+            padding: 16px;
+            text-decoration: none;
+            transition: background-color 0.3s;
+        }
+
+        .sidebar a.active {
+            background-color: #6C63FF;
+            color: white;
+        }
+
+        .sidebar a:hover:not(.active) {
+            background-color: #37374F;
+            color: #FFF;
+        }
+
+        div.content {
+            margin-left: 0; /* Removes the left margin */
+            position: relative; /* Ensures content is not impacted by the sidebar */
+            z-index: 1; /* Places content behind the sidebar */
+        }
+
+        .feature-cards {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .feature-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            width: 20%;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            margin-top: 30px;
+        }
+        .feature-card img {
+            max-width: 120px;
+            margin-bottom: 15px;
+        }
+        .feature-card h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+        .feature-card p {
+            font-size: 1em;
+        }
+
+        #download {
+            padding: 40px;
+            text-align: center;
+            background-color: #121212; /* Light background to contrast the content */
+            position: relative;
+        }
+
+        .download-content {
+            position: relative;
+            z-index: 2; /* Make sure the button is on top of the background */
+        }
+
+        .download-btn {
+            background-color: #007BFF;
+            color: white;
+            font-size: 1.2em;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 20px;
+        }
+
+        .download-btn:hover {
+            background-color: #0056b3;
+        }
+
+        .download-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('static/download-background.jpg'); /* Example abstract pattern */
+            background-size: cover;
+            background-position: center;
+            opacity: 0.1; /* Keep it subtle */
+            z-index: 1;
+        }
+        .login-btn {
+            background-color: #28a745;
+            color: white;
+            font-size: 1.2em;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 20px;
+            transition: background-color 0.3s;
+        }
+        .login-btn:hover {
+            background-color: #218838;
+        }
+        .center-items {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none; /* Hides the sidebar on smaller screens */
+            }
+            div.content {
+                margin-left: 0; /* Removes the left margin */
+            }
+            .feature-cards {
+                flex-direction: column;
+            }
+            .feature-card {
+                width: 80%;
+            }
+            /* Ensure sections take up full height */
+            section {
+                padding: 20px;
+                width: 100%;
+                height: 100vh;
+                box-sizing: border-box;
+            }
+
+            section h2 {
+                font-size: 1.8rem;
+                margin-bottom: 10px;
+            }
+
+            section p {
+                font-size: 1rem;
+                line-height: 1.5;
+            }
+
+            /* Adjust button sizes */
+            button {
+                font-size: 1rem;
+                padding: 12px 25px;
+            }
+
+            /* Avoid margins between sections */
+            #download, #login, #about, #contact {
+                margin: 0;
+                padding: 20px 15px;
+            }
+            #features {
+                padding: 20px 15px;
+                height: 70%;
+            }
+        }
+        
     </style>
 </head>
 <body>
 
+<!-- Sidebar -->
+<div class="sidebar">
+    <a href="#features" class="active">Features</a>
+    <a href="#download">Download</a>
+    <a href="#login">Login</a>
+    <a href="#about">About</a>
+    <a href="#contact">Contact</a>
+</div>
+
 <header>
-    <a href="#" id="header-icon"><img src="static/favicon.ico" alt="Future Notes Logo" style="width: 50px; height: 50px; border-radius: 50%;"></a>
     <h1>Future Notes</h1>
     <p>The modern way to keep track of your ideas and plans.</p>
 </header>
 
-<section id="features">
-    <h2>Features</h2>
-    <img src="static/features-image.png" alt="Features Image" style="max-width: 100%; height: auto; margin: 20px 0; border-radius: 10px;">
-    <p>Organize your thoughts with ease using notes to remember important things.<br>
-    Access your notes anytime, anywhere whether you are using a Windows PC or your phone.<br>
-    A sleek and modern interface designed for productivity.</p>
-</section>
+<div class="content">    
 
-<section id="download">
-    <h2>Download for Windows</h2>
-    <p>Get the full desktop experience for your notes on Windows.</p>
-    <button id="download-button">Download</button>
-</section>
+    <section id="features">
+        <h2>Features</h2>
+        <div class="feature-cards">
+            <div class="feature-card">
+                <img src="static/icon-organize.png" alt="Organize Icon">
+                <h3>Organize Your Thoughts</h3>
+                <p>Keep your ideas structured and easy to access.</p>
+            </div>
+            <div class="feature-card">
+                <img src="static/features-image.png" alt="Features Image">
+                <h3>Sync Across Devices</h3>
+                <p>Access your notes from any device, anytime.</p>
+            </div>
+            <div class="feature-card">
+                <img src="static/icon-modern.png" alt="Modern Interface Icon">
+                <h3>Sleek Interface</h3>
+                <p>A modern, user-friendly interface to keep you productive.</p>
+            </div>
+        </div>
+    </section>
+    
 
-<section id="login">
-    <h2>Login to Web App</h2>
-    <p>Access your notes from any device, right from your browser.</p>
-    <a href="javascript:void(0);" id="login-button">Login</a>
-</section>
+    <section id="download">
+        <div class="download-background"></div>
+        <h2>Download for Windows</h2>
+        <p>Get the full desktop experience for your notes on Windows.</p>
+        <div class="download-content">
+            <button id="download-button" class="download-btn">Download Now</button>
+        </div>
+    </section>
 
-<section id="about">
-    <h2>About Us</h2>
-    <p>Future Notes was build as a hobby project, but turned into a fully functional application very fast.<br>
-    Join Future Notes today and never forget anything again!</p>
-</section>
+    <section id="login">
+        <div class="center-items">
+            <h2>Login to Web App</h2>
+            <p>Access your notes from any device, right from your browser.</p>
+            <button id="login-button" class="login-btn">
+                <img src="static/lock-icon.png" alt="Lock Icon" style="width: 20px; margin-right: 10px;">
+                Login
+            </button>
+        </div>
+    </section>    
 
-<section id="contact">
-    <h2>Contact Us</h2>
-    <p>If you have any questions or feedback, feel free to reach out to us.<br>
-    Email: nathanvcappellen@solcon.nl<br></p>
-</section>
+    <section id="about">
+        <h2>About Us</h2>
+        <p>
+            Welcome to <a href="#" style="text-decoration: none;"><span class="highlight">Future Notes</span></a>, your ultimate tool for staying organized and never letting an idea slip away. 
+            <br><br>
+            What started as a passion project quickly transformed into a fully-fledged application trusted by thousands to keep their thoughts, tasks, and plans in one place.
+            <br><br>
+            <span class="interactive-text" id="learn-more">Click here</span> to discover more about our journey!
+        </p>
+        <div id="additional-info" class="hidden">
+            <p>
+                At Future Notes, we believe everyone deserves a simple, powerful tool to turn their ideas into action. With user-friendly design and features tailored for productivity, we’re here to help you achieve your goals, one note at a time.
+            </p>
+        </div>
+    
+        <!-- New Content Section -->
+        <div id="about-features">
+            <h3>Features You'll Love</h3>
+            <ul>
+                <li>Easy-to-use interface for seamless note-taking.</li>
+                <li>Organize your thoughts with tags and categories.</li>
+                <li>Access your notes anywhere with cloud syncing.</li>
+                <li>Secure and private – your data is always safe with us.</li>
+            </ul>
+        </div>
+    
+        <!-- Call-to-Action Button -->
+        <div id="cta">
+            <h3>Ready to Get Started?</h3>
+            <div class="center-items"><button id="login-button" class="login-btn">Join Future Notes Today</button></div>
+        </div>
+    </section>
+
+    <section id="contact">
+        <h2>Contact Us</h2>
+        <p>If you have any questions or feedback, feel free to reach out to us.<br>
+            Email: <a href="mailto:nathanvcappellen@solcon.nl" id="email-link">nathanvcappellen@solcon.nl</a>
+        </p>
+        <p>Alternatively, you can send us a direct message below:</p>
+    
+        <!-- New Form for Direct Messages -->
+        <form id="contact-form">
+            <label for="name">Your Name:</label>
+            <input type="text" id="name" name="name" placeholder="Enter your name" required>
+    
+            <label for="email">Your Email:</label>
+            <input type="email" id="email" name="email" placeholder="Enter your email" required>
+    
+            <label for="message">Your Message:</label>
+            <textarea id="message" name="message" placeholder="Enter your message" rows="4" required></textarea>
+    
+            <button id="send-button" type="submit">Send Message</button>
+        </form>
+    
+        <!-- Success Message -->
+        <div id="success-message" class="hidden">
+            <p>Thank you! Your message has been sent successfully.</p>
+        </div>
+    </section>
+    
+</div>
 
 <div id="blank-screen"></div>
 <div id="blur-bg"></div>
@@ -391,38 +780,100 @@
 </footer>
 
 <script>
-    const loginButton = document.getElementById('login-button');
+    const loginButtons = document.querySelectorAll('#login-button'); // Fix selector with # for ID
     const blankScreen = document.getElementById('blank-screen');
     const downloadButton = document.getElementById('download-button');
     const downloadOverlay = document.getElementById('download-overlay');
     const blurBg = document.getElementById('blur-bg');
     const closeBtn = document.querySelector('#download-overlay .close-btn');
+    const sidebarLinks = document.querySelectorAll('.sidebar a');
+    const sections = document.querySelectorAll('section');
+    const sendButton = document.getElementById('send-button');
+    const contactForm = document.getElementById('contact-form');
+    const successMessage = document.getElementById('success-message');
 
-    loginButton.addEventListener('click', () => {
-        blankScreen.classList.add('active');
+    contactForm.addEventListener('submit', async (event) => {
+        event.preventDefault(); // Prevent default form submission
+
+        // Gather form data
+        const email = document.getElementById('email').value;
+        const message = document.getElementById('message').value;
+
+        try {
+            // Send data to the backend
+            const response = await fetch('/contact', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, message }),
+            });
+
+            const result = await response.json();
+
+            if (response.status === 201) {
+                // Update and show the success message
+                successMessage.textContent = result.success;
+                successMessage.style.color = '#8BC34A'; // Set success color
+                successMessage.classList.remove('hidden');
+
+                // Clear form fields
+                contactForm.reset();
+            } else {
+                // Update and show the error message
+                successMessage.textContent = `Error: ${result.error}`;
+                successMessage.style.color = '#FF5252'; // Set error color
+                successMessage.classList.remove('hidden');
+            }
+        } catch (error) {
+            // Update and show the error message for network issues
+            successMessage.textContent = 'An error occurred while submitting your message. Please try again.';
+            successMessage.style.color = '#FF5252'; // Set error color
+            successMessage.classList.remove('hidden');
+        }
+
+        // Hide the message after 5 seconds
         setTimeout(() => {
-            window.location.href = '/login_page';
-        }, 1000);
+            successMessage.classList.add('hidden');
+        }, 5000);
     });
 
+
+    // Toggle additional info
+    document.getElementById('learn-more').addEventListener('click', function () {
+        const additionalInfo = document.getElementById('additional-info');
+        additionalInfo.classList.toggle('hidden');
+    });
+
+    // Attach event listeners to all login buttons
+    loginButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+            blankScreen.classList.add('active');
+            setTimeout(() => {
+                window.location.href = '/login_page';
+            }, 1000);
+        });
+    });
+
+    // Blur background functionality
     blurBg.addEventListener('click', () => {
         downloadOverlay.classList.remove('active');
         blurBg.classList.remove('active');
     });
 
-
+    // Download button functionality
     downloadButton.addEventListener('click', () => {
         downloadOverlay.classList.add('active');
         blurBg.classList.add('active');
     });
 
+    // Close overlay functionality
     closeBtn.addEventListener('click', () => {
         downloadOverlay.classList.remove('active');
         blurBg.classList.remove('active');
     });
 
-    const sections = document.querySelectorAll('section');
-
+    // Handle scroll animations
     function handleScrollAnimations() {
         sections.forEach((section, index) => {
             const rect = section.getBoundingClientRect();
@@ -438,8 +889,38 @@
         });
     }
 
-    window.addEventListener('scroll', handleScrollAnimations);
+    // Update active link based on scroll position
+    function updateActiveLink() {
+        let index = sections.length;
+
+        while (--index && window.scrollY + 50 < sections[index].offsetTop) {}
+
+        sidebarLinks.forEach((link) => link.classList.remove('active'));
+        sidebarLinks[index].classList.add('active');
+    }
+
+    // Enable smooth scrolling for sidebar links
+    sidebarLinks.forEach((link) => {
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            const targetId = link.getAttribute('href').substring(1);
+            const targetSection = document.getElementById(targetId);
+
+            targetSection.scrollIntoView({
+                behavior: 'smooth',
+            });
+        });
+    });
+
+    // Combine multiple functions into one scroll event listener
+    window.addEventListener('scroll', () => {
+        handleScrollAnimations();
+        updateActiveLink();
+    });
+
+    // Trigger scroll animations on DOM content load
     document.addEventListener('DOMContentLoaded', handleScrollAnimations);
+
 
 </script>
 
