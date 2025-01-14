@@ -37,7 +37,7 @@ def generate_session_key(user_id):
     key = secrets.token_hex(32)
     session_keys[key] = {
         "user_id": user_id,
-        "expires_at": datetime.now() + timedelta(minutes=30),
+        "expires_at": datetime.now() + timedelta(minutes=1),
         "last_active": datetime.now()
     }
     return key
@@ -91,6 +91,7 @@ def login_page():
 def signup_page():
     return render_template('signup.html')
 
+
 @app.route('/account_page')
 def account_page():
     return render_template('account.html')
@@ -138,6 +139,11 @@ def logout():
     key = auth_header.split("Bearer ")[1]
     del session_keys[key]
     return jsonify({"message": "Logged out successfully!"}), 200
+
+@app.route('/test-session', methods=['GET'])
+@require_session_key
+def test_session():
+    return jsonify({"message": "Session is valid!"}), 200
 
 @app.route('/notes', methods=['GET', 'POST'])
 @require_session_key

@@ -182,11 +182,112 @@
         <button id="logout">Logout</button>
     </div>
 
+    <div id="modal-overlay" style="
+        display: none; 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        background-color: rgba(0, 0, 0, 0.6); 
+        z-index: 1000;
+        justify-content: center; 
+        align-items: center;
+    ">
+        <div id="modal" style="
+            background-color: #1E1E1E; 
+            padding: 20px 30px; 
+            border-radius: 12px; 
+            text-align: center; 
+            width: 100%; 
+            max-width: 400px; 
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        ">
+            <h2 style="color: #F5F5F5; font-size: 24px; margin-bottom: 20px;">Session Expired</h2>
+            <p style="color: #BDBDBD; margin-bottom: 20px;">Please re-enter your username and password:</p>
+            <input id="username" type="text" placeholder="Username" style="
+                width: 100%; 
+                padding: 12px; 
+                margin: 10px 10px; 
+                border: 1px solid #424242; 
+                border-radius: 8px; 
+                background-color: #2E2E2E; 
+                color: #E0E0E0; 
+                font-size: 16px;
+                outline: none;
+            " />
+            <input id="password" type="password" placeholder="Password" style="
+                width: 100%; 
+                padding: 12px; 
+                margin: 10px 0; 
+                border: 1px solid #424242; 
+                border-radius: 8px; 
+                background-color: #2E2E2E; 
+                color: #E0E0E0; 
+                font-size: 16px;
+                outline: none;
+            " />
+            <button id="submit-credentials" style="
+                background-color: #424242; 
+                color: #E0E0E0; 
+                padding: 12px 20px; 
+                border: none; 
+                border-radius: 8px; 
+                font-size: 16px; 
+                cursor: pointer; 
+                transition: background-color 0.3s ease;
+            " 
+            onmouseover="this.style.backgroundColor='#616161'" 
+            onmouseout="this.style.backgroundColor='#424242'">
+                Submit
+            </button>
+        </div>
+    </div>
+
     <script>
         const sessionKey = sessionStorage.getItem("session_key");
         if (!sessionKey) {
-            window.location.href = "/login_page";
+            showModal();
         }
+
+        function showModal() {
+            const modalOverlay = document.getElementById("modal-overlay");
+            modalOverlay.style.display = "flex";
+        }
+
+        function hideModal() {
+            const modalOverlay = document.getElementById("modal-overlay");
+            modalOverlay.style.display = "none";
+        }
+
+        document.getElementById("submit-credentials").addEventListener("click", async () => {
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value.trim();
+
+            if (!username || !password) {
+                alert("Both fields are required.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    sessionStorage.setItem("session_key", data.session_key);
+                    hideModal();
+                } else {
+                    alert("Invalid username or password. Please try again.");
+                }
+            } catch (error) {
+                console.error("Error during re-login:", error);
+                alert("There was an error. Please try again.");
+            }
+        });
 
         document.getElementById("update-username-form").addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -207,7 +308,7 @@
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
-                    window.location.href = "/login_page";
+                    showModal();
                 } else {
                     const error = await response.json();
                     alert(error.error || "An error occurred while updating the username.");
@@ -241,7 +342,7 @@
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
-                    window.location.href = "/login_page";
+                    showModal();
                 } else {
                     const error = await response.json();
                     alert(error.error || "An error occurred while updating the password.");
@@ -277,7 +378,7 @@
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
-                    window.location.href = "/login_page";
+                    showModal();
                 } else if (response.status === 400) {
                     alert("Incorrect password. Please try again.");
                 } else {
@@ -294,9 +395,22 @@
             window.location.href = "/login_page";
         });
 
-        document.getElementById("back-home").addEventListener("click", () => {
-            window.location.href = "/index";
-        });
+        window.onload = async () => {
+            try {
+                const response = await fetch("/test-session", {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                });
+                if (response.status === 401) {
+                    showModal();
+                }
+            } catch (error) {
+                console.error("Error during re-login:", error);
+            }
+        }
     </script>
 </body>
 </html>

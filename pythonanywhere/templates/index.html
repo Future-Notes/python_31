@@ -228,6 +228,18 @@
             border-top-left-radius: 15px;
             border-top-right-radius: 15px;
         }
+        @media (max-width: 600px) {
+            #add-note-form {
+                display: flex;
+                flex-direction: column;
+            }
+
+            #note-text, #note-tag {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+        
     </style>
 </head>
 <body>
@@ -245,6 +257,7 @@
     </main>
 
     <div id="overlay"></div>
+
     <div id="update-menu">
         <h3>Update Note</h3>
         <textarea id="update-note-text" placeholder="Updated note text"></textarea>
@@ -252,23 +265,126 @@
         <button id="update-note-button">Update</button>
         <button id="delete-button" onclick="deleteNote(currentNoteId)">Delete</button>
         <button id="cancel-update">Cancel</button>
-    </div>    
+    </div>
+
+    <div id="modal-overlay" style="
+        display: none; 
+        position: fixed; 
+        top: 0; 
+        left: 0; 
+        width: 100%; 
+        height: 100%; 
+        background-color: rgba(0, 0, 0, 0.6); 
+        z-index: 1000;
+        justify-content: center; 
+        align-items: center;
+    ">
+        <div id="modal" style="
+            background-color: #1E1E1E; 
+            padding: 20px 30px; 
+            border-radius: 12px; 
+            text-align: center; 
+            width: 100%; 
+            max-width: 400px; 
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        ">
+            <h2 style="color: #F5F5F5; font-size: 24px; margin-bottom: 20px;">Session Expired</h2>
+            <p style="color: #BDBDBD; margin-bottom: 20px;">Please re-enter your username and password:</p>
+            <input id="username" type="text" placeholder="Username" style="
+                width: 100%; 
+                padding: 12px; 
+                margin: 10px 10px; 
+                border: 1px solid #424242; 
+                border-radius: 8px; 
+                background-color: #2E2E2E; 
+                color: #E0E0E0; 
+                font-size: 16px;
+                outline: none;
+            " />
+            <input id="password" type="password" placeholder="Password" style="
+                width: 100%; 
+                padding: 12px; 
+                margin: 10px 0; 
+                border: 1px solid #424242; 
+                border-radius: 8px; 
+                background-color: #2E2E2E; 
+                color: #E0E0E0; 
+                font-size: 16px;
+                outline: none;
+            " />
+            <button id="submit-credentials" style="
+                background-color: #424242; 
+                color: #E0E0E0; 
+                padding: 12px 20px; 
+                border: none; 
+                border-radius: 8px; 
+                font-size: 16px; 
+                cursor: pointer; 
+                transition: background-color 0.3s ease;
+            " 
+            onmouseover="this.style.backgroundColor='#616161'" 
+            onmouseout="this.style.backgroundColor='#424242'">
+                Submit
+            </button>
+        </div>
+    </div>
 
     <script>
-        const sessionKey = sessionStorage.getItem("session_key");
-        if (!sessionKey) {
-            window.location.href = "/login_page";
-        }
 
         let currentNoteId = null;
 
-        async function fetchNotes() {
-            console.log("Fetching notes..."); // Log to check if the function is being called
+        
+        const sessionKey = sessionStorage.getItem("session_key");
+        if (!sessionKey) {
+            showModal();
+        }
 
+        function showModal() {
+            const modalOverlay = document.getElementById("modal-overlay");
+            modalOverlay.style.display = "flex";
+        }
+
+        function hideModal() {
+            const modalOverlay = document.getElementById("modal-overlay");
+            modalOverlay.style.display = "none";
+        }
+
+        document.getElementById("submit-credentials").addEventListener("click", async () => {
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value.trim();
+
+            if (!username || !password) {
+                alert("Both fields are required.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    sessionStorage.setItem("session_key", data.session_key);
+                    hideModal();
+                    fetchNotes(); // Refresh notes
+                } else {
+                    alert("Invalid username or password. Please try again.");
+                }
+            } catch (error) {
+                console.error("Error during re-login:", error);
+                alert("There was an error. Please try again.");
+            }
+        });
+
+        async function fetchNotes() {
+            console.log("Fetching notes...");
             const sessionKey = sessionStorage.getItem("session_key");
             if (!sessionKey) {
-                console.log("No session key found. Redirecting to login...");
-                window.location.href = "/login_page";
+                console.log("No session key found. Showing re-login modal...");
+                showModal();
                 return;
             }
 
@@ -280,18 +396,15 @@
                 if (!response.ok && response.status !== 401) {
                     throw new Error(`Failed to fetch notes: ${response.status}`);
                 } else if (response.status === 401) {
-                    console.log("Session key invalid. Redirecting to login...");
-                    alert("Your session has expired. Please log in again.");
-                    window.location.href = "/login_page";
+                    console.log("Session key invalid. Showing re-login modal...");
+                    showModal();
                     return;
                 }
 
                 const notes = await response.json();
-                console.log("Fetched notes:", notes); // Log the fetched notes to check the data
-
+                console.log("Fetched notes:", notes);
                 const notesList = document.getElementById("notes-list");
 
-                // If there are no notes, display a message
                 if (notes.length === 0) {
                     notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
                 } else {
@@ -318,7 +431,6 @@
             }
 
             try {
-                // Add the note
                 const response = await fetch("/notes", {
                     method: "POST",
                     headers: {
@@ -337,7 +449,6 @@
                     return;
                 }
 
-                // Refresh the notes list after adding the note
                 fetchNotes();
                 document.getElementById("note-text").value = ''; // Clear the input
                 document.getElementById("note-tag").value = ''; // Clear the tag input
