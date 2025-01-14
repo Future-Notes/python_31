@@ -25,6 +25,7 @@ class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     note = db.Column(db.Text, nullable=False)
+    tag = db.Column(db.String(100), nullable=True)  # Allow tag to be None
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -145,14 +146,15 @@ def manage_notes():
         data = request.json
         # Replace newlines with a space before saving to the database
         sanitized_note = data['note'].replace('\n', ' ')
-        note = Note(user_id=g.user_id, note=sanitized_note)
+        tag = data.get('tag')  # Get the tag if provided, else None
+        note = Note(user_id=g.user_id, note=sanitized_note, tag=tag)
         db.session.add(note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
         # Replace newlines with a space before sending the response
-        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' ')} for note in notes]
+        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' '), "tag": note.tag} for note in notes]
         return jsonify(sanitized_notes)
 
 
@@ -166,6 +168,7 @@ def update_delete_note(note_id):
     if request.method == 'PUT':
         data = request.json
         note.note = data['note']
+        note.tag = data.get('tag')  # Update the tag if provided, else None
         db.session.commit()
         return jsonify({"message": "Note updated successfully!"}), 200
     elif request.method == 'DELETE':

@@ -193,7 +193,7 @@
             const newUsername = document.getElementById("new-username").value;
 
             try {
-                const response = await fetch("https://bosbes.eu.pythonanywhere.com/update-username", {
+                const response = await fetch("/update-username", {
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",
@@ -220,7 +220,7 @@
             const newPassword = document.getElementById("new-password").value;
 
             try {
-                const response = await fetch("https://bosbes.eu.pythonanywhere.com/update-password", {
+                const response = await fetch("/update-password", {
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",
@@ -253,7 +253,7 @@
             }
 
             try {
-                const response = await fetch("https://bosbes.eu.pythonanywhere.com/delete-account", {
+                const response = await fetch("/delete-account", {
                     method: "DELETE",
                     headers: {
                         "Content-Type": "application/json",
