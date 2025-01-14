@@ -4,9 +4,6 @@ from flask_bcrypt import Bcrypt
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
 import secrets
-import os
-import base64
-from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 CORS(app)
@@ -27,16 +24,7 @@ class User(db.Model):
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    note_encrypted = db.Column(db.Text, nullable=False)
-
-    @property
-    def note(self):
-        return decrypt_data(self.note_encrypted)
-
-    @note.setter
-    def note(self, value):
-        self.note_encrypted = encrypt_data(value)
-
+    note = db.Column(db.Text, nullable=False)
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -74,20 +62,6 @@ def validate_session_key():
     # Update last active time
     session["last_active"] = now
     return True, session
-
-def get_encryption_key():
-    key = os.getenv("ENCRYPTION_KEY")
-    if not key:
-        raise ValueError("Encryption key not found in environment variables")
-    return base64.urlsafe_b64decode(key)
-
-def encrypt_data(data: str) -> str:
-    fernet = Fernet(get_encryption_key())
-    return fernet.encrypt(data.encode()).decode()
-
-def decrypt_data(data: str) -> str:
-    fernet = Fernet(get_encryption_key())
-    return fernet.decrypt(data.encode()).decode()
 
 # Decorator for protected routes
 def require_session_key(func):
@@ -171,14 +145,14 @@ def manage_notes():
         data = request.json
         # Replace newlines with a space before saving to the database
         sanitized_note = data['note'].replace('\n', ' ')
-        note = Note(user_id=g.user_id, note=sanitized_note)  # Automatically encrypts
+        note = Note(user_id=g.user_id, note=sanitized_note)
         db.session.add(note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
-        # Decrypt notes and replace newlines with a space before sending the response
-        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' ')} for note in notes]  # Automatically decrypts
+        # Replace newlines with a space before sending the response
+        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' ')} for note in notes]
         return jsonify(sanitized_notes)
 
 
@@ -191,7 +165,7 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
-        note.note = data['note']  # Automatically encrypts
+        note.note = data['note']
         db.session.commit()
         return jsonify({"message": "Note updated successfully!"}), 200
     elif request.method == 'DELETE':
