@@ -204,6 +204,10 @@
 
                 if (response.ok) {
                     alert("Username updated successfully!");
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
+                    sessionStorage.clear();
+                    window.location.href = "/login_page";
                 } else {
                     const error = await response.json();
                     alert(error.error || "An error occurred while updating the username.");
@@ -234,6 +238,10 @@
 
                 if (response.ok) {
                     alert("Password updated successfully!");
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
+                    sessionStorage.clear();
+                    window.location.href = "/login_page";
                 } else {
                     const error = await response.json();
                     alert(error.error || "An error occurred while updating the password.");
@@ -264,6 +272,10 @@
 
                 if (response.status === 200) {
                     alert("Account deleted successfully!");
+                    sessionStorage.clear();
+                    window.location.href = "/login_page";
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
                     sessionStorage.clear();
                     window.location.href = "/login_page";
                 } else if (response.status === 400) {

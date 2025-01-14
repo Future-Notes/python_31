@@ -277,8 +277,13 @@
                     headers: { Authorization: `Bearer ${sessionKey}` },
                 });
 
-                if (!response.ok) {
+                if (!response.ok && response.status !== 401) {
                     throw new Error(`Failed to fetch notes: ${response.status}`);
+                } else if (response.status === 401) {
+                    console.log("Session key invalid. Redirecting to login...");
+                    alert("Your session has expired. Please log in again.");
+                    window.location.href = "/login_page";
+                    return;
                 }
 
                 const notes = await response.json();
@@ -323,8 +328,13 @@
                     body: JSON.stringify({ note: noteText, tag: noteTag || null }),
                 });
 
-                if (!response.ok) {
+                if (!response.ok && response.status !== 401) {
                     throw new Error("Failed to add note");
+                } else if (response.status === 401) {
+                    console.log("Session key invalid. Redirecting to login...");
+                    alert("Your session has expired. Please log in again.");
+                    window.location.href = "/login_page";
+                    return;
                 }
 
                 // Refresh the notes list after adding the note
@@ -351,8 +361,13 @@
                         body: JSON.stringify({ note: updatedText, tag: updatedTag || null }),
                     });
 
-                    if (!response.ok) {
+                    if (!response.ok && response.status !== 401) {
                         throw new Error("Failed to update note");
+                    } else if (response.status === 401) {
+                        console.log("Session key invalid. Redirecting to login...");
+                        alert("Your session has expired. Please log in again.");
+                        window.location.href = "/login_page";
+                        return;
                     }
 
                     currentNoteId = null;
@@ -372,8 +387,13 @@
                     headers: { Authorization: `Bearer ${sessionStorage.getItem("session_key")}` },
                 });
 
-                if (!response.ok) {
+                if (!response.ok && response.status !== 401) {
                     throw new Error("Failed to delete note");
+                } else if (response.status === 401) {
+                    console.log("Session key invalid. Redirecting to login...");
+                    alert("Your session has expired. Please log in again.");
+                    window.location.href = "/login_page";
+                    return;
                 }
 
                 closeUpdateMenu();
