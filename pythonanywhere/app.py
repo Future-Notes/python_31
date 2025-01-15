@@ -48,7 +48,6 @@ def validate_session_key():
         return False, "Invalid or missing session API key"
 
     key = auth_header.split("Bearer ")[1]
-    print(key)  # Debug print
     if key not in session_keys:
         return False, "Invalid or missing session API key"
 

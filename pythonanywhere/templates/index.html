@@ -122,8 +122,9 @@
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             transition: background-color 0.3s ease, box-shadow 0.3s ease;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
+            text-align: center;
             height: 200px;
             text-align: center;
             font-size: 18px;
@@ -239,6 +240,21 @@
                 margin-bottom: 10px;
             }
         }
+        #search-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        #search-arrow {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        #search-arrow.rotate {
+            transform: rotate(180deg);
+        }
         
     </style>
 </head>
@@ -252,8 +268,15 @@
             <textarea id="note-text" placeholder="Write a note..."></textarea>
             <input type="text" id="note-tag" placeholder="Tag (optional)">
             <button type="submit">Add Note</button>
+            <button type="button" id="search-button">
+                <img src="static/magnifying-glass-icon.png" alt="Search" style="width: 16px; height: 16px;">
+                <span id="search-arrow">&#9660;</span>
+            </button>
         </form>
+        <input type="text" id="search-input" placeholder="Search..." style="display: none; margin-top: 10px; width: 97.5%; padding: 10px; font-size: 16px; margin-bottom: 20px;">
+        
         <ul id="notes-list"></ul>
+        
     </main>
 
     <div id="overlay"></div>
@@ -348,6 +371,68 @@
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "none";
         }
+
+        document.getElementById("search-button").addEventListener("click", () => {
+            const searchInput = document.getElementById("search-input");
+            const searchArrow = document.getElementById("search-arrow");
+            if (searchInput.style.display === "none") {
+                searchInput.style.display = "block";
+                searchInput.focus();
+                searchArrow.classList.add("rotate");
+            } else {
+                searchInput.style.display = "none";
+                searchNotes("");
+                searchArrow.classList.remove("rotate");
+            }
+        });
+
+        document.getElementById("search-input").addEventListener("input", (event) => {
+            const query = event.target.value.toLowerCase();
+            searchNotes(query);
+        });
+
+        function searchNotes(searchTerm) {
+            const notesList = document.getElementById("notes-list");
+            const notes = Array.from(notesList.children);
+
+            let hasResults = false;
+
+            notes.forEach(note => {
+                const noteText = note.querySelector('span')?.innerText.toLowerCase() || "";
+                const noteTag = note.querySelector('.note-tag')?.innerText.toLowerCase() || "";
+
+                if (noteText.includes(searchTerm.toLowerCase()) || noteTag.includes(searchTerm.toLowerCase())) {
+                    note.style.display = "flex"; // Show matching notes
+                    hasResults = true;
+                } else {
+                    note.style.display = "none"; // Hide non-matching notes
+                }
+            });
+
+            // Handle the "No results found" message
+            const noResultsMessage = document.querySelector(".no-results-message");
+
+            if (!hasResults) {
+                if (!noResultsMessage) {
+                    const messageElement = document.createElement("li");
+                    messageElement.classList.add("no-results-message", "empty-note");
+                    messageElement.innerText = "No results found.";
+                    notesList.appendChild(messageElement);
+                }
+            } else {
+                if (noResultsMessage) {
+                    noResultsMessage.remove(); // Remove "No results found" if results exist
+                }
+            }
+        }
+
+        // Event listener for the search input
+        document.getElementById("search-input").addEventListener("input", (e) => {
+            const searchTerm = e.target.value.trim();
+            searchNotes(searchTerm);
+        });
+
+
 
         document.getElementById("submit-credentials").addEventListener("click", async () => {
             const username = document.getElementById("username").value.trim();
