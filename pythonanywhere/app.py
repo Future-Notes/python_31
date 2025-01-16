@@ -119,33 +119,47 @@ def contact():
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
-@app.route('/update-profile-picture', methods=['POST'])
+@app.route('/update-profile-picture', methods=['POST', 'DELETE'])
 @require_session_key
 def update_profile_picture():
-    user = User.query.get(g.user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    if request.method == 'POST':
+        user = User.query.get(g.user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
-    if 'profile_picture' not in request.files:
-        return jsonify({"error": "No file part in the request"}), 400
+        if 'profile_picture' not in request.files:
+            return jsonify({"error": "No file part in the request"}), 400
 
-    file = request.files['profile_picture']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
+        file = request.files['profile_picture']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
 
-    if file and allowed_file(file.filename):
-        # Sanitize the filename for security
-        filename = secure_filename(f"{user.username}_{file.filename}")
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
+        if file and allowed_file(file.filename):
+            # Sanitize the filename for security
+            filename = secure_filename(f"{user.username}_{file.filename}")
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
 
-        # Update user record in the database
-        user.profile_picture = file_path
-        db.session.commit()
+            # Update user record in the database
+            user.profile_picture = file_path
+            db.session.commit()
 
-        return jsonify({"message": "Profile picture updated successfully", "path": file_path}), 200
+            return jsonify({"message": "Profile picture updated successfully", "path": file_path}), 200
 
-    return jsonify({"error": "Invalid file format"}), 400
+        return jsonify({"error": "Invalid file format"}), 400
+    elif request.method == 'DELETE':
+        user = User.query.get(g.user_id)
+        if not user:
+            print("user not found")
+            return jsonify({"error": "User not found"}), 404
+
+        if user.profile_picture:
+            os.remove(user.profile_picture)
+            user.profile_picture = None
+            db.session.commit()
+            return jsonify({"message": "Profile picture deleted successfully!"}), 200
+
+        return jsonify({"error": "No profile picture to delete"}), 400
 
 @app.route('/user-info', methods=['GET'])
 @require_session_key
@@ -201,17 +215,15 @@ def test_session():
 def manage_notes():
     if request.method == 'POST':
         data = request.json
-        # Replace newlines with a space before saving to the database
-        sanitized_note = data['note'].replace('\n', ' ')
+        note = data['note']
         tag = data.get('tag')  # Get the tag if provided, else None
-        note = Note(user_id=g.user_id, note=sanitized_note, tag=tag)
-        db.session.add(note)
+        new_note = Note(user_id=g.user_id, note=note, tag=tag)
+        db.session.add(new_note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
-        # Replace newlines with a space before sending the response
-        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' '), "tag": note.tag} for note in notes]
+        sanitized_notes = [{"id": note.id, "note": note.note, "tag": note.tag} for note in notes]
         return jsonify(sanitized_notes)
 
 
