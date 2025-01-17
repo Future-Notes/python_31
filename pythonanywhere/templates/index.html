@@ -945,9 +945,8 @@
                 if (!response.ok && response.status !== 401) {
                     throw new Error("Failed to add note");
                 } else if (response.status === 401) {
-                    console.log("Session key invalid. Redirecting to login...");
-                    alert("Your session has expired. Please log in again.");
-                    window.location.href = "/login_page";
+                    console.log("Session key invalid. Showing re-login modal...");
+                    showModal();
                     return;
                 }
 
