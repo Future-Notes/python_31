@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2c2c2c">
     <title>Future Notes</title>
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
@@ -525,6 +526,7 @@
         <h3>Add Note</h3>
         <textarea id="mobile-note-text" placeholder="Write a note..."></textarea>
         <input type="text" id="mobile-note-tag" placeholder="Tag (optional)">
+
         <button id="mobile-add-note-button">Add Note</button>
         <button id="mobile-cancel-button">Cancel</button>
     </div>
@@ -599,12 +601,6 @@
                 }
             }
         }
-
-        // Event listener for the search input
-        document.getElementById("search-input").addEventListener("input", (e) => {
-            const searchTerm = e.target.value.trim();
-            searchNotes(searchTerm);
-        });
 
         document.getElementById("submit-credentials").addEventListener("click", async () => {
             const username = document.getElementById("username").value.trim();
@@ -700,9 +696,9 @@
                 if (!response.ok && response.status !== 401) {
                     throw new Error("Failed to add note");
                 } else if (response.status === 401) {
-                    console.log("Session key invalid. Redirecting to login...");
-                    alert("Your session has expired. Please log in again.");
-                    window.location.href = "/login_page";
+                    console.log("Session key invalid. Showing re-login modal...");
+                    
+                    showModal();
                     return;
                 }
 
@@ -770,12 +766,13 @@
             }
         }
 
-        function showViewMenu(noteId, noteText) {
+        function showViewMenu(noteId, noteText, noteTag) {
             currentNoteId = noteId;
             document.getElementById("view-note-text").value = noteText.replace(/\\n/g, "\n");
             document.getElementById("view-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
         }
+
 
         function closeViewMenu() {
             document.getElementById("view-menu").style.display = "none";
@@ -785,15 +782,17 @@
         function showUpdateMenu(noteId, noteText, noteTag) {
             currentNoteId = noteId;
             document.getElementById("update-note-text").value = noteText.replace(/\\n/g, "\n");
-            document.getElementById("update-note-tag").value = noteTag;
+            document.getElementById("update-note-tag").value = noteTag; // Ensure tag input is populated
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("update-menu").style.display = "block";
         }
+
 
         function closeUpdateMenu() {
             document.getElementById("update-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
         }
+
 
         document.getElementById("edit-note-button").addEventListener("click", () => {
             showUpdateMenu(currentNoteId, document.getElementById("view-note-text").value, document.getElementById("update-note-tag").value);

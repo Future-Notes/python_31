@@ -288,6 +288,12 @@ def delete_account():
         return jsonify({"error": "Incorrect password"}), 400
 
     try:
+        # Delete profile pictures
+        profile_pictures_dir = app.config['UPLOAD_FOLDER']
+        for filename in os.listdir(profile_pictures_dir):
+            if filename.startswith(f"{user.username}_"):
+                os.remove(os.path.join(profile_pictures_dir, filename))
+
         Note.query.filter_by(user_id=user.id).delete()
         db.session.delete(user)
         db.session.commit()
