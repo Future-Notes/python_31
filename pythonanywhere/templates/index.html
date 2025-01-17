@@ -123,16 +123,39 @@
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             transition: background-color 0.3s ease, box-shadow 0.3s ease;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            flex-direction: column;
+            justify-content: space-between;
             text-align: center;
             height: 200px;
-            text-align: center;
-            font-size: 18px;
             overflow: hidden;
             opacity: 0;
             animation: fadeIn 1s forwards;
         }
+
+        #notes-list li h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: bold;
+            color: #e0e0e0;
+            text-align: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        #notes-list li span {
+            margin: 0px auto;
+            max-width: 30%;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            z-index: 1;
+        }
+
+        .note-tag {
+            background-color: #6a6a6a;
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
+        }
+
 
         #notes-list li:hover {
             background-color: #4a4a4a;
@@ -219,12 +242,8 @@
 
         .note-tag {
             position: absolute;
-            top: 5px;
-            left: 0;
-            right: 0;
-            background-color: rgba(106, 106, 106, 0.5); /* Light opacity for seethrough effect */
             color: #e0e0e0;
-            padding: 5px 0;
+            padding: 10px 5px;
             text-align: center;
             font-size: 14px;
             border-top-left-radius: 15px;
@@ -432,6 +451,7 @@
     </header>
     <main>
         <form id="add-note-form">
+            <input type="text" id="note-title" placeholder="Title (optional)">
             <textarea id="note-text" placeholder="Write a note..."></textarea>
             <input type="text" id="note-tag" placeholder="Tag (optional)">
             <button type="submit">Add Note</button>
@@ -446,12 +466,15 @@
     <div id="overlay"></div>
 
     <div id="view-menu">
+        <input type="text" id="view-note-title" readonly>
         <textarea id="view-note-text" readonly></textarea>
+        <input id="view-note-tag" type="hidden">
         <button id="edit-note-button">Edit</button>
     </div>
 
     <div id="update-menu">
         <h3>Update Note</h3>
+        <input type="text" id="update-note-title" placeholder="Title (optional)">
         <textarea id="update-note-text" placeholder="Updated note text"></textarea>
         <input type="text" id="update-note-tag" placeholder="Tag (optional)">
         <button id="save-note-button">Save</button>
@@ -524,6 +547,7 @@
     <div id="floating-add-button">+</div>
     <div id="mobile-add-menu">
         <h3>Add Note</h3>
+        <input type="text" id="mobile-note-title" placeholder="Title (optional)">
         <textarea id="mobile-note-text" placeholder="Write a note..."></textarea>
         <input type="text" id="mobile-note-tag" placeholder="Tag (optional)">
 
@@ -543,11 +567,13 @@
         function showModal() {
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "flex";
+            document.getElementById("floating-add-button").style.display = "none";
         }
 
         function hideModal() {
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "none";
+            document.getElementById("floating-add-button").style.display = "flex";
             location.reload();
         }
 
@@ -636,45 +662,47 @@
             console.log("Fetching notes...");
             const sessionKey = sessionStorage.getItem("session_key");
             if (!sessionKey) {
-                console.log("No session key found. Showing re-login modal...");
+            console.log("No session key found. Showing re-login modal...");
+            showModal();
+            return;
+            }
+
+            try {
+            const response = await fetch("/notes", {
+                headers: { Authorization: `Bearer ${sessionKey}` },
+            });
+
+            if (!response.ok && response.status !== 401) {
+                throw new Error(`Failed to fetch notes: ${response.status}`);
+            } else if (response.status === 401) {
+                console.log("Session key invalid. Showing re-login modal...");
                 showModal();
                 return;
             }
 
-            try {
-                const response = await fetch("/notes", {
-                    headers: { Authorization: `Bearer ${sessionKey}` },
-                });
+            const notes = await response.json();
+            console.log("Fetched notes:", notes);
+            const notesList = document.getElementById("notes-list");
+            if (notes.length === 0) {
+                notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
+            } else {
+                notesList.innerHTML = notes.map(note => `
+                    <li class="${note.note ? '' : 'empty-note'}" onclick="showViewMenu(${note.id}, '${note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', '${note.tag || ''}', '${note.title || 'Untitled'}')">
+                        <h3>${note.title || 'Untitled'}</h3>
+                        <span>${note.note ? note.note.replace(/\n/g, "<br>").substring(0, 100) + (note.note.length > 100 ? '...' : '') : 'Empty note'}</span>
+                        ${note.tag ? `<span class="note-tag">${note.tag}</span>` : ''}
+                    </li>
+                `).join("");
+            }
 
-                if (!response.ok && response.status !== 401) {
-                    throw new Error(`Failed to fetch notes: ${response.status}`);
-                } else if (response.status === 401) {
-                    console.log("Session key invalid. Showing re-login modal...");
-                    showModal();
-                    return;
-                }
-
-                const notes = await response.json();
-                console.log("Fetched notes:", notes);
-                const notesList = document.getElementById("notes-list");
-
-                if (notes.length === 0) {
-                    notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
-                } else {
-                    notesList.innerHTML = notes.map(note => `
-                        <li class="${note.note ? '' : 'empty-note'}" onclick="showViewMenu(${note.id}, '${note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', '${note.tag || ''}')">
-                            ${note.tag ? `<span class="note-tag">${note.tag}</span>` : ''}
-                            <span>${note.note ? note.note.replace(/\n/g, "<br>") : 'Empty note'}</span>
-                        </li>
-                    `).join("");
-                }
             } catch (error) {
-                console.error("Error fetching notes:", error);
-                alert("There was an error loading your notes. Please try again later.");
+            console.error("Error fetching notes:", error);
+            alert("There was an error loading your notes. Please try again later.");
             }
         }
 
         async function addNote() {
+            const noteTitle = document.getElementById("note-title").value;
             const noteText = document.getElementById("note-text").value;
             const noteTag = document.getElementById("note-tag").value;
 
@@ -690,7 +718,7 @@
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
-                    body: JSON.stringify({ note: noteText, tag: noteTag || null }),
+                    body: JSON.stringify({title: noteTitle || null, note: noteText, tag: noteTag || null }),
                 });
 
                 if (!response.ok && response.status !== 401) {
@@ -703,6 +731,7 @@
                 }
 
                 fetchNotes();
+                document.getElementById("note-title").value = ''; // Clear the title input
                 document.getElementById("note-text").value = ''; // Clear the input
                 document.getElementById("note-tag").value = ''; // Clear the tag input
             } catch (error) {
@@ -712,6 +741,7 @@
         }
 
         async function updateNote() {
+            const updatedTitle = document.getElementById("update-note-title").value;
             const updatedText = document.getElementById("update-note-text").value;
             const updatedTag = document.getElementById("update-note-tag").value;
             if (currentNoteId) {
@@ -722,7 +752,7 @@
                             "Content-Type": "application/json",
                             Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
                         },
-                        body: JSON.stringify({ note: updatedText, tag: updatedTag || null }),
+                        body: JSON.stringify({title: updatedTitle || null, note: updatedText, tag: updatedTag || null }),
                     });
 
                     if (!response.ok && response.status !== 401) {
@@ -766,41 +796,52 @@
             }
         }
 
-        function showViewMenu(noteId, noteText, noteTag) {
+        function showViewMenu(noteId, noteText, noteTag, noteTitle) {
             currentNoteId = noteId;
+            console.log("View Menu Opened:", { noteId, noteText, noteTag, noteTitle });
+            document.getElementById("view-note-title").value = noteTitle || 'Untitled';
             document.getElementById("view-note-text").value = noteText.replace(/\\n/g, "\n");
+            document.getElementById("view-note-tag").value = noteTag || ''; // Add this line
             document.getElementById("view-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
+            document.getElementById("floating-add-button").style.display = "none";
         }
+
+
 
 
         function closeViewMenu() {
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
-        function showUpdateMenu(noteId, noteText, noteTag) {
+        function showUpdateMenu(noteId, noteText, noteTag, noteTitle) {
             currentNoteId = noteId;
+            console.log("Edit Menu Opened:", { noteId, noteText, noteTag, noteTitle });
+            document.getElementById("update-note-title").value = noteTitle; // Ensure title input is populated
             document.getElementById("update-note-text").value = noteText.replace(/\\n/g, "\n");
             document.getElementById("update-note-tag").value = noteTag; // Ensure tag input is populated
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("update-menu").style.display = "block";
+            document.getElementById("floating-add-button").style.display = "none";
         }
 
 
         function closeUpdateMenu() {
             document.getElementById("update-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
 
         document.getElementById("edit-note-button").addEventListener("click", () => {
-            showUpdateMenu(currentNoteId, document.getElementById("view-note-text").value, document.getElementById("update-note-tag").value);
+            showUpdateMenu(currentNoteId, document.getElementById("view-note-text").value, document.getElementById("view-note-tag").value, document.getElementById("view-note-title").value);
         });
 
         document.getElementById("back-button").addEventListener("click", () => {
             closeUpdateMenu();
-            showViewMenu(currentNoteId, document.getElementById("update-note-text").value);
+            showViewMenu(currentNoteId, document.getElementById("update-note-text").value, document.getElementById("update-note-tag").value, document.getElementById("update-note-title").value);
         });
 
         document.getElementById("save-note-button").addEventListener("click", updateNote);
@@ -904,13 +945,13 @@
                 if (!response.ok && response.status !== 401) {
                     throw new Error("Failed to add note");
                 } else if (response.status === 401) {
-                    console.log("Session key invalid. Redirecting to login...");
-                    alert("Your session has expired. Please log in again.");
-                    window.location.href = "/login_page";
+                    console.log("Session key invalid. Showing re-login modal...");
+                    showModal();
                     return;
                 }
 
                 fetchNotes();
+                document.getElementById("mobile-note-title").value = ''; // Clear the title input
                 document.getElementById("mobile-note-text").value = ''; // Clear the input
                 document.getElementById("mobile-note-tag").value = ''; // Clear the tag input
                 document.getElementById("mobile-add-menu").style.display = "none";

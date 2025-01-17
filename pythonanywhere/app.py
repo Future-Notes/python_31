@@ -32,6 +32,7 @@ class User(db.Model):
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.String(100), nullable=True)
     note = db.Column(db.Text, nullable=False)
     tag = db.Column(db.String(100), nullable=True)  # Allow tag to be None
 
@@ -215,15 +216,16 @@ def test_session():
 def manage_notes():
     if request.method == 'POST':
         data = request.json
+        title = data.get('title')  # Get the title if provided, else None
         note = data['note']
         tag = data.get('tag')  # Get the tag if provided, else None
-        new_note = Note(user_id=g.user_id, note=note, tag=tag)
+        new_note = Note(user_id=g.user_id, title=title, note=note, tag=tag)
         db.session.add(new_note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
-        sanitized_notes = [{"id": note.id, "note": note.note, "tag": note.tag} for note in notes]
+        sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
         return jsonify(sanitized_notes)
 
 
@@ -236,6 +238,7 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
+        note.title = data.get('title')  # Update the title if provided, else None
         note.note = data['note']
         note.tag = data.get('tag')  # Update the tag if provided, else None
         db.session.commit()
@@ -288,12 +291,6 @@ def delete_account():
         return jsonify({"error": "Incorrect password"}), 400
 
     try:
-        # Delete profile pictures
-        profile_pictures_dir = app.config['UPLOAD_FOLDER']
-        for filename in os.listdir(profile_pictures_dir):
-            if filename.startswith(f"{user.username}_"):
-                os.remove(os.path.join(profile_pictures_dir, filename))
-
         Note.query.filter_by(user_id=user.id).delete()
         db.session.delete(user)
         db.session.commit()
