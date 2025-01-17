@@ -37,7 +37,7 @@
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            width: 100%;
+            width: 90%;
             max-width: 400px;
             display: flex;
             flex-direction: column;
@@ -160,6 +160,158 @@
             background-color: #5a5a5a;
             transform: scale(1.1);
         }
+
+        .banner {
+            background-color: #4f83cc; /* Soft blue */
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .profile-pic {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: transparent; /* Remove white background */
+            color: #4f83cc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-right: 20px;
+            background-size: cover;
+            background-position: center;
+        }
+
+        .profile-pic.no-picture {
+            background-color: #cc4f4f; /* Soft blue background when no picture */
+            color: white; /* White text for the initial */
+            border-radius: 50%;
+        }
+
+        .container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .section {
+            flex: 1;
+            background-color: #3a3a3a;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        input, button {
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        input {
+            background-color: #6a6a6a;
+            color: #e0e0e0;
+        }
+
+        button {
+            background-color: #6a6a6ad5;
+            color: #e0e0e0;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #5a5a5a;
+        }
+
+        #delete-account {
+            background-color: #d83c3e;
+        }
+
+        #delete-account:hover {
+            background-color: #b22d2f;
+        }
+
+        /* Modal */
+        #modal-overlay-2 {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            justify-content: center;
+            align-items: center;
+        }
+
+        #modal {
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        }
+
+        #modal input {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        #modal button {
+            background-color: #4f83cc;
+            color: white;
+            font-weight: bold;
+        }
+
+        #modal button:hover {
+            background-color: #3a6bab;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .section {
+                width: 100%;
+                margin-bottom: 20px;
+            }
+            #account-actions {
+                margin-bottom: 0;
+                align-items: center;
+                justify-content: center;
+                max-width: 85%;
+            }
+
+            #account-management {
+                max-width: 85%;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .banner {
+                width: 90%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -167,19 +319,41 @@
         <a href="/index" class="back-button" aria-label="Go back to web app">←</a>
         <h1>Account</h1>
     </header>
-    <!-- Account Page Content -->
-    <form id="update-username-form">
-        <input type="text" id="new-username" placeholder="New Username" required>
-        <button type="submit">Update Username</button>
-    </form>
-    <form id="update-password-form">
-        <input type="password" id="current-password" placeholder="Current Password" required>
-        <input type="password" id="new-password" placeholder="New Password" required>
-        <button type="submit">Update Password</button>
-    </form>
-    <div class="button-group">
-        <button id="delete-account">Delete Account</button>
-        <button id="logout">Logout</button>
+
+    <div class="banner">
+        <div class="profile-pic" id="profile-pic">U</div>
+        <span id="username-display">username - Account</span>
+    </div>
+    
+    <div class="container">
+        <div class="section" id="account-management">
+            <h2>Account Management</h2>
+            <form id="update-username-form">
+                <input type="text" id="new-username" placeholder="New Username" required>
+                <button type="submit">Update Username</button>
+            </form>
+            <form id="update-password-form">
+                <input type="password" id="current-password" placeholder="Current Password" required>
+                <input type="password" id="new-password" placeholder="New Password" required>
+                <button type="submit">Update Password</button>
+            </form>
+        </div>
+        <div class="section" id="account-actions">
+            <h2>Account Actions</h2>
+            <button id="delete-account">Delete Account</button>
+            <button id="logout">Logout</button>
+        </div>
+    </div>
+
+    <!-- Modal for profile picture -->
+    <div id="modal-overlay-2">
+        <div id="modal">
+            <h2>Update Profile Picture</h2>
+            <input type="file" id="profile-picture-upload" accept="image/*">
+            <button id="save-profile-picture">Save</button>
+            <button id="delete-profile-picture">Delete profile picture</button>
+            <button onclick="document.getElementById('modal-overlay-2').style.display = 'none'">Cancel</button>
+        </div>
     </div>
 
     <div id="modal-overlay" style="
@@ -258,6 +432,7 @@
         function hideModal() {
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "none";
+            location.reload();
         }
 
         document.getElementById("submit-credentials").addEventListener("click", async () => {
@@ -306,7 +481,6 @@
                 if (response.ok) {
                     alert("Username updated successfully!");
                 } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
                     sessionStorage.clear();
                     showModal();
                 } else {
@@ -406,11 +580,110 @@
                 });
                 if (response.status === 401) {
                     showModal();
+                } else {
+                    const userInfoResponse = await fetch("/user-info", {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                    });
+
+                    if (userInfoResponse.ok) {
+                        const userInfo = await userInfoResponse.json();
+                        const username = userInfo.username;
+                        const profilePic = userInfo.profile_picture;
+                        console.log(userInfo);
+
+                        document.getElementById("username-display").textContent = `${username} - Account`;
+                        const profilePicElement = document.getElementById("profile-pic");
+
+                        if (profilePic) {
+                            // Replace backslashes with forward slashes to fix path issues
+                            const correctedProfilePic = profilePic.replace(/\\/g, "/");
+
+                            // Use the corrected path directly (no need to prepend "/static/uploads/profile_pictures/")
+                            profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+                            profilePicElement.classList.remove("no-picture");
+                            profilePicElement.textContent = ""; // Clear the text content
+                        } else {
+                            profilePicElement.textContent = username[0].toUpperCase();
+                            profilePicElement.classList.add("no-picture");
+                        }
+
+                    } else {
+                        console.error("Failed to fetch user info");
+                    }
                 }
             } catch (error) {
                 console.error("Error during re-login:", error);
             }
-        }
+        };
+
+        document.getElementById("profile-pic").addEventListener("click", () => {
+            document.getElementById("modal-overlay-2").style.display = "flex";
+        });
+
+        document.getElementById("save-profile-picture").addEventListener("click", async () => {
+            const fileInput = document.getElementById("profile-picture-upload");
+            if (fileInput.files.length === 0) {
+                alert("Please select an image.");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("profile_picture", fileInput.files[0]);
+
+            try {
+                const response = await fetch("/update-profile-picture", {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${sessionKey}`
+                    },
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    alert("Profile picture updated successfully!");
+                    document.getElementById("modal-overlay-2").style.display = "none";
+                    location.reload();
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
+                    sessionStorage.clear();
+                    showModal();
+                } else {
+                    alert("Failed to update profile picture.");
+                }
+            } catch (err) {
+                console.error("Error uploading profile picture:", err);
+            }
+        });
+
+        document.getElementById("delete-profile-picture").addEventListener("click", async () => {
+            try {
+                const response = await fetch("/update-profile-picture", {
+                    method: "DELETE",
+                    headers: {
+                        Authorization: `Bearer ${sessionKey}`
+                    },
+                });
+
+                if (response.ok) {
+                    alert("Profile picture deleted successfully!");
+                    document.getElementById("modal-overlay-2").style.display = "none";
+                    location.reload();
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
+                    sessionStorage.clear();
+                    showModal();
+                } else {
+                    alert("Failed to delete profile picture.");
+                }
+            } catch (err) {
+                console.error("Error deleting profile picture:", err);
+            }
+        });
+
     </script>
 </body>
 </html>

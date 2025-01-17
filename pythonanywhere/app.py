@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify, g, render_template  
 from flask_sqlalchemy import SQLAlchemy                        
-from flask_bcrypt import Bcrypt                                
+from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
 import secrets
+from werkzeug.utils import secure_filename
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -11,6 +13,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
+UPLOAD_FOLDER = 'static/uploads/profile_pictures'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
 # In-memory session key store
 session_keys = {}
@@ -20,6 +27,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
+    profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -32,7 +40,7 @@ class Messages(db.Model):
     email = db.Column(db.String(100), nullable=False)
     message = db.Column(db.Text, nullable=False)
 
-# Helper function to generate and manage session keys
+# Helper function to generate and manage session keys, aswell as allowed extensions
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
     session_keys[key] = {
@@ -48,7 +56,6 @@ def validate_session_key():
         return False, "Invalid or missing session API key"
 
     key = auth_header.split("Bearer ")[1]
-    print(key)  # Debug print
     if key not in session_keys:
         return False, "Invalid or missing session API key"
 
@@ -63,6 +70,9 @@ def validate_session_key():
     # Update last active time
     session["last_active"] = now
     return True, session
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Decorator for protected routes
 def require_session_key(func):
@@ -108,6 +118,61 @@ def contact():
         return jsonify({"succes": "Message received successfully!"}), 201
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
+    
+@app.route('/update-profile-picture', methods=['POST', 'DELETE'])
+@require_session_key
+def update_profile_picture():
+    if request.method == 'POST':
+        user = User.query.get(g.user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        if 'profile_picture' not in request.files:
+            return jsonify({"error": "No file part in the request"}), 400
+
+        file = request.files['profile_picture']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+
+        if file and allowed_file(file.filename):
+            # Sanitize the filename for security
+            filename = secure_filename(f"{user.username}_{file.filename}")
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            # Update user record in the database
+            user.profile_picture = file_path
+            db.session.commit()
+
+            return jsonify({"message": "Profile picture updated successfully", "path": file_path}), 200
+
+        return jsonify({"error": "Invalid file format"}), 400
+    elif request.method == 'DELETE':
+        user = User.query.get(g.user_id)
+        if not user:
+            print("user not found")
+            return jsonify({"error": "User not found"}), 404
+
+        if user.profile_picture:
+            os.remove(user.profile_picture)
+            user.profile_picture = None
+            db.session.commit()
+            return jsonify({"message": "Profile picture deleted successfully!"}), 200
+
+        return jsonify({"error": "No profile picture to delete"}), 400
+
+@app.route('/user-info', methods=['GET'])
+@require_session_key
+def get_user_info():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "username": user.username,
+        "profile_picture": user.profile_picture
+    }), 200
+
 
 # Routes
 @app.route('/signup', methods=['POST'])
@@ -150,17 +215,15 @@ def test_session():
 def manage_notes():
     if request.method == 'POST':
         data = request.json
-        # Replace newlines with a space before saving to the database
-        sanitized_note = data['note'].replace('\n', ' ')
+        note = data['note']
         tag = data.get('tag')  # Get the tag if provided, else None
-        note = Note(user_id=g.user_id, note=sanitized_note, tag=tag)
-        db.session.add(note)
+        new_note = Note(user_id=g.user_id, note=note, tag=tag)
+        db.session.add(new_note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
-        # Replace newlines with a space before sending the response
-        sanitized_notes = [{"id": note.id, "note": note.note.replace('\n', ' '), "tag": note.tag} for note in notes]
+        sanitized_notes = [{"id": note.id, "note": note.note, "tag": note.tag} for note in notes]
         return jsonify(sanitized_notes)
 
 
@@ -225,6 +288,12 @@ def delete_account():
         return jsonify({"error": "Incorrect password"}), 400
 
     try:
+        # Delete profile pictures
+        profile_pictures_dir = app.config['UPLOAD_FOLDER']
+        for filename in os.listdir(profile_pictures_dir):
+            if filename.startswith(f"{user.username}_"):
+                os.remove(os.path.join(profile_pictures_dir, filename))
+
         Note.query.filter_by(user_id=user.id).delete()
         db.session.delete(user)
         db.session.commit()
