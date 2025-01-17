@@ -687,11 +687,12 @@
                 notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
             } else {
                 notesList.innerHTML = notes.map(note => `
-                    <li class="${note.note ? '' : 'empty-note'}" onclick="showViewMenu(${note.id}, '${note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', '${note.tag || ''}', '${note.title || 'Untitled'}')">
-                        <h3>${note.title || 'Untitled'}</h3>
-                        <span>${note.note ? note.note.replace(/\n/g, "<br>").substring(0, 100) + (note.note.length > 100 ? '...' : '') : 'Empty note'}</span>
-                        ${note.tag ? `<span class="note-tag">${note.tag}</span>` : ''}
-                    </li>
+                <li class="${note.note ? '' : 'empty-note'}" onclick="showViewMenu(${note.id}, '${note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', '${note.tag || ''}', '${note.title || 'Untitled'}')">
+                    <h3>${note.title || 'Untitled'}</h3>
+                    <span>${note.note ? note.note.replace(/\n/g, "<br>").substring(0, 100) + (note.note.length > 100 ? '...' : '') : 'Empty note'}</span>
+                    ${note.tag ? `<span class="note-tag">${note.tag}</span>` : ''}
+                    <button class="share-button" onclick="event.stopPropagation(); showShareModal(${note.id});" style="z-index: 1000;">Share</button>
+                </li>
                 `).join("");
             }
 
@@ -700,6 +701,78 @@
             alert("There was an error loading your notes. Please try again later.");
             }
         }
+        
+
+        function showShareModal(noteId) {
+            const shareModal = document.createElement("div");
+            shareModal.id = "share-modal";
+            shareModal.style = `
+                display: flex;
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #4a4a4a;
+                padding: 30px;
+                border-radius: 15px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                z-index: 1000;
+                width: 80%;
+                max-width: 500px;
+                opacity: 0;
+                animation: fadeIn 0.2s forwards 0.2s;
+            `;
+
+            shareModal.innerHTML = `
+                <h3>Share Note</h3>
+                <input type="text" id="share-username" placeholder="Enter username">
+                <button id="send-share-button">Send</button>
+                <button id="cancel-share-button">Cancel</button>
+            `;
+
+            document.body.appendChild(shareModal);
+            document.getElementById("overlay").style.display = "block";
+
+            document.getElementById("send-share-button").addEventListener("click", async () => {
+                const username = document.getElementById("share-username").value.trim();
+                if (!username) {
+                    alert("Username cannot be empty.");
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/share-note/${noteId}`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+                        },
+                        body: JSON.stringify({ username }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error("Failed to share note");
+                    }
+
+                    alert("Note shared successfully!");
+                    closeShareModal();
+                } catch (error) {
+                    console.error("Error sharing note:", error);
+                    alert("There was an error sharing the note. Please try again.");
+                }
+            });
+
+            document.getElementById("cancel-share-button").addEventListener("click", closeShareModal);
+        }
+
+        function closeShareModal() {
+            const shareModal = document.getElementById("share-modal");
+            if (shareModal) {
+                shareModal.remove();
+            }
+            document.getElementById("overlay").style.display = "none";
+        }
+    
 
         async function addNote() {
             const noteTitle = document.getElementById("note-title").value;

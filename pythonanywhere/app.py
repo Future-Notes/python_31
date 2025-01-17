@@ -120,6 +120,39 @@ def contact():
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
+
+
+@app.route('/share-note/<int:note_id>', methods=['POST'])
+def share_note(note_id):
+    data = request.get_json()
+    username = data.get('username')
+
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    original_note = Note.query.get(note_id)
+    if not original_note:
+        return jsonify({"error": "Note not found"}), 404
+
+    try:
+        new_note = Note(
+            user_id=user.id,
+            title=original_note.title,
+            note=original_note.note,
+            tag=original_note.tag
+        )
+        db.session.add(new_note)
+        db.session.commit()
+        return jsonify({"message": "Note shared successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    
 @app.route('/update-profile-picture', methods=['POST', 'DELETE'])
 @require_session_key
 def update_profile_picture():
