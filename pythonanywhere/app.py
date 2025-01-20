@@ -28,6 +28,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
+    allows_sharing = db.Column(db.Boolean, default=True)
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -120,6 +121,43 @@ def contact():
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
+
+
+@app.route('/share-note/<int:note_id>', methods=['POST'])
+def share_note(note_id):
+    data = request.get_json()
+    username = data.get('username')
+
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    
+    allows_sharing = user.allows_sharing
+    if not allows_sharing:
+        return jsonify({"error": "User does not allow sharing notes"}), 400
+
+    original_note = Note.query.get(note_id)
+    if not original_note:
+        return jsonify({"error": "Note not found"}), 404
+
+    try:
+        new_note = Note(
+            user_id=user.id,
+            title=original_note.title,
+            note=original_note.note,
+            tag=original_note.tag
+        )
+        db.session.add(new_note)
+        db.session.commit()
+        return jsonify({"message": "Note shared successfully"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    
 @app.route('/update-profile-picture', methods=['POST', 'DELETE'])
 @require_session_key
 def update_profile_picture():
@@ -171,8 +209,30 @@ def get_user_info():
 
     return jsonify({
         "username": user.username,
-        "profile_picture": user.profile_picture
+        "profile_picture": user.profile_picture,
+        "allows_sharing": user.allows_sharing
     }), 200
+
+@app.route('/allow-sharing', methods=['PUT'])
+@require_session_key
+def allow_sharing():
+    data = request.json
+    if not data or 'allows_sharing' not in data:
+        return jsonify({"error": "Invalid request"}), 400
+
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    try:
+        user.allows_sharing = data['allows_sharing']
+        db.session.commit()
+        return jsonify({"message": "Sharing preference updated successfully!"}), 200
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating sharing preference: {e}")
+        return jsonify({"error": "Failed to update sharing preference"}), 500
+
 
 
 # Routes

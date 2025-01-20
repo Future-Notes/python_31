@@ -342,6 +342,61 @@
             <h2>Account Actions</h2>
             <button id="delete-account">Delete Account</button>
             <button id="logout">Logout</button>
+            <div class="section">
+                <h2>Sharing Preferences</h2>
+                <label class="switch">
+                    <input type="checkbox" id="sharing-toggle">
+                    <span class="slider round"></span>
+                </label>
+                <span id="sharing-status">Allow Sharing Notes</span>
+            </div>
+
+            <style>
+                .switch {
+                    position: relative;
+                    display: inline-block;
+                    width: 60px;
+                    height: 34px;
+                }
+
+                .switch input {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                }
+
+                .slider {
+                    position: absolute;
+                    cursor: pointer;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: #ccc;
+                    transition: .4s;
+                    border-radius: 34px;
+                }
+
+                .slider:before {
+                    position: absolute;
+                    content: "";
+                    height: 26px;
+                    width: 26px;
+                    left: 4px;
+                    bottom: 4px;
+                    background-color: white;
+                    transition: .4s;
+                    border-radius: 50%;
+                }
+
+                input:checked + .slider {
+                    background-color: #4f83cc;
+                }
+
+                input:checked + .slider:before {
+                    transform: translateX(26px);
+                }
+            </style>
         </div>
     </div>
 
@@ -461,6 +516,33 @@
             } catch (error) {
                 console.error("Error during re-login:", error);
                 alert("There was an error. Please try again.");
+            }
+        });
+
+        document.getElementById("sharing-toggle").addEventListener("change", async (e) => {
+            const allowsSharing = e.target.checked;
+
+            try {
+                const response = await fetch("/allow-sharing", {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({ allows_sharing: allowsSharing }),
+                });
+
+                if (response.ok) {
+                    alert("Sharing preference updated successfully!");
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
+                    sessionStorage.clear();
+                    showModal();
+                } else {
+                    alert("Failed to update sharing preference.");
+                }
+            } catch (err) {
+                console.error("Error updating sharing preference:", err);
             }
         });
 
@@ -593,6 +675,8 @@
                         const userInfo = await userInfoResponse.json();
                         const username = userInfo.username;
                         const profilePic = userInfo.profile_picture;
+                        const sharingToggle = document.getElementById("sharing-toggle");
+                        sharingToggle.checked = userInfo.allows_sharing === true;
                         console.log(userInfo);
 
                         document.getElementById("username-display").textContent = `${username} - Account`;
