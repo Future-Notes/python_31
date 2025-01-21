@@ -354,6 +354,7 @@
                 </label>
                 <span id="sharing-status">Allow Sharing Notes</span>
             </div>
+            <a href="admin_page" style="display:none;">Admin page</a>
 
             <style>
                 .switch {
@@ -680,6 +681,7 @@
                         const username = userInfo.username;
                         const profilePic = userInfo.profile_picture;
                         const sharingToggle = document.getElementById("sharing-toggle");
+                        const role = userInfo.role;
                         sharingToggle.checked = userInfo.allows_sharing === true;
                         console.log(userInfo);
 
@@ -697,6 +699,10 @@
                         } else {
                             profilePicElement.textContent = username[0].toUpperCase();
                             profilePicElement.classList.add("no-picture");
+                        }
+
+                        if (role === "admin") {
+                            document.querySelector("a[href='admin_page']").style.display = "block";
                         }
 
                     } else {
