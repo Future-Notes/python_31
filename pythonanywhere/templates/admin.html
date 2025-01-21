@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Page</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #2E2E2E;
+            color: #E0E0E0;
+            line-height: 1.6;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 20px 0;
+            color: #F5F5F5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #3A3A3A;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #4A4A4A;
+        }
+
+        th {
+            background-color: #424242;
+            color: #FFFFFF;
+        }
+
+        tr:nth-child(even) {
+            background-color: #383838;
+        }
+
+        tr:hover {
+            background-color: #505050;
+        }
+
+        .section-title {
+            margin-top: 20px;
+            font-size: 1.5em;
+            color: #F5F5F5;
+        }
+
+        #error-message {
+            color: #FF5252;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        /* Modal Styles */
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #modal {
+            background-color: #1E1E1E;
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        }
+
+        input, button {
+            font-size: 16px;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        input {
+            width: calc(100% - 24px);
+            margin: 10px 0;
+            background-color: #2E2E2E;
+            border: 1px solid #424242;
+            color: #E0E0E0;
+        }
+
+        button {
+            background-color: #424242;
+            color: #E0E0E0;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #616161;
+        }
+    </style>
+</head>
+<body>
+    <div id="modal-overlay">
+        <div id="modal">
+            <h2>Session Expired</h2>
+            <p>Please re-enter your username and password:</p>
+            <input id="username" type="text" placeholder="Username" />
+            <input id="password" type="password" placeholder="Password" />
+            <button id="submit-credentials">Submit</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <h1>Admin Page</h1>
+        <p id="error-message"></p>
+
+        <h2 class="section-title">Users</h2>
+        <table id="users-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Profile Picture</th>
+                    <th>Allows Sharing</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <h2 class="section-title">Messages</h2>
+        <table id="messages-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Email</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        const sessionKey = sessionStorage.getItem("session_key");
+        if (!sessionKey) {
+            showModal();
+        }
+
+        function showModal() {
+            const modalOverlay = document.getElementById("modal-overlay");
+            modalOverlay.style.display = "flex";
+        }
+
+        function hideModal() {
+            const modalOverlay = document.getElementById("modal-overlay");
+            modalOverlay.style.display = "none";
+            location.reload();
+        }
+
+        document.getElementById("submit-credentials").addEventListener("click", async () => {
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value.trim();
+
+            if (!username || !password) {
+                alert("Both fields are required.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    sessionStorage.setItem("session_key", data.session_key);
+                    hideModal();
+                } else {
+                    alert("Invalid username or password. Please try again.");
+                }
+            } catch (error) {
+                console.error("Error during re-login:", error);
+                alert("There was an error. Please try again.");
+            }
+        });
+
+        async function fetchAdminData() {
+            try {
+                const response = await fetch("/admin", {
+                    method: "GET",
+                    headers: { Authorization: `Bearer ${sessionKey}` },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    populateTables(data.users, data.messages);
+                } else if (response.status === 401) {
+                    alert("Session expired. Please log in again.");
+                    sessionStorage.clear();
+                    showModal();
+                } else {
+                    document.getElementById("error-message").textContent =
+                        "Failed to fetch data. Please try again later.";
+                }
+            } catch (error) {
+                console.error("Error fetching admin data:", error);
+                document.getElementById("error-message").textContent =
+                    "An unexpected error occurred. Please try again later.";
+            }
+        }
+
+        function populateTables(users, messages) {
+            const usersTable = document.querySelector("#users-table tbody");
+            const messagesTable = document.querySelector("#messages-table tbody");
+
+            users.forEach((user) => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${user.id}</td>
+                    <td>${user.username}</td>
+                    <td>${user.profile_picture || "N/A"}</td>
+                    <td>${user.allows_sharing ? "Yes" : "No"}</td>
+                    <td>${user.role}</td>
+                `;
+                usersTable.appendChild(row);
+            });
+
+            messages.forEach((message) => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${message.id}</td>
+                    <td>${message.email}</td>
+                    <td>${message.message}</td>
+                `;
+                messagesTable.appendChild(row);
+            });
+        }
+
+        // Fetch data on page load
+        fetchAdminData();
+
+    </script>
+</body>
+</html>

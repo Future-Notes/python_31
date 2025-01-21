@@ -241,6 +241,47 @@ def allow_sharing():
         return jsonify({"error": "Failed to update sharing preference"}), 500
 
 
+@app.route('/admin')
+@require_session_key
+def admin_page():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.role != "admin":
+        return jsonify({"error": "Insufficient permissions"}), 401
+
+    # Retrieve all messages
+    messages = Messages.query.all()
+    messages_data = [
+        {
+            "id": message.id,
+            "email": message.email,
+            "message": message.message,
+        }
+        for message in messages
+    ]
+
+    # Retrieve all users excluding passwords
+    users = User.query.with_entities(
+        User.id, User.username, User.profile_picture, User.allows_sharing, User.role
+    ).all()
+    users_data = [
+        {
+            "id": user.id,
+            "username": user.username,
+            "profile_picture": user.profile_picture,
+            "allows_sharing": user.allows_sharing,
+            "role": user.role,
+        }
+        for user in users
+    ]
+
+    # Return the data as a JSON response
+    return jsonify({
+        "users": users_data,
+        "messages": messages_data,
+    }), 200
 
 # Routes
 @app.route('/signup', methods=['POST'])
