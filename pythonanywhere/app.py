@@ -115,6 +115,10 @@ def signup_page():
 def account_page():
     return render_template('account.html')
 
+@app.route('/admin_page')
+def admin_page():
+    return render_template('admin.html')
+
 @app.route('/contact', methods=['POST'])
 def contact():
     data = request.json
@@ -243,7 +247,7 @@ def allow_sharing():
 
 @app.route('/admin')
 @require_session_key
-def admin_page():
+def admin():
     user = User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
