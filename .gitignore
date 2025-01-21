@@ -4,3 +4,4 @@ test.py
 **/venv
 **/pythonanywhere_api
 **/uploads
+**/__pycache__

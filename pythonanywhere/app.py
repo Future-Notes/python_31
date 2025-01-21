@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, g, render_template  
-from flask_sqlalchemy import SQLAlchemy                        
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import CheckConstraint                        
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -29,6 +30,12 @@ class User(db.Model):
     password = db.Column(db.String(200), nullable=False)
     profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
     allows_sharing = db.Column(db.Boolean, default=True)
+    role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
+    
+    __table_args__ = (
+        CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
+    )
+
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -362,4 +369,4 @@ def delete_account():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host="0.0.0.0")
