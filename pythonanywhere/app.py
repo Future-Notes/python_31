@@ -221,7 +221,8 @@ def get_user_info():
     return jsonify({
         "username": user.username,
         "profile_picture": user.profile_picture,
-        "allows_sharing": user.allows_sharing
+        "allows_sharing": user.allows_sharing,
+        "role": user.role
     }), 200
 
 @app.route('/allow-sharing', methods=['PUT'])
@@ -245,47 +246,63 @@ def allow_sharing():
         return jsonify({"error": "Failed to update sharing preference"}), 500
 
 
-@app.route('/admin')
+@app.route('/admin', methods=['GET', 'DELETE', 'PUT'])
 @require_session_key
 def admin():
     user = User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
-
+    
     if user.role != "admin":
-        return jsonify({"error": "Insufficient permissions"}), 401
+        return jsonify({"error": "Insufficient permissions"}), 400
 
-    # Retrieve all messages
-    messages = Messages.query.all()
-    messages_data = [
-        {
-            "id": message.id,
-            "email": message.email,
-            "message": message.message,
-        }
-        for message in messages
-    ]
+    if request.method == 'GET':
+        # Fetch users and messages
+        users = User.query.with_entities(User.id, User.username, User.profile_picture, User.allows_sharing, User.role).all()
+        messages = Messages.query.with_entities(Messages.id, Messages.email, Messages.message).all()
+        return jsonify({
+            "users": [user._asdict() for user in users],
+            "messages": [message._asdict() for message in messages],
+        })
 
-    # Retrieve all users excluding passwords
-    users = User.query.with_entities(
-        User.id, User.username, User.profile_picture, User.allows_sharing, User.role
-    ).all()
-    users_data = [
-        {
-            "id": user.id,
-            "username": user.username,
-            "profile_picture": user.profile_picture,
-            "allows_sharing": user.allows_sharing,
-            "role": user.role,
-        }
-        for user in users
-    ]
+    if request.method == 'DELETE':
+        data = request.json
+        target = data.get('target')
+        target_type = data.get('type')
 
-    # Return the data as a JSON response
-    return jsonify({
-        "users": users_data,
-        "messages": messages_data,
-    }), 200
+        if target_type == 'message':
+            message = Messages.query.get(target)
+            if not message:
+                return jsonify({"error": "Message not found"}), 404
+            db.session.delete(message)
+            db.session.commit()
+            return jsonify({"message": "Message deleted successfully"}), 200
+
+        elif target_type == 'user':
+            user_to_delete = User.query.get(target)
+            if not user_to_delete:
+                return jsonify({"error": "User not found"}), 404
+            db.session.delete(user_to_delete)
+            db.session.commit()
+            return jsonify({"message": "User deleted successfully"}), 200
+
+        return jsonify({"error": "Invalid target type"}), 400
+
+    if request.method == 'PUT':
+        data = request.json
+        target_user_id = data.get('user_id')
+        new_role = data.get('new_role')
+
+        user_to_update = User.query.get(target_user_id)
+        if not user_to_update:
+            return jsonify({"error": "User not found"}), 404
+
+        if new_role not in ["user", "admin"]:
+            return jsonify({"error": "Invalid role value"}), 400
+
+        user_to_update.role = new_role
+        db.session.commit()
+        return jsonify({"message": f"Role updated to {new_role} for user {target_user_id}"}), 200
 
 # Routes
 @app.route('/signup', methods=['POST'])
