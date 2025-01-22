@@ -16,9 +16,9 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #2c2c2c;
             color: #e0e0e0;
-            transition: background-color 0.3s ease;
+            transition: background-color 0.1s ease;
             opacity: 0;
-            animation: fadeIn 1s forwards;
+            animation: fadeIn 0.2s forwards;
         }
 
         header {
@@ -30,7 +30,7 @@
             align-items: center;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
             opacity: 0;
-            animation: fadeIn 1s forwards 0.3s;
+            animation: fadeIn 0.5s forwards 0.3s;
         }
 
         header h1 {
@@ -59,7 +59,7 @@
             max-width: 900px;
             margin: 0 auto;
             opacity: 0;
-            animation: fadeIn 1s forwards 0.5s;
+            animation: fadeIn 0.5s forwards 0.5s;
         }
 
         form {
@@ -111,7 +111,7 @@
             padding: 0;
             margin: 0;
             opacity: 0;
-            animation: fadeIn 1s forwards 0.7s;
+            animation: fadeIn 0.5s forwards 0.3s;
         }
 
         #notes-list li {
@@ -573,6 +573,11 @@
         function hideModal() {
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "none";
+
+            // Check if the viewport is smaller than 600px before showing the button
+            if (window.innerWidth < 600) {
+                document.getElementById("floating-add-button").style.display = "flex";
+            }
             location.reload();
         }
 
@@ -598,11 +603,36 @@
 
             let hasResults = false;
 
+            // Parse the search term for advanced capabilities
+            const terms = searchTerm
+                .match(/"[^"]+"|\S+/g) // Match quoted strings or individual words
+                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase()); // Remove quotes and convert to lowercase
+
+            if (!terms || terms.length === 0) {
+                notes.forEach(note => note.style.display = "flex"); // Show all notes if search is empty
+                return;
+            }
+
             notes.forEach(note => {
                 const noteText = note.querySelector('span')?.innerText.toLowerCase() || "";
                 const noteTag = note.querySelector('.note-tag')?.innerText.toLowerCase() || "";
+                const noteTitle = note.querySelector('h3')?.innerText.toLowerCase() || "";
 
-                if (noteText.includes(searchTerm.toLowerCase()) || noteTag.includes(searchTerm.toLowerCase())) {
+                // Combine all searchable fields into one string
+                const noteContent = `${noteTitle} ${noteText} ${noteTag}`;
+
+                // Perform advanced search
+                const matches = terms.every(term => {
+                    if (term.includes(" ")) {
+                        // For exact matches
+                        return noteContent.includes(term);
+                    } else {
+                        // For partial matches
+                        return noteContent.split(/\s+/).some(word => word.startsWith(term));
+                    }
+                });
+
+                if (matches) {
                     note.style.display = "flex"; // Show matching notes
                     hasResults = true;
                 } else {
@@ -893,7 +923,11 @@
         function closeViewMenu() {
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
-            document.getElementById("floating-add-button").style.display = "flex";
+
+            // Check if the viewport is smaller than 600px before showing the button
+            if (window.innerWidth < 600) {
+                document.getElementById("floating-add-button").style.display = "flex";
+            }
         }
 
         function showUpdateMenu(noteId, noteText, noteTag, noteTitle) {
@@ -911,7 +945,11 @@
         function closeUpdateMenu() {
             document.getElementById("update-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
-            document.getElementById("floating-add-button").style.display = "flex";
+
+            // Check if the viewport is smaller than 600px before showing the button
+            if (window.innerWidth < 600) {
+                document.getElementById("floating-add-button").style.display = "flex";
+            }
         }
 
 
@@ -1048,4 +1086,4 @@
         });
     </script>
 </body>
-</html>
+</html> 
