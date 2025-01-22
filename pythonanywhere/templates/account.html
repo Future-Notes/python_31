@@ -285,6 +285,67 @@
             background-color: #3a6bab;
         }
 
+        
+    
+        a.admin-page-link {
+            display: inline-block; /* Ensures consistent display */
+            padding: 10px 20px; /* Spacing for better button appearance */
+            margin-top: 20px;
+            text-decoration: none; /* Remove underline */
+            font-size: 16px; /* Legible font size */
+            font-weight: bold;
+            border-radius: 6px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+
+        /* Default enabled state */
+        a.admin-page-link.enabled {
+            background-color: #4f83cc; /* Soft blue */
+            color: white;
+            cursor: pointer;
+        }
+
+        a.admin-page-link.enabled:hover {
+            background-color: #3a6bab; /* Slightly darker blue on hover */
+            transform: scale(1.05); /* Zoom effect */
+        }
+
+        a.admin-page-link.enabled:active {
+            background-color: #2e5c8c; /* Even darker blue for active state */
+        }
+
+        /* Disabled state */
+        a.admin-page-link.disabled {
+            background-color: #6a6a6a; /* Grayish disabled color */
+            color: #a0a0a0; /* Light gray text for contrast */
+            cursor: not-allowed; /* Forbidden cursor */
+            pointer-events: all; /* Prevent any interaction */
+            position: relative; /* For tooltip positioning */
+        }
+
+        /* Tooltip for disabled link */
+        a.admin-page-link.disabled::after {
+            content: "You don't have access to this page because you are not an admin";
+            position: absolute;
+            bottom: 130%; /* Position above the link */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #3a3a3a; /* Dark background */
+            color: #e0e0e0; /* Light text */
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            white-space: nowrap;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            display: none; /* Hidden by default */
+            z-index: 10; /* Ensure it's above other elements */
+        }
+
+        a.admin-page-link.disabled:hover::after {
+            display: block; /* Show tooltip on hover */
+        }
+
         @media (max-width: 600px) {
             .container {
                 flex-direction: column;
@@ -354,7 +415,9 @@
                 </label>
                 <span id="sharing-status">Allow Sharing Notes</span>
             </div>
-            <a href="admin_page" style="display:none;">Admin page</a>
+            <!-- Admin page link (disabled by default) -->
+            <a href="admin_page" class="admin-page-link disabled">Admin Page</a>
+
 
             <style>
                 .switch {
@@ -665,6 +728,7 @@
                         Authorization: `Bearer ${sessionKey}`,
                     },
                 });
+
                 if (response.status === 401) {
                     showModal();
                 } else {
@@ -682,6 +746,7 @@
                         const profilePic = userInfo.profile_picture;
                         const sharingToggle = document.getElementById("sharing-toggle");
                         const role = userInfo.role;
+
                         sharingToggle.checked = userInfo.allows_sharing === true;
                         console.log(userInfo);
 
@@ -692,7 +757,7 @@
                             // Replace backslashes with forward slashes to fix path issues
                             const correctedProfilePic = profilePic.replace(/\\/g, "/");
 
-                            // Use the corrected path directly (no need to prepend "/static/uploads/profile_pictures/")
+                            // Use the corrected path directly (no need to prepend "/static/uploads/profile_pictures/").
                             profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
                             profilePicElement.classList.remove("no-picture");
                             profilePicElement.textContent = ""; // Clear the text content
@@ -701,10 +766,21 @@
                             profilePicElement.classList.add("no-picture");
                         }
 
-                        if (role === "admin") {
-                            document.querySelector("a[href='admin_page']").style.display = "block";
-                        }
+                        // Handle admin link access dynamically
+                        const adminLink = document.querySelector(".admin-page-link");
 
+                        if (role === "admin") {
+                            adminLink.classList.remove("disabled");
+                            adminLink.classList.add("enabled");
+                        } else {
+                            adminLink.classList.remove("enabled");
+                            adminLink.classList.add("disabled");
+
+                            // Add event listener to prevent navigation
+                            adminLink.addEventListener("click", (e) => {
+                                e.preventDefault();
+                            });
+                        }
                     } else {
                         console.error("Failed to fetch user info");
                     }
@@ -713,6 +789,7 @@
                 console.error("Error during re-login:", error);
             }
         };
+
 
         document.getElementById("profile-pic").addEventListener("click", () => {
             document.getElementById("modal-overlay-2").style.display = "flex";

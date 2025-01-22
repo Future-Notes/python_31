@@ -705,7 +705,6 @@
             const shareModal = document.createElement("div");
             shareModal.id = "share-modal";
             shareModal.style = `
-                display: flex;
                 position: fixed;
                 top: 50%;
                 left: 50%;
@@ -730,6 +729,14 @@
 
             document.body.appendChild(shareModal);
             document.getElementById("overlay").style.display = "block";
+
+            const handleClickOutside = (event) => {
+                if (!shareModal.contains(event.target)) {
+                    closeShareModal();
+                }
+            };
+
+            document.addEventListener("click", handleClickOutside);
 
             document.getElementById("send-share-button").addEventListener("click", async () => {
                 const username = document.getElementById("share-username").value.trim();
@@ -761,15 +768,17 @@
             });
 
             document.getElementById("cancel-share-button").addEventListener("click", closeShareModal);
+
+            function closeShareModal() {
+                const shareModal = document.getElementById("share-modal");
+                if (shareModal) {
+                    shareModal.remove();
+                }
+                document.getElementById("overlay").style.display = "none";
+                document.removeEventListener("click", handleClickOutside); // Remove the event listener to prevent memory leaks
+            }
         }
 
-        function closeShareModal() {
-            const shareModal = document.getElementById("share-modal");
-            if (shareModal) {
-                shareModal.remove();
-            }
-            document.getElementById("overlay").style.display = "none";
-        }
     
 
         async function addNote() {
