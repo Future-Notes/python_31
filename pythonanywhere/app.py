@@ -94,6 +94,10 @@ def require_session_key(func):
     wrapper.__name__ = func.__name__
     return wrapper
 
+@app.errorhandler(404)
+def page_note_found(error):
+    return render_template('404.html')
+
 @app.route('/')
 def home():
     return render_template('home.html')
