@@ -54,7 +54,7 @@ def generate_session_key(user_id):
     key = secrets.token_hex(32)
     session_keys[key] = {
         "user_id": user_id,
-        "expires_at": datetime.now() + timedelta(minutes=30),
+        "expires_at": datetime.now() + timedelta(minutes=120),
         "last_active": datetime.now()
     }
     return key
