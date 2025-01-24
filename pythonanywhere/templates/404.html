@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 - Page Not Found</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Arial', sans-serif;
+      background-color: #1e1e1e; /* Dark gray background */
+      color: #cfcfcf; /* Light gray text */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      text-align: center;
+      max-width: 600px;
+      padding: 20px;
+      background: #2b2b2b; /* Slightly lighter gray for the container */
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Subtle shadow for depth */
+    }
+    .status-code {
+      font-size: 6rem;
+      font-weight: bold;
+      color: #8c8c8c; /* Mid-gray for the status code */
+    }
+    .message {
+      font-size: 1.5rem;
+      margin: 20px 0;
+      color: #a1a1a1; /* Slightly lighter gray for the message text */
+    }
+    .cta {
+      margin-top: 20px;
+    }
+    .cta a {
+      text-decoration: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      color: #1e1e1e; /* Dark text */
+      background-color: #a1a1a1; /* Gray background */
+      border-radius: 8px;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+    .cta a:hover {
+      background-color: #cfcfcf; /* Lighter gray on hover */
+      color: #000; /* Darker text on hover */
+    }
+
+
+    #injected-content {
+        position: fixed;
+        top: 20%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+        text-align: center;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="status-code">404</div>
+    <div class="message">Oops! The page you're looking for doesn't exist.</div>
+    <div class="cta">
+      <a href="/" id="cta-button">Go Back to Home</a>
+    </div>
+  </div>
+
+    <script>
+        // Function to inject HTML and show confetti
+        function injectAndConfetti() {
+            let visitCount = parseInt(localStorage.getItem('visitCount')) || 0;
+            // Inject floating HTML content
+            const htmlToInject = `
+                <div id="injected-content">
+                    <h1>Congratulations!</h1>
+                    <p>You have managed to not find the correct page ${visitCount} times!</p>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', htmlToInject);
+
+            // Remove the injected content after 5 seconds
+            setTimeout(() => {
+                const injectedContent = document.getElementById('injected-content');
+                if (injectedContent) {
+                    injectedContent.remove();
+                }
+            }, 15000);
+
+            // Create a canvas for confetti
+            const confettiCanvas = document.createElement('canvas');
+            confettiCanvas.id = 'confetti-canvas';
+            confettiCanvas.style.position = 'fixed';
+            confettiCanvas.style.top = '0';
+            confettiCanvas.style.left = '0';
+            confettiCanvas.style.width = '100%';
+            confettiCanvas.style.height = '100%';
+            confettiCanvas.style.pointerEvents = 'none';
+            confettiCanvas.style.zIndex = '999'; // Higher than other content
+            document.body.appendChild(confettiCanvas);
+
+            // Use a confetti library or custom code
+            const confetti = startConfetti();
+
+            // Stop confetti after 3 seconds
+            setTimeout(() => {
+                stopConfetti(confetti);
+                document.body.removeChild(confettiCanvas);
+            }, 10000);
+        }
+
+        // Confetti generation code
+        function startConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            const ctx = canvas.getContext('2d');
+            const confettiParticles = [];
+            const colors = ['#f94144', '#f3722c', '#f8961e', '#90be6d', '#43aa8b', '#577590'];
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            class ConfettiParticle {
+                constructor() {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height - canvas.height;
+                    this.size = Math.random() * 8 + 4;
+                    this.speed = Math.random() * 3 + 2;
+                    this.color = colors[Math.floor(Math.random() * colors.length)];
+                }
+
+                update() {
+                    this.y += this.speed;
+                    if (this.y > canvas.height) {
+                        this.y = -this.size;
+                        this.x = Math.random() * canvas.width;
+                    }
+                }
+
+                draw() {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            for (let i = 0; i < 150; i++) {
+                confettiParticles.push(new ConfettiParticle());
+            }
+
+            let animationFrame;
+            function render() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                confettiParticles.forEach((particle) => {
+                    particle.update();
+                    particle.draw();
+                });
+                animationFrame = requestAnimationFrame(render);
+            }
+
+            render();
+            return () => cancelAnimationFrame(animationFrame);
+        }
+
+        // Function to stop confetti
+        function stopConfetti(cancelAnimation) {
+            cancelAnimation();
+        }
+
+        // Function to start special animation/game on the 100th visit
+        function specialAnimation() {
+
+            document.body.innerHTML = '';
+            // Jump scare
+            const jumpscare = document.createElement('div');
+            jumpscare.id = 'jumpscare';
+            jumpscare.style.position = 'fixed';
+            jumpscare.style.top = '0';
+            jumpscare.style.left = '0';
+            jumpscare.style.width = '100%';
+            jumpscare.style.height = '100%';
+            jumpscare.style.background = "url('static/jumpscare.png') center/cover";
+            jumpscare.style.zIndex = '1000';
+            jumpscare.style.display = 'none';
+            document.body.appendChild(jumpscare);
+
+            // Show jump scare
+            setTimeout(() => {
+                jumpscare.style.display = 'block';
+                setTimeout(() => {
+                    jumpscare.style.display = 'none';
+                    document.body.removeChild(jumpscare);
+                    startMiniGame();
+                }, 3000); // Jump scare lasts 3 seconds
+            }, 1000);
+        }
+
+        // Function to start special animation/game on the 100th visit
+        function specialAnimation() {
+            // Clear the existing HTML content
+            document.body.innerHTML = '';
+
+            // Mini-game logic
+            const gameCanvas = document.createElement('canvas');
+            gameCanvas.id = 'game-canvas';
+            gameCanvas.style.position = 'fixed';
+            gameCanvas.style.top = '0';
+            gameCanvas.style.left = '0';
+            gameCanvas.style.width = '100%';
+            gameCanvas.style.height = '100%';
+            gameCanvas.style.zIndex = '999';
+            document.body.appendChild(gameCanvas);
+
+            const canvas = gameCanvas;
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            let player = { x: canvas.width / 2, y: canvas.height - 50, width: 30, height: 30, color: '#3498db' };
+            let obstacles = [];
+            let score = 0;
+            let obstacleSpawnRate = 1000; // Spawn rate in milliseconds
+            let isGamePaused = false;
+            let isGameOver = false;
+            let obstacleSpeedMultiplier = 1;
+
+            // Create the score display
+            const scoreDiv = document.createElement('div');
+            scoreDiv.id = 'score-div';
+            scoreDiv.style.position = 'fixed';
+            scoreDiv.style.top = '10px';
+            scoreDiv.style.left = '10px';
+            scoreDiv.style.color = 'white';
+            scoreDiv.style.fontSize = '20px';
+            scoreDiv.style.zIndex = '1000';
+            document.body.appendChild(scoreDiv);
+
+            function updateScore() {
+                scoreDiv.textContent = `Score: ${score}`;
+            }
+
+            function createObstacle() {
+                return {
+                    x: Math.random() * canvas.width,
+                    y: -50,
+                    width: 20 + Math.random() * 30,
+                    height: 20 + Math.random() * 30,
+                    color: '#e74c3c',
+                    speed: (2 + Math.random() * 3) * obstacleSpeedMultiplier,
+                };
+            }
+
+            function drawPlayer() {
+                ctx.fillStyle = player.color;
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+            }
+
+            function drawObstacles() {
+                obstacles.forEach((obstacle) => {
+                    ctx.fillStyle = obstacle.color;
+                    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                });
+            }
+
+            function updateObstacles() {
+                obstacles.forEach((obstacle) => {
+                    obstacle.y += obstacle.speed;
+                    if (obstacle.y > canvas.height) {
+                        obstacles.splice(obstacles.indexOf(obstacle), 1);
+                    }
+                });
+            }
+
+            function detectCollision() {
+                obstacles.forEach((obstacle) => {
+                    if (
+                        player.x < obstacle.x + obstacle.width &&
+                        player.x + player.width > obstacle.x &&
+                        player.y < obstacle.y + obstacle.height &&
+                        player.y + player.height > obstacle.y
+                    ) {
+                        isGameOver = true;
+                    }
+                });
+            }
+
+            function gameLoop() {
+                if (isGamePaused) return;
+
+                if (isGameOver) {
+                    isGamePaused = !isGamePaused;
+                    alert("Game over! Nice try!");
+                    localStorage.setItem("visitCount", 0);
+                    window.location.href = "/";
+                }
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawPlayer();
+                drawObstacles();
+                updateObstacles();
+                detectCollision();
+                updateScore();
+                requestAnimationFrame(gameLoop);
+            }
+
+            function startGame() {
+                setInterval(() => {
+                    if (!isGameOver && !isGamePaused) {
+                        obstacles.push(createObstacle());
+                        score++;
+                        if (score % 10 === 0) {
+                            obstacleSpeedMultiplier += 0.1; // Increase speed every 10 points
+                            obstacleSpawnRate = Math.max(200, obstacleSpawnRate - 50); // Cap spawn rate
+                        }
+                    }
+                }, obstacleSpawnRate);
+
+                gameLoop();
+            }
+
+            // Pause Menu
+            const pauseMenu = document.createElement('div');
+            pauseMenu.id = 'pause-menu';
+            pauseMenu.style.position = 'fixed';
+            pauseMenu.style.top = '50%';
+            pauseMenu.style.left = '50%';
+            pauseMenu.style.transform = 'translate(-50%, -50%)';
+            pauseMenu.style.background = 'rgba(0, 0, 0, 0.8)';
+            pauseMenu.style.color = 'white';
+            pauseMenu.style.padding = '20px';
+            pauseMenu.style.borderRadius = '10px';
+            pauseMenu.style.display = 'none';
+            pauseMenu.style.zIndex = '1001';
+            pauseMenu.innerHTML = `
+                <h2>Game Paused</h2>
+                <button id="resume-btn" style="margin: 10px;">Continue</button>
+                <button id="home-btn" style="margin: 10px;">Back to Homepage</button>
+            `;
+            document.body.appendChild(pauseMenu);
+
+            document.getElementById('resume-btn').addEventListener('click', () => {
+                isGamePaused = false;
+                pauseMenu.style.display = 'none';
+                gameLoop();
+            });
+
+            document.getElementById('home-btn').addEventListener('click', () => {
+                window.location.href = '/'; // Redirect to homepage
+            });
+
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    isGamePaused = !isGamePaused;
+                    pauseMenu.style.display = isGamePaused ? 'block' : 'none';
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isGamePaused) player.x = e.clientX - player.width / 2;
+            });
+
+            startGame();
+        }
+
+
+        // Track visits and show animations at specific milestones
+        document.addEventListener('DOMContentLoaded', () => {
+            let visitCount = parseInt(localStorage.getItem('visitCount')) || 0;
+            visitCount++;
+            localStorage.setItem('visitCount', visitCount);
+            console.log(visitCount)
+
+            // Warning at 95 visits
+            if (visitCount >= 95 && visitCount < 100) {
+                const warningDiv = document.createElement('div');
+                warningDiv.id = 'warning-div';
+                warningDiv.innerHTML = `
+                    <div style="background: yellow; color: black; padding: 20px; text-align: center; z-index: 1000; opacity: 1; position: fixed; top: 20%; left: 50%;">
+                        <p><strong>Epilepsy Warning:</strong> Intense animations will be triggered soon. Visit count: ${visitCount}</p>
+                    </div>
+                `;
+                document.body.appendChild(warningDiv);
+            }
+
+            // Show confetti or special animation
+            if (visitCount === 10) {
+                injectAndConfetti();
+            } else if (visitCount === 100) {
+                const warningDiv = document.getElementById('warning-div');
+                if (warningDiv) warningDiv.remove();
+                specialAnimation();
+            }
+        });
+    </script>
+</body>
+</html>
