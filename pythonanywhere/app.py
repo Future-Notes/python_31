@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g, render_template, make_response  
+from flask import Flask, request, jsonify, g, render_template, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint                        
 from flask_bcrypt import Bcrypt                                 
