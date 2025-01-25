@@ -139,6 +139,30 @@
             background-color: #5a5a5a;
             transform: scale(1.1);
         }
+
+        #password-confirmation-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #password-confirmation-modal {
+            background-color: #1E1E1E;
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        }
+
     </style>
 </head>
 <body>
@@ -158,6 +182,21 @@
     <div class="container">
         <h1>Admin Page</h1>
         <p id="error-message"></p>
+
+        <!-- Database Dump Button -->
+        <button id="dump-database">Dump Database</button>
+
+        <!-- Password Confirmation Modal -->
+        <div id="password-confirmation-overlay" style="display: none;">
+            <div id="password-confirmation-modal">
+                <h2>Confirm Your Password</h2>
+                <p>Enter your password to confirm database dump:</p>
+                <input id="confirm-password" type="password" placeholder="Password" />
+                <button id="confirm-dump">Confirm</button>
+                <button id="cancel-dump">Cancel</button>
+            </div>
+        </div>
+
 
         <!-- Messages Table -->
         <h2 class="section-title">Messages</h2>
@@ -371,6 +410,57 @@
                 console.error("Error updating role:", error);
             }
         }
+
+        document.getElementById("dump-database").addEventListener("click", () => {
+            const overlay = document.getElementById("password-confirmation-overlay");
+            overlay.style.display = "flex";
+        });
+
+        document.getElementById("confirm-dump").addEventListener("click", async () => {
+            const password = document.getElementById("confirm-password").value.trim();
+
+            if (!password) {
+                alert("Password is required to confirm database dump.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/admin/dump", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({ password }),
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.style.display = "none";
+                    a.href = url;
+                    a.download = "database_dump.json";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    alert("Database dump downloaded successfully.");
+                } else {
+                    const error = await response.json();
+                    alert(error.error || "Failed to dump database.");
+                }
+            } catch (error) {
+                console.error("Error dumping database:", error);
+                alert("An unexpected error occurred.");
+            } finally {
+                document.getElementById("password-confirmation-overlay").style.display = "none";
+            }
+        });
+
+        document.getElementById("cancel-dump").addEventListener("click", () => {
+            document.getElementById("password-confirmation-overlay").style.display = "none";
+        });
+
 
         // Fetch data on page load
         fetchAdminData();

@@ -5,3 +5,5 @@ test.py
 **/pythonanywhere_api
 **/uploads
 **/__pycache__
+init_db.py
+key.txt

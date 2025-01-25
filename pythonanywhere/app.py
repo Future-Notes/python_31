@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, g, render_template  
+from flask import Flask, request, jsonify, g, render_template, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint                        
 from flask_bcrypt import Bcrypt                                 
@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import secrets
 from werkzeug.utils import secure_filename
 import os
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -31,6 +32,7 @@ class User(db.Model):
     profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
     allows_sharing = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
+    database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
     
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
@@ -307,6 +309,46 @@ def admin():
         user_to_update.role = new_role
         db.session.commit()
         return jsonify({"message": f"Role updated to {new_role} for user {target_user_id}"}), 200
+    
+@app.route('/admin/dump', methods=['POST'])
+@require_session_key
+def admin_dump():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.role != "admin":
+        return jsonify({"error": "Insufficient permissions"}), 403
+    
+    if not user.database_dump_tag:
+        return jsonify({"error": "Insufficient permissions"}), 403
+
+    data = request.json
+    password = data.get("password")
+
+    if not bcrypt.check_password_hash(user.password, password):
+        return jsonify({"error": "Incorrect password"}), 400
+
+    # Fetch raw database data
+    users = User.query.with_entities(
+        User.id, User.username, User.profile_picture, User.allows_sharing, User.role
+    ).all()
+    messages = Messages.query.with_entities(Messages.id, Messages.email, Messages.message).all()
+    notes = Note.query.with_entities(Note.id, Note.title, Note.tag, Note.note, Note.user_id)
+
+    # Prepare data for dumping
+    dump_data = {
+        "users": [user._asdict() for user in users],
+        "messages": [message._asdict() for message in messages],
+        "notes": [note._asdict() for note in notes],
+    }
+
+    # Return as downloadable JSON file
+    response = make_response(json.dumps(dump_data, indent=4))
+    response.headers["Content-Disposition"] = "attachment; filename=database_dump.json"
+    response.headers["Content-Type"] = "application/json"
+    return response
+
 
 # Routes
 @app.route('/signup', methods=['POST'])
