@@ -10,6 +10,32 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
+    <!-- 
+
+            This file contains the base styles for the entire application. Below is a documentation of the color schemes and other style attributes used in this application:
+
+            Color Schemes:
+            - Primary Color: #3498db (Blue)
+            - Secondary Color: #2ecc71 (Green)
+            - Background Color: #ecf0f1 (Light Gray)
+            - Text Color: #2c3e50 (Dark Gray)
+            - Accent Color: #e74c3c (Red)
+
+            Style Attributes:
+            - Font Family: 'Arial, sans-serif'
+            - Font Size: 16px (base size)
+            - Line Height: 1.5
+            - Margin: 0 (default for all elements)
+            - Padding: 0 (default for all elements)
+            - Border Radius: 4px (for buttons and input fields)
+            - Transition: background-color 0.3s ease (for smooth color transitions on hover)
+
+            Additional Notes:
+            - Ensure consistency in using the defined color schemes across all components.
+            - Maintain the base font size and line height for readability.
+            - Use the defined border radius for a consistent look and feel.
+            - Apply the transition effect to interactive elements like buttons and links for better user experience.
+            -->
     <style>
         body {
             margin: 0;
@@ -432,6 +458,56 @@
                 background-color: #7a7a7a;
             }
         }
+
+        /* Modal Styles */
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #modal {
+            background-color: #1E1E1E;
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        }
+
+        input, button {
+            font-size: 16px;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        #username, #password {
+            width: calc(100% - 24px);
+            margin: 10px 0;
+            background-color: #2E2E2E;
+            border: 1px solid #424242;
+            color: #E0E0E0;
+        }
+
+        button #submit-credentials {
+            background-color: #424242;
+            color: #E0E0E0;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #616161;
+        }
     </style>
 </head>
 <body>
@@ -473,61 +549,13 @@
         <button id="back-button">Back</button>
     </div>
 
-    <div id="modal-overlay" style="
-        display: none !important; 
-        position: fixed !important; 
-        top: 0 !important; 
-        left: 0 !important; 
-        width: 100% !important; 
-        height: 100% !important; 
-        background-color: rgba(0, 0, 0, 0.6) !important; 
-        z-index: 1000 !important;
-        justify-content: center !important; 
-        align-items: center !important;
-    ">
-        <div id="modal" style="
-            background-color: #1E1E1E !important; 
-            padding: 20px 30px !important; 
-            border-radius: 12px !important; 
-            text-align: center !important; 
-            width: 100% !important; 
-            max-width: 400px !important; 
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6) !important;
-        ">
-            <h2 style="color: #F5F5F5 !important; font-size: 24px !important; margin-bottom: 20px !important;">Session Expired</h2>
-            <p style="color: #BDBDBD !important; margin-bottom: 20px !important;">Please re-enter your username and password:</p>
-            <input id="username" type="text" placeholder="Username" style="
-                width: 100% !important; 
-                padding: 12px !important; 
-                margin: 10px 10px !important; 
-                border: 1px solid #424242 !important; 
-                border-radius: 8px !important; 
-                background-color: #2E2E2E !important; 
-                color: #E0E0E0 !important; 
-                font-size: 16px !important;
-                outline: none !important;
-            " />
-            <input id="password" type="password" placeholder="Password" style="
-                width: 100% !important; 
-                padding: 12px !important; 
-                margin: 10px 0 !important; 
-                border: 1px solid #424242 !important; 
-                border-radius: 8px !important; 
-                background-color: #2E2E2E !important; 
-                color: #E0E0E0 !important; 
-                font-size: 16px !important;
-                outline: none !important;
-            " />
-            <button id="submit-credentials" style="
-                background-color: #424242 !important; 
-                color: #E0E0E0 !important; 
-                padding: 12px 20px !important; 
-                border: none !important; 
-                border-radius: 8px !important; 
-                font-size: 16px !important; 
-                cursor: pointer !important; 
-                transition: background-color 0.3s ease !important;
-            " 
+    <div id="modal-overlay">
+        <div id="modal">
+            <h2>Session Expired</h2>
+            <p>Please re-enter your username and password:</p>
+            <input id="username" type="text" placeholder="Username"/>
+            <input id="password" type="password" placeholder="Password"/>
+            <button id="submit-credentials" 
             onmouseover="this.style.backgroundColor='#616161'" 
             onmouseout="this.style.backgroundColor='#424242'">
                 Submit

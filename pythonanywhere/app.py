@@ -1,3 +1,61 @@
+"""
+app.py
+This module contains the implementation of a Flask web application with various routes and functionalities.
+The application uses SQLAlchemy for database interactions, Flask-Bcrypt for password hashing, and Flask-CORS for handling Cross-Origin Resource Sharing.
+Modules:
+    - flask: Flask framework for web development.
+    - flask_sqlalchemy: SQLAlchemy integration with Flask.
+    - sqlalchemy: SQLAlchemy core library.
+    - flask_bcrypt: Bcrypt hashing for Flask.
+    - flask_cors: CORS handling for Flask.
+    - datetime: Date and time manipulation.
+    - secrets: Secure random number generation.
+    - werkzeug.utils: Utility functions from Werkzeug.
+    - os: Operating system interfaces.
+    - json: JSON handling.
+Configuration:
+    - SQLALCHEMY_DATABASE_URI: URI for the SQLite database.
+    - SQLALCHEMY_TRACK_MODIFICATIONS: Track modifications setting for SQLAlchemy.
+    - UPLOAD_FOLDER: Directory for uploading profile pictures.
+    - ALLOWED_EXTENSIONS: Set of allowed file extensions for profile pictures.
+Models:
+    - User: Represents a user in the application.
+    - Note: Represents a note created by a user.
+    - Messages: Represents a message sent through the contact form.
+Helper Functions:
+    - generate_session_key(user_id): Generates a session key for a user.
+    - validate_session_key(): Validates the session key from the request headers.
+    - allowed_file(filename): Checks if a file is allowed based on its extension.
+Decorators:
+    - require_session_key(func): Decorator to protect routes with session key validation.
+Error Handlers:
+    - page_note_found(error): Renders a custom 404 error page.
+Routes:
+    - '/': Renders the home page.
+    - '/index': Renders the index page.
+    - '/login_page': Renders the login page.
+    - '/signup_page': Renders the signup page.
+    - '/account_page': Renders the account page.
+    - '/admin_page': Renders the admin page.
+    - '/contact': Handles contact form submissions.
+    - '/share-note/<int:note_id>': Shares a note with another user.
+    - '/update-profile-picture': Updates or deletes the profile picture of a user.
+    - '/user-info': Retrieves information about the logged-in user.
+    - '/allow-sharing': Updates the sharing preference of a user.
+    - '/admin': Admin route for managing users and messages.
+    - '/admin/dump': Admin route for dumping the database.
+    - '/signup': Handles user signup.
+    - '/login': Handles user login.
+    - '/logout': Handles user logout.
+    - '/test-session': Tests the validity of a session.
+    - '/notes': Manages notes (create and retrieve).
+    - '/notes/<int:note_id>': Updates or deletes a specific note.
+    - '/update-password': Updates the password of a user.
+    - '/update-username': Updates the username of a user.
+    - '/delete-account': Deletes the account of a user.
+Main:
+    - Runs the Flask application.
+"""
 from flask import Flask, request, jsonify, g, render_template, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint                        
@@ -98,7 +156,7 @@ def require_session_key(func):
 
 @app.errorhandler(404)
 def page_note_found(error):
-    return render_template('404.html')
+    return render_template('404.html'), 404
 
 @app.route('/')
 def home():
@@ -151,6 +209,8 @@ def share_note(note_id):
     user = User.query.filter_by(username=username).first()
     if not user:
         return jsonify({"error": "User not found"}), 404
+    if user.id == g.user_id:
+        return jsonify({"error": "You cannot share a note with yourself"}), 400
     
     allows_sharing = user.allows_sharing
     if not allows_sharing:
