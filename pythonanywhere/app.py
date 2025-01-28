@@ -87,6 +87,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
+    lasting_key = db.Column(db.String(200), nullable=True)
     profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
     allows_sharing = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
@@ -426,12 +427,45 @@ def signup():
 # Routes
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
-    user = User.query.filter_by(username=data['username']).first()
-    if user and bcrypt.check_password_hash(user.password, data['password']):
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "Invalid request data"}), 400
+
+        lasting_key = data.get('lasting_key')
+        if lasting_key:
+            user = User.query.filter_by(lasting_key=lasting_key).first()
+            if user:
+                key = generate_session_key(user.id)
+                return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
+            return jsonify({"error": "Invalid lasting key"}), 400
+
+        # Only check for username and password if lasting_key is not provided
+        username = data.get('username')
+        password = data.get('password')
+        if not username or not password:
+            return jsonify({"error": "Missing username or password"}), 400
+
+        user = User.query.filter_by(username=username).first()
+        if not user or not bcrypt.check_password_hash(user.password, password):
+            return jsonify({"error": "Invalid credentials"}), 400
+
         key = generate_session_key(user.id)
+        if data.get('keep_login'):
+            new_lasting_key = secrets.token_hex(32)
+            user.lasting_key = new_lasting_key
+            db.session.commit()
+            return jsonify({
+                "message": "Login successful!",
+                "session_key": key,
+                "user_id": user.id,
+                "lasting_key": new_lasting_key
+            }), 200
+
         return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
-    return jsonify({"error": "Invalid credentials"}), 400
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/logout', methods=['POST'])
 @require_session_key

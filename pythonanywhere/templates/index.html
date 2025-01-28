@@ -578,10 +578,73 @@
 
         let currentNoteId = null;
 
-        const sessionKey = sessionStorage.getItem("session_key");
-        if (!sessionKey) {
-            showModal();
-        }
+        document.addEventListener("DOMContentLoaded", async () => {
+            const sessionKey = sessionStorage.getItem("session_key");
+            const lastingKey = localStorage.getItem("lasting_key");
+
+            // Function to attempt auto-login using lasting_key
+            async function attemptAutoLogin() {
+                try {
+                    const response = await fetch("/login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ lasting_key: lastingKey }),
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Save session_key and redirect if needed
+                        sessionStorage.setItem("session_key", data.session_key);
+                        console.log("Auto-login successful!");
+                        fetchNotes();
+                    } else {
+                        console.error("Auto-login failed:", data.error || "Unknown error");
+                        localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
+                        showModal(); // Show modal if auto-login fails
+                    }
+                } catch (error) {
+                    console.error("Error during auto-login:", error);
+                    showModal(); // Show modal if auto-login fails
+                }
+            }
+
+            // If session_key is missing but lasting_key is present, attempt auto-login
+            if (!sessionKey && lastingKey) {
+                await attemptAutoLogin();
+            } else if (!sessionKey && !lastingKey) {
+                // No session_key or lasting_key: show modal
+                showModal();
+            } else {
+                console.log("Session key is present, user is logged in.");
+                // Check if the session key is valid
+                try {
+                    const response = await fetch("/test-session", {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                    });
+
+                    if (response.status === 401) {
+                        console.log("Session key invalid. Attempting auto-login...");
+                        if (lastingKey) {
+                            await attemptAutoLogin();
+                        } else {
+                            showModal();
+                        }
+                    } else {
+                        console.log("Session key is valid.");
+                        hideModal();
+                    }
+                } catch (error) {
+                    console.error("Error during session validation:", error);
+                    showModal();
+                }
+            }
+            fetchNotes(); // Move fetchNotes() here to ensure it's only called once
+        });
 
         function showModal() {
             const modalOverlay = document.getElementById("modal-overlay");
@@ -597,7 +660,6 @@
             if (window.innerWidth < 600) {
                 document.getElementById("floating-add-button").style.display = "flex";
             }
-            location.reload();
         }
 
         document.getElementById("search-button").addEventListener("click", () => {
@@ -731,6 +793,7 @@
             const notes = await response.json();
             console.log("Fetched notes:", notes);
             const notesList = document.getElementById("notes-list");
+            hideModal();
             if (notes.length === 0) {
                 notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
             } else {
@@ -1047,8 +1110,6 @@
 
         document.getElementById("overlay").addEventListener("click", closeUpdateMenu);
         document.getElementById("profile-pic").addEventListener("click", showAccountMenu);
-
-        fetchNotes();
 
         document.getElementById("floating-add-button").addEventListener("click", () => {
             document.getElementById("mobile-add-menu").style.display = "block";
