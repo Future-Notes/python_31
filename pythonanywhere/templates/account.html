@@ -542,10 +542,126 @@
     </div>
 
     <script>
-        const sessionKey = sessionStorage.getItem("session_key");
-        if (!sessionKey) {
-            showModal();
-        }
+        let sessionKey;
+        document.addEventListener("DOMContentLoaded", async () => {
+            sessionKey = sessionStorage.getItem("session_key");
+            const lastingKey = localStorage.getItem("lasting_key");
+
+            async function attemptAutoLogin() {
+                try {
+                    const response = await fetch("/login", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ lasting_key: lastingKey }),
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Save session_key and redirect if needed
+                        sessionStorage.setItem("session_key", data.session_key);
+                        console.log("Auto-login successful!");
+                        location.reload();
+                    } else {
+                        console.error("Auto-login failed:", data.error || "Unknown error");
+                        localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
+                        if (window.location.pathname !== "/login") {
+                            window.location.href = "/login"; // Redirect to the login page
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error during auto-login:", error);
+                    if (window.location.pathname !== "/login") {
+                        showModal();
+                    }
+                }
+            }
+
+            if (!sessionKey && lastingKey) {
+                await attemptAutoLogin();
+            } else if (!sessionKey && !lastingKey) {
+                // No session_key or lasting_key: redirect to the login page if not already there
+                if (window.location.pathname !== "/login") {
+                    showModal();
+                }
+            } else {
+                console.log("Session key is present, user is logged in.");
+                // Test if the session key is valid
+                try {
+                    const response = await fetch("/test-session", {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                    });
+
+                    if (response.status === 401) {
+                        console.log("Session key is invalid.");
+                        if (lastingKey) {
+                            await attemptAutoLogin();
+                        } else {
+                            showModal();
+                        }
+                    } else {
+                        const userInfoResponse = await fetch("/user-info", {
+                            method: "GET",
+                            headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${sessionKey}`,
+                            },
+                        });
+
+                        if (userInfoResponse.ok) {
+                            const userInfo = await userInfoResponse.json();
+                            const username = userInfo.username;
+                            const profilePic = userInfo.profile_picture;
+                            const sharingToggle = document.getElementById("sharing-toggle");
+                            const role = userInfo.role;
+
+                            sharingToggle.checked = userInfo.allows_sharing === true;
+                            console.log(userInfo);
+
+                            document.getElementById("username-display").textContent = `${username} - Account`;
+                            const profilePicElement = document.getElementById("profile-pic");
+
+                            if (profilePic) {
+                                // Replace backslashes with forward slashes to fix path issues
+                                const correctedProfilePic = profilePic.replace(/\\/g, "/");
+
+                                // Use the corrected path directly (no need to prepend "/static/uploads/profile_pictures/").
+                                profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+                                profilePicElement.classList.remove("no-picture");
+                                profilePicElement.textContent = ""; // Clear the text content
+                            } else {
+                                profilePicElement.textContent = username[0].toUpperCase();
+                                profilePicElement.classList.add("no-picture");
+                            }
+
+                            // Handle admin link access dynamically
+                            const adminLink = document.querySelector(".admin-page-link");
+
+                            if (role === "admin") {
+                                adminLink.classList.remove("disabled");
+                                adminLink.classList.add("enabled");
+                            } else {
+                                adminLink.classList.remove("enabled");
+                                adminLink.classList.add("disabled");
+
+                                // Add event listener to prevent navigation
+                                adminLink.addEventListener("click", (e) => {
+                                    e.preventDefault();
+                                });
+                            }
+                        } else {
+                            console.error("Failed to fetch user info");
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error during session validation:", error);
+                }
+            }
+        });
 
         function showModal() {
             const modalOverlay = document.getElementById("modal-overlay");
@@ -642,7 +758,6 @@
             }
         });
 
-
         document.getElementById("update-password-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const currentPassword = document.getElementById("current-password").value;
@@ -675,7 +790,6 @@
                 alert("Network error. Please try again later.");
             }
         });
-
 
         document.getElementById("delete-account").addEventListener("click", async () => {
             const password = prompt("Enter your password to confirm:");
@@ -713,83 +827,11 @@
             }
         });
 
-
         document.getElementById("logout").addEventListener("click", () => {
             sessionStorage.clear();
+            localStorage.clear();
             window.location.href = "/login_page";
         });
-
-        window.onload = async () => {
-            try {
-                const response = await fetch("/test-session", {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
-                    },
-                });
-
-                if (response.status === 401) {
-                    showModal();
-                } else {
-                    const userInfoResponse = await fetch("/user-info", {
-                        method: "GET",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
-                        },
-                    });
-
-                    if (userInfoResponse.ok) {
-                        const userInfo = await userInfoResponse.json();
-                        const username = userInfo.username;
-                        const profilePic = userInfo.profile_picture;
-                        const sharingToggle = document.getElementById("sharing-toggle");
-                        const role = userInfo.role;
-
-                        sharingToggle.checked = userInfo.allows_sharing === true;
-                        console.log(userInfo);
-
-                        document.getElementById("username-display").textContent = `${username} - Account`;
-                        const profilePicElement = document.getElementById("profile-pic");
-
-                        if (profilePic) {
-                            // Replace backslashes with forward slashes to fix path issues
-                            const correctedProfilePic = profilePic.replace(/\\/g, "/");
-
-                            // Use the corrected path directly (no need to prepend "/static/uploads/profile_pictures/").
-                            profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
-                            profilePicElement.classList.remove("no-picture");
-                            profilePicElement.textContent = ""; // Clear the text content
-                        } else {
-                            profilePicElement.textContent = username[0].toUpperCase();
-                            profilePicElement.classList.add("no-picture");
-                        }
-
-                        // Handle admin link access dynamically
-                        const adminLink = document.querySelector(".admin-page-link");
-
-                        if (role === "admin") {
-                            adminLink.classList.remove("disabled");
-                            adminLink.classList.add("enabled");
-                        } else {
-                            adminLink.classList.remove("enabled");
-                            adminLink.classList.add("disabled");
-
-                            // Add event listener to prevent navigation
-                            adminLink.addEventListener("click", (e) => {
-                                e.preventDefault();
-                            });
-                        }
-                    } else {
-                        console.error("Failed to fetch user info");
-                    }
-                }
-            } catch (error) {
-                console.error("Error during re-login:", error);
-            }
-        };
-
 
         document.getElementById("profile-pic").addEventListener("click", () => {
             document.getElementById("modal-overlay-2").style.display = "flex";
@@ -854,7 +896,6 @@
                 console.error("Error deleting profile picture:", err);
             }
         });
-
     </script>
 </body>
 </html>

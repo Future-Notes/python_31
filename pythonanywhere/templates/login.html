@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#2c2c2c">
-    <title>Future notes - Login</title>
+    <title>Future Notes - Login</title>
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
@@ -38,9 +38,9 @@
             text-align: center;
             width: 100%;
             max-width: 400px;
-            opacity: 0; /* Initial state for animation */
-            transform: translateY(-20px); /* Initial position */
-            animation: fadeIn 1s ease-out forwards; /* Animation properties */
+            opacity: 0;
+            transform: translateY(-20px);
+            animation: fadeIn 1s ease-out forwards;
         }
 
         @keyframes fadeIn {
@@ -65,7 +65,8 @@
         }
 
         input[type="text"],
-        input[type="password"] {
+        input[type="password"],
+        input[type="checkbox"] {
             width: 100%;
             padding: 10px;
             margin-bottom: 20px;
@@ -133,29 +134,28 @@
             background-color: #5a5a5a;
             transform: scale(1.1);
         }
+
        /* Large Title */
         .page-title {
             position: absolute;
-            top: 0; /* Start near the top */
-            left: 50%; /* Center horizontally */
-            transform: translate(-50%, -100%); /* Center horizontally and start above the viewport */
+            top: 0;
+            left: 50%;
+            transform: translate(-50%, -100%);
             font-size: 36px;
             font-weight: bold;
             color: #e0e0e0;
-            opacity: 0; /* Start fully invisible */
-            animation: slideInFromTop 1s ease-out forwards; /* Slide down into position */
+            opacity: 0;
+            animation: slideInFromTop 1s ease-out forwards;
             text-align: center;
             margin: 0;
         }
 
-        /* Keyframes for sliding in */
         @keyframes slideInFromTop {
             to {
-                transform: translate(-50%, 20px); /* Final position with a bit of padding */
-                opacity: 1; /* Fully visible */
+                transform: translate(-50%, 20px);
+                opacity: 1;
             }
         }
-
     </style>
 </head>
 <body>
@@ -169,31 +169,65 @@
             <input type="text" id="username" required>
             <label for="password">Password:</label>
             <input type="password" id="password" required>
+            <label>
+                <input type="checkbox" id="remember-me">
+                Remember Me
+            </label>
             <button type="submit">Login</button>
         </form>
         <p>Don't have an account? <a href="/signup_page">Sign Up</a></p>
     </div>
 
     <script>
+        document.addEventListener("DOMContentLoaded", async () => {
+            const lastingKey = localStorage.getItem("lasting_key");
+            if (lastingKey) {
+                const response = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ lasting_key: lastingKey }),
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    sessionStorage.setItem("session_key", data.session_key);
+                    window.location.href = "/index";
+                } else {
+                    console.log(data)
+                }
+            }
+        });
+
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
+            const rememberMe = document.getElementById("remember-me").checked;
+
+            if (!username || !password) {
+                alert("Please enter both username and password.");
+                return;
+            }
 
             const response = await fetch("/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ username, password, keep_login: rememberMe }),
             });
+
             const data = await response.json();
 
             if (response.ok) {
                 sessionStorage.setItem("session_key", data.session_key);
+                if (rememberMe && data.lasting_key) {
+                    localStorage.setItem("lasting_key", data.lasting_key);
+                }
                 window.location.href = "/index";
             } else {
                 alert(data.error || "Login failed");
             }
         });
+
     </script>
 </body>
 </html>
