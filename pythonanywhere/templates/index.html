@@ -616,7 +616,7 @@
                 // No session_key or lasting_key: show modal
                 showModal();
             } else {
-                console.log("Session key is present, user is logged in.");
+                console.log("Session key is present, validating...");
                 // Check if the session key is valid
                 try {
                     const response = await fetch("/test-session", {
@@ -635,7 +635,7 @@
                             showModal();
                         }
                     } else {
-                        console.log("Session key is valid.");
+                        console.log("Session key is valid, user is logged in.");
                         hideModal();
                     }
                 } catch (error) {

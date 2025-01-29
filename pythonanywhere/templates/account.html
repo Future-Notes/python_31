@@ -549,6 +549,7 @@
 
             async function attemptAutoLogin() {
                 try {
+                    console.log("Attempting autologin...")
                     const response = await fetch("/login", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -583,9 +584,10 @@
                 // No session_key or lasting_key: redirect to the login page if not already there
                 if (window.location.pathname !== "/login") {
                     showModal();
+                    console.log("No lasting key nor session key, showing re-login modal...")
                 }
             } else {
-                console.log("Session key is present, user is logged in.");
+                console.log("Session key is present, validating...");
                 // Test if the session key is valid
                 try {
                     const response = await fetch("/test-session", {
@@ -597,13 +599,16 @@
                     });
 
                     if (response.status === 401) {
-                        console.log("Session key is invalid.");
+                        console.log("Session key is invalid, checking for lasting key...");
                         if (lastingKey) {
+                            console.log("Lasting key present, validating it...")
                             await attemptAutoLogin();
                         } else {
+                            console.log("No lasting key present, showing re-login modal...")
                             showModal();
                         }
                     } else {
+                        console.log("Session key valid, fetching user info...")
                         const userInfoResponse = await fetch("/user-info", {
                             method: "GET",
                             headers: {
@@ -613,6 +618,7 @@
                         });
 
                         if (userInfoResponse.ok) {
+                            console.log("Fetched user info:")
                             const userInfo = await userInfoResponse.json();
                             const username = userInfo.username;
                             const profilePic = userInfo.profile_picture;
@@ -626,6 +632,7 @@
                             const profilePicElement = document.getElementById("profile-pic");
 
                             if (profilePic) {
+                                console.log("Setting profile picture...")
                                 // Replace backslashes with forward slashes to fix path issues
                                 const correctedProfilePic = profilePic.replace(/\\/g, "/");
 
@@ -634,6 +641,7 @@
                                 profilePicElement.classList.remove("no-picture");
                                 profilePicElement.textContent = ""; // Clear the text content
                             } else {
+                                console.log("User has not set profile picture!")
                                 profilePicElement.textContent = username[0].toUpperCase();
                                 profilePicElement.classList.add("no-picture");
                             }
@@ -642,9 +650,11 @@
                             const adminLink = document.querySelector(".admin-page-link");
 
                             if (role === "admin") {
+                                console.log("User is an admin!")
                                 adminLink.classList.remove("disabled");
                                 adminLink.classList.add("enabled");
                             } else {
+                                console.log("User is not an admin!")
                                 adminLink.classList.remove("enabled");
                                 adminLink.classList.add("disabled");
 
@@ -664,6 +674,7 @@
         });
 
         function showModal() {
+            console.log("Re-login modal shown!")
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "flex";
         }
@@ -671,6 +682,7 @@
         function hideModal() {
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "none";
+            console.log("Re-login modal hidden!")
             location.reload();
         }
 
@@ -693,6 +705,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     sessionStorage.setItem("session_key", data.session_key);
+                    console.log("Username and password valid, hiding modal...")
                     hideModal();
                 } else {
                     alert("Invalid username or password. Please try again.");
@@ -707,6 +720,7 @@
             const allowsSharing = e.target.checked;
 
             try {
+                console.log("Sharing toggle pressed, attempting change...")
                 const response = await fetch("/allow-sharing", {
                     method: "PUT",
                     headers: {
@@ -717,12 +731,12 @@
                 });
 
                 if (response.ok) {
-                    alert("Sharing preference updated successfully!");
+                    console.log("Sharing preference updated succesfully!")
                 } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
                     sessionStorage.clear();
                     showModal();
                 } else {
+                    console.log("Failed to update sharing preference!")
                     alert("Failed to update sharing preference.");
                 }
             } catch (err) {
