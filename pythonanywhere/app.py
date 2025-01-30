@@ -66,6 +66,7 @@ import secrets
 from werkzeug.utils import secure_filename
 import os
 import json
+import uuid
 
 app = Flask(__name__)
 CORS(app)
@@ -100,10 +101,28 @@ class User(db.Model):
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)  # New field
     title = db.Column(db.String(100), nullable=True)
     note = db.Column(db.Text, nullable=False)
-    tag = db.Column(db.String(100), nullable=True)  # Allow tag to be None
+    tag = db.Column(db.String(100), nullable=True)
+
+    group = db.relationship("Group", backref="notes")
+
+
+class Group(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class GroupMember(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=False)
+    joined_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    user = db.relationship("User", backref="group_memberships")
+    group = db.relationship("Group", backref="members")
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -149,6 +168,7 @@ def require_session_key(func):
     def wrapper(*args, **kwargs):
         valid, response = validate_session_key()
         if not valid:
+            print("unauthorized")
             return jsonify({"error": response}), 401
         g.user_id = response["user_id"]  # Store user ID for the route
         return func(*args, **kwargs)
@@ -184,6 +204,10 @@ def account_page():
 def admin_page():
     return render_template('admin.html')
 
+@app.route('/group-notes')
+def group_notes():
+    return render_template("group_index.html")
+
 @app.route('/contact', methods=['POST'])
 def contact():
     data = request.json
@@ -197,6 +221,161 @@ def contact():
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
+@app.route('/check-group')
+@require_session_key
+def group_info():
+    print("Entering group_info route")
+    user_id = User.query.get(g.user_id)
+    print(f"Queried user_id: {user_id}")
+
+    if not user_id:
+        print("User not found")
+        return jsonify({"error": "User not found"}), 400
+    
+    group_membership = GroupMember.query.filter_by(user_id=user_id.id).first()
+    print(f"Queried group_membership: {group_membership}")
+
+    if not group_membership:
+        print("User is not in any group")
+        return jsonify({"error": "User is not in any group"}), 404
+
+    print("User is in a group")
+    return jsonify({"message": "User is in a group", "group_id": group_membership.group_id}), 200
+    
+@app.route('/groups', methods=['POST'])
+@require_session_key
+def create_group():
+    print("Entering create_group route")
+    data = request.json
+    print(f"Received data: {data}")
+    name = data.get('name')
+    print(f"Group name: {name}")
+
+    if not name:
+        print("Group name is required")
+        return jsonify({"error": "Group name is required"}), 400
+
+    new_group = Group(name=name)
+    db.session.add(new_group)
+    db.session.commit()
+    print(f"Created new group: {new_group}")
+
+    # Automatically add the creator as a member
+    membership = GroupMember(user_id=g.user_id, group_id=new_group.id)
+    db.session.add(membership)
+    db.session.commit()
+    print(f"Added creator as member: {membership}")
+
+    return jsonify({"message": "Group created successfully!", "group_id": new_group.id}), 201
+
+@app.route('/groups/join', methods=['POST'])
+@require_session_key
+def join_group():
+    print("Entering join_group route")
+    data = request.json
+    print(f"Received data: {data}")
+    group_id = data.get('group_id')
+    print(f"Group ID: {group_id}")
+
+    group = Group.query.get(group_id)
+    print(f"Queried group: {group}")
+    if not group:
+        print("Group not found")
+        return jsonify({"error": "Group not found"}), 404
+
+    # Check if user is already in the group
+    existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried existing_member: {existing_member}")
+    if existing_member:
+        print("Already a member of this group")
+        return jsonify({"message": "Already a member of this group"}), 200
+
+    membership = GroupMember(user_id=g.user_id, group_id=group_id)
+    db.session.add(membership)
+    db.session.commit()
+    print(f"Joined group successfully: {membership}")
+
+    return jsonify({"message": "Joined group successfully!"}), 200
+
+@app.route('/groups/<string:group_id>/notes', methods=['GET'])
+@require_session_key
+def get_group_notes(group_id):
+    print("Entering get_group_notes route")
+    print(f"Group ID: {group_id}")
+
+    # Ensure the user is part of the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried membership: {membership}")
+    if not membership:
+        print("Not a member of this group")
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    notes = Note.query.filter_by(group_id=group_id).all()
+    print(f"Queried notes: {notes}")
+    sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
+    print(f"Sanitized notes: {sanitized_notes}")
+
+    return jsonify(sanitized_notes)
+
+@app.route('/groups/<string:group_id>/notes', methods=['POST'])
+@require_session_key
+def add_group_note(group_id):
+    print("Entering add_group_note route")
+    data = request.json
+    print(f"Received data: {data}")
+    title = data.get('title')
+    note_text = data['note']
+    tag = data.get('tag')
+    print(f"Title: {title}, Note: {note_text}, Tag: {tag}")
+
+    # Ensure user is in the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried membership: {membership}")
+    if not membership:
+        print("Not a member of this group")
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    new_note = Note(group_id=group_id, title=title, note=note_text, tag=tag)
+    db.session.add(new_note)
+    db.session.commit()
+    print(f"Added new note: {new_note}")
+
+    return jsonify({"message": "Group note added successfully!"}), 201
+
+@app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
+@require_session_key
+def update_delete_group_note(group_id, note_id):
+    print("Entering update_delete_group_note route")
+    print(f"Group ID: {group_id}, Note ID: {note_id}")
+    note = Note.query.get(note_id)
+    print(f"Queried note: {note}")
+
+    if not note or note.group_id != group_id:
+        print("Note not found")
+        return jsonify({"error": "Note not found"}), 404
+
+    # Ensure user is part of the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried membership: {membership}")
+    if not membership:
+        print("Not a member of this group")
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    if request.method == 'PUT':
+        data = request.json
+        print(f"Received data: {data}")
+        note.title = data.get('title')
+        note.note = data['note']
+        note.tag = data.get('tag')
+        db.session.commit()
+        print("Note updated successfully")
+        return jsonify({"message": "Note updated successfully!"}), 200
+
+    elif request.method == 'DELETE':
+        db.session.delete(note)
+        db.session.commit()
+        print("Note deleted successfully")
+        return jsonify({"message": "Note deleted successfully!"}), 200
 
 
 @app.route('/share-note/<int:note_id>', methods=['POST'])
