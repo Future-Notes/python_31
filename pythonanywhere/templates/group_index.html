@@ -1014,8 +1014,7 @@
                     } 
                     throw new Error("Failed to add note");
                 }
-
-                fetchNotes(); // Refresh notes after adding
+                fetchNotes(groupId); // Refresh notes after adding
                 document.getElementById("note-title").value = ''; 
                 document.getElementById("note-text").value = ''; 
                 document.getElementById("note-tag").value = ''; 
@@ -1056,7 +1055,8 @@
                     }
 
                     closeUpdateMenu();
-                    fetchNotes(groupId);
+                    const groupId = sessionStorage.getItem("group_id", groupId)
+                    fetchNotes(groupId); 
                 } catch (error) {
                     console.error("Error updating note:", error);
                     alert("There was an error updating your note. Please try again.");
@@ -1091,9 +1091,10 @@
         }
 
 
-        function showViewMenu(noteId, noteText, noteTag, noteTitle) {
+        function showViewMenu(groupId, noteId, noteText, noteTag, noteTitle) {
             currentNoteId = noteId;
-            console.log("View Menu Opened:", { noteId, noteText, noteTag, noteTitle });
+            currentGroupId = groupId;
+            console.log("View Menu Opened:", {groupId, noteId, noteText, noteTag, noteTitle });
             document.getElementById("view-note-title").value = noteTitle || 'Untitled';
             document.getElementById("view-note-text").value = noteText.replace(/\\n/g, "\n");
             document.getElementById("view-note-tag").value = noteTag || ''; // Add this line
@@ -1208,7 +1209,8 @@
 
         document.getElementById("add-note-form").addEventListener("submit", (e) => {
             e.preventDefault();
-            addNote();
+            const groupId = sessionStorage.getItem("group_id");
+            addNote(groupId);
         });
 
         document.getElementById("overlay").addEventListener("click", closeUpdateMenu);
@@ -1251,7 +1253,8 @@
                     return;
                 }
 
-                fetchNotes();
+                const groupId = sessionStorage.getItem("group_id", groupId)
+                fetchNotes(groupId);
                 document.getElementById("mobile-note-title").value = ''; // Clear the title input
                 document.getElementById("mobile-note-text").value = ''; // Clear the input
                 document.getElementById("mobile-note-tag").value = ''; // Clear the tag input
