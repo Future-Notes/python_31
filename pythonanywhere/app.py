@@ -451,18 +451,15 @@ def login():
             return jsonify({"error": "Invalid credentials"}), 400
 
         key = generate_session_key(user.id)
-
         if data.get('keep_login'):
-            # Check if user already has a lasting key
-            if not user.lasting_key:
-                user.lasting_key = secrets.token_hex(32)  # Generate new lasting key only if none exists
-            
+            new_lasting_key = secrets.token_hex(32)
+            user.lasting_key = new_lasting_key
             db.session.commit()
             return jsonify({
                 "message": "Login successful!",
                 "session_key": key,
                 "user_id": user.id,
-                "lasting_key": user.lasting_key  # Reuse existing key if available
+                "lasting_key": new_lasting_key
             }), 200
 
         return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
