@@ -241,6 +241,21 @@ def group_info():
 
     print("User is in a group")
     return jsonify({"message": "User is in a group", "group_id": group_membership.group_id}), 200
+
+@app.route('/group-info/<string:group_id>', methods=['GET'])
+@require_session_key
+def get_group_info(group_id):
+    print("Entering get_group_info route")
+    print(f"Group ID: {group_id}")
+
+    group = Group.query.get(group_id)
+    print(f"Queried group: {group}")
+
+    if not group:
+        print("Group not found")
+        return jsonify({"error": "Group not found"}), 404
+
+    return jsonify({"group_name": group.name}), 200
     
 @app.route('/groups', methods=['POST'])
 @require_session_key
@@ -310,20 +325,22 @@ def leave_group():
     print(f"Queried group: {group}")
     if not group:
         print("Group not found")
-        return jsonify({"error" : "Group not found"}), 404
+        return jsonify({"error": "Group not found"}), 404
 
     # Check if user is already in the group
     existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
     print(f"Queried existing_member: {existing_member}")
+    
     if not existing_member:
         print("Not a member of this group")
         return jsonify({"message": "Not a member of this group!"}), 403
-    
-    membership = GroupMember(user_id=g.user_id, group_id=group_id)
-    db.session.delete(membership)
-    print(f"Left group succesfully: Membership no longer available")
 
-    return jsonify({"message" : "Left group succesfully!"}), 200
+    # Delete the existing membership from the database
+    db.session.delete(existing_member)
+    db.session.commit()  # Commit the transaction
+
+    print("Left group successfully: Membership deleted")
+    return jsonify({"message": "Left group successfully!"}), 200
 
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key

@@ -47,7 +47,6 @@
         header {
             background-color: #3a3a3a;
             padding: 20px;
-            text-align: center;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -61,7 +60,44 @@
             color: #f2f2f2;
         }
 
-        header a {
+        nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        nav a {
+            text-decoration: none;
+        }
+
+        .nav-link {
+            position: relative;
+            color: white;
+            font-size: 18px;
+            padding: 5px 0;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 0;
+            background-color: transparent;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .nav-link:hover::after {
+            width: 100%;
+            background-color: lightgray;
+        }
+
+        .nav-link.active::after {
+            width: 100%;
+            background-color: white;
+        }
+
+
+        .homepage-link {
             text-decoration: none;
             background-color: #4a4a4a;
             color: #e0e0e0;
@@ -72,6 +108,54 @@
 
         header a:hover {
             background-color: #5c5c5c;
+        }
+
+        /* Mobile Sub-Header - Hidden by default */
+        .mobile-sub-header {
+            display: none;
+            background-color: #2e2e2e;
+            padding: 10px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Mobile Nav Links */
+        .mobile-sub-header a {
+            display: block;
+            color: white;
+            text-decoration: none;
+            padding: 10px;
+            font-size: 18px;
+        }
+
+        /* Active State */
+        .mobile-sub-header a.active::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 100%;
+            background-color: white;
+        }
+
+        /* Hover effect */
+        .mobile-sub-header a:hover::after {
+            background-color: lightgray;
+        }
+        /* Desktop Nav - Visible on large screens */
+        .desktop-nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        /* Responsive Styles */
+        @media (max-width: 600px) {
+            .desktop-nav {
+                display: none; /* Hide desktop nav on small screens */
+            }
+
+            .mobile-sub-header {
+                display: block; /* Show mobile sub-header */
+            }
         }
 
         main {
@@ -512,11 +596,27 @@
 </head>
 <body>
     <header>
-        <a href="/"><h1>Future Notes</h1></a>
+        <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
+        <nav class="desktop-nav">
+            <a href="/index" class="nav-link">Personal notes</a>
+            <a href="/group-notes" class="nav-link active">Group notes</a>
+        </nav>
         <input type="text" id="mobile-search-input" placeholder="Search notes...">
         <div id="profile-pic" class="profile-pic no-picture"></div>
     </header>
+
+    <!-- Mobile Sub-Header (Only visible on mobile) -->
+    <nav class="mobile-sub-header">
+        <a href="/index" class="nav-link">Personal notes</a>
+        <a href="/group-notes" class="nav-link active">Group notes</a>
+    </nav>  
+
     <main>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background-color: #3a3a3a; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);">
+            <h2 id="group-name" style="font-size: 24px; color: #e0e0e0; margin: 0;">Loading...</h2>
+            <button id="leave-group-button" style="background-color: #b33a3a; color: #e0e0e0; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; transition: background-color 0.3s ease;">Leave Group</button>
+        </div>
+
         <form id="add-note-form">
             <input type="text" id="note-title" placeholder="Title (optional)">
             <textarea id="note-text" placeholder="Write a note..."></textarea>
@@ -792,11 +892,15 @@
                     console.log("User is in a group:", responseData.group_id);
                     sessionStorage.setItem("group_id", responseData.group_id); // Save for future use
                     fetchNotes(responseData.group_id); // Fetch notes for the group
+                    fetchGroupInfo(responseData.group_id) // Fetch group name and members
                 } else if (response.status === 404) {
                     console.log("User not part of any group. Showing group creation/join options...");
+                    document.getElementById("floating-add-button").style.display = 'none';
                     const mainContent = document.querySelector("main");
                     mainContent.innerHTML = `
                         <div style="text-align: center; margin-top: 50px;">
+                            <h1>Welcome to groups!</h1>
+                            <h5>Sharing notes has never been so easy. Enter a group UUID to join a group, or click Create New Group to create a new group.</h5>
                             <button id="create-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #6a6a6a; color: #e0e0e0; border: none; cursor: pointer;">Create New Group</button>
                             <div style="margin-top: 20px;">
                                 <input type="text" id="group-uuid" placeholder="Enter Group UUID" style="padding: 10px; font-size: 16px; border-radius: 8px; width: 80%; max-width: 300px; margin-bottom: 10px;">
@@ -814,6 +918,41 @@
                 console.error("Error checking group:", error);
             }
         }
+
+        async function fetchGroupInfo(groupId) {
+            try {
+                const sessionKey = sessionStorage.getItem("session_key");
+
+                // Check if session key is available
+                if (!sessionKey) {
+                    console.error("Session key is missing.");
+                    document.getElementById("group-name").textContent = "Unknown group name";
+                    return;
+                }
+
+                const response = await fetch(`/group-info/${groupId}`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${sessionKey}`
+                    }
+                });
+
+                // Check if the response is successful
+                if (response.ok) {
+                    const data = await response.json();
+                    // Set group name if found
+                    document.getElementById("group-name").textContent = data.group_name;
+                } else {
+                    // Handle the case where the group is not found
+                    document.getElementById("group-name").textContent = "Unknown group name";
+                }
+            } catch (error) {
+                // Catch any errors during the fetch process
+                console.error("Error fetching group info:", error);
+                document.getElementById("group-name").textContent = "Unknown group name";
+            }
+        }
+
 
         function showCreateGroupModal() {
             const modalOverlay = document.createElement("div");
@@ -838,14 +977,19 @@
             modal.style.maxWidth = "400px";
             modal.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.6)";
 
+            modalOverlay.appendChild(modal);
+            document.body.appendChild(modalOverlay);
+
             modal.innerHTML = `
                 <h2>Create New Group</h2>
                 <input id="group-name" type="text" placeholder="Group Name" style="width: calc(100% - 24px); margin: 10px 0; background-color: #2E2E2E; border: 1px solid #424242; color: #E0E0E0; padding: 10px; border-radius: 8px;">
                 <button id="confirm-create-group-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px;">Create Group</button>
+                <button id="cancel-create-group-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px; margin-left: 10px;">Cancel</button>
             `;
 
-            modalOverlay.appendChild(modal);
-            document.body.appendChild(modalOverlay);
+            document.getElementById("cancel-create-group-button").addEventListener("click", () => {
+                document.body.removeChild(modalOverlay); // Remove modal
+            });
 
             document.getElementById("confirm-create-group-button").addEventListener("click", async () => {
                 const groupName = document.getElementById("group-name").value.trim();
@@ -869,7 +1013,7 @@
                     if (createResponse.ok) {
                         console.log("Group created successfully.");
                         document.body.removeChild(modalOverlay); // Remove modal
-                        checkIfGroup(); // Recheck group status
+                        location.reload();
                     } else {
                         console.error("Failed to create group.");
                         alert("There was an error creating the group. Please try again.");
@@ -906,7 +1050,7 @@
                     console.log(responseData.message);
                     alert(responseData.message);
                     sessionStorage.setItem("group_id", groupId); // Save group ID
-                    fetchNotes(groupId); // Fetch notes after joining
+                    location.reload();
                 } else {
                     console.error(responseData.error || "Failed to join group.");
                     alert(responseData.error || "There was an error joining the group. Please try again.");
@@ -917,7 +1061,95 @@
             }
         }
 
-                
+        document.addEventListener("DOMContentLoaded", function () {
+            const leaveGroupButton = document.getElementById("leave-group-button");
+
+            if (leaveGroupButton) {
+                leaveGroupButton.addEventListener("click", function () {
+                    showLeaveGroupModal();
+                });
+            }
+        });
+
+        function showLeaveGroupModal() {
+            // Create the modal dynamically
+            const modal = document.createElement("div");
+            modal.id = "leave-group-modal";
+            modal.innerHTML = `
+                <div style="
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: #2c2c2c; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                    z-index: 1000; width: 300px; text-align: center;">
+                    <p>Are you sure you want to leave this group?</p>
+                    <button id="confirm-leave" style="background: red; color: white; padding: 8px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;">
+                        Yes, Leave
+                    </button>
+                    <button id="cancel-leave" style="background: gray; color: white; padding: 8px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;">
+                        No, Cancel
+                    </button>
+                </div>
+                <div id="modal-overlay" style="
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(0, 0, 0, 0.5); z-index: 999;"></div>
+            `;
+            document.body.appendChild(modal);
+            document.getElementById("overlay").style.display = "block";
+
+            // Add event listeners for the buttons
+            document.getElementById("confirm-leave").addEventListener("click", leaveGroup);
+            document.getElementById("cancel-leave").addEventListener("click", function () {
+                document.body.removeChild(modal); // Remove modal on cancel
+                document.getElementById("overlay").style.display = "none";
+            });
+        }
+
+        async function leaveGroup() {
+            const sessionKey = sessionStorage.getItem("session_key");
+            if (!sessionKey) {
+                console.error("No session key found in sessionStorage.");
+                alert("You must be logged in to leave a group.");
+                return;
+            }
+
+            const leaveGroupButton = document.getElementById("leave-group-button");
+            const groupId = sessionStorage.getItem("group_id"); //Get the groupId from session storage
+            if (!groupId) {
+                console.error("No group ID found.");
+                alert("Invalid group ID.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/groups/leave", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${sessionKey}`
+                    },
+                    body: JSON.stringify({ group_id: groupId })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert("Successfully left the group!");
+                    sessionStorage.removeItem("group_id")
+                    window.location.reload(); // Reload page or redirect as needed
+                } else {
+                    alert(`Error: ${data.message || "Failed to leave group"}`);
+                }
+            } catch (error) {
+                console.error("Error leaving group:", error);
+                alert("An unexpected error occurred. Please try again.");
+            }
+
+            // Remove modal after the request
+            const modal = document.getElementById("leave-group-modal");
+            if (modal) {
+                document.body.removeChild(modal);
+            }
+        }
+                        
 
         async function fetchNotes(groupId) {
             console.log(`Fetching notes for group: ${groupId}...`);
@@ -1231,8 +1463,15 @@
         });
 
         document.getElementById("mobile-add-note-button").addEventListener("click", async () => {
+            const noteTitle = document.getElementById("mobile-note-title").value;
             const noteText = document.getElementById("mobile-note-text").value;
             const noteTag = document.getElementById("mobile-note-tag").value;
+            const groupId = sessionStorage.getItem("group_id");
+
+            if (!groupId) {
+                alert("Error: Group ID is missing.");
+                return;
+            }
 
             if (!noteText.trim()) {
                 alert("Note cannot be empty.");
@@ -1240,28 +1479,32 @@
             }
 
             try {
-                const response = await fetch("/notes", {
+                const response = await fetch(`/groups/${groupId}/notes`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
-                    body: JSON.stringify({ note: noteText, tag: noteTag || null }),
+                    body: JSON.stringify({ title: noteTitle || null, note: noteText, tag: noteTag || null }),
                 });
 
-                if (!response.ok && response.status !== 401) {
-                    throw new Error("Failed to add note");
+                if (response.status === 403) {
+                    alert("You are not a member of this group.");
+                    return;
                 } else if (response.status === 401) {
                     console.log("Session key invalid. Showing re-login modal...");
                     showModal();
                     return;
+                } else if (!response.ok) {
+                    throw new Error("Failed to add note");
                 }
 
-                const groupId = sessionStorage.getItem("group_id", groupId)
                 fetchNotes(groupId);
-                document.getElementById("mobile-note-title").value = ''; // Clear the title input
-                document.getElementById("mobile-note-text").value = ''; // Clear the input
-                document.getElementById("mobile-note-tag").value = ''; // Clear the tag input
+
+                // Clear input fields after successful submission
+                document.getElementById("mobile-note-title").value = "";
+                document.getElementById("mobile-note-text").value = "";
+                document.getElementById("mobile-note-tag").value = "";
                 document.getElementById("mobile-add-menu").style.display = "none";
                 document.getElementById("overlay").style.display = "none";
             } catch (error) {
@@ -1274,6 +1517,8 @@
             const query = event.target.value.toLowerCase();
             searchNotes(query);
         });
+
+        sessionStorage.setItem("last_page", "/group-notes");
     </script>
 </body>
 </html> 
