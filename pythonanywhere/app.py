@@ -297,6 +297,34 @@ def join_group():
 
     return jsonify({"message": "Joined group successfully!"}), 200
 
+@app.route('/groups/leave', methods=['POST'])
+@require_session_key
+def leave_group():
+    print("Entering leave_group route")
+    data = request.json
+    print(f"Received data: {data}")
+    group_id = data.get('group_id')
+    print(f"Group ID: {group_id}")
+
+    group = Group.query.get(group_id)
+    print(f"Queried group: {group}")
+    if not group:
+        print("Group not found")
+        return jsonify({"error" : "Group not found"}), 404
+
+    # Check if user is already in the group
+    existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried existing_member: {existing_member}")
+    if not existing_member:
+        print("Not a member of this group")
+        return jsonify({"message": "Not a member of this group!"}), 403
+    
+    membership = GroupMember(user_id=g.user_id, group_id=group_id)
+    db.session.delete(membership)
+    print(f"Left group succesfully: Membership no longer available")
+
+    return jsonify({"message" : "Left group succesfully!"}), 200
+
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
 def get_group_notes(group_id):
@@ -342,12 +370,14 @@ def add_group_note(group_id):
 
     return jsonify({"message": "Group note added successfully!"}), 201
 
-@app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
+@app.route('/groups/<string:group_id>/notes', methods=['PUT', 'DELETE'])
 @require_session_key
-def update_delete_group_note(group_id, note_id):
+def update_delete_group_note(group_id):
     print("Entering update_delete_group_note route")
-    print(f"Group ID: {group_id}, Note ID: {note_id}")
-    note = Note.query.get(note_id)
+    print(f"Group ID: {group_id}")
+
+    # Use filter_by to query by group_id
+    note = Note.query.filter_by(group_id=group_id).first()
     print(f"Queried note: {note}")
 
     if not note or note.group_id != group_id:
