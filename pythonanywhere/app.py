@@ -120,6 +120,7 @@ class GroupMember(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=False)
     joined_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    admin = db.Column(db.Boolean, nullable=False, default=False)
 
     user = db.relationship("User", backref="group_memberships")
     group = db.relationship("Group", backref="members")
@@ -223,7 +224,7 @@ def contact():
     
 @app.route('/check-group')
 @require_session_key
-def group_info():
+def group_info_lol():
     print("Entering group_info route")
     user_id = User.query.get(g.user_id)
     print(f"Queried user_id: {user_id}")
@@ -240,22 +241,49 @@ def group_info():
         return jsonify({"error": "User is not in any group"}), 404
 
     print("User is in a group")
-    return jsonify({"message": "User is in a group", "group_id": group_membership.group_id}), 200
+    return jsonify({
+        "message": "User is in a group",
+        "group_id": group_membership.group_id,
+        "is_admin": group_membership.admin
+    }), 200
 
-@app.route('/group-info/<string:group_id>', methods=['GET'])
+@app.route('/group-info/<group_id>')
 @require_session_key
-def get_group_info(group_id):
-    print("Entering get_group_info route")
-    print(f"Group ID: {group_id}")
-
+def group_info(group_id):
+    # Get the group
     group = Group.query.get(group_id)
-    print(f"Queried group: {group}")
-
     if not group:
-        print("Group not found")
         return jsonify({"error": "Group not found"}), 404
 
-    return jsonify({"group_name": group.name}), 200
+    # Get the current user's membership (to check if they are admin)
+    current_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
+    if not current_membership:
+        return jsonify({"error": "User is not in this group"}), 403
+
+    # Query all members of the group
+    memberships = GroupMember.query.filter_by(group_id=group_id).all()
+    members_list = []
+    for membership in memberships:
+        user = User.query.get(membership.user_id)
+        # If the profile picture exists, clean it; otherwise, set it to None.
+        if user.profile_picture:
+            cleaned_profile_pic = user.profile_picture.replace("\\", "/")
+        else:
+            cleaned_profile_pic = None
+
+        members_list.append({
+            "user_id": user.id,
+            "username": user.username,
+            "profile_pic": cleaned_profile_pic,
+            "is_admin": membership.admin
+        })
+        print(members_list)
+
+    return jsonify({
+        "group_name": group.name,
+        "group_members": members_list,
+        "current_user_admin": current_membership.admin
+    }), 200
     
 @app.route('/groups', methods=['POST'])
 @require_session_key
@@ -276,7 +304,7 @@ def create_group():
     print(f"Created new group: {new_group}")
 
     # Automatically add the creator as a member
-    membership = GroupMember(user_id=g.user_id, group_id=new_group.id)
+    membership = GroupMember(user_id=g.user_id, group_id=new_group.id, admin=True)
     db.session.add(membership)
     db.session.commit()
     print(f"Added creator as member: {membership}")
@@ -305,7 +333,12 @@ def join_group():
         print("Already a member of this group")
         return jsonify({"message": "Already a member of this group"}), 200
 
-    membership = GroupMember(user_id=g.user_id, group_id=group_id)
+    # Check if the group has no members
+    has_members = GroupMember.query.filter_by(group_id=group_id).first()
+    is_admin = not has_members  # If no members, the joining user becomes admin
+    print(f"Is first member (admin): {is_admin}")
+
+    membership = GroupMember(user_id=g.user_id, group_id=group_id, admin=is_admin)
     db.session.add(membership)
     db.session.commit()
     print(f"Joined group successfully: {membership}")
@@ -341,6 +374,51 @@ def leave_group():
 
     print("Left group successfully: Membership deleted")
     return jsonify({"message": "Left group successfully!"}), 200
+
+@app.route('/groups/remove-user', methods=['POST'])
+@require_session_key
+def remove_user_from_group():
+    data = request.get_json()
+    group_id = data.get("group_id")
+    user_id_to_remove = data.get("user_id")
+
+    # Verify that the current user is an admin of the group
+    admin_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
+    if not admin_membership or not admin_membership.admin:
+        return jsonify({"error": "Unauthorized: only admins can remove users."}), 403
+
+    # Find the membership for the user to remove
+    member_to_remove = GroupMember.query.filter_by(group_id=group_id, user_id=user_id_to_remove).first()
+    if not member_to_remove:
+        return jsonify({"error": "User not found in the group."}), 404
+
+    db.session.delete(member_to_remove)
+    db.session.commit()
+    return jsonify({"message": "User removed successfully."}), 200
+
+@app.route('/groups/delete', methods=['POST'])
+@require_session_key
+def delete_group():
+    data = request.get_json()
+    group_id = data.get("group_id")
+
+    # Verify that the current user is an admin of the group
+    admin_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
+    if not admin_membership or not admin_membership.admin:
+        return jsonify({"error": "Unauthorized: only admins can delete the group."}), 403
+
+    # Remove all group memberships
+    GroupMember.query.filter_by(group_id=group_id).delete()
+    # Remove all notes belonging to the group
+    Note.query.filter_by(group_id=group_id).delete()
+    # Remove the group itself
+    group = Group.query.get(group_id)
+    if group:
+        db.session.delete(group)
+
+    db.session.commit()
+    return jsonify({"message": "Group deleted successfully."}), 200
+
 
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key

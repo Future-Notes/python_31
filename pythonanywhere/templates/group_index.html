@@ -592,6 +592,137 @@
         button:hover {
             background-color: #616161;
         }
+
+        /* Sidebar container (expanded state) */
+        #group-members-sidebar {
+            position: fixed;
+            top: 150px; /* Adjust if needed so it appears below the header */
+            right: 20px; /* Spacing from the right edge */
+            width: 250px;
+            min-height: 700px;
+            background-color: #3a3a3a;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            color: #e0e0e0;
+            max-height: calc(100% - 120px);
+            overflow-y: auto;
+            transition: width 0.3s ease, border-radius 0.3s ease, padding 0.3s ease;
+        }
+
+        #expand-member-sidebar {
+            display: none;
+        }
+
+        /* Sidebar header container */
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        /* Title (Group Members) styling */
+        .sidebar-header h2 {
+            margin: 0;
+            font-size: 20px;
+            text-align: center;
+            transition: transform 0.3s ease 0.3s, opacity 0.3s ease 0.3s; 
+            /* The 0.3s delay makes this part happen after the width change */
+        }
+
+        /* Toggle button styling */
+        #toggle-sidebar {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        /* SVG in toggle button */
+        #toggle-sidebar svg {
+            display: block;
+            transition: transform 0.3s ease;
+        }
+
+        /* Sidebar table styling remains unchanged */
+        #group-members-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        #group-members-table tr {
+            border-bottom: 1px solid #4a4a4a;
+            padding: 10px 0;
+        }
+
+        #group-members-table tr:last-child {
+            border-bottom: none;
+        }
+
+        /* Group member row layout */
+        .group-member {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        /* Adjusted profile picture for the sidebar */
+        .group-member .profile-pic {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            margin-right: 10px;
+        }
+
+        /* Remove user button styling */
+        .remove-user-button {
+            background-color: #b33a3a;
+            color: #e0e0e0;
+            border: none;
+            padding: 5px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: auto;
+        }
+
+        .remove-user-button:hover {
+            background-color: #cc4a4a;
+        }
+
+        /* Responsive: hide sidebar on small screens if desired */
+        @media (max-width: 600px) {
+            #group-members-sidebar {
+                display: none;
+            }
+        }
+
+        /* === Collapsed state styles === */
+        #group-members-sidebar.collapsed {
+            width: 50px;  /* Only large enough for the icon */
+            padding: 5px;
+            border-radius: 50%;
+        }
+
+        /* Hide the title when collapsed */
+        #group-members-sidebar.collapsed .sidebar-header h2 {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        /* Rotate the toggle icon (arrow) when collapsed */
+        #group-members-sidebar.collapsed #toggle-sidebar svg {
+            transform: rotate(180deg);
+        }
+
+        .hidden {
+            display: none;
+        }
+
     </style>
 </head>
 <body>
@@ -601,7 +732,7 @@
             <a href="/index" class="nav-link">Personal notes</a>
             <a href="/group-notes" class="nav-link active">Group notes</a>
         </nav>
-        <input type="text" id="mobile-search-input" placeholder="Search notes...">
+        <input type="text" id="mobile-search-input" placeholder="Search notes..." autocomplete="off">
         <div id="profile-pic" class="profile-pic no-picture"></div>
     </header>
 
@@ -629,6 +760,23 @@
         <ul id="notes-list"></ul>
         
     </main>
+    <aside id="group-members-sidebar">
+        <div class="sidebar-header">
+          <h2>Group Members</h2>
+          <button id="toggle-sidebar">
+            <!-- An inline SVG arrow with no shaft. Initially pointing up. -->
+            <svg width="24" height="24" viewBox="0 0 24 24">
+              <path d="M12 8L8 12h8L12 8z" fill="currentColor"></path>
+            </svg>
+          </button>
+        </div>
+        <table id="group-members-table">
+          <tbody>
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+    </aside>
+      
 
     <div id="overlay"></div>
 
@@ -679,6 +827,23 @@
         let currentNoteId = null;
 
         let groupId = null;
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const toggleSidebarButton = document.getElementById("toggle-sidebar");
+            const expandMemberSidebarButton = document.getElementById("expand-member-sidebar");
+            const groupMembersSidebar = document.getElementById("group-members-table");
+
+            toggleSidebarButton.addEventListener("click", () => {
+                groupMembersSidebar.classList.toggle("hidden");
+                const wholeBar = document.getElementById("group-members-sidebar");
+                if (wholeBar.style.minHeight === '700px' || wholeBar.style.minHeight === '') {
+                    wholeBar.style.minHeight = '0';
+                } else {
+                    wholeBar.style.minHeight = '700px';
+                }
+            });
+
+        });
 
         document.addEventListener("DOMContentLoaded", async () => {
             const sessionKey = sessionStorage.getItem("session_key");
@@ -896,6 +1061,7 @@
                 } else if (response.status === 404) {
                     console.log("User not part of any group. Showing group creation/join options...");
                     document.getElementById("floating-add-button").style.display = 'none';
+                    document.getElementById("group-members-sidebar").style.display = 'none';
                     const mainContent = document.querySelector("main");
                     mainContent.innerHTML = `
                         <div style="text-align: center; margin-top: 50px;">
@@ -922,8 +1088,6 @@
         async function fetchGroupInfo(groupId) {
             try {
                 const sessionKey = sessionStorage.getItem("session_key");
-
-                // Check if session key is available
                 if (!sessionKey) {
                     console.error("Session key is missing.");
                     document.getElementById("group-name").textContent = "Unknown group name";
@@ -937,19 +1101,144 @@
                     }
                 });
 
-                // Check if the response is successful
                 if (response.ok) {
                     const data = await response.json();
-                    // Set group name if found
                     document.getElementById("group-name").textContent = data.group_name;
+                    // Populate the sidebar with the returned group members
+                    populateSidebar(data.group_members, data.current_user_admin);
                 } else {
-                    // Handle the case where the group is not found
                     document.getElementById("group-name").textContent = "Unknown group name";
                 }
             } catch (error) {
-                // Catch any errors during the fetch process
                 console.error("Error fetching group info:", error);
                 document.getElementById("group-name").textContent = "Unknown group name";
+            }
+        }
+
+        async function removeGroupMember(userId) {
+            const sessionKey = sessionStorage.getItem("session_key");
+            const groupId = sessionStorage.getItem("group_id");
+
+            try {
+                const response = await fetch('/groups/remove-user', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionKey}`
+                    },
+                    body: JSON.stringify({ group_id: groupId, user_id: userId })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    // Refresh the sidebar with updated group info
+                    fetchGroupInfo(groupId);
+                } else {
+                    alert(data.error || 'Failed to remove user.');
+                }
+            } catch (error) {
+                console.error('Error removing user:', error);
+                alert('Error removing user.');
+            }
+        }
+
+        async function deleteGroup() {
+            if (!confirm('Are you sure you want to delete the entire group? This action cannot be undone.')) return;
+
+            const sessionKey = sessionStorage.getItem("session_key");
+            const groupId = sessionStorage.getItem("group_id");
+
+            try {
+                const response = await fetch('/groups/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionKey}`
+                    },
+                    body: JSON.stringify({ group_id: groupId })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    // Remove group info from session storage and reload (or redirect)
+                    sessionStorage.removeItem('group_id');
+                    window.location.reload();
+                } else {
+                    alert(data.error || 'Failed to delete group.');
+                }
+            } catch (error) {
+                console.error('Error deleting group:', error);
+                alert('Error deleting group.');
+            }
+        }
+
+
+        function populateSidebar(members, currentUserIsAdmin) {
+            const tbody = document.querySelector('#group-members-table tbody');
+            tbody.innerHTML = ''; // Clear previous entries
+
+            members.forEach(member => {
+                const tr = document.createElement('tr');
+                tr.classList.add('group-member');
+
+                // Profile picture cell
+                const picTd = document.createElement('td');
+                const picDiv = document.createElement('div');
+                picDiv.classList.add('profile-pic');
+                if (member.profile_pic) {
+                    picDiv.style.backgroundImage = `url(${member.profile_pic})`;
+                } else {
+                    picDiv.textContent = member.username.charAt(0).toUpperCase();
+                    picDiv.classList.add('no-picture');
+                }
+                picTd.appendChild(picDiv);
+                tr.appendChild(picTd);
+
+                // Username cell
+                const usernameTd = document.createElement('td');
+                usernameTd.textContent = member.username;
+                tr.appendChild(usernameTd);
+
+                // If the current user is admin and the member is not admin (you may also choose to prevent self‑removal)
+                if (currentUserIsAdmin && !member.is_admin) {
+                    const btnTd = document.createElement('td');
+                    const removeButton = document.createElement('button');
+                    removeButton.textContent = 'Remove';
+                    removeButton.classList.add('remove-user-button');
+                    removeButton.onclick = () => removeGroupMember(member.user_id);
+                    btnTd.appendChild(removeButton);
+                    tr.appendChild(btnTd);
+                }
+
+                tbody.appendChild(tr);
+            });
+
+            // Optionally, if the current user is admin, add a "Delete Group" button to the sidebar if not already present
+            const sidebar = document.getElementById('group-members-sidebar');
+            let deleteGroupButton = document.getElementById('delete-group-button');
+            if (currentUserIsAdmin) {
+                if (!deleteGroupButton) {
+                    deleteGroupButton = document.createElement('button');
+                    deleteGroupButton.id = 'delete-group-button';
+                    deleteGroupButton.textContent = 'Delete Group';
+                    // Style the button similarly to your other buttons
+                    deleteGroupButton.style.backgroundColor = '#b33a3a';
+                    deleteGroupButton.style.color = '#e0e0e0';
+                    deleteGroupButton.style.border = 'none';
+                    deleteGroupButton.style.padding = '10px 20px';
+                    deleteGroupButton.style.borderRadius = '8px';
+                    deleteGroupButton.style.cursor = 'pointer';
+                    deleteGroupButton.style.marginTop = '10px';
+                    deleteGroupButton.addEventListener('click', deleteGroup);
+                    sidebar.appendChild(deleteGroupButton);
+                }
+            } else {
+                // If not admin, remove the delete button if it exists
+                if (deleteGroupButton) {
+                    sidebar.removeChild(deleteGroupButton);
+                }
             }
         }
 
