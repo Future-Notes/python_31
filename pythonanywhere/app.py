@@ -67,6 +67,7 @@ from werkzeug.utils import secure_filename
 import os
 import json
 import uuid
+import glob
 
 app = Flask(__name__)
 CORS(app)
@@ -504,6 +505,7 @@ def update_delete_group_note(group_id):
 
 
 @app.route('/share-note/<int:note_id>', methods=['POST'])
+@require_session_key
 def share_note(note_id):
     data = request.get_json()
     username = data.get('username')
@@ -857,6 +859,7 @@ def update_username():
 def delete_account():
     data = request.json
     user = User.query.get(g.user_id)
+    
     if not user:
         return jsonify({"error": "User not found"}), 404
 
@@ -864,13 +867,68 @@ def delete_account():
         return jsonify({"error": "Incorrect password"}), 400
 
     try:
-        Note.query.filter_by(user_id=user.id).delete()
-        db.session.delete(user)
+        delete_profile_pictures(user.username)
+        handle_group_membership(user.id)
+        delete_user_and_data(user)
+        
         db.session.commit()
         return jsonify({"message": "Account and all related data deleted successfully!"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+def delete_profile_pictures(username):
+    """ Deletes all profile pictures associated with the given username. """
+    profile_pictures_path = os.path.join(UPLOAD_FOLDER)
+    user_pictures = glob.glob(os.path.join(profile_pictures_path, f"{username}_*"))
+
+    for picture in user_pictures:
+        try:
+            os.remove(picture)
+        except Exception as e:
+            print(f"Failed to delete {picture}: {e}")
+
+
+def handle_group_membership(user_id):
+    """ Handles removal or admin transfer for groups the user is in. """
+    memberships = GroupMember.query.filter_by(user_id=user_id).all()
+
+    for membership in memberships:
+        if not membership.admin:
+            db.session.delete(membership)
+        else:
+            group_id = membership.group_id
+            group_members = GroupMember.query.filter_by(group_id=group_id).all()
+
+            if len(group_members) == 1:
+                delete_group_and_notes(group_id)
+            else:
+                transfer_admin_rights(group_id, user_id)
+
+            db.session.delete(membership)
+
+
+def transfer_admin_rights(group_id, admin_id):
+    """ Transfers admin rights to the next available group member. """
+    next_admin = GroupMember.query.filter(GroupMember.group_id == group_id, GroupMember.user_id != admin_id).first()
+
+    if next_admin:
+        next_admin.admin = True
+    else:
+        raise Exception("No other members found to transfer admin rights.")
+
+
+def delete_group_and_notes(group_id):
+    """ Deletes all notes associated with the group and removes the group. """
+    Note.query.filter_by(group_id=group_id).delete()
+    Group.query.filter_by(id=group_id).delete()
+
+
+def delete_user_and_data(user):
+    """ Deletes all notes and the user itself. """
+    Note.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
 
 if __name__ == "__main__":
     with app.app_context():
