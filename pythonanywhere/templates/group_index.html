@@ -141,7 +141,6 @@
         .mobile-sub-header a:hover::after {
             background-color: lightgray;
         }
-
         /* Desktop Nav - Visible on large screens */
         .desktop-nav {
             display: flex;
@@ -593,28 +592,163 @@
         button:hover {
             background-color: #616161;
         }
+
+        /* Sidebar container (expanded state) */
+        #group-members-sidebar {
+            position: fixed;
+            top: 150px; /* Adjust if needed so it appears below the header */
+            right: 20px; /* Spacing from the right edge */
+            width: 250px;
+            min-height: 700px;
+            background-color: #3a3a3a;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            color: #e0e0e0;
+            max-height: calc(100% - 120px);
+            overflow-y: auto;
+            transition: width 0.3s ease, border-radius 0.3s ease, padding 0.3s ease;
+        }
+
+        #expand-member-sidebar {
+            display: none;
+        }
+
+        /* Sidebar header container */
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        /* Title (Group Members) styling */
+        .sidebar-header h2 {
+            margin: 0;
+            font-size: 20px;
+            text-align: center;
+            transition: transform 0.3s ease 0.3s, opacity 0.3s ease 0.3s; 
+            /* The 0.3s delay makes this part happen after the width change */
+        }
+
+        /* Toggle button styling */
+        #toggle-sidebar {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        /* SVG in toggle button */
+        #toggle-sidebar svg {
+            display: block;
+            transition: transform 0.3s ease;
+        }
+
+        /* Sidebar table styling remains unchanged */
+        #group-members-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        #group-members-table tr {
+            border-bottom: 1px solid #4a4a4a;
+            padding: 10px 0;
+        }
+
+        #group-members-table tr:last-child {
+            border-bottom: none;
+        }
+
+        /* Group member row layout */
+        .group-member {
+            display: flex;
+            align-items: center;
+            padding: 10px 0;
+        }
+
+        /* Adjusted profile picture for the sidebar */
+        .group-member .profile-pic {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            background-size: cover;
+            background-position: center;
+            margin-right: 10px;
+        }
+
+        /* Remove user button styling */
+        .remove-user-button {
+            background-color: #b33a3a;
+            color: #e0e0e0;
+            border: none;
+            padding: 5px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: auto;
+        }
+
+        .remove-user-button:hover {
+            background-color: #cc4a4a;
+        }
+
+        /* Responsive: hide sidebar on small screens if desired */
+        @media (max-width: 600px) {
+            #group-members-sidebar {
+                display: none;
+            }
+        }
+
+        /* === Collapsed state styles === */
+        #group-members-sidebar.collapsed {
+            width: 50px;  /* Only large enough for the icon */
+            padding: 5px;
+            border-radius: 50%;
+        }
+
+        /* Hide the title when collapsed */
+        #group-members-sidebar.collapsed .sidebar-header h2 {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+
+        /* Rotate the toggle icon (arrow) when collapsed */
+        #group-members-sidebar.collapsed #toggle-sidebar svg {
+            transform: rotate(180deg);
+        }
+
+        .hidden {
+            display: none;
+        }
+
     </style>
 </head>
 <body>
     <header>
         <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
         <nav class="desktop-nav">
-            <a href="/index" class="nav-link active">Personal notes</a>
-            <a href="/group-notes" class="nav-link">Group notes</a>
+            <a href="/index" class="nav-link">Personal notes</a>
+            <a href="/group-notes" class="nav-link active">Group notes</a>
         </nav>
         <input type="password" style="position: absolute; left: -9999px; opacity: 0;">
         <input type="text" id="mobile-search-input" placeholder="Search notes..." autocomplete="off">
-
         <div id="profile-pic" class="profile-pic no-picture"></div>
     </header>
-    
+
     <!-- Mobile Sub-Header (Only visible on mobile) -->
     <nav class="mobile-sub-header">
-        <a href="/index" class="nav-link active">Personal notes</a>
-        <a href="/group-notes" class="nav-link">Group notes</a>
-    </nav> 
+        <a href="/index" class="nav-link">Personal notes</a>
+        <a href="/group-notes" class="nav-link active">Group notes</a>
+    </nav>  
 
     <main>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background-color: #3a3a3a; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);">
+            <h2 id="group-name" style="font-size: 24px; color: #e0e0e0; margin: 0;">Loading...</h2>
+            <button id="leave-group-button" style="background-color: #b33a3a; color: #e0e0e0; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; transition: background-color 0.3s ease;">Leave Group</button>
+        </div>
+
         <form id="add-note-form">
             <input type="text" id="note-title" placeholder="Title (optional)">
             <textarea id="note-text" placeholder="Write a note..."></textarea>
@@ -627,6 +761,23 @@
         <ul id="notes-list"></ul>
         
     </main>
+    <aside id="group-members-sidebar">
+        <div class="sidebar-header">
+          <h2>Group Members</h2>
+          <button id="toggle-sidebar">
+            <!-- An inline SVG arrow with no shaft. Initially pointing up. -->
+            <svg width="24" height="24" viewBox="0 0 24 24">
+              <path d="M12 8L8 12h8L12 8z" fill="currentColor"></path>
+            </svg>
+          </button>
+        </div>
+        <table id="group-members-table">
+          <tbody>
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+    </aside>
+      
 
     <div id="overlay"></div>
 
@@ -643,7 +794,7 @@
         <textarea id="update-note-text" placeholder="Updated note text"></textarea>
         <input type="text" id="update-note-tag" placeholder="Tag (optional)">
         <button id="save-note-button">Save</button>
-        <button id="delete-button" onclick="deleteNote(currentNoteId)">Delete</button>
+        <button id="delete-button" onclick="deleteNote(sessionStorage.getItem('group_id'));">Delete</button>
         <button id="back-button">Back</button>
     </div>
 
@@ -676,6 +827,25 @@
 
         let currentNoteId = null;
 
+        let groupId = null;
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const toggleSidebarButton = document.getElementById("toggle-sidebar");
+            const expandMemberSidebarButton = document.getElementById("expand-member-sidebar");
+            const groupMembersSidebar = document.getElementById("group-members-table");
+
+            toggleSidebarButton.addEventListener("click", () => {
+                groupMembersSidebar.classList.toggle("hidden");
+                const wholeBar = document.getElementById("group-members-sidebar");
+                if (wholeBar.style.minHeight === '700px' || wholeBar.style.minHeight === '') {
+                    wholeBar.style.minHeight = '0';
+                } else {
+                    wholeBar.style.minHeight = '700px';
+                }
+            });
+
+        });
+
         document.addEventListener("DOMContentLoaded", async () => {
             const sessionKey = sessionStorage.getItem("session_key");
             const lastingKey = localStorage.getItem("lasting_key");
@@ -695,7 +865,7 @@
                         // Save session_key and redirect if needed
                         sessionStorage.setItem("session_key", data.session_key);
                         console.log("Auto-login successful!");
-                        fetchNotes();
+                        checkIfGroup();
                     } else {
                         console.error("Auto-login failed:", data.error || "Unknown error");
                         localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
@@ -741,7 +911,7 @@
                     showModal();
                 }
             }
-            fetchNotes(); // Move fetchNotes() here to ensure it's only called once
+            checkIfGroup(); // Move fetchNotes() here to ensure it's only called once
         });
 
         function showModal() {
@@ -856,7 +1026,7 @@
                     const data = await response.json();
                     sessionStorage.setItem("session_key", data.session_key);
                     hideModal();
-                    fetchNotes(); // Refresh notes
+                    checkIfGroup(); // Refresh notes
                 } else {
                     alert("Invalid username or password. Please try again.");
                 }
@@ -866,135 +1036,477 @@
             }
         });
 
-        async function fetchNotes() {
-            console.log("Fetching notes...");
+        async function checkIfGroup() {
+            console.log("Checking if user is part of a group...");
             const sessionKey = sessionStorage.getItem("session_key");
+
             if (!sessionKey) {
-            console.log("No session key found. Showing re-login modal...");
-            showModal();
-            return;
-            }
-
-            try {
-            const response = await fetch("/notes", {
-                headers: { Authorization: `Bearer ${sessionKey}` },
-            });
-
-            if (!response.ok && response.status !== 401) {
-                throw new Error(`Failed to fetch notes: ${response.status}`);
-            } else if (response.status === 401) {
-                console.log("Session key invalid. Showing re-login modal...");
+                console.log("No session key found. Showing re-login modal...");
                 showModal();
                 return;
             }
 
-            const notes = await response.json();
-            console.log("Fetched notes:", notes);
-            const notesList = document.getElementById("notes-list");
-            hideModal();
-            if (notes.length === 0) {
-                notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
-            } else {
-                notesList.innerHTML = notes.map(note => `
-                <li class="${note.note ? '' : 'empty-note'}" onclick="showViewMenu(${note.id}, '${note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', '${note.tag || ''}', '${note.title || 'Untitled'}')">
-                    <h3>${note.title || 'Untitled'}</h3>
-                    <span>${note.note ? note.note.replace(/\n/g, "<br>").substring(0, 100) + (note.note.length > 100 ? '...' : '') : 'Empty note'}</span>
-                    ${note.tag ? `<span class="note-tag">${note.tag}</span>` : ''}
-                    <button class="share-button" onclick="event.stopPropagation(); showShareModal(${note.id});" style="z-index: 1000;">Share</button>
-                </li>
-                `).join("");
-            }
+            try {
+                const response = await fetch("/check-group", {
+                    method: "GET",
+                    headers: { Authorization: `Bearer ${sessionKey}` },
+                });
 
+                const responseData = await response.json();
+
+                if (response.status === 200) {
+                    console.log("User is in a group:", responseData.group_id);
+                    sessionStorage.setItem("group_id", responseData.group_id); // Save for future use
+                    fetchNotes(responseData.group_id); // Fetch notes for the group
+                    fetchGroupInfo(responseData.group_id) // Fetch group name and members
+                } else if (response.status === 404) {
+                    console.log("User not part of any group. Showing group creation/join options...");
+                    document.getElementById("floating-add-button").style.display = 'none';
+                    document.getElementById("group-members-sidebar").style.display = 'none';
+                    const mainContent = document.querySelector("main");
+                    mainContent.innerHTML = `
+                        <div style="text-align: center; margin-top: 50px;">
+                            <h1>Welcome to groups!</h1>
+                            <h5>Sharing notes has never been so easy. Enter a group UUID to join a group, or click Create New Group to create a new group.</h5>
+                            <button id="create-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #6a6a6a; color: #e0e0e0; border: none; cursor: pointer;">Create New Group</button>
+                            <div style="margin-top: 20px;">
+                                <input type="text" id="group-uuid" placeholder="Enter Group UUID" style="padding: 10px; font-size: 16px; border-radius: 8px; width: 80%; max-width: 300px; margin-bottom: 10px;">
+                                <button id="join-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #6a6a6a; color: #e0e0e0; border: none; cursor: pointer;">Join Group</button>
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById("create-group-button").addEventListener("click", showCreateGroupModal);
+                    document.getElementById("join-group-button").addEventListener("click", joinGroup);
+                } else {
+                    throw new Error(`Unexpected response: ${response.status}`);
+                }
             } catch (error) {
-            console.error("Error fetching notes:", error);
+                console.error("Error checking group:", error);
             }
         }
-        
 
-        function showShareModal(noteId) {
-            const shareModal = document.createElement("div");
-            shareModal.id = "share-modal";
-            shareModal.style = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: #4a4a4a;
-                padding: 30px;
-                border-radius: 15px;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-                z-index: 1000;
-                width: 80%;
-                max-width: 500px;
-                opacity: 0;
-                animation: fadeIn 0.2s forwards 0.2s;
-            `;
-
-            shareModal.innerHTML = `
-                <h3>Share Note</h3>
-                <input type="text" id="share-username" placeholder="Enter username">
-                <button id="send-share-button">Send</button>
-                <button id="cancel-share-button">Cancel</button>
-            `;
-
-            document.body.appendChild(shareModal);
-            document.getElementById("overlay").style.display = "block";
-
-            const handleClickOutside = (event) => {
-                if (!shareModal.contains(event.target)) {
-                    closeShareModal();
-                }
-            };
-
-            document.addEventListener("click", handleClickOutside);
-
-            document.getElementById("send-share-button").addEventListener("click", async () => {
-                const username = document.getElementById("share-username").value.trim();
-                if (!username) {
-                    alert("Username cannot be empty.");
+        async function fetchGroupInfo(groupId) {
+            try {
+                const sessionKey = sessionStorage.getItem("session_key");
+                if (!sessionKey) {
+                    console.error("Session key is missing.");
+                    document.getElementById("group-name").textContent = "Unknown group name";
                     return;
                 }
 
-                try {
-                    const response = await fetch(`/share-note/${noteId}`, {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
-                        },
-                        body: JSON.stringify({ username }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error("Failed to share note");
+                const response = await fetch(`/group-info/${groupId}`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${sessionKey}`
                     }
+                });
 
-                    alert("Note shared successfully!");
-                    closeShareModal();
-                } catch (error) {
-                    console.error("Error sharing note:", error);
-                    alert("There was an error sharing the note. Please try again.");
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById("group-name").textContent = data.group_name;
+                    // Populate the sidebar with the returned group members
+                    populateSidebar(data.group_members, data.current_user_admin);
+                } else {
+                    document.getElementById("group-name").textContent = "Unknown group name";
                 }
-            });
-
-            document.getElementById("cancel-share-button").addEventListener("click", closeShareModal);
-
-            function closeShareModal() {
-                const shareModal = document.getElementById("share-modal");
-                if (shareModal) {
-                    shareModal.remove();
-                }
-                document.getElementById("overlay").style.display = "none";
-                document.removeEventListener("click", handleClickOutside); // Remove the event listener to prevent memory leaks
+            } catch (error) {
+                console.error("Error fetching group info:", error);
+                document.getElementById("group-name").textContent = "Unknown group name";
             }
         }
 
-    
+        async function removeGroupMember(userId) {
+            const sessionKey = sessionStorage.getItem("session_key");
+            const groupId = sessionStorage.getItem("group_id");
 
-        async function addNote() {
+            try {
+                const response = await fetch('/groups/remove-user', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionKey}`
+                    },
+                    body: JSON.stringify({ group_id: groupId, user_id: userId })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    // Refresh the sidebar with updated group info
+                    fetchGroupInfo(groupId);
+                } else {
+                    alert(data.error || 'Failed to remove user.');
+                }
+            } catch (error) {
+                console.error('Error removing user:', error);
+                alert('Error removing user.');
+            }
+        }
+
+        async function deleteGroup() {
+            if (!confirm('Are you sure you want to delete the entire group? This action cannot be undone.')) return;
+
+            const sessionKey = sessionStorage.getItem("session_key");
+            const groupId = sessionStorage.getItem("group_id");
+
+            try {
+                const response = await fetch('/groups/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionKey}`
+                    },
+                    body: JSON.stringify({ group_id: groupId })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    // Remove group info from session storage and reload (or redirect)
+                    sessionStorage.removeItem('group_id');
+                    window.location.reload();
+                } else {
+                    alert(data.error || 'Failed to delete group.');
+                }
+            } catch (error) {
+                console.error('Error deleting group:', error);
+                alert('Error deleting group.');
+            }
+        }
+
+
+        function populateSidebar(members, currentUserIsAdmin) {
+            const tbody = document.querySelector('#group-members-table tbody');
+            tbody.innerHTML = ''; // Clear previous entries
+
+            members.forEach(member => {
+                const tr = document.createElement('tr');
+                tr.classList.add('group-member');
+
+                // Profile picture cell
+                const picTd = document.createElement('td');
+                const picDiv = document.createElement('div');
+                picDiv.classList.add('profile-pic');
+                if (member.profile_pic) {
+                    picDiv.style.backgroundImage = `url(${member.profile_pic})`;
+                } else {
+                    picDiv.textContent = member.username.charAt(0).toUpperCase();
+                    picDiv.classList.add('no-picture');
+                }
+                picTd.appendChild(picDiv);
+                tr.appendChild(picTd);
+
+                // Username cell
+                const usernameTd = document.createElement('td');
+                usernameTd.textContent = member.username;
+                tr.appendChild(usernameTd);
+
+                // If the current user is admin and the member is not admin (you may also choose to prevent self‑removal)
+                if (currentUserIsAdmin && !member.is_admin) {
+                    const btnTd = document.createElement('td');
+                    const removeButton = document.createElement('button');
+                    removeButton.textContent = 'Remove';
+                    removeButton.classList.add('remove-user-button');
+                    removeButton.onclick = () => removeGroupMember(member.user_id);
+                    btnTd.appendChild(removeButton);
+                    tr.appendChild(btnTd);
+                }
+
+                tbody.appendChild(tr);
+            });
+
+            // Optionally, if the current user is admin, add a "Delete Group" button to the sidebar if not already present
+            const sidebar = document.getElementById('group-members-sidebar');
+            let deleteGroupButton = document.getElementById('delete-group-button');
+            if (currentUserIsAdmin) {
+                if (!deleteGroupButton) {
+                    deleteGroupButton = document.createElement('button');
+                    deleteGroupButton.id = 'delete-group-button';
+                    deleteGroupButton.textContent = 'Delete Group';
+                    // Style the button similarly to your other buttons
+                    deleteGroupButton.style.backgroundColor = '#b33a3a';
+                    deleteGroupButton.style.color = '#e0e0e0';
+                    deleteGroupButton.style.border = 'none';
+                    deleteGroupButton.style.padding = '10px 20px';
+                    deleteGroupButton.style.borderRadius = '8px';
+                    deleteGroupButton.style.cursor = 'pointer';
+                    deleteGroupButton.style.marginTop = '10px';
+                    deleteGroupButton.addEventListener('click', deleteGroup);
+                    sidebar.appendChild(deleteGroupButton);
+                }
+            } else {
+                // If not admin, remove the delete button if it exists
+                if (deleteGroupButton) {
+                    sidebar.removeChild(deleteGroupButton);
+                }
+            }
+        }
+
+
+        function showCreateGroupModal() {
+            const modalOverlay = document.createElement("div");
+            modalOverlay.id = "group-modal-overlay";
+            modalOverlay.style.display = "flex";
+            modalOverlay.style.position = "fixed";
+            modalOverlay.style.top = "0";
+            modalOverlay.style.left = "0";
+            modalOverlay.style.width = "100%";
+            modalOverlay.style.height = "100%";
+            modalOverlay.style.backgroundColor = "rgba(0, 0, 0, 0.6)";
+            modalOverlay.style.justifyContent = "center";
+            modalOverlay.style.alignItems = "center";
+            modalOverlay.style.zIndex = "1000";
+
+            const modal = document.createElement("div");
+            modal.style.backgroundColor = "#1E1E1E";
+            modal.style.padding = "20px 30px";
+            modal.style.borderRadius = "12px";
+            modal.style.textAlign = "center";
+            modal.style.width = "100%";
+            modal.style.maxWidth = "400px";
+            modal.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.6)";
+
+            modalOverlay.appendChild(modal);
+            document.body.appendChild(modalOverlay);
+
+            modal.innerHTML = `
+                <h2>Create New Group</h2>
+                <input id="group-name" type="text" placeholder="Group Name" style="width: calc(100% - 24px); margin: 10px 0; background-color: #2E2E2E; border: 1px solid #424242; color: #E0E0E0; padding: 10px; border-radius: 8px;">
+                <button id="confirm-create-group-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px;">Create Group</button>
+                <button id="cancel-create-group-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px; margin-left: 10px;">Cancel</button>
+            `;
+
+            document.getElementById("cancel-create-group-button").addEventListener("click", () => {
+                document.body.removeChild(modalOverlay); // Remove modal
+            });
+
+            document.getElementById("confirm-create-group-button").addEventListener("click", async () => {
+                const groupName = document.getElementById("group-name").value.trim();
+                if (!groupName) {
+                    alert("Please enter a valid Group Name.");
+                    return;
+                }
+
+                const sessionKey = sessionStorage.getItem("session_key");
+
+                try {
+                    const createResponse = await fetch("/groups", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                        body: JSON.stringify({ name: groupName }),
+                    });
+
+                    if (createResponse.ok) {
+                        console.log("Group created successfully.");
+                        document.body.removeChild(modalOverlay); // Remove modal
+                        location.reload();
+                    } else {
+                        console.error("Failed to create group.");
+                        alert("There was an error creating the group. Please try again.");
+                    }
+                } catch (error) {
+                    console.error("Error creating group:", error);
+                    alert("There was an error creating the group. Please try again.");
+                }
+            });
+        }
+
+        async function joinGroup() {
+            const groupId = document.getElementById("group-uuid").value.trim();
+            if (!groupId) {
+                alert("Please enter a valid Group ID.");
+                return;
+            }
+
+            const sessionKey = sessionStorage.getItem("session_key");
+
+            try {
+                const joinResponse = await fetch("/groups/join", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({ group_id: groupId }), 
+                });
+
+                const responseData = await joinResponse.json();
+
+                if (joinResponse.ok) {
+                    console.log(responseData.message);
+                    alert(responseData.message);
+                    sessionStorage.setItem("group_id", groupId); // Save group ID
+                    location.reload();
+                } else {
+                    console.error(responseData.error || "Failed to join group.");
+                    alert(responseData.error || "There was an error joining the group. Please try again.");
+                }
+            } catch (error) {
+                console.error("Error joining group:", error);
+                alert("There was an error joining the group. Please try again.");
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            const leaveGroupButton = document.getElementById("leave-group-button");
+
+            if (leaveGroupButton) {
+                leaveGroupButton.addEventListener("click", function () {
+                    showLeaveGroupModal();
+                });
+            }
+        });
+
+        function showLeaveGroupModal() {
+            // Create the modal dynamically
+            const modal = document.createElement("div");
+            modal.id = "leave-group-modal";
+            modal.innerHTML = `
+                <div style="
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: #2c2c2c; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                    z-index: 1000; width: 300px; text-align: center;">
+                    <p>Are you sure you want to leave this group?</p>
+                    <button id="confirm-leave" style="background: red; color: white; padding: 8px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;">
+                        Yes, Leave
+                    </button>
+                    <button id="cancel-leave" style="background: gray; color: white; padding: 8px 15px; margin: 5px; border: none; border-radius: 5px; cursor: pointer;">
+                        No, Cancel
+                    </button>
+                </div>
+                <div id="modal-overlay" style="
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(0, 0, 0, 0.5); z-index: 999;"></div>
+            `;
+            document.body.appendChild(modal);
+            document.getElementById("overlay").style.display = "block";
+
+            // Add event listeners for the buttons
+            document.getElementById("confirm-leave").addEventListener("click", leaveGroup);
+            document.getElementById("cancel-leave").addEventListener("click", function () {
+                document.body.removeChild(modal); // Remove modal on cancel
+                document.getElementById("overlay").style.display = "none";
+            });
+        }
+
+        async function leaveGroup() {
+            const sessionKey = sessionStorage.getItem("session_key");
+            if (!sessionKey) {
+                console.error("No session key found in sessionStorage.");
+                alert("You must be logged in to leave a group.");
+                return;
+            }
+
+            const leaveGroupButton = document.getElementById("leave-group-button");
+            const groupId = sessionStorage.getItem("group_id"); //Get the groupId from session storage
+            if (!groupId) {
+                console.error("No group ID found.");
+                alert("Invalid group ID.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/groups/leave", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${sessionKey}`
+                    },
+                    body: JSON.stringify({ group_id: groupId })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert("Successfully left the group!");
+                    sessionStorage.removeItem("group_id")
+                    window.location.reload(); // Reload page or redirect as needed
+                } else {
+                    alert(`Error: ${data.message || "Failed to leave group"}`);
+                }
+            } catch (error) {
+                console.error("Error leaving group:", error);
+                alert("An unexpected error occurred. Please try again.");
+            }
+
+            // Remove modal after the request
+            const modal = document.getElementById("leave-group-modal");
+            if (modal) {
+                document.body.removeChild(modal);
+            }
+        }
+                        
+
+        async function fetchNotes(groupId) {
+            console.log(`Fetching notes for group: ${groupId}...`);
+            const sessionKey = sessionStorage.getItem("session_key");
+
+            if (!sessionKey) {
+                console.log("No session key found. Showing re-login modal...");
+                showModal();
+                return;
+            }
+
+            try {
+                const response = await fetch(`/groups/${groupId}/notes`, {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${sessionKey}`
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        console.log("Session key invalid. Showing re-login modal...");
+                        showModal();
+                        return;
+                    } else if (response.status === 403) {
+                        throw new Error("Access denied: You are not a member of this group.");
+                    } else {
+                        throw new Error(`Failed to fetch notes: ${response.status}`);
+                    }
+                }
+
+                const notes = await response.json();
+                console.log("Fetched notes:", notes);
+                const notesList = document.getElementById("notes-list");
+                hideModal();
+
+                const currentGroupId = String(groupId);
+
+                if (notes.length === 0) {
+                    notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
+                } else {
+                    notesList.innerHTML = notes.map(note => `
+                        <li class="${note.note ? '' : 'empty-note'}" onclick="showViewMenu('${currentGroupId}', '${note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n")}', '${note.tag || ''}', '${note.title || 'Untitled'}')">
+                            <h3>${note.title || 'Untitled'}</h3>
+                            <span>${note.note ? note.note.replace(/\n/g, "<br>").substring(0, 100) + (note.note.length > 100 ? '...' : '') : 'Empty note'}</span>
+                            ${note.tag ? `<span class="note-tag">${note.tag}</span>` : ''}
+                        </li>
+                    `).join("");
+                }
+
+            } catch (error) {
+                console.error("Error fetching notes:", error);
+            }
+        }
+
+        async function addNote(groupId) { 
             const noteTitle = document.getElementById("note-title").value;
             const noteText = document.getElementById("note-text").value;
             const noteTag = document.getElementById("note-tag").value;
+
+            const sessionKey = sessionStorage.getItem("session_key");
+
+            if (!sessionKey) {
+                console.log("No session key found. Showing re-login modal...");
+                showModal();
+                return;
+            }
 
             if (!noteText.trim()) {
                 alert("Note cannot be empty.");
@@ -1002,28 +1514,35 @@
             }
 
             try {
-                const response = await fetch("/notes", {
+                const response = await fetch(`/groups/${groupId}/notes`, { 
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+                        Authorization : `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
-                    body: JSON.stringify({title: noteTitle || null, note: noteText, tag: noteTag || null }),
+                    body: JSON.stringify({
+                        title: noteTitle || null,
+                        note: noteText,
+                        tag: noteTag || null
+                    }),
                 });
 
-                if (!response.ok && response.status !== 401) {
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        alert("You are not a member of this group.");
+                        return;
+                    } else if (response.status === 401) {
+                        console.log("Session key invalid. Showing re-login modal...");
+                        showModal();
+                        return;
+                    } 
                     throw new Error("Failed to add note");
-                } else if (response.status === 401) {
-                    console.log("Session key invalid. Showing re-login modal...");
-                    
-                    showModal();
-                    return;
                 }
+                fetchNotes(groupId); // Refresh notes after adding
+                document.getElementById("note-title").value = ''; 
+                document.getElementById("note-text").value = ''; 
+                document.getElementById("note-tag").value = ''; 
 
-                fetchNotes();
-                document.getElementById("note-title").value = ''; // Clear the title input
-                document.getElementById("note-text").value = ''; // Clear the input
-                document.getElementById("note-tag").value = ''; // Clear the tag input
             } catch (error) {
                 console.error("Error adding note:", error);
                 alert("There was an error adding your note. Please try again.");
@@ -1034,61 +1553,70 @@
             const updatedTitle = document.getElementById("update-note-title").value;
             const updatedText = document.getElementById("update-note-text").value;
             const updatedTag = document.getElementById("update-note-tag").value;
-            if (currentNoteId) {
-                try {
-                    const response = await fetch(`/notes/${currentNoteId}`, {
-                        method: "PUT",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
-                        },
-                        body: JSON.stringify({title: updatedTitle || null, note: updatedText, tag: updatedTag || null }),
-                    });
+            const groupId = sessionStorage.getItem("group_id");
 
-                    if (!response.ok && response.status !== 401) {
-                        throw new Error("Failed to update note");
-                    } else if (response.status === 401) {
+            try {
+                const response = await fetch(`/groups/${groupId}/notes`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+                    },
+                    body: JSON.stringify({
+                        title: updatedTitle || null,
+                        note: updatedText,
+                        tag: updatedTag || null,
+                    }),
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
                         console.log("Session key invalid. Showing re-login modal...");
                         showModal();
                         return;
                     }
-
-                    currentNoteId = null;
-                    closeUpdateMenu();
-                    fetchNotes();
-                } catch (error) {
-                    console.error("Error updating note:", error);
-                    alert("There was an error updating your note. Please try again.");
-                }
-            }
-        }
-
-        async function deleteNote(noteId) {
-            try {
-                const response = await fetch(`/notes/${noteId}`, {
-                    method: "DELETE",
-                    headers: { Authorization: `Bearer ${sessionStorage.getItem("session_key")}` },
-                });
-
-                if (!response.ok && response.status !== 401) {
-                    throw new Error("Failed to delete note");
-                } else if (response.status === 401) {
-                    console.log("Session key invalid. Showing re-login modal...");
-                    showModal();
-                    return;
+                    throw new Error("Failed to update note");
                 }
 
                 closeUpdateMenu();
-                fetchNotes();
+                fetchNotes(groupId);
             } catch (error) {
-                console.error("Error deleting note:", error);
-                alert("There was an error deleting your note. Please try again.");
+                console.error("Error updating note:", error);
+                alert("There was an error updating your note. Please try again.");
             }
         }
 
-        function showViewMenu(noteId, noteText, noteTag, noteTitle) {
-            currentNoteId = noteId;
-            console.log("View Menu Opened:", { noteId, noteText, noteTag, noteTitle });
+        async function deleteNote(groupId) {
+            if (groupId) {
+                try {
+                    const response = await fetch(`/groups/${groupId}/notes`, {
+                        method: "DELETE",
+                        headers: { Authorization: `Bearer ${sessionStorage.getItem("session_key")}` },
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            console.log("Session key invalid. Showing re-login modal...");
+                            showModal();
+                            return;
+                        }
+                        throw new Error("Failed to delete note");
+                    }
+
+                    closeUpdateMenu();
+                    fetchNotes(groupId);
+                } catch (error) {
+                    console.error("Error deleting note:", error);
+                    alert("There was an error deleting your note. Please try again.");
+                }
+            }
+        }
+
+
+
+        function showViewMenu(groupId, noteText, noteTag, noteTitle) {
+            currentGroupId = groupId;
+            console.log("View Menu Opened:", {groupId, noteText, noteTag, noteTitle });
             document.getElementById("view-note-title").value = noteTitle || 'Untitled';
             document.getElementById("view-note-text").value = noteText.replace(/\\n/g, "\n");
             document.getElementById("view-note-tag").value = noteTag || ''; // Add this line
@@ -1110,16 +1638,18 @@
             }
         }
 
-        function showUpdateMenu(noteId, noteText, noteTag, noteTitle) {
-            currentNoteId = noteId;
-            console.log("Edit Menu Opened:", { noteId, noteText, noteTag, noteTitle });
-            document.getElementById("update-note-title").value = noteTitle; // Ensure title input is populated
+        function showUpdateMenu(groupId, noteText, noteTag, noteTitle) {
+            currentGroupId = groupId;
+            console.log("Edit Menu Opened:", {groupId, noteText, noteTag, noteTitle });
+
+            document.getElementById("update-note-title").value = noteTitle;
             document.getElementById("update-note-text").value = noteText.replace(/\\n/g, "\n");
-            document.getElementById("update-note-tag").value = noteTag; // Ensure tag input is populated
+            document.getElementById("update-note-tag").value = noteTag;
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("update-menu").style.display = "block";
             document.getElementById("floating-add-button").style.display = "none";
         }
+
 
 
         function closeUpdateMenu() {
@@ -1134,12 +1664,14 @@
 
 
         document.getElementById("edit-note-button").addEventListener("click", () => {
-            showUpdateMenu(currentNoteId, document.getElementById("view-note-text").value, document.getElementById("view-note-tag").value, document.getElementById("view-note-title").value);
+            const groupIdFromSession = sessionStorage.getItem("group_id");
+            showUpdateMenu(groupIdFromSession, document.getElementById("view-note-text").value, document.getElementById("view-note-tag").value, document.getElementById("view-note-title").value);
         });
+
 
         document.getElementById("back-button").addEventListener("click", () => {
             closeUpdateMenu();
-            showViewMenu(currentNoteId, document.getElementById("update-note-text").value, document.getElementById("update-note-tag").value, document.getElementById("update-note-title").value);
+            showViewMenu(currentGroupId, document.getElementById("update-note-text").value, document.getElementById("update-note-tag").value, document.getElementById("update-note-title").value);
         });
 
         document.getElementById("save-note-button").addEventListener("click", updateNote);
@@ -1203,7 +1735,8 @@
 
         document.getElementById("add-note-form").addEventListener("submit", (e) => {
             e.preventDefault();
-            addNote();
+            const groupId = sessionStorage.getItem("group_id");
+            addNote(groupId);
         });
 
         document.getElementById("overlay").addEventListener("click", closeUpdateMenu);
@@ -1220,8 +1753,15 @@
         });
 
         document.getElementById("mobile-add-note-button").addEventListener("click", async () => {
+            const noteTitle = document.getElementById("mobile-note-title").value;
             const noteText = document.getElementById("mobile-note-text").value;
             const noteTag = document.getElementById("mobile-note-tag").value;
+            const groupId = sessionStorage.getItem("group_id");
+
+            if (!groupId) {
+                alert("Error: Group ID is missing.");
+                return;
+            }
 
             if (!noteText.trim()) {
                 alert("Note cannot be empty.");
@@ -1229,27 +1769,32 @@
             }
 
             try {
-                const response = await fetch("/notes", {
+                const response = await fetch(`/groups/${groupId}/notes`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
-                    body: JSON.stringify({ note: noteText, tag: noteTag || null }),
+                    body: JSON.stringify({ title: noteTitle || null, note: noteText, tag: noteTag || null }),
                 });
 
-                if (!response.ok && response.status !== 401) {
-                    throw new Error("Failed to add note");
+                if (response.status === 403) {
+                    alert("You are not a member of this group.");
+                    return;
                 } else if (response.status === 401) {
                     console.log("Session key invalid. Showing re-login modal...");
                     showModal();
                     return;
+                } else if (!response.ok) {
+                    throw new Error("Failed to add note");
                 }
 
-                fetchNotes();
-                document.getElementById("mobile-note-title").value = ''; // Clear the title input
-                document.getElementById("mobile-note-text").value = ''; // Clear the input
-                document.getElementById("mobile-note-tag").value = ''; // Clear the tag input
+                fetchNotes(groupId);
+
+                // Clear input fields after successful submission
+                document.getElementById("mobile-note-title").value = "";
+                document.getElementById("mobile-note-text").value = "";
+                document.getElementById("mobile-note-tag").value = "";
                 document.getElementById("mobile-add-menu").style.display = "none";
                 document.getElementById("overlay").style.display = "none";
             } catch (error) {
@@ -1263,7 +1808,7 @@
             searchNotes(query);
         });
 
-        sessionStorage.setItem("last_page", "/index");
+        sessionStorage.setItem("last_page", "/group-notes");
     </script>
 </body>
 </html> 

@@ -66,6 +66,8 @@ import secrets
 from werkzeug.utils import secure_filename
 import os
 import json
+import uuid
+import glob
 
 app = Flask(__name__)
 CORS(app)
@@ -100,10 +102,29 @@ class User(db.Model):
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)  # New field
     title = db.Column(db.String(100), nullable=True)
     note = db.Column(db.Text, nullable=False)
-    tag = db.Column(db.String(100), nullable=True)  # Allow tag to be None
+    tag = db.Column(db.String(100), nullable=True)
+
+    group = db.relationship("Group", backref="notes")
+
+
+class Group(db.Model):
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class GroupMember(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=False)
+    joined_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    admin = db.Column(db.Boolean, nullable=False, default=False)
+
+    user = db.relationship("User", backref="group_memberships")
+    group = db.relationship("Group", backref="members")
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -149,6 +170,7 @@ def require_session_key(func):
     def wrapper(*args, **kwargs):
         valid, response = validate_session_key()
         if not valid:
+            print("unauthorized")
             return jsonify({"error": response}), 401
         g.user_id = response["user_id"]  # Store user ID for the route
         return func(*args, **kwargs)
@@ -184,6 +206,10 @@ def account_page():
 def admin_page():
     return render_template('admin.html')
 
+@app.route('/group-notes')
+def group_notes():
+    return render_template("group_index.html")
+
 @app.route('/contact', methods=['POST'])
 def contact():
     data = request.json
@@ -197,9 +223,289 @@ def contact():
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
+@app.route('/check-group')
+@require_session_key
+def group_info_lol():
+    print("Entering group_info route")
+    user_id = User.query.get(g.user_id)
+    print(f"Queried user_id: {user_id}")
+
+    if not user_id:
+        print("User not found")
+        return jsonify({"error": "User not found"}), 400
+    
+    group_membership = GroupMember.query.filter_by(user_id=user_id.id).first()
+    print(f"Queried group_membership: {group_membership}")
+
+    if not group_membership:
+        print("User is not in any group")
+        return jsonify({"error": "User is not in any group"}), 404
+
+    print("User is in a group")
+    return jsonify({
+        "message": "User is in a group",
+        "group_id": group_membership.group_id,
+        "is_admin": group_membership.admin
+    }), 200
+
+@app.route('/group-info/<group_id>')
+@require_session_key
+def group_info(group_id):
+    # Get the group
+    group = Group.query.get(group_id)
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+
+    # Get the current user's membership (to check if they are admin)
+    current_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
+    if not current_membership:
+        return jsonify({"error": "User is not in this group"}), 403
+
+    # Query all members of the group
+    memberships = GroupMember.query.filter_by(group_id=group_id).all()
+    members_list = []
+    for membership in memberships:
+        user = User.query.get(membership.user_id)
+        # If the profile picture exists, clean it; otherwise, set it to None.
+        if user.profile_picture:
+            cleaned_profile_pic = user.profile_picture.replace("\\", "/")
+        else:
+            cleaned_profile_pic = None
+
+        members_list.append({
+            "user_id": user.id,
+            "username": user.username,
+            "profile_pic": cleaned_profile_pic,
+            "is_admin": membership.admin
+        })
+        print(members_list)
+
+    return jsonify({
+        "group_name": group.name,
+        "group_members": members_list,
+        "current_user_admin": current_membership.admin
+    }), 200
+    
+@app.route('/groups', methods=['POST'])
+@require_session_key
+def create_group():
+    print("Entering create_group route")
+    data = request.json
+    print(f"Received data: {data}")
+    name = data.get('name')
+    print(f"Group name: {name}")
+
+    if not name:
+        print("Group name is required")
+        return jsonify({"error": "Group name is required"}), 400
+
+    new_group = Group(name=name)
+    db.session.add(new_group)
+    db.session.commit()
+    print(f"Created new group: {new_group}")
+
+    # Automatically add the creator as a member
+    membership = GroupMember(user_id=g.user_id, group_id=new_group.id, admin=True)
+    db.session.add(membership)
+    db.session.commit()
+    print(f"Added creator as member: {membership}")
+
+    return jsonify({"message": "Group created successfully!", "group_id": new_group.id}), 201
+
+@app.route('/groups/join', methods=['POST'])
+@require_session_key
+def join_group():
+    print("Entering join_group route")
+    data = request.json
+    print(f"Received data: {data}")
+    group_id = data.get('group_id')
+    print(f"Group ID: {group_id}")
+
+    group = Group.query.get(group_id)
+    print(f"Queried group: {group}")
+    if not group:
+        print("Group not found")
+        return jsonify({"error": "Group not found"}), 404
+
+    # Check if user is already in the group
+    existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried existing_member: {existing_member}")
+    if existing_member:
+        print("Already a member of this group")
+        return jsonify({"message": "Already a member of this group"}), 200
+
+    # Check if the group has no members
+    has_members = GroupMember.query.filter_by(group_id=group_id).first()
+    is_admin = not has_members  # If no members, the joining user becomes admin
+    print(f"Is first member (admin): {is_admin}")
+
+    membership = GroupMember(user_id=g.user_id, group_id=group_id, admin=is_admin)
+    db.session.add(membership)
+    db.session.commit()
+    print(f"Joined group successfully: {membership}")
+
+    return jsonify({"message": "Joined group successfully!"}), 200
+
+@app.route('/groups/leave', methods=['POST'])
+@require_session_key
+def leave_group():
+    print("Entering leave_group route")
+    data = request.json
+    print(f"Received data: {data}")
+    group_id = data.get('group_id')
+    print(f"Group ID: {group_id}")
+
+    group = Group.query.get(group_id)
+    print(f"Queried group: {group}")
+    if not group:
+        print("Group not found")
+        return jsonify({"error": "Group not found"}), 404
+
+    # Check if user is already in the group
+    existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried existing_member: {existing_member}")
+    
+    if not existing_member:
+        print("Not a member of this group")
+        return jsonify({"message": "Not a member of this group!"}), 403
+
+    # Delete the existing membership from the database
+    db.session.delete(existing_member)
+    db.session.commit()  # Commit the transaction
+
+    print("Left group successfully: Membership deleted")
+    return jsonify({"message": "Left group successfully!"}), 200
+
+@app.route('/groups/remove-user', methods=['POST'])
+@require_session_key
+def remove_user_from_group():
+    data = request.get_json()
+    group_id = data.get("group_id")
+    user_id_to_remove = data.get("user_id")
+
+    # Verify that the current user is an admin of the group
+    admin_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
+    if not admin_membership or not admin_membership.admin:
+        return jsonify({"error": "Unauthorized: only admins can remove users."}), 403
+
+    # Find the membership for the user to remove
+    member_to_remove = GroupMember.query.filter_by(group_id=group_id, user_id=user_id_to_remove).first()
+    if not member_to_remove:
+        return jsonify({"error": "User not found in the group."}), 404
+
+    db.session.delete(member_to_remove)
+    db.session.commit()
+    return jsonify({"message": "User removed successfully."}), 200
+
+@app.route('/groups/delete', methods=['POST'])
+@require_session_key
+def delete_group():
+    data = request.get_json()
+    group_id = data.get("group_id")
+
+    # Verify that the current user is an admin of the group
+    admin_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
+    if not admin_membership or not admin_membership.admin:
+        return jsonify({"error": "Unauthorized: only admins can delete the group."}), 403
+
+    # Remove all group memberships
+    GroupMember.query.filter_by(group_id=group_id).delete()
+    # Remove all notes belonging to the group
+    Note.query.filter_by(group_id=group_id).delete()
+    # Remove the group itself
+    group = Group.query.get(group_id)
+    if group:
+        db.session.delete(group)
+
+    db.session.commit()
+    return jsonify({"message": "Group deleted successfully."}), 200
+
+
+@app.route('/groups/<string:group_id>/notes', methods=['GET'])
+@require_session_key
+def get_group_notes(group_id):
+    print("Entering get_group_notes route")
+    print(f"Group ID: {group_id}")
+
+    # Ensure the user is part of the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried membership: {membership}")
+    if not membership:
+        print("Not a member of this group")
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    notes = Note.query.filter_by(group_id=group_id).all()
+    print(f"Queried notes: {notes}")
+    sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
+    print(f"Sanitized notes: {sanitized_notes}")
+
+    return jsonify(sanitized_notes)
+
+@app.route('/groups/<string:group_id>/notes', methods=['POST'])
+@require_session_key
+def add_group_note(group_id):
+    print("Entering add_group_note route")
+    data = request.json
+    print(f"Received data: {data}")
+    title = data.get('title')
+    note_text = data['note']
+    tag = data.get('tag')
+    print(f"Title: {title}, Note: {note_text}, Tag: {tag}")
+
+    # Ensure user is in the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried membership: {membership}")
+    if not membership:
+        print("Not a member of this group")
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    new_note = Note(group_id=group_id, title=title, note=note_text, tag=tag)
+    db.session.add(new_note)
+    db.session.commit()
+    print(f"Added new note: {new_note}")
+
+    return jsonify({"message": "Group note added successfully!"}), 201
+
+@app.route('/groups/<string:group_id>/notes', methods=['PUT', 'DELETE'])
+@require_session_key
+def update_delete_group_note(group_id):
+    print("Entering update_delete_group_note route")
+    print(f"Group ID: {group_id}")
+
+    # Use filter_by to query by group_id
+    note = Note.query.filter_by(group_id=group_id).first()
+    print(f"Queried note: {note}")
+
+    if not note or note.group_id != group_id:
+        print("Note not found")
+        return jsonify({"error": "Note not found"}), 404
+
+    # Ensure user is part of the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    print(f"Queried membership: {membership}")
+    if not membership:
+        print("Not a member of this group")
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    if request.method == 'PUT':
+        data = request.json
+        print(f"Received data: {data}")
+        note.title = data.get('title')
+        note.note = data['note']
+        note.tag = data.get('tag')
+        db.session.commit()
+        print("Note updated successfully")
+        return jsonify({"message": "Note updated successfully!"}), 200
+
+    elif request.method == 'DELETE':
+        db.session.delete(note)
+        db.session.commit()
+        print("Note deleted successfully")
+        return jsonify({"message": "Note deleted successfully!"}), 200
 
 
 @app.route('/share-note/<int:note_id>', methods=['POST'])
+@require_session_key
 def share_note(note_id):
     data = request.get_json()
     username = data.get('username')
@@ -451,18 +757,15 @@ def login():
             return jsonify({"error": "Invalid credentials"}), 400
 
         key = generate_session_key(user.id)
-
         if data.get('keep_login'):
-            # Check if user already has a lasting key
-            if not user.lasting_key:
-                user.lasting_key = secrets.token_hex(32)  # Generate new lasting key only if none exists
-            
+            new_lasting_key = secrets.token_hex(32)
+            user.lasting_key = new_lasting_key
             db.session.commit()
             return jsonify({
                 "message": "Login successful!",
                 "session_key": key,
                 "user_id": user.id,
-                "lasting_key": user.lasting_key  # Reuse existing key if available
+                "lasting_key": new_lasting_key
             }), 200
 
         return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
@@ -556,6 +859,7 @@ def update_username():
 def delete_account():
     data = request.json
     user = User.query.get(g.user_id)
+    
     if not user:
         return jsonify({"error": "User not found"}), 404
 
@@ -563,13 +867,68 @@ def delete_account():
         return jsonify({"error": "Incorrect password"}), 400
 
     try:
-        Note.query.filter_by(user_id=user.id).delete()
-        db.session.delete(user)
+        delete_profile_pictures(user.username)
+        handle_group_membership(user.id)
+        delete_user_and_data(user)
+        
         db.session.commit()
         return jsonify({"message": "Account and all related data deleted successfully!"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+def delete_profile_pictures(username):
+    """ Deletes all profile pictures associated with the given username. """
+    profile_pictures_path = os.path.join(UPLOAD_FOLDER)
+    user_pictures = glob.glob(os.path.join(profile_pictures_path, f"{username}_*"))
+
+    for picture in user_pictures:
+        try:
+            os.remove(picture)
+        except Exception as e:
+            print(f"Failed to delete {picture}: {e}")
+
+
+def handle_group_membership(user_id):
+    """ Handles removal or admin transfer for groups the user is in. """
+    memberships = GroupMember.query.filter_by(user_id=user_id).all()
+
+    for membership in memberships:
+        if not membership.admin:
+            db.session.delete(membership)
+        else:
+            group_id = membership.group_id
+            group_members = GroupMember.query.filter_by(group_id=group_id).all()
+
+            if len(group_members) == 1:
+                delete_group_and_notes(group_id)
+            else:
+                transfer_admin_rights(group_id, user_id)
+
+            db.session.delete(membership)
+
+
+def transfer_admin_rights(group_id, admin_id):
+    """ Transfers admin rights to the next available group member. """
+    next_admin = GroupMember.query.filter(GroupMember.group_id == group_id, GroupMember.user_id != admin_id).first()
+
+    if next_admin:
+        next_admin.admin = True
+    else:
+        raise Exception("No other members found to transfer admin rights.")
+
+
+def delete_group_and_notes(group_id):
+    """ Deletes all notes associated with the group and removes the group. """
+    Note.query.filter_by(group_id=group_id).delete()
+    Group.query.filter_by(id=group_id).delete()
+
+
+def delete_user_and_data(user):
+    """ Deletes all notes and the user itself. """
+    Note.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
 
 if __name__ == "__main__":
     with app.app_context():

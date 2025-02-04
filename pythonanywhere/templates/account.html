@@ -395,7 +395,7 @@
 </head>
 <body>
     <header>
-        <a href="/index" class="back-button" aria-label="Go back to web app">←</a>
+        <a href="/index" class="back-button" id="back-button" aria-label="Go back to web app">←</a>
         <h1>Account</h1>
     </header>
 
@@ -702,6 +702,9 @@
             console.log("Re-login modal hidden!")
             location.reload();
         }
+
+        const lastActivePage = sessionStorage.getItem("last_page") || "/index";
+        document.getElementById("back-button").href = lastActivePage;
 
         document.getElementById('profile-picture-upload').addEventListener('change', function() {
             var fileName = this.files[0] ? this.files[0].name : 'No file selected';
