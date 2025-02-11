@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zeeslag - Spectate</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #000;
+    }
+    h1, h2 {
+      margin-bottom: 10px;
+    }
+    .board-container {
+      display: inline-block;
+      margin: 20px;
+      background: rgba(0,0,0,0.75);
+      padding: 20px;
+      border-radius: 10px;
+      color: #fff;
+    }
+    table {
+      border-collapse: collapse;
+      margin: auto;
+    }
+    td {
+      width: 30px;
+      height: 30px;
+      border: 1px solid #333;
+      text-align: center;
+      vertical-align: middle;
+      font-weight: bold;
+      background: rgba(0,0,0,0.1);
+    }
+    .hit {
+      background-color: red;
+      color: white;
+    }
+    .miss {
+      background-color: lightgray;
+      color: black;
+      font-size: 18px;
+      line-height: 30px;
+    }
+    .sunk {
+      background-color: darkred;
+      color: white;
+    }
+    .incoming-miss {
+      background-color: orange;
+      animation: fadeOut 2s forwards;
+    }
+    @keyframes fadeOut {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Zeeslag - Spectate</h1>
+  <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
+  
+  <div class="board-container">
+    <h2 id="player1Name">Speler 1</h2>
+    <table id="player1Board"></table>
+  </div>
+  <div class="board-container">
+    <h2 id="player2Name">Speler 2</h2>
+    <table id="player2Board"></table>
+  </div>  
+
+  <script>
+    const boardSize = 10;
+    // Retrieve gameCode from the URL query parameter:
+    const urlParams = new URLSearchParams(window.location.search);
+    const gameCode = urlParams.get('gameCode');
+    if (!gameCode) {
+      document.getElementById('statusMessage').innerText = "Geen gameCode opgegeven.";
+    }
+
+    // Create boards for both players.
+    function createBoard(tableId) {
+      const table = document.getElementById(tableId);
+      for (let y = 0; y < boardSize; y++) {
+        const tr = document.createElement('tr');
+        for (let x = 0; x < boardSize; x++) {
+          const td = document.createElement('td');
+          td.id = `${tableId}-${x}-${y}`;
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+    }
+    createBoard('player1Board');
+    createBoard('player2Board');
+
+    // Poll the spectate endpoint to update both boards.
+    function updateSpectateState() {
+      fetch(`/spectate_state?gameCode=${gameCode}`)
+        .then(res => res.json())
+        .then(game => {
+          if (game.error) {
+            document.getElementById('statusMessage').innerText = game.error;
+            return;
+          }
+          document.getElementById('statusMessage').innerText = `Status: ${game.status}`;
+
+          if (game.status === "gameover" && game.winner) {
+            document.getElementById('statusMessage').innerText = `Gewonnen door: ${game.winner}`;
+        } else {
+            document.getElementById('statusMessage').innerText = `Status: ${game.status}`;
+        }
+
+        // Update the board headings with the player names.
+        if (game.players.player1) {
+            document.getElementById('player1Name').innerText = game.players.player1.name;
+        }
+        if (game.players.player2) {
+            document.getElementById('player2Name').innerText = game.players.player2.name;
+        }
+
+          // For both players update their boards.
+          ['player1', 'player2'].forEach(player => {
+            const playerData = game.players[player];
+            if (!playerData) return;
+
+            // Clear board cells.
+            for (let y = 0; y < boardSize; y++) {
+              for (let x = 0; x < boardSize; x++) {
+                const cell = document.getElementById(`${player}Board-${x}-${y}`);
+                cell.className = "";
+                cell.innerText = "";
+              }
+            }
+            // Mark hit positions.
+            if (playerData.hits) {
+              playerData.hits.forEach(pos => {
+                const cell = document.getElementById(`${player}Board-${pos[0]}-${pos[1]}`);
+                if (cell) {
+                  cell.classList.add('hit');
+                  cell.innerText = "X";
+                }
+              });
+            }
+            // Mark misses.
+            if (playerData.misses) {
+              playerData.misses.forEach(pos => {
+                const cell = document.getElementById(`${player}Board-${pos[0]}-${pos[1]}`);
+                if (cell) {
+                  cell.classList.add('miss');
+                  cell.innerText = "O";
+                }
+              });
+            }
+            // Mark sunk ships.
+            if (playerData.sunk_ships) {
+              playerData.sunk_ships.forEach(ship => {
+                ship.positions.forEach(pos => {
+                  const cell = document.getElementById(`${player}Board-${pos[0]}-${pos[1]}`);
+                  if (cell) {
+                    // Ensure that sunk markers override any previous marker.
+                    cell.className = "sunk";
+                    cell.innerText = "S";
+                  }
+                });
+              });
+            }
+          });
+        })
+        .catch(err => {
+          console.error('Error fetching spectate state:', err);
+          document.getElementById('statusMessage').innerText = "Serverfout. Probeer opnieuw.";
+        });
+    }
+    
+    // Poll every 500ms.
+    setInterval(updateSpectateState, 500);
+    updateSpectateState();
+  </script>
+</body>
+</html>

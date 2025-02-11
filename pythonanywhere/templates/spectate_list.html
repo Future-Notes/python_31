@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zeeslag - Ongoing Games</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #000;
+    }
+    h1, h2 {
+      margin-bottom: 10px;
+    }
+    .container {
+      background: rgba(0,0,0,0.75);
+      padding: 20px;
+      border-radius: 10px;
+      display: inline-block;
+      color: #fff;
+      margin-top: 20px;
+    }
+    .pin-container {
+      margin-bottom: 20px;
+    }
+    .pin-input {
+      padding: 10px;
+      font-size: 16px;
+      width: 200px;
+      border: 1px solid #333;
+      border-radius: 5px;
+    }
+    .pin-button {
+      padding: 10px 15px;
+      font-size: 16px;
+      margin-left: 10px;
+      border: none;
+      border-radius: 5px;
+      background-color: #007BFF;
+      color: white;
+      cursor: pointer;
+    }
+    .game-list {
+      list-style-type: none;
+      padding: 0;
+    }
+    .game-list li {
+      margin: 10px 0;
+      padding: 10px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .game-list li:hover {
+      background: rgba(255,255,255,0.4);
+    }
+  </style>
+</head>
+<body>
+  <h1>Zeeslag - Ongoing Games</h1>
+  <div class="container">
+    <!-- PIN section -->
+    <div id="pinSection" class="pin-container">
+      <h2>Enter PIN to Unlock</h2>
+      <input type="password" id="pinInput" class="pin-input" placeholder="PIN">
+      <button id="pinButton" class="pin-button">Unlock</button>
+      <p id="pinError" style="color: red; display: none;">Incorrect PIN. Please try again.</p>
+    </div>
+
+    <!-- Games list section -->
+    <div id="gamesSection" style="display: none;">
+      <h2>Ongoing Games</h2>
+      <ul id="gamesList" class="game-list">
+        <!-- Game items will be injected here -->
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // Set your PIN here
+    const CORRECT_PIN = "1234";
+
+    // Handle PIN submission
+    document.getElementById("pinButton").addEventListener("click", function() {
+      const enteredPin = document.getElementById("pinInput").value;
+      if (enteredPin === CORRECT_PIN) {
+        document.getElementById("pinSection").style.display = "none";
+        document.getElementById("gamesSection").style.display = "block";
+        fetchGames();
+        // Poll for ongoing games every 10 seconds (10000ms)
+        setInterval(fetchGames, 10000);
+      } else {
+        document.getElementById("pinError").style.display = "block";
+      }
+    });
+
+    // Optionally, allow the Enter key to submit the PIN.
+    document.getElementById("pinInput").addEventListener("keyup", function(e) {
+      if (e.key === "Enter") {
+        document.getElementById("pinButton").click();
+      }
+    });
+
+    // Function to fetch ongoing games from the backend.
+    function fetchGames() {
+      fetch('/list_games')
+        .then(response => response.json())
+        .then(data => {
+          const gamesList = document.getElementById("gamesList");
+          gamesList.innerHTML = "";
+          if (!data.games || data.games.length === 0) {
+            gamesList.innerHTML = "<li>No ongoing games available.</li>";
+          } else {
+            data.games.forEach(game => {
+              // Create a clickable list item for each game.
+              const li = document.createElement("li");
+              li.innerText = `Game Code: ${game.gameCode} - Status: ${game.status}`;
+              li.addEventListener("click", function() {
+                // Redirect to spectate page with gameCode as a query parameter.
+                window.location.href = `/spectate_callback?gameCode=${game.gameCode}`;
+              });
+              gamesList.appendChild(li);
+            });
+          }
+        })
+        .catch(err => {
+          console.error("Error fetching games:", err);
+          document.getElementById("gamesList").innerHTML = "<li>Error fetching games.</li>";
+        });
+    }
+  </script>
+</body>
+</html>

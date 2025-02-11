@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Zeeslag - Lobby</title>
+  <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* Overall page style with an ocean background */
+    body {
+      font-family: 'Roboto', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #fff;
+    }
+
+    /* Container for the lobby and confirmation screens */
+    #lobby, .confirmation {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 30px;
+      border-radius: 10px;
+      max-width: 400px;
+      margin: 80px auto;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Header styling to evoke a bold battleship title */
+    h1 {
+      text-align: center;
+      font-size: 2.5em;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    /* Input and button styling for consistency */
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: none;
+      border-radius: 4px;
+      font-size: 1em;
+      box-sizing: border-box;
+    }
+
+    input {
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+    }
+
+    button {
+      background: #007BFF;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    /* Styling for paragraphs in the confirmation message */
+    .confirmation p {
+      font-size: 1.2em;
+      text-align: center;
+      margin: 15px 0;
+    }
+
+    /* Mobile optimizations */
+    @media (max-width: 480px) {
+      body {
+        padding: 10px;
+      }
+
+      #lobby, .confirmation {
+        padding: 20px;
+        width: 95%;
+      }
+
+      h1 {
+        font-size: 1.8em;
+      }
+
+      input, button {
+        font-size: 0.9em;
+        padding: 10px;
+      }
+
+      .confirmation p {
+        font-size: 1em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Lobby container -->
+  <div id="lobby">
+    <!-- Logo added above the title -->
+    <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+    <h1>Zeeslag Lobby</h1>
+    <div style="text-align: center; margin: 20px 0;">
+      <hr style="border: 1px solid #fff;">
+      <p style="margin: 10px 0;">Maak een game aan:</p>
+    </div>
+    <input id="createPlayerName" type="text" placeholder="Jouw naam">
+    <button id="createGame">Game aanmaken</button>
+    <div style="text-align: center; margin: 20px 0;">
+      <hr style="border: 1px solid #fff;">
+      <p style="margin: 10px 0;">Of join een game:</p>
+    </div>
+    <input id="joinPlayerName" type="text" placeholder="Jouw naam">
+    <input id="joinCode" type="text" placeholder="Game Code">
+    <button id="joinGame">Game joinen</button>
+  </div>
+
+  <script>
+    let gameCode = null;
+    let player = null;
+
+    // Create game: send a POST to /create and then clear the DOM to show a confirmation screen.
+    document.getElementById('createGame').addEventListener('click', () => {
+      const name = document.getElementById('createPlayerName').value.trim();
+      if (!name) {
+        alert("Voer alsjeblieft je naam in.");
+        return;
+      }
+      localStorage.setItem('playerName', name);
+      fetch('/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({playerName: name})
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.gameCode) {
+          gameCode = data.gameCode;
+          player = "player1";
+          // Clear the entire DOM and show a confirmation message with the logo.
+          document.body.innerHTML = `
+            <div class="confirmation">
+              <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+              <h1>Game aangemaakt!</h1>
+              <p>Je Game Code is:</p>
+              <p style="font-size:2em; font-weight:bold;">${gameCode}</p>
+              <p>Deel deze code met je tegenstander om te starten.</p>
+            </div>
+          `;
+        } else if (data.error) {
+          alert(data.error);
+        }
+      })
+      .catch(error => console.error("Error:", error));
+    });
+
+    // Join game: send a POST to /join and show a waiting message.
+    document.getElementById('joinGame').addEventListener('click', () => {
+      const name = document.getElementById('joinPlayerName').value.trim();
+      const code = document.getElementById('joinCode').value.trim();
+      if (!name || !code) {
+        alert("Voer alsjeblieft je naam en game code in.");
+        return;
+      }
+      localStorage.setItem('playerName', name);
+      fetch('/join', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({playerName: name, gameCode: code})
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (!data.error) {
+          gameCode = code;
+          player = "player2";
+          // Update the lobby container to show a waiting message along with the logo.
+          document.getElementById('lobby').innerHTML = `
+            <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+            <h1>Zeeslag Lobby</h1>
+            <p style="text-align:center; font-size:1.2em;">Game met succes gejoined. Wachten totdat beide spelers klaar zijn...</p>
+          `;
+        } else {
+          alert(data.error);
+        }
+      })
+      .catch(error => console.error("Error:", error));
+    });
+
+    // Poll the server for the game status every second.
+    setInterval(() => {
+      if (gameCode) {
+        fetch(`/game_state?gameCode=${gameCode}`)
+          .then(res => res.json())
+          .then(game => {
+            // Once both players have joined and the status is "placing", redirect to the setup page.
+            if (game.opponentJoined && game.status === "placing") {
+              // Save game info so the setup page can use it.
+              localStorage.setItem('gameCode', gameCode);
+              localStorage.setItem('player', player);
+              window.location.href = '/setup';
+            }
+          })
+          .catch(error => console.error("Error polling game state:", error));
+      }
+    }, 1000);
+  </script>
+</body>
+</html>

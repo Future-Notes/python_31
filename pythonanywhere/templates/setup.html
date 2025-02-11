@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Battleship Setup</title>
+  <!-- Include a Google Font for a modern look -->
+  <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* Global Styles */
+    body {
+      font-family: 'Roboto', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #fff;
+    }
+    /* Container styling matching the lobby page */
+    #setup-container {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 30px;
+      border-radius: 10px;
+      max-width: 500px;
+      margin: 80px auto;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+      text-align: center;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    p {
+      font-size: 1.2em;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 10px;
+      margin: 10px;
+      border: none;
+      border-radius: 4px;
+      font-size: 1em;
+      cursor: pointer;
+      background: #007BFF;
+      color: #fff;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    /* Ship Selection Panel */
+    #ship-selection {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ship {
+      background: #00BFFF;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: grab;
+      user-select: none;
+      display: inline-block;
+      color: #000;
+    }
+    .ship.selected {
+      border: 2px solid yellow;
+    }
+    /* Board Container */
+    #boardContainer {
+      margin: 20px auto;
+      overflow-x: auto;
+    }
+    /* Battleship grid styling */
+    table {
+      border-collapse: collapse;
+      margin: 0 auto;
+    }
+    td {
+      width: 40px;
+      height: 40px;
+      border: 2px solid #007BFF;
+      text-align: center;
+      vertical-align: middle;
+      background: rgba(0, 0, 0, 0.1);
+      transition: background 0.3s ease;
+      position: relative;
+    }
+    /* Style for cells where ships have been placed */
+    .ship-cell {
+      background-color: #00BFFF;
+    }
+
+    .disabled {
+      background-color: #333;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .disabled:hover {
+      background-color: #333;
+    }
+    /* Responsive adjustments */
+    @media (max-width: 600px) {
+      td {
+        width: 30px;
+        height: 30px;
+      }
+      #setup-container {
+        max-width: 90%;
+        margin: 20px auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="setup-container">
+    <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+    <h1>Plaats je schepen!</h1>
+    <p>Sleep de schepen naar het speelveld en klik op "Klaar" als je klaar bent. Dubbelklik een schip om te verwijderen.</p>
+    <p>
+      <strong>Orientatie:</strong> <span id="orientationDisplay">Horizontaal</span>
+      <button id="toggleOrientation">Orientatie draaien</button>
+    </p>
+    <!-- The Ship Selection Panel -->
+    <div id="ship-selection"></div>
+    
+    <!-- The Board -->
+    <div id="boardContainer"></div>
+    
+    <button id="done" class="disabled" disabled>Klaar</button>
+  </div>
+  
+  <script>
+    // Retrieve game info from localStorage.
+    const gameCode = localStorage.getItem('gameCode'); 
+    const player = localStorage.getItem('player');
+    
+    // Define the ships (by length) that need to be placed.
+    // For example: one ship of length 2, two ships of length 3, one ship of length 4.
+    const shipSizes = [2, 3, 3, 4];
+    // availableShips holds ship objects that have not yet been placed.
+    let availableShips = []; // Each: {id, length}
+    // placedShips will hold placed ships: {id, length, orientation, positions}
+    let placedShips = [];
+    
+    // Global orientation state: 'H' for Horizontal, 'V' for Vertical.
+    let currentOrientation = 'H';
+    const boardSize = 10;
+    
+    // For mobile alternative selection.
+    let selectedShipId = null;
+    const isMobile = ('ontouchstart' in window);
+    
+    // Initialize availableShips with a unique id for each ship.
+    shipSizes.forEach((length, index) => {
+      availableShips.push({ id: 'ship-' + index, length: length });
+    });
+    
+    // Render the ship selection panel.
+    function renderShipSelection() {
+      const container = document.getElementById('ship-selection');
+      container.innerHTML = '';
+      availableShips.forEach(ship => {
+        const shipDiv = document.createElement('div');
+        shipDiv.className = 'ship';
+        shipDiv.draggable = true;
+        shipDiv.innerText = 'Schip met lengte ' + ship.length;
+        shipDiv.dataset.shipId = ship.id;
+        shipDiv.dataset.length = ship.length;
+        // Drag events for desktop browsers.
+        shipDiv.addEventListener('dragstart', shipDragStart);
+        // For mobile (or touch devices), allow tapping to select.
+        shipDiv.addEventListener('click', () => {
+          if (selectedShipId === ship.id) {
+            selectedShipId = null;
+            shipDiv.classList.remove('selected');
+          } else {
+            selectedShipId = ship.id;
+            document.querySelectorAll('.ship').forEach(el => el.classList.remove('selected'));
+            shipDiv.classList.add('selected');
+          }
+        });
+        container.appendChild(shipDiv);
+      });
+    }
+    
+    // Dragstart handler: attach ship info to the drag event.
+    function shipDragStart(e) {
+      const shipId = e.target.dataset.shipId;
+      const length = e.target.dataset.length;
+      e.dataTransfer.setData('text/plain', JSON.stringify({ shipId, length }));
+    }
+    
+    // Create a 10x10 board.
+    function createBoard() {
+      const container = document.getElementById('boardContainer');
+      const table = document.createElement('table');
+      for (let y = 0; y < boardSize; y++) {
+        const tr = document.createElement('tr');
+        for (let x = 0; x < boardSize; x++) {
+          const td = document.createElement('td');
+          td.dataset.x = x;
+          td.dataset.y = y;
+          // Allow dropping onto cells.
+          td.addEventListener('dragover', (e) => {
+            e.preventDefault();
+          });
+          td.addEventListener('drop', boardDrop);
+          // For mobile alternative: if a ship is selected, tap to place.
+          td.addEventListener('click', boardCellClick);
+          // Allow repositioning: double-click (or double-tap) to remove a placed ship.
+          td.addEventListener('dblclick', removePlacedShip);
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+      container.appendChild(table);
+    }
+    
+    // Handle drop on board cells (desktop drag&drop).
+    function boardDrop(e) {
+      e.preventDefault();
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const shipId = data.shipId;
+      const length = parseInt(data.length);
+      const startX = parseInt(e.target.dataset.x);
+      const startY = parseInt(e.target.dataset.y);
+      placeShip(shipId, length, startX, startY, currentOrientation);
+    }
+    
+    // Mobile alternative: when a board cell is tapped and a ship is selected.
+    function boardCellClick(e) {
+      if (!isMobile || !selectedShipId) return;
+      const ship = availableShips.find(s => s.id === selectedShipId);
+      if (!ship) return;
+      const startX = parseInt(e.target.dataset.x);
+      const startY = parseInt(e.target.dataset.y);
+      placeShip(ship.id, ship.length, startX, startY, currentOrientation);
+      // Clear selection.
+      selectedShipId = null;
+      document.querySelectorAll('.ship').forEach(el => el.classList.remove('selected'));
+    }
+    
+    // Attempt to place a ship at the given starting cell.
+    function placeShip(shipId, length, startX, startY, orientation) {
+      // Determine the cells that would be occupied.
+      const proposed = [];
+      if (orientation === 'H') {
+        if (startX + length > boardSize) return; // Out of bounds.
+        for (let i = 0; i < length; i++) {
+          proposed.push({ x: startX + i, y: startY });
+        }
+      } else {
+        if (startY + length > boardSize) return; // Out of bounds.
+        for (let i = 0; i < length; i++) {
+          proposed.push({ x: startX, y: startY + i });
+        }
+      }
+      // Check for overlap with already placed ships.
+      for (let ship of placedShips) {
+        for (let cell of ship.positions) {
+          if (proposed.some(p => p.x === cell.x && p.y === cell.y)) {
+            return; // Overlap detected; ignore placement.
+          }
+        }
+      }
+      
+      // If the ship is still in the availableShips list, remove it;
+      // otherwise, it is being repositioned.
+      const index = availableShips.findIndex(s => s.id === shipId);
+      if (index !== -1) {
+        availableShips.splice(index, 1);
+      } else {
+        // Repositioning: remove its previous placement.
+        removeShipFromBoard(shipId);
+        const placedIndex = placedShips.findIndex(s => s.id === shipId);
+        if (placedIndex !== -1) {
+          placedShips.splice(placedIndex, 1);
+        }
+      }
+      
+      // Add the new ship placement.
+      const newShip = { id: shipId, length: length, orientation: orientation, positions: proposed };
+      placedShips.push(newShip);
+      renderBoard();
+      renderShipSelection();
+      updateDoneButton();
+    }
+    
+    // Render the board, marking cells occupied by placed ships.
+    function renderBoard() {
+      // First, clear all board cells.
+      document.querySelectorAll('#boardContainer td').forEach(cell => {
+        cell.classList.remove('ship-cell');
+        cell.removeAttribute('data-ship-id');
+      });
+      // Then, for each placed ship, mark its cells.
+      placedShips.forEach(ship => {
+        ship.positions.forEach(pos => {
+          const cell = document.querySelector(`td[data-x="${pos.x}"][data-y="${pos.y}"]`);
+          if (cell) {
+            cell.classList.add('ship-cell');
+            cell.setAttribute('data-ship-id', ship.id);
+          }
+        });
+      });
+    }
+    
+    // When a cell is double–clicked, remove the ship placed there so it can be repositioned.
+    function removePlacedShip(e) {
+      const shipId = e.target.getAttribute('data-ship-id');
+      if (!shipId) return;
+      removeShipFromBoard(shipId);
+      const index = placedShips.findIndex(s => s.id === shipId);
+      if (index !== -1) {
+        const removedShip = placedShips.splice(index, 1)[0];
+        availableShips.push({ id: removedShip.id, length: removedShip.length });
+      }
+      renderBoard();
+      renderShipSelection();
+      updateDoneButton();
+    }
+    
+    // Helper: Remove all cell markers for a ship with the given id.
+    function removeShipFromBoard(shipId) {
+      document.querySelectorAll(`#boardContainer td[data-ship-id="${shipId}"]`).forEach(cell => {
+        cell.classList.remove('ship-cell');
+        cell.removeAttribute('data-ship-id');
+      });
+    }
+    
+    // Enable the "Done" button only when all ships have been placed.
+    function updateDoneButton() {
+      const doneBtn = document.getElementById('done');
+      if (availableShips.length > 0) {
+      doneBtn.disabled = true;
+      doneBtn.classList.add('disabled');
+      } else {
+      doneBtn.disabled = false;
+      doneBtn.classList.remove('disabled');
+      }
+    }
+    
+    // Toggle orientation.
+    document.getElementById('toggleOrientation').addEventListener('click', function() {
+      currentOrientation = (currentOrientation === 'H' ? 'V' : 'H');
+      document.getElementById('orientationDisplay').innerText = (currentOrientation === 'H' ? 'Horizontaal' : 'Verticaal');
+    });
+    
+    // When "Done" is clicked, send the placements to the server.
+    document.getElementById('done').addEventListener('click', function() {
+      const payload = {
+        gameCode: gameCode,
+        player: player,
+        ships: placedShips.map(ship => ({
+          length: ship.length,
+          orientation: ship.orientation,
+          positions: ship.positions.map(p => [p.x, p.y])
+        }))
+      };
+      fetch('/place_ships', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          alert(data.error);
+        } else {
+          window.location.href = '/battle';
+        }
+      });
+    });
+    
+    // Initialize the page.
+    renderShipSelection();
+    createBoard();
+    updateDoneButton();
+  </script>
+</body>
+</html>
