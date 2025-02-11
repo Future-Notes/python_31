@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zeeslag - Game</title>
+  <!-- Preload the logo image for smoother animations -->
+  <link rel="preload" as="image" href="static/zeeslag.png">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #000;
+    }
+    h1, h2 {
+      margin-bottom: 10px;
+    }
+    .board-container {
+      display: inline-block;
+      margin: 20px;
+      background: rgba(0,0,0,0.75);
+      padding: 20px;
+      border-radius: 10px;
+      color: white;
+    }
+    table {
+      border-collapse: collapse;
+      margin: auto;
+    }
+    td {
+      width: 30px;
+      height: 30px;
+      border: 1px solid #333;
+      text-align: center;
+      vertical-align: middle;
+      font-weight: bold;
+      cursor: default;
+      background: rgba(0,0,0,0.1);
+    }
+    /* --- Board Cell Styles --- */
+    .ship {
+      background-color: lightblue;
+    }
+    .hit {
+      background-color: red;
+      color: white;
+    }
+    .miss {
+      background-color: lightgray;
+      color: black;
+      font-size: 18px;
+      line-height: 30px;
+    }
+    .clickable {
+      cursor: pointer;
+    }
+    .sunk {
+      background-color: darkred;
+      color: white;
+    }
+    .incoming-miss {
+      background-color: orange;
+      -webkit-animation: fadeOut 2s forwards;
+      animation: fadeOut 2s forwards;
+    }
+    @-webkit-keyframes fadeOut {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    @keyframes fadeOut {
+      0% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    /* --- Floating Sunk Message --- */
+    .sunk-message {
+      position: fixed;
+      top: -50px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: #FFD700;
+      padding: 10px 20px;
+      border-radius: 5px;
+      font-size: 18px;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .sunk-message.show {
+      animation: slideDown 0.5s forwards, fadeOut 0.5s 2.5s forwards;
+    }
+    @keyframes slideDown {
+      from {
+        top: -50px;
+        opacity: 0;
+      }
+      to {
+        top: 20px;
+        opacity: 1;
+      }
+    }
+    /* --- Fullscreen Button --- */
+    #fullscreenButton {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 1;
+      padding: 10px;
+      background: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    /* --- Game Over Overlay (Final End Screen) --- */
+    .gameover-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .gameover-overlay.show {
+      animation: fadeInOverlay 0.5s forwards;
+      pointer-events: auto;
+    }
+    @keyframes fadeInOverlay {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    /* Different backgrounds for win/lose */
+    .gameover-overlay.win {
+      background: linear-gradient(135deg, #004d00, #007700);
+    }
+    .gameover-overlay.lose {
+      background: linear-gradient(135deg, #330000, #770000);
+    }
+    /* --- Game Over Logo Animations --- */
+    .gameover-logo {
+      width: 150px;
+      margin-bottom: 20px;
+    }
+    .logo-fly {
+      animation: logoFly 1.5s ease-out forwards;
+    }
+    .logo-pulse {
+      animation: logoPulse 2s ease-in-out infinite;
+    }
+    @keyframes logoFly {
+      0% {
+        transform: translate(-150%, -150%) scale(0.5) rotate(-360deg);
+        opacity: 0;
+      }
+      40% {
+        opacity: 1;
+      }
+      80% {
+        transform: translate(20%, 20%) scale(1.2) rotate(720deg);
+      }
+      100% {
+        transform: translate(0, 0) scale(1) rotate(0deg);
+        opacity: 1;
+      }
+    }
+    @keyframes logoPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+    /* --- Game Over Text Animations --- */
+    .gameover-text {
+      font-size: 48px;
+      color: white;
+    }
+    .gameover-text.win {
+      animation: textGlow 1.5s infinite;
+    }
+    @keyframes textGlow {
+      0% { text-shadow: 0 0 5px #fff, 0 0 10px #fff; }
+      50% { text-shadow: 0 0 20px #ffd700, 0 0 30px #ffd700; }
+      100% { text-shadow: 0 0 5px #fff, 0 0 10px #fff; }
+    }
+    .gameover-text.lose {
+      animation: shake 0.5s infinite;
+    }
+    @keyframes shake {
+      0% { transform: translate(0, 0); }
+      25% { transform: translate(-10px, 0); }
+      50% { transform: translate(10px, 0); }
+      75% { transform: translate(-10px, 0); }
+      100% { transform: translate(0, 0); }
+    }
+    /* --- New Game Button as Progress Bar --- */
+    #newGameButton {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 18px;
+      color: white;
+      background-color: #007BFF; /* starting tint */
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.1s linear;
+      position: relative;
+      overflow: hidden;
+    }
+    .logo-transition {
+      position: fixed;
+      z-index: 3000; /* Ensure it's on top */
+      transition: transform 1.5s ease-in-out;
+      will-change: transform;
+      /* Optional: set pointer-events to none so it doesn't block clicks */
+      pointer-events: none;
+    }
+    #muteButton {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 16px;
+    z-index: 1001; /* Ensures the button stays on top */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.3s ease;
+  }
+
+  #muteButton:hover {
+    background-color: #0056b3;
+  }
+  </style>
+</head>
+<body>
+  <button id="fullscreenButton">Volledig scherm</button>
+  <img id="mainLogo" src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+  <h1>Zeeslag - Vechten</h1>
+  <!-- Player information -->
+  <div id="playersInfo" style="font-size: 20px; margin-bottom: 10px;"></div>
+  <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
+  <!-- Floating sunk message -->
+  <div id="sunkMessage" class="sunk-message"></div>
+  
+  <!-- Game Over Overlay (Final End Screen) -->
+  <div id="gameoverOverlay" class="gameover-overlay">
+    <img id="gameoverLogo" src="static/zeeslag.png" alt="Zeeslag Logo" class="gameover-logo">
+    <h1 id="gameoverText" class="gameover-text"></h1>
+    <!-- New Game Button with integrated timer/progress -->
+    <button id="newGameButton">New Game (start automatisch in 10 seconden)</button>
+  </div>
+  
+  <div class="board-container">
+    <h2>Jouw bord</h2>
+    <table id="myBoard"></table>
+  </div>
+  <div class="board-container">
+    <h2>Tegenstander bord</h2>
+    <table id="enemyBoard"></table>
+  </div>
+  <audio id="soundtrack" loop>
+    <source src="static/soundtrack.mp3" type="audio/mpeg">
+    Your browser does not support the audio element.
+  </audio>
+  <button id="muteButton">Mute</button>
+
+  <script>
+
+    // Get references to the audio element and mute button.
+    const soundtrack = document.getElementById('soundtrack');
+    const muteButton = document.getElementById('muteButton');
+
+    // Attempt to play the audio (some browsers may require user interaction for autoplay).
+    // If autoplay is blocked, you might want to call soundtrack.play() in response to a user action.
+    soundtrack.play().catch(err => {
+      console.log('Autoplay failed; will play when user interacts.', err);
+    });
+
+    // Set up the mute/unmute toggle.
+    muteButton.addEventListener('click', () => {
+      // Toggle the muted property
+      soundtrack.muted = !soundtrack.muted;
+
+      // Update the button text
+      muteButton.innerText = soundtrack.muted ? 'Unmute' : 'Mute';
+    });
+    // Fullscreen request.
+    document.getElementById('fullscreenButton').addEventListener('click', function() {
+      const docElm = document.documentElement;
+      if (docElm.requestFullscreen) {
+        docElm.requestFullscreen();
+      } else if (docElm.mozRequestFullScreen) {
+        docElm.mozRequestFullScreen();
+      } else if (docElm.webkitRequestFullscreen) {
+        docElm.webkitRequestFullscreen();
+      } else if (docElm.msRequestFullscreen) {
+        docElm.msRequestFullscreen();
+      }
+      this.style.display = 'none';
+    });
+
+    const boardSize = 10;
+    const gameCode = localStorage.getItem('gameCode');
+    const player = localStorage.getItem('player');
+    const opponent = (player === 'player1') ? 'player2' : 'player1';
+
+    // Create the boards.
+    function createBoard(tableId, isEnemy) {
+      const table = document.getElementById(tableId);
+      for (let y = 0; y < boardSize; y++) {
+        const tr = document.createElement('tr');
+        for (let x = 0; x < boardSize; x++) {
+          const td = document.createElement('td');
+          td.id = `${tableId}-${x}-${y}`;
+          if (isEnemy) {
+            td.classList.add('clickable');
+            td.addEventListener('click', () => cellClick(x, y));
+          }
+          tr.appendChild(td);
+        }
+        table.appendChild(tr);
+      }
+    }
+    createBoard('myBoard', false);
+    createBoard('enemyBoard', true);
+
+    let canFire = false;
+    let enemyShots = [];
+    let announcedSunkShips = {}; // Track already announced sunk ships
+
+    function cellClick(x, y) {
+      if (!canFire) return;
+      if (enemyShots.some(pos => pos[0] === x && pos[1] === y)) return;
+      
+      fetch('/fire', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameCode: gameCode, player: player, x: x, y: y })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          alert(data.error);
+        }
+        updateGameState();
+      })
+      .catch(err => console.error('Error firing:', err));
+    }
+
+    // Show game over overlay with special effects and start the new game timer.
+    function showGameOverScreen(won) {
+      const overlay = document.getElementById('gameoverOverlay');
+      const logo = document.getElementById('gameoverLogo');
+      const gameoverText = document.getElementById('gameoverText');
+      
+      // Set overlay styling and text based on win or lose.
+      if (won) {
+        overlay.classList.add('win');
+        gameoverText.innerText = "Je hebt gewonnen!";
+        gameoverText.classList.add('win');
+      } else {
+        overlay.classList.add('lose');
+        gameoverText.innerText = "Je hebt verloren!";
+        gameoverText.classList.add('lose');
+      }
+      overlay.classList.add('show');
+      
+      // Start logo fly-in animation.
+      logo.classList.add('logo-fly');
+      logo.addEventListener('animationend', function(e) {
+        if (e.animationName === 'logoFly') {
+          logo.classList.remove('logo-fly');
+          logo.classList.add('logo-pulse');
+        }
+      });
+
+      animateLogoTransition();
+      
+      // Start the New Game timer with progress.
+      startNewGameTimer();
+    }
+
+    function animateLogoTransition() {
+      const mainLogo = document.getElementById('mainLogo');
+      const gameoverLogo = document.getElementById('gameoverLogo');
+      
+      // Hide the game over logo initially so only the clone is visible during the animation
+      gameoverLogo.style.visibility = 'hidden';
+      
+      // Get starting position and size
+      const startRect = mainLogo.getBoundingClientRect();
+      
+      // Ensure the overlay is visible so we can get the target position.
+      // (If your overlay is hidden via opacity or pointer-events, you might need to temporarily display it.)
+      const overlay = document.getElementById('gameoverOverlay');
+      // (If necessary, you can adjust the display style; here we assume the overlay is now visible)
+      
+      // Get target position and size for the game over logo
+      const targetRect = gameoverLogo.getBoundingClientRect();
+      
+      // Create a clone of the main logo
+      const logoClone = mainLogo.cloneNode(true);
+      logoClone.classList.add('logo-transition');
+      document.body.appendChild(logoClone);
+      
+      // Position the clone exactly over the original logo
+      logoClone.style.top = startRect.top + 'px';
+      logoClone.style.left = startRect.left + 'px';
+      logoClone.style.width = startRect.width + 'px';
+      logoClone.style.height = startRect.height + 'px';
+      
+      // Force a reflow so the browser registers the starting position
+      logoClone.getBoundingClientRect();
+      
+      // Calculate the difference in position and size
+      const deltaX = targetRect.left - startRect.left;
+      const deltaY = targetRect.top - startRect.top;
+      const scaleX = targetRect.width / startRect.width;
+      const scaleY = targetRect.height / startRect.height;
+      
+      // Apply the transform to animate the movement and zoom
+      logoClone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
+      
+      // When the transition ends, remove the clone and reveal the game over logo
+      logoClone.addEventListener('transitionend', () => {
+        gameoverLogo.style.visibility = 'visible';
+        logoClone.remove();
+      });
+    }
+
+
+    // Start a 10-second countdown that updates the new game button.
+    function startNewGameTimer() {
+      const button = document.getElementById('newGameButton');
+      let timeLeft = 10; // seconds
+      const totalTime = 10;
+      // Colors for progress (you can change these values)
+      const startColor = { r: 0, g: 123, b: 255 };   // #007BFF
+      const endColor   = { r: 102, g: 179, b: 255 };  // #66B3FF
+      
+      // Update the button text immediately.
+      button.innerText = `Nieuwe game (start automatisch in 10 seconden)`;
+      
+      const interval = setInterval(() => {
+        timeLeft -= 0.1; // update every 100ms
+        if (timeLeft <= 0) {
+          clearInterval(interval);
+          window.location.href = '/';
+          return;
+        }
+        // Update button text with whole seconds remaining.
+        const displayTime = Math.ceil(timeLeft);
+        button.innerText = `New Game (${displayTime})`;
+        // Calculate progress fraction.
+        const progress = (totalTime - timeLeft) / totalTime;
+        // Interpolate between startColor and endColor.
+        const r = Math.round(startColor.r + (endColor.r - startColor.r) * progress);
+        const g = Math.round(startColor.g + (endColor.g - startColor.g) * progress);
+        const b = Math.round(startColor.b + (endColor.b - startColor.b) * progress);
+        button.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+      }, 100);
+      
+      // Remove any existing event listeners to prevent multiple intervals.
+      const newButton = button.cloneNode(true);
+      button.parentNode.replaceChild(newButton, button);
+      // Clicking the button immediately starts a new game.
+      newButton.addEventListener('click', function() {
+        clearInterval(interval);
+        window.location.href = '/pws';
+      });
+    }
+
+    function updateGameState() {
+      fetch(`/game_state?gameCode=${gameCode}`)
+        .then(res => res.json())
+        .then(game => {
+          const myData = game.players[player];
+          const enemyData = game.players[opponent];
+          const statusMsg = document.getElementById('statusMessage');
+          const sunkMsg = document.getElementById('sunkMessage');
+          const playersInfo = document.getElementById('playersInfo');
+
+          // Update player info.
+          if (enemyData && enemyData.name) {
+            playersInfo.innerText = "Tegenstander: " + enemyData.name;
+          } else {
+            playersInfo.innerText = "Wachten op tegenstander...";
+          }
+
+          if (game.status === "gameover") {
+            const won = (game.winner === player);
+            localStorage.setItem('result', won ? 'win' : 'lose');
+            showGameOverScreen(won);
+            return;
+          } else if (game.status === "battle") {
+            if (game.turn === player) {
+              statusMsg.innerText = "Jouw beurt";
+              canFire = true;
+            } else {
+              statusMsg.innerText = "Tegenstanders beurt";
+              canFire = false;
+            }
+          } else {
+            statusMsg.innerText = "Wachten op andere speler...";
+            canFire = false;
+          }
+
+          // --- Update Your Board ---
+          for (let y = 0; y < boardSize; y++) {
+            for (let x = 0; x < boardSize; x++) {
+              const cell = document.getElementById(`myBoard-${x}-${y}`);
+              cell.className = "";
+              cell.innerText = "";
+            }
+          }
+          if (myData && myData.ships) {
+            myData.ships.forEach(ship => {
+              ship.positions.forEach(pos => {
+                const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
+                if (cell) cell.classList.add('ship');
+              });
+            });
+          }
+          if (enemyData && enemyData.hits) {
+            enemyData.hits.forEach(pos => {
+              const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
+              if (cell) {
+                if (cell.classList.contains('ship')) {
+                  cell.classList.add('hit');
+                  cell.innerText = "X";
+                } else {
+                  cell.classList.add('miss');
+                  cell.innerText = "O";
+                }
+              }
+            });
+          }
+          if (myData && myData.ships) {
+            myData.ships.forEach(ship => {
+              if (ship.sunk) {
+                ship.positions.forEach(pos => {
+                  const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
+                  if (cell) {
+                    cell.classList.remove('ship');
+                    cell.classList.add('sunk');
+                    cell.innerText = "S";
+                  }
+                });
+              }
+            });
+          }
+          if (myData && myData.incoming_misses) {
+            const now = Date.now() / 1000;
+            myData.incoming_misses.forEach(miss => {
+              const timeSince = now - miss.timestamp;
+              const cell = document.getElementById(`myBoard-${miss.pos[0]}-${miss.pos[1]}`);
+              if (cell && timeSince < 2) {
+                cell.classList.add('incoming-miss');
+              }
+            });
+          }
+
+          // --- Update Enemy Board ---
+          enemyShots = [];
+          for (let y = 0; y < boardSize; y++) {
+            for (let x = 0; x < boardSize; x++) {
+              const cell = document.getElementById(`enemyBoard-${x}-${y}`);
+              cell.className = "clickable";
+              cell.innerText = "";
+            }
+          }
+          if (myData) {
+            if (myData.hits) {
+              myData.hits.forEach(pos => {
+                const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
+                if (cell) {
+                  cell.classList.remove("clickable");
+                  cell.classList.add("hit");
+                  cell.innerText = "X";
+                  enemyShots.push(pos);
+                }
+              });
+            }
+            if (myData.misses) {
+              myData.misses.forEach(pos => {
+                const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
+                if (cell) {
+                  cell.classList.remove("clickable");
+                  cell.classList.add("miss");
+                  cell.innerText = "O";
+                  enemyShots.push(pos);
+                }
+              });
+            }
+          }
+          if (enemyData && enemyData.ships) {
+            enemyData.ships.forEach(ship => {
+              if (ship.sunk) {
+                const shipKey = JSON.stringify(ship.positions);
+                if (!announcedSunkShips[shipKey]) {
+                  sunkMsg.innerText = `Je hebt een schip van de tegenstander gezonken met lengte ${ship.positions.length}!`;
+                  sunkMsg.classList.add('show');
+                  setTimeout(() => {
+                    sunkMsg.classList.remove('show');
+                    sunkMsg.innerText = "";
+                  }, 3000);
+                  announcedSunkShips[shipKey] = true;
+                }
+                ship.positions.forEach(pos => {
+                  const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
+                  if (cell) {
+                    cell.classList.remove("hit");
+                    cell.classList.add("sunk");
+                    cell.innerText = "S";
+                  }
+                });
+              }
+            });
+          }
+        })
+        .catch(err => {
+          console.error('Error updating game state:', err);
+          const statusMsg = document.getElementById('statusMessage');
+          statusMsg.innerText = "Serverfout. Probeer opnieuw.";
+          for (let y = 0; y < boardSize; y++) {
+            for (let x = 0; x < boardSize; x++) {
+              document.getElementById(`myBoard-${x}-${y}`).className = "";
+              document.getElementById(`myBoard-${x}-${y}`).innerText = "";
+              document.getElementById(`enemyBoard-${x}-${y}`).className = "";
+              document.getElementById(`enemyBoard-${x}-${y}`).innerText = "";
+            }
+          }
+        });
+    }
+
+    // Poll the server every 500ms.
+    setInterval(updateGameState, 500);
+    updateGameState();
+  </script>
+</body>
+</html>
