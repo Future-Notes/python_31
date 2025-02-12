@@ -1,689 +1,212 @@
-import threading
-import customtkinter as ctk
-from tkinter import messagebox
-import requests
+import sys
+import ctypes
+import winreg
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QSystemTrayIcon
+from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtCore import QUrl, pyqtSlot, QObject
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWebChannel import QWebChannel
 
-# Flask API URL
-API_URL = "https://bosbes.eu.pythonanywhere.com"
-ALTERNATE_API_URL = "http://localhost:5000"
+# Windows API Setup (for titlebar color changes)
+DWM_API = ctypes.windll.dwmapi
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # Dark Mode Toggle
+DWMWA_BORDER_COLOR = 34             # Titlebar Border Color
+DWMWA_CAPTION_COLOR = 35            # Titlebar Background Color
+DWMWA_TEXT_COLOR = 36               # Titlebar Text Color
 
-session_key = {}
+###########################################################################
+# 1. Create a Python object to manage startup registration via the Windows registry
+###########################################################################
 
-def clear_frame(frame):
-    for widget in frame.winfo_children():
-        widget.destroy()
+class StartupManager(QObject):
+    @pyqtSlot(result=bool)
+    def isStartupEnabled(self):
+        """Check if our app is in the Windows startup registry."""
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                 r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                 0, winreg.KEY_READ)
+            try:
+                winreg.QueryValueEx(key, "FutureNotes")
+                winreg.CloseKey(key)
+                return True
+            except FileNotFoundError:
+                winreg.CloseKey(key)
+                return False
+        except Exception:
+            return False
 
-class LoadingScreen(ctk.CTkToplevel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.geometry("300x100")
-        self.title("Loading")
-        self.label = ctk.CTkLabel(self, text="Loading... Please wait.")
-        self.label.pack(pady=20, padx=20)
-        self.update_idletasks()
+    @pyqtSlot(result=bool)
+    def toggleStartup(self):
+        """
+        Toggle our app’s startup registry entry.
+        Returns the new status (True if enabled, False if disabled).
+        """
+        import sys
+        app_path = sys.executable  # (If frozen, this is the path to your exe)
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                 r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                 0, winreg.KEY_ALL_ACCESS)
+        except Exception:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                                   r"Software\Microsoft\Windows\CurrentVersion\Run")
+        try:
+            # If already registered, remove it.
+            winreg.QueryValueEx(key, "FutureNotes")
+            winreg.DeleteValue(key, "FutureNotes")
+            new_status = False
+        except FileNotFoundError:
+            # Not registered yet: add it.
+            winreg.SetValueEx(key, "FutureNotes", 0, winreg.REG_SZ, app_path)
+            new_status = True
 
-def show_loading_screen(parent):
-    loading_screen = LoadingScreen(parent)
-    parent.loading_screen = loading_screen
-    parent.loading_screen.update()
+        winreg.CloseKey(key)
+        return new_status
 
-def hide_loading_screen(parent):
-    if hasattr(parent, 'loading_screen'):
-        parent.loading_screen.destroy()
-        del parent.loading_screen
+###########################################################################
+# 2. The Main Window: our web app viewer with JS injection support
+###########################################################################
 
-class App(ctk.CTk):
-    def __init__(self):
+class WebAppViewer(QMainWindow):
+    def __init__(self, base_url):
         super().__init__()
 
-        self.geometry("600x450")
-        self.resizable(True, True)
-        self.title("Future Notes")
-        self.current_user = None
-
-        self.center_window()
-
-        self.container = ctk.CTkFrame(self)
-        self.container.pack(fill="both", expand=True)
-
-        self.show_login_screen()
-
-    def center_window(self):
-        self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
-        x = (self.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.winfo_screenheight() // 2) - (height // 2)
-        self.geometry(f'{width}x{height}+{x}+{y}')
-
-    def show_login_screen(self):
-        clear_frame(self.container)
-        self.check_connection_async()
-
-        frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9")
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
-
-        header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)  # No rounded corners for header
-        header.pack(fill="x")
-        header.pack_propagate(False)
-        ctk.CTkLabel(
-            header, text="Login", font=("Helvetica", 18, "bold"), text_color="white", corner_radius=0
-        ).pack(side="left", padx=20)
-
-
-        content_frame = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-
-        username_entry = ctk.CTkEntry(
-            content_frame,
-            placeholder_text="Username",
-            fg_color="white",
-            text_color="black",
-            corner_radius=10,
-            height=40
-        )
-        username_entry.pack(fill="x", pady=10)
-
-        password_entry = ctk.CTkEntry(
-            content_frame,
-            placeholder_text="Password",
-            show="*",
-            fg_color="white",
-            text_color="black",
-            corner_radius=10,
-            height=40
-        )
-        password_entry.pack(fill="x", pady=10)
-        
-
-        def login():
-            show_loading_screen(self)
-            username = username_entry.get()
-            password = password_entry.get()
-            response = requests.post(
-                f"{API_URL}/login", json={"username": username, "password": password}
-            )
-            hide_loading_screen(self)
-            if response.status_code == 200:
-                response_json = response.json()
-                self.current_user = response_json["user_id"]
-                self.session_key = response_json["session_key"]
-                self.session_data = {self.current_user: self.session_key}
-                print(f"Session Key: {self.session_key}")  # Debug print
-                self.show_main_screen()
-            else:
-                messagebox.showerror(
-                    "Login Failed", response.json().get("error", "Error")
-                )
-
-        ctk.CTkButton(
-            content_frame,
-            text="Login",
-            command=login,
-            fg_color="#4c6ef5",
-            text_color="white",
-            corner_radius=10,
-            hover_color="#3b56cc",
-            height=40
-        ).pack(pady=10)
-
-        def show_signup():
-            self.show_signup_screen()
-
-        ctk.CTkButton(
-            content_frame,
-            text="Signup",
-            command=show_signup,
-            fg_color="#f1f1f1",
-            text_color="black",
-            corner_radius=10,
-            height=40
-        ).pack(pady=5)
-        self.update_idletasks()
-
-    def show_no_connection_screen(self):
-        clear_frame(self.container)
-
-        frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
-
-        ctk.CTkLabel(
-            frame,
-            text="No internet connection. Please check your network.",
-            font=("Helvetica", 14, "bold"),
-            text_color="red",
-        ).pack(pady=20)
-
-        ctk.CTkButton(
-            frame,
-            text="Retry",
-            command=self.show_login_screen,
-            fg_color="#4c6ef5",
-            text_color="white",
-            corner_radius=10,
-            height=40
-        ).pack(pady=10)
-        self.update_idletasks()
-
-    def check_connection(self):
-        try:
-            show_loading_screen(self)
-            requests.get(API_URL)
-            hide_loading_screen(self)
-        except requests.exceptions.RequestException:
-            self.show_no_connection_screen()
-
-    def check_connection_async(self):
-        def run_check():
-            self.check_connection()
-
-        thread = threading.Thread(target=run_check)
-        thread.start()
-
-    def show_signup_screen(self):
-        clear_frame(self.container)
-
-        frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
-
-        header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)  # No rounded corners for header
-        header.pack(fill="x")
-        header.pack_propagate(False)
-        ctk.CTkLabel(
-            header, text="Signup", font=("Helvetica", 18, "bold"), text_color="white", corner_radius=0
-        ).pack(side="left", padx=20)
-
-
-        content_frame = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-
-        username_entry = ctk.CTkEntry(
-            content_frame,
-            placeholder_text="Username",
-            fg_color="white",
-            text_color="black",
-            corner_radius=10,
-            height=40
-        )
-        username_entry.pack(fill="x", pady=10)
-
-        password_entry = ctk.CTkEntry(
-            content_frame,
-            placeholder_text="Password",
-            show="*",
-            fg_color="white",
-            text_color="black",
-            corner_radius=10,
-            height=40
-        )
-        password_entry.pack(fill="x", pady=10)
-
-        def signup():
-            show_loading_screen(self)
-            username = username_entry.get()
-            password = password_entry.get()
-            response = requests.post(
-                f"{API_URL}/signup", json={"username": username, "password": password}
-            )
-            hide_loading_screen(self)
-            if response.status_code == 201:
-                messagebox.showinfo("Success", "Signup successful! Please login.")
-                self.show_login_screen()
-            else:
-                messagebox.showerror(
-                    "Error", response.json().get("error", "Username already exists")
-                )
-
-        ctk.CTkButton(
-            content_frame,
-            text="Signup",
-            command=signup,
-            fg_color="#4caf50",
-            text_color="white",
-            corner_radius=10,
-            height=40
-        ).pack(pady=10)
-
-        def show_login():
-            self.show_login_screen()
-
-        ctk.CTkButton(
-            content_frame,
-            text="Back to Login",
-            command=show_login,
-            fg_color="#f1f1f1",
-            text_color="black",
-            corner_radius=10,
-            height=40
-        ).pack(pady=5)
-        self.update_idletasks()
-
-    # Add this new method
-    def show_account_screen(self):
-        clear_frame(self.container)
-        self.geometry("600x720")
-        self.center_window()
-        # Main frame setup
-        frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
-
-        # Header
-        header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)
-        header.pack(fill="x")
-        header.pack_propagate(False)  # Prevent header from shrinking
-
-        ctk.CTkButton(
-            header,
-            text="🔙",
-            command=self.show_main_screen,
-            fg_color="#4c6ef5",
-            text_color="white",
-            corner_radius=10,
-            height=40,
-        ).pack(side="left", padx=10, pady=5)
-
-        ctk.CTkButton(
-            header,
-            text="Logout",
-            command=self.show_login_screen,
-            fg_color="red",
-            text_color="white",
-            corner_radius=10,
-            height=40,
-        ).pack(side="right", padx=10, pady=5)
-
-        ctk.CTkLabel(
-            header,
-            text="Account Settings",
-            font=("Helvetica", 18, "bold"),
-            text_color="white",
-        ).pack(side="left", padx=20)
-
-        # Content container
-        content_frame = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # Section for updating username
-        username_section = ctk.CTkFrame(content_frame, fg_color="#f4f4f9", corner_radius=10)
-        username_section.pack(fill="x", pady=10, padx=20)
-
-        ctk.CTkLabel(
-            username_section,
-            text="Update Username",
-            font=("Helvetica", 14, "bold"),
-        ).pack(pady=10)
-
-        username_entry = ctk.CTkEntry(
-            username_section,
-            placeholder_text="New Username",
-            fg_color="#f9f9f9",
-            text_color="black",
-            corner_radius=10,
-        )
-        username_entry.pack(fill="x", pady=10, padx=20)
-
-        def update_username():
-            new_username = username_entry.get()
-            show_loading_screen(self)
-            headers = {"Authorization": f"Bearer {self.session_key}"}
-            response = requests.put(
-                f"{API_URL}/update-username",
-                json={"user_id": self.current_user, "new_username": new_username},
-                headers=headers
-            )
-            hide_loading_screen(self)
-            if response.status_code == 200:
-                messagebox.showinfo("Success", "Username updated successfully!")
-            else:
-                messagebox.showerror("Error", response.json().get("error", "Error"))
-
-        ctk.CTkButton(
-            username_section,
-            text="Update Username",
-            command=update_username,
-            fg_color="#4caf50",
-            text_color="white",
-            corner_radius=10,
-            height=40,
-        ).pack(pady=10)
-
-        # Section for updating password
-        password_section = ctk.CTkFrame(content_frame, fg_color="#f4f4f9", corner_radius=10)
-        password_section.pack(fill="x", pady=10, padx=20)
-
-        ctk.CTkLabel(
-            password_section,
-            text="Update Password",
-            font=("Helvetica", 14, "bold"),
-        ).pack(pady=10)
-
-        current_password_entry = ctk.CTkEntry(
-            password_section,
-            placeholder_text="Current Password",
-            show="*",
-            fg_color="#f9f9f9",
-            text_color="black",
-            corner_radius=10,
-        )
-        current_password_entry.pack(fill="x", pady=10, padx=20)
-
-        new_password_entry = ctk.CTkEntry(
-            password_section,
-            placeholder_text="New Password",
-            show="*",
-            fg_color="#f9f9f9",
-            text_color="black",
-            corner_radius=10,
-        )
-        new_password_entry.pack(fill="x", pady=10, padx=20)
-
-        def update_password():
-            current_password = current_password_entry.get()
-            new_password = new_password_entry.get()
-            show_loading_screen(self)
-            headers = {"Authorization": f"Bearer {self.session_key}"}
-            response = requests.put(
-                f"{API_URL}/update-password",
-                json={
-                    "user_id": self.current_user,
-                    "current_password": current_password,
-                    "new_password": new_password,
-                },
-                headers=headers
-            )
-            hide_loading_screen(self)
-            if response.status_code == 200:
-                messagebox.showinfo("Success", "Password updated successfully!")
-            else:
-                messagebox.showerror("Error", response.json().get("error", "Error"))
-
-        ctk.CTkButton(
-            password_section,
-            text="Update Password",
-            command=update_password,
-            fg_color="#4caf50",
-            text_color="white",
-            corner_radius=10,
-            height=40,
-        ).pack(pady=10)
-
-        # Section for deleting account
-        delete_section = ctk.CTkFrame(content_frame, fg_color="#f4f4f9", corner_radius=10)
-        delete_section.pack(fill="x", pady=20, padx=20)
-
-        ctk.CTkLabel(
-            delete_section,
-            text="Delete Account",
-            font=("Helvetica", 14, "bold"),
-            text_color="red",
-        ).pack(pady=10)
-
-        delete_password_entry = ctk.CTkEntry(
-            delete_section,
-            placeholder_text="Enter Password to Confirm",
-            show="*",
-            fg_color="#f9f9f9",
-            text_color="black",
-            corner_radius=10,
-        )
-        delete_password_entry.pack(fill="x", pady=10, padx=20)
-
-        def delete_account():
-            password = delete_password_entry.get()
-            if not messagebox.askyesno(
-                "Confirm Deletion", 
-                "Are you sure you want to delete your account? This action cannot be undone."
-            ):
-                return
-
-            show_loading_screen(self)
-            headers = {"Authorization": f"Bearer {self.session_key}"}
-            response = requests.delete(
-                f"{API_URL}/delete-account",
-                json={"user_id": self.current_user, "password": password},
-                headers=headers
-            )
-            hide_loading_screen(self)
-            if response.status_code == 200:
-                messagebox.showinfo("Success", "Account deleted successfully!")
-                self.current_user = None
-                self.show_login_screen()  # Redirect to login screen after account deletion
-            else:
-                messagebox.showerror("Error", response.json().get("error", "Error"))
-
-        ctk.CTkButton(
-            delete_section,
-            text="Delete Account",
-            command=delete_account,
-            fg_color="#f44336",  # Red button
-            text_color="white",
-            hover_color="#d32f2f",  # Darker red on hover
-            corner_radius=10,
-            height=40,
-        ).pack(pady=10)
-
-        # Update window size after widget packing
-        self.update_idletasks()
-
-    def show_main_screen(self):
-        clear_frame(self.container)
-        self.geometry("600x450")
-        self.center_window()
-        frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=0)
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
-
-        action_bar = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)
-        action_bar.pack(fill="x")
-        action_bar.pack_propagate(False)
-
-        # Add "Account" button
-        ctk.CTkButton(
-            action_bar,
-            text="Account",
-            command=self.show_account_screen,
-            fg_color="#ff9800",
-            text_color="white",
-            corner_radius=10,
-            hover_color="#e68900",
-            height=40,
-        ).pack(side="right", padx=10, pady=5)
-
-        ctk.CTkButton(
-            action_bar,
-            text="Add Note",
-            command=self.show_add_edit_screen,
-            fg_color="#4caf50",
-            text_color="white",
-            corner_radius=10,
-            hover_color="#45a049",
-            height=40
-        ).pack(side="right", padx=10, pady=5)
-
-        ctk.CTkLabel(
-            action_bar,
-            text="Future Notes",
-            font=("Helvetica", 18, "bold"),
-            text_color="white",
-        ).pack(side="left", padx=20)
-
-        notes_frame_container = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
-        notes_frame_container.pack(fill="both", expand=True)
-
-        canvas = ctk.CTkCanvas(notes_frame_container, bg="white")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        notes_frame = ctk.CTkFrame(canvas, fg_color="white")
-        canvas.create_window((0, 0), window=notes_frame, anchor="nw")
-
-        # Add a scrollbar for vertical scrolling when needed
-        scrollbar = ctk.CTkScrollbar(notes_frame_container, orientation="vertical", command=canvas.yview)
-        scrollbar.pack(side="right", fill="y")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        # Add a temporary loading message
-        loading_label = ctk.CTkLabel(
-            notes_frame,
-            text="Loading notes...",
-            font=("Helvetica", 16, "bold"),
-            text_color="gray",
-        )
-        loading_label.pack(pady=20, padx=20)
-
-        # Fetch the notes
-        show_loading_screen(self)
-        headers = {"Authorization": f"Bearer {self.session_key}"}
-        response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user}, headers=headers)
-        hide_loading_screen(self)
-
-        # Remove the loading message
-        loading_label.pack_forget()
-
-        todos = response.json() if response.status_code == 200 else []
-
-        row, col = 0, 0
-        if todos:
-            for todo in todos:
-                note_id = todo["id"]
-                note_text = todo["note"]
-
-                # Check if the note is empty
-                display_text = note_text[:100] if note_text.strip() else "Empty Note"
-                text_color = "black" if note_text.strip() else "gray"  # Lighter color for empty notes
-
-                ctk.CTkButton(
-                    notes_frame,
-                    text=display_text,
-                    fg_color="#ffeb3b",  # Yellow color for notes
-                    text_color=text_color,
-                    hover_color="#fdd835",  # Darker yellow for hover effect
-                    corner_radius=10,
-                    anchor="nw",
-                    height=150,
-                    command=lambda id=note_id: self.show_add_edit_screen(todo_id=id),
-                ).grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-
-                col += 1
-                if col > 6:
-                    col = 0
-                    row += 1
-
-            notes_frame.update_idletasks()
-            canvas.config(scrollregion=canvas.bbox("all"))
+        self.base_url = base_url
+        self.setWindowTitle("Future Notes")
+        self.setGeometry(100, 100, 1024, 768)
+        self.setWindowIcon(QIcon("icon.ico"))  # Replace with your .ico file path
+
+        # Set a unique AppUserModelID for Windows taskbar grouping
+        app_id = "futurenotes.futurenotesapp.1.0"  # Change to a unique name
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+
+        tray_icon = QSystemTrayIcon(QIcon("icon.ico"), app)
+        tray_icon.show()
+
+        # Create a central widget for styling
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
+        layout = QVBoxLayout()
+        self.central_widget.setLayout(layout)
+
+        # Create the QWebEngineView and load the initial page (login page)
+        self.browser = QWebEngineView()
+        self.browser.setUrl(QUrl(self.base_url + "/login_page"))
+        layout.addWidget(self.browser)
+
+        # Set up QWebChannel for JS ⇄ Python communication
+        self.channel = QWebChannel(self.browser.page())
+        self.startup_manager = StartupManager()
+        self.channel.registerObject("startupManager", self.startup_manager)
+        self.browser.page().setWebChannel(self.channel)
+
+        # When a page loads, check for theme-color and for account/settings page injection.
+        self.browser.loadFinished.connect(self.on_page_load)
+
+    @pyqtSlot()
+    def on_page_load(self):
+        # --- 1. Update the window theme based on the page's <meta name="theme-color"> ---
+        js_theme = """
+        (function() {
+            var meta = document.querySelector('meta[name="theme-color"]');
+            return meta ? meta.getAttribute("content") : "";
+        })();
+        """
+        self.browser.page().runJavaScript(js_theme, self.update_theme_color)
+
+        # --- 2. If we are on the account/settings page, inject our startup toggle button ---
+        current_url = self.browser.url().toString()
+        if current_url == self.base_url + "/account_page":
+            self.inject_startup_button()
+
+    def update_theme_color(self, color):
+        if color and color.startswith("#"):
+            print(f"Applying theme color: {color}")
+            self.central_widget.setStyleSheet(f"background-color: {color};")
+            self.set_titlebar_color(color)
         else:
-            ctk.CTkLabel(
-                notes_frame,
-                text="No notes found. Click on 'Add Note' to add a new note.",
-                font=("Helvetica", 14, "bold"),
-                text_color="gray",
-            ).pack(pady=20, padx=20)
-        self.update_idletasks()
+            print("No valid theme color found.")
 
+    def set_titlebar_color(self, hex_color):
+        # Convert hex (e.g. "#RRGGBB") to COLORREF format for Windows.
+        r, g, b = self.hex_to_rgb(hex_color)
+        color = (b << 16) | (g << 8) | r
+        hwnd = int(self.winId())
+        DWM_API.DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR,
+                                      ctypes.byref(ctypes.c_int(color)),
+                                      ctypes.sizeof(ctypes.c_int))
+        DWM_API.DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR,
+                                      ctypes.byref(ctypes.c_int(color)),
+                                      ctypes.sizeof(ctypes.c_int))
+        DWM_API.DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR,
+                                      ctypes.byref(ctypes.c_int(0xFFFFFF)),
+                                      ctypes.sizeof(ctypes.c_int))
 
-    def show_add_edit_screen(self, todo_id=None):
-        clear_frame(self.container)
+    def hex_to_rgb(self, hex_color):
+        hex_color = hex_color.lstrip("#")
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
-        frame = ctk.CTkFrame(self.container, fg_color="#f4f4f9", corner_radius=10)
-        frame.pack(pady=20, padx=20, fill="both", expand=True)
+    def inject_startup_button(self):
+        """
+        Injects HTML, CSS and JavaScript into the account page that:
+          - Adds a fixed-position button labeled according to the startup registry state.
+          - Uses QWebChannel to call Python methods when clicked.
+        """
+        js_code = """
+        (function() {
+            // Function to insert the button if it doesn't already exist.
+            function injectButton() {
+                if (document.getElementById('startupToggleBtn')) return;
+                var btn = document.createElement('button');
+                btn.id = 'startupToggleBtn';
+                btn.style.position = 'fixed';
+                btn.style.bottom = '20px';
+                btn.style.right = '20px';
+                btn.style.padding = '10px 20px';
+                btn.style.zIndex = '10000';
+                // When clicked, call the exposed Python method to toggle startup.
+                btn.onclick = function() {
+                    window.startupManager.toggleStartup(function(new_status) {
+                        btn.innerText = new_status ? "Don't start on system startup"
+                                                  : "Start on system startup";
+                    });
+                };
+                document.body.appendChild(btn);
+                // Set the initial button text based on whether startup is enabled.
+                window.startupManager.isStartupEnabled(function(enabled) {
+                    btn.innerText = enabled ? "Don't start on system startup"
+                                            : "Start on system startup";
+                });
+            }
+            // Ensure QWebChannel is loaded, then initialize it.
+            if (typeof QWebChannel === 'undefined') {
+                var script = document.createElement('script');
+                script.src = 'qrc:///qtwebchannel/qwebchannel.js';
+                script.onload = function() {
+                    new QWebChannel(qt.webChannelTransport, function(channel) {
+                        window.startupManager = channel.objects.startupManager;
+                        injectButton();
+                    });
+                };
+                document.head.appendChild(script);
+            } else {
+                new QWebChannel(qt.webChannelTransport, function(channel) {
+                    window.startupManager = channel.objects.startupManager;
+                    injectButton();
+                });
+            }
+        })();
+        """
+        self.browser.page().runJavaScript(js_code)
 
-        header = ctk.CTkFrame(frame, fg_color="#4c6ef5", height=50, corner_radius=0)  # No rounded corners for header
-        header.pack(fill="x")
-        header.pack_propagate(False)
-
-        # Back button positioned at left with background color
-        ctk.CTkButton(
-            header,
-            text="Back",
-            command=self.show_main_screen,
-            fg_color="#4c6ef5",
-            text_color="white",
-            corner_radius=10,
-            height=40
-        ).pack(side="left", padx=10, pady=5)
-
-        ctk.CTkLabel(
-            header,
-            text="Edit Note" if todo_id else "Add Note",
-            font=("Helvetica", 18, "bold"),
-            text_color="white",
-        ).pack(side="right", padx=20)  # Positioned at the right
-
-        content_frame = ctk.CTkFrame(frame, fg_color="white", corner_radius=10)
-        content_frame.pack(fill="both", expand=True, padx=20, pady=20)
-
-        note_entry = ctk.CTkEntry(
-            content_frame,
-            placeholder_text="Write your note here...",
-            height=200,
-            fg_color="#f9f9f9",
-            text_color="black",
-            corner_radius=10,
-        )
-        note_entry.pack(fill="x", pady=10)
-
-        if todo_id:
-            show_loading_screen(self)
-            headers = {"Authorization": f"Bearer {self.session_key}"}
-            response = requests.get(f"{API_URL}/notes", params={"user_id": self.current_user}, headers=headers)
-            hide_loading_screen(self)
-            notes = response.json()
-            for note in notes:
-                if note["id"] == todo_id:
-                    note_entry.insert(0, note["note"])
-
-        button_bar = ctk.CTkFrame(content_frame, fg_color="white", corner_radius=10)
-        button_bar.pack(fill="x", pady=20)
-
-        def save_note():
-            show_loading_screen(self)
-            note = note_entry.get()
-            headers = {"Authorization": f"Bearer {self.session_key}"}
-            if todo_id:
-                response = requests.put(f"{API_URL}/notes/{todo_id}", json={"note": note}, headers=headers)
-            else:
-                response = requests.post(
-                    f"{API_URL}/notes", json={"user_id": self.current_user, "note": note},
-                    headers=headers
-                )
-            hide_loading_screen(self)
-            if response.status_code in [200, 201]:
-                self.show_main_screen()
-            else:
-                messagebox.showerror("Error", response.json().get("error", "Error"))
-
-        ctk.CTkButton(
-            button_bar,
-            text="Save",
-            command=save_note,
-            fg_color="#4caf50",
-            text_color="white",
-            corner_radius=10,
-            width=100,
-            height=40
-        ).pack(side="left", padx=10)
-
-        if todo_id:
-            def delete_note():
-                show_loading_screen(self)
-                headers = {"Authorization": f"Bearer {self.session_key}"}
-                response = requests.delete(f"{API_URL}/notes/{todo_id}", headers=headers)
-                hide_loading_screen(self)
-                if response.status_code == 200:
-                    self.show_main_screen()
-                else:
-                    messagebox.showerror("Error", response.json().get("error", "Error"))
-
-            ctk.CTkButton(
-                button_bar,
-                text="Delete",
-                command=delete_note,
-                fg_color="#e74c3c",
-                text_color="white",
-                corner_radius=10,
-                width=100,
-                height=40
-            ).pack(side="left", padx=10)
-        self.update_idletasks()
+###########################################################################
+# 3. Run the Application
+###########################################################################
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    app = QApplication(sys.argv)
+    base_url = "https://bosbes.eu.pythonanywhere.com"  # Change to your actual app URL
+    window = WebAppViewer(base_url)
+    window.show()
+    sys.exit(app.exec_())
