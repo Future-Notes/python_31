@@ -244,7 +244,7 @@ class WebAppViewer(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    base_url = "https://bosbes.eu.pythonanywhere.com"  # Change to your actual app URL
+    base_url = "http://127.0.0.1:5000"  # Change to your actual app URL
     window = WebAppViewer(base_url)
     window.show()
     sys.exit(app.exec())

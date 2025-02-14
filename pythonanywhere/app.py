@@ -130,6 +130,26 @@ class GroupMember(db.Model):
     user = db.relationship("User", backref="group_memberships")
     group = db.relationship("Group", backref="members")
 
+class Appointment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    # Using a single datetime field for both date and time.
+    appointment_datetime = db.Column(db.DateTime, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    # Relationship back to the User model (assuming your User model's table name is "user")
+    user = db.relationship('User', backref=db.backref('appointments', lazy=True))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "appointment_datetime": self.appointment_datetime.isoformat(),
+            "user_id": self.user_id
+        }
+
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), nullable=False)
@@ -201,7 +221,6 @@ def login_page():
 def signup_page():
     return render_template('signup.html')
 
-
 @app.route('/account_page')
 def account_page():
     return render_template('account.html')
@@ -213,6 +232,10 @@ def admin_page():
 @app.route('/group-notes')
 def group_notes():
     return render_template("group_index.html")
+
+@app.route('/scheduler-page')
+def scheduler_page():
+    return render_template("scheduler.html")
 
 @app.route('/contact', methods=['POST'])
 def contact():
@@ -226,6 +249,95 @@ def contact():
         return jsonify({"succes": "Message received successfully!"}), 201
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
+    
+# 1. Fetch all appointments for the current user
+@app.route('/appointments', methods=['GET'])
+@require_session_key
+def get_appointments():
+    user_id = g.user_id
+    appointments = Appointment.query.filter_by(user_id=user_id).all()
+    appointments_data = [appt.to_dict() for appt in appointments]
+    return jsonify({"appointments": appointments_data}), 200
+
+# 2. Create a new appointment
+@app.route('/appointments', methods=['POST'])
+@require_session_key
+def create_appointment():
+    data = request.get_json() or {}
+    title = data.get('title')
+    description = data.get('description', '')
+    appointment_datetime_str = data.get('appointment_datetime')
+
+    if not title or not appointment_datetime_str:
+        return jsonify({"error": "Missing required fields: title and appointment_datetime"}), 400
+
+    try:
+        # Expecting ISO 8601 format (e.g. "2025-02-14T15:30:00")
+        appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
+    except ValueError:
+        return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    new_appointment = Appointment(
+        title=title,
+        description=description,
+        appointment_datetime=appointment_datetime,
+        user_id=g.user_id
+    )
+
+    db.session.add(new_appointment)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Appointment created successfully",
+        "appointment": new_appointment.to_dict()
+    }), 201
+
+# 3. Update an existing appointment
+@app.route('/appointments/<int:appointment_id>', methods=['PUT'])
+@require_session_key
+def update_appointment(appointment_id):
+    data = request.get_json() or {}
+    appointment = Appointment.query.get(appointment_id)
+
+    # Check if appointment exists and belongs to the current user.
+    if not appointment or appointment.user_id != g.user_id:
+        return jsonify({"error": "Appointment not found"}), 404
+
+    title = data.get('title')
+    description = data.get('description')
+    appointment_datetime_str = data.get('appointment_datetime')
+
+    if title:
+        appointment.title = title
+    if description is not None:
+        appointment.description = description
+    if appointment_datetime_str:
+        try:
+            appointment.appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
+        except ValueError:
+            return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Appointment updated successfully",
+        "appointment": appointment.to_dict()
+    }), 200
+
+# 4. Delete an appointment
+@app.route('/appointments/<int:appointment_id>', methods=['DELETE'])
+@require_session_key
+def delete_appointment(appointment_id):
+    appointment = Appointment.query.get(appointment_id)
+    
+    # Ensure the appointment exists and belongs to the current user.
+    if not appointment or appointment.user_id != g.user_id:
+        return jsonify({"error": "Appointment not found"}), 404
+
+    db.session.delete(appointment)
+    db.session.commit()
+
+    return jsonify({"message": "Appointment deleted successfully"}), 200
     
 @app.route('/check-group')
 @require_session_key
@@ -742,15 +854,20 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
+        # Handle auto login with lasting_key if provided
         lasting_key = data.get('lasting_key')
         if lasting_key:
             user = User.query.filter_by(lasting_key=lasting_key).first()
             if user:
                 key = generate_session_key(user.id)
-                return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
+                return jsonify({
+                    "message": "Login successful!",
+                    "session_key": key,
+                    "user_id": user.id
+                }), 200
             return jsonify({"error": "Invalid lasting key"}), 400
 
-        # Only check for username and password if lasting_key is not provided
+        # Validate credentials when lasting_key isn't provided
         username = data.get('username')
         password = data.get('password')
         if not username or not password:
@@ -760,19 +877,28 @@ def login():
         if not user or not bcrypt.check_password_hash(user.password, password):
             return jsonify({"error": "Invalid credentials"}), 400
 
+        # Generate a new session key for this login
         key = generate_session_key(user.id)
+
+        # If the user wants to stay logged in, reuse an existing lasting_key if available,
+        # or generate a new one if not.
         if data.get('keep_login'):
-            new_lasting_key = secrets.token_hex(32)
-            user.lasting_key = new_lasting_key
-            db.session.commit()
+            if not user.lasting_key:
+                user.lasting_key = secrets.token_hex(32)
+                db.session.commit()
             return jsonify({
                 "message": "Login successful!",
                 "session_key": key,
                 "user_id": user.id,
-                "lasting_key": new_lasting_key
+                "lasting_key": user.lasting_key
             }), 200
 
-        return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
+        # Standard login response
+        return jsonify({
+            "message": "Login successful!",
+            "session_key": key,
+            "user_id": user.id
+        }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
