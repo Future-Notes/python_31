@@ -273,7 +273,7 @@
     <source src="static/soundtrack.mp3" type="audio/mpeg">
     Your browser does not support the audio element.
   </audio>
-  <button id="muteButton">Mute</button>
+  <button id="muteButton">Dempen</button>
 
   <script>
 
@@ -293,7 +293,7 @@
       soundtrack.muted = !soundtrack.muted;
 
       // Update the button text
-      muteButton.innerText = soundtrack.muted ? 'Unmute' : 'Mute';
+      muteButton.innerText = soundtrack.muted ? 'Dempen opheffen' : 'Dempen';
     });
     // Fullscreen request.
     document.getElementById('fullscreenButton').addEventListener('click', function() {
@@ -456,7 +456,7 @@
         timeLeft -= 0.1; // update every 100ms
         if (timeLeft <= 0) {
           clearInterval(interval);
-          window.location.href = '/';
+          window.location.href = '/pws';
           return;
         }
         // Update button text with whole seconds remaining.

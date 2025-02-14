@@ -1,11 +1,12 @@
 import sys
 import ctypes
 import winreg
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QSystemTrayIcon
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl, pyqtSlot, QObject
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWebChannel import QWebChannel
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QSystemTrayIcon
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtCore import QUrl, pyqtSlot, QObject
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWebChannel import QWebChannel
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings, QWebEnginePage
 
 # Windows API Setup (for titlebar color changes)
 DWM_API = ctypes.windll.dwmapi
@@ -17,6 +18,13 @@ DWMWA_TEXT_COLOR = 36               # Titlebar Text Color
 ###########################################################################
 # 1. Create a Python object to manage startup registration via the Windows registry
 ###########################################################################
+
+from PyQt6.QtWebEngineCore import QWebEnginePage
+
+class CustomWebEnginePage(QWebEnginePage):
+    def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+        print(f"JS Console: {message} (line: {lineNumber}, source: {sourceID})")
+
 
 class StartupManager(QObject):
     @pyqtSlot(result=bool)
@@ -38,12 +46,13 @@ class StartupManager(QObject):
 
     @pyqtSlot(result=bool)
     def toggleStartup(self):
-        """
-        Toggle our app’s startup registry entry.
-        Returns the new status (True if enabled, False if disabled).
-        """
-        import sys
-        app_path = sys.executable  # (If frozen, this is the path to your exe)
+        """Toggle our app’s startup registry entry."""
+        import os
+        if getattr(sys, 'frozen', False):
+            app_path = sys.executable
+        else:
+            app_path = os.path.join(os.path.dirname(__file__), "main.py")
+        
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                                  r"Software\Microsoft\Windows\CurrentVersion\Run",
@@ -58,7 +67,7 @@ class StartupManager(QObject):
             new_status = False
         except FileNotFoundError:
             # Not registered yet: add it.
-            winreg.SetValueEx(key, "FutureNotes", 0, winreg.REG_SZ, app_path)
+            winreg.SetValueEx(key, "FutureNotes", 0, winreg.REG_SZ, f'"{app_path}"')
             new_status = True
 
         winreg.CloseKey(key)
@@ -77,6 +86,14 @@ class WebAppViewer(QMainWindow):
         self.setGeometry(100, 100, 1024, 768)
         self.setWindowIcon(QIcon("icon.ico"))  # Replace with your .ico file path
 
+        # --- IMPORTANT: Configure QWebEngineProfile BEFORE creating the QWebEngineView ---
+        self.profile = QWebEngineProfile.defaultProfile()
+        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+        # Set an absolute path or ensure the relative path exists
+        self.profile.setPersistentStoragePath("./web_storage")
+        # (Optional) Explicitly enable localStorage
+        self.profile.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+
         # Set a unique AppUserModelID for Windows taskbar grouping
         app_id = "futurenotes.futurenotesapp.1.0"  # Change to a unique name
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
@@ -90,13 +107,17 @@ class WebAppViewer(QMainWindow):
         layout = QVBoxLayout()
         self.central_widget.setLayout(layout)
 
-        # Create the QWebEngineView and load the initial page (login page)
+        # --- Create the QWebEngineView AFTER configuring the profile ---
         self.browser = QWebEngineView()
+        # Create a new QWebEnginePage with the specified profile.
+        page = CustomWebEnginePage(self.profile, self.browser)
+        # Set the custom page to the browser.
+        self.browser.setPage(page)
         self.browser.setUrl(QUrl(self.base_url + "/login_page"))
         layout.addWidget(self.browser)
 
         # Set up QWebChannel for JS ⇄ Python communication
-        self.channel = QWebChannel(self.browser.page())
+        self.channel = QWebChannel()
         self.startup_manager = StartupManager()
         self.channel.registerObject("startupManager", self.startup_manager)
         self.browser.page().setWebChannel(self.channel)
@@ -115,6 +136,23 @@ class WebAppViewer(QMainWindow):
         """
         self.browser.page().runJavaScript(js_theme, self.update_theme_color)
 
+        # Hide scrollbars
+        self.browser.page().runJavaScript("""
+            (function() {
+                var css = '*::-webkit-scrollbar { display: none; }';
+                var style = document.createElement('style');
+                style.innerHTML = css;
+                document.head.appendChild(style);
+            })();
+        """)
+        print("Hiding scrollbars")
+        
+        # Test localStorage functionality
+        self.browser.page().runJavaScript("""
+            localStorage.setItem("testKey", "testValue");
+            console.log("Stored value in localStorage:", localStorage.getItem("testKey"));
+        """)
+
         # --- 2. If we are on the account/settings page, inject our startup toggle button ---
         current_url = self.browser.url().toString()
         if current_url == self.base_url + "/account_page":
@@ -132,7 +170,7 @@ class WebAppViewer(QMainWindow):
         # Convert hex (e.g. "#RRGGBB") to COLORREF format for Windows.
         r, g, b = self.hex_to_rgb(hex_color)
         color = (b << 16) | (g << 8) | r
-        hwnd = int(self.winId())
+        hwnd = self.winId().__int__()  # Updated for PyQt6
         DWM_API.DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR,
                                       ctypes.byref(ctypes.c_int(color)),
                                       ctypes.sizeof(ctypes.c_int))
@@ -209,4 +247,4 @@ if __name__ == "__main__":
     base_url = "https://bosbes.eu.pythonanywhere.com"  # Change to your actual app URL
     window = WebAppViewer(base_url)
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
