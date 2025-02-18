@@ -1,61 +1,5 @@
-"""
-app.py
-This module contains the implementation of a Flask web application with various routes and functionalities.
-The application uses SQLAlchemy for database interactions, Flask-Bcrypt for password hashing, and Flask-CORS for handling Cross-Origin Resource Sharing.
-Modules:
-    - flask: Flask framework for web development.
-    - flask_sqlalchemy: SQLAlchemy integration with Flask.
-    - sqlalchemy: SQLAlchemy core library.
-    - flask_bcrypt: Bcrypt hashing for Flask.
-    - flask_cors: CORS handling for Flask.
-    - datetime: Date and time manipulation.
-    - secrets: Secure random number generation.
-    - werkzeug.utils: Utility functions from Werkzeug.
-    - os: Operating system interfaces.
-    - json: JSON handling.
-Configuration:
-    - SQLALCHEMY_DATABASE_URI: URI for the SQLite database.
-    - SQLALCHEMY_TRACK_MODIFICATIONS: Track modifications setting for SQLAlchemy.
-    - UPLOAD_FOLDER: Directory for uploading profile pictures.
-    - ALLOWED_EXTENSIONS: Set of allowed file extensions for profile pictures.
-Models:
-    - User: Represents a user in the application.
-    - Note: Represents a note created by a user.
-    - Messages: Represents a message sent through the contact form.
-Helper Functions:
-    - generate_session_key(user_id): Generates a session key for a user.
-    - validate_session_key(): Validates the session key from the request headers.
-    - allowed_file(filename): Checks if a file is allowed based on its extension.
-Decorators:
-    - require_session_key(func): Decorator to protect routes with session key validation.
-Error Handlers:
-    - page_note_found(error): Renders a custom 404 error page.
-Routes:
-    - '/': Renders the home page.
-    - '/index': Renders the index page.
-    - '/login_page': Renders the login page.
-    - '/signup_page': Renders the signup page.
-    - '/account_page': Renders the account page.
-    - '/admin_page': Renders the admin page.
-    - '/contact': Handles contact form submissions.
-    - '/share-note/<int:note_id>': Shares a note with another user.
-    - '/update-profile-picture': Updates or deletes the profile picture of a user.
-    - '/user-info': Retrieves information about the logged-in user.
-    - '/allow-sharing': Updates the sharing preference of a user.
-    - '/admin': Admin route for managing users and messages.
-    - '/admin/dump': Admin route for dumping the database.
-    - '/signup': Handles user signup.
-    - '/login': Handles user login.
-    - '/logout': Handles user logout.
-    - '/test-session': Tests the validity of a session.
-    - '/notes': Manages notes (create and retrieve).
-    - '/notes/<int:note_id>': Updates or deletes a specific note.
-    - '/update-password': Updates the password of a user.
-    - '/update-username': Updates the username of a user.
-    - '/delete-account': Deletes the account of a user.
-Main:
-    - Runs the Flask application.
-"""
+# ------------------------------Imports--------------------------------
+
 from flask import Flask, request, jsonify, g, render_template, make_response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint                        
@@ -72,7 +16,7 @@ import string
 import time
 import glob
 
-
+# ------------------------------Global variables--------------------------------
 app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
@@ -84,11 +28,11 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
-
-# In-memory session key store
 session_keys = {}
+games = {}
+BOARD_SIZE = 10
 
-# Models
+# --------------------------------Models--------------------------------------
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -103,7 +47,6 @@ class User(db.Model):
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
     )
 
-
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
@@ -113,7 +56,6 @@ class Note(db.Model):
     tag = db.Column(db.String(100), nullable=True)
 
     group = db.relationship("Group", backref="notes")
-
 
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -135,7 +77,7 @@ class Messages(db.Model):
     email = db.Column(db.String(100), nullable=False)
     message = db.Column(db.Text, nullable=False)
 
-# Helper function to generate and manage session keys, aswell as allowed extensions
+#---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
     session_keys[key] = {
@@ -181,6 +123,249 @@ def require_session_key(func):
     wrapper.__name__ = func.__name__
     return wrapper
 
+def delete_profile_pictures(username):
+    """ Deletes all profile pictures associated with the given username. """
+    profile_pictures_path = os.path.join(UPLOAD_FOLDER)
+    user_pictures = glob.glob(os.path.join(profile_pictures_path, f"{username}_*"))
+
+    for picture in user_pictures:
+        try:
+            os.remove(picture)
+        except Exception as e:
+            print(f"Failed to delete {picture}: {e}")
+
+
+def handle_group_membership(user_id):
+    """ Handles removal or admin transfer for groups the user is in. """
+    memberships = GroupMember.query.filter_by(user_id=user_id).all()
+
+    for membership in memberships:
+        if not membership.admin:
+            db.session.delete(membership)
+        else:
+            group_id = membership.group_id
+            group_members = GroupMember.query.filter_by(group_id=group_id).all()
+
+            if len(group_members) == 1:
+                delete_group_and_notes(group_id)
+            else:
+                transfer_admin_rights(group_id, user_id)
+
+            db.session.delete(membership)
+
+
+def transfer_admin_rights(group_id, admin_id):
+    """ Transfers admin rights to the next available group member. """
+    next_admin = GroupMember.query.filter(GroupMember.group_id == group_id, GroupMember.user_id != admin_id).first()
+
+    if next_admin:
+        next_admin.admin = True
+    else:
+        raise Exception("No other members found to transfer admin rights.")
+
+
+def delete_group_and_notes(group_id):
+    """ Deletes all notes associated with the group and removes the group. """
+    Note.query.filter_by(group_id=group_id).delete()
+    Group.query.filter_by(id=group_id).delete()
+
+
+def delete_user_and_data(user):
+    """ Deletes all notes and the user itself. """
+    Note.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
+
+def generate_game_code(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+def generate_bot_ships():
+    """
+    Randomly generates ship placements for the bot.
+    Example ships: sizes 4, 3, 3, 2.
+    Ships do not overlap.
+    """
+    ship_sizes = [4, 3, 3, 2]
+    ships = []
+    occupied = set()  # to track positions already used
+
+    for size in ship_sizes:
+        placed = False
+        attempts = 0
+        while not placed and attempts < 100:
+            attempts += 1
+            orientation = random.choice(['horizontal', 'vertical'])
+            if orientation == 'horizontal':
+                x = random.randint(0, BOARD_SIZE - size)
+                y = random.randint(0, BOARD_SIZE - 1)
+                positions = [[x + i, y] for i in range(size)]
+            else:
+                x = random.randint(0, BOARD_SIZE - 1)
+                y = random.randint(0, BOARD_SIZE - size)
+                positions = [[x, y + i] for i in range(size)]
+            # Check for conflicts with already occupied positions.
+            if any((pos[0], pos[1]) in occupied for pos in positions):
+                continue
+            for pos in positions:
+                occupied.add((pos[0], pos[1]))
+            ships.append({
+                "positions": positions,
+                "sunk": False
+            })
+            placed = True
+        if not placed:
+            print(f"Failed to place ship of size {size}")
+    return ships
+
+def process_fire(game, player, x, y):
+    """
+    Processes a fire action for the given player at (x,y).
+    Returns a dict with the result (hit/miss, status, turn, winner, and sunk ship if any).
+    """
+    opponent = "player1" if player == "player2" else "player2"
+    opponent_ships = game["players"][opponent]["ships"]
+
+    hit = False
+    for ship in opponent_ships:
+        if [x, y] in ship["positions"]:
+            hit = True
+            game["players"][player]["hits"].append([x, y])
+            break
+
+    if not hit:
+        game["players"][player]["misses"].append([x, y])
+        game["players"][opponent]["incoming_misses"].append({"pos": [x, y], "timestamp": time.time()})
+
+    # Check win condition.
+    all_opponent_positions = []
+    for ship in opponent_ships:
+        all_opponent_positions.extend(ship["positions"])
+    if all([pos in game["players"][player]["hits"] for pos in all_opponent_positions]):
+        game["status"] = "gameover"
+        game["winner"] = player
+
+    sunk_ship = None
+    if hit:
+        for ship in opponent_ships:
+            if not ship.get("sunk", False) and all(pos in game["players"][player]["hits"] for pos in ship["positions"]):
+                ship["sunk"] = True
+                sunk_ship = ship
+                break
+    else:
+        # On a miss, change turn.
+        game["turn"] = opponent
+
+    return {
+        "hit": hit,
+        "status": game["status"],
+        "turn": game["turn"],
+        "winner": game["winner"],
+        "sunk": sunk_ship
+    }
+
+def already_fired(bot, x, y):
+    """Checks if the bot has already fired at the given (x,y)."""
+    return [x, y] in bot.get("hits", []) or [x, y] in bot.get("misses", [])
+
+def bot_move(game_code):
+    """
+    Called when it is the bot's turn. Uses two modes:
+    1. "search": picks a random unfired cell.
+    2. "target": after a hit, picks an adjacent cell and, if a second hit occurs,
+       deduces the ship’s orientation and continues in that direction.
+    If a move is a miss, turn passes to the human.
+    """
+    game = games[game_code]
+    bot = game["players"]["player2"]
+
+    # Initialize bot state if not already set.
+    if "botState" not in bot:
+        bot["botState"] = {
+            "mode": "search",       # can be "search" or "target"
+            "target_hits": [],      # list of consecutive hit coordinates
+            "potential_targets": [] # list of next coordinates to try
+        }
+    state = bot["botState"]
+
+    if state["mode"] == "search":
+        # Build list of all cells not already fired at.
+        possible_moves = []
+        for x in range(BOARD_SIZE):
+            for y in range(BOARD_SIZE):
+                if not already_fired(bot, x, y):
+                    possible_moves.append([x, y])
+        if not possible_moves:
+            return {"error": "No more moves available"}
+        move = random.choice(possible_moves)
+    else:
+        # In "target" mode, if potential targets are not computed, use the first hit.
+        if not state["potential_targets"]:
+            first_hit = state["target_hits"][0]
+            x, y = first_hit
+            adjacent = []
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE and not already_fired(bot, nx, ny):
+                    adjacent.append([nx, ny])
+            state["potential_targets"] = adjacent
+
+        if state["potential_targets"]:
+            move = random.choice(state["potential_targets"])
+        else:
+            # Fallback: reset to search mode if no targets available.
+            state["mode"] = "search"
+            return bot_move(game_code)
+
+    x, y = move
+    result = process_fire(game, "player2", x, y)
+    print(f"Bot fires at {(x, y)}: {result}")
+
+    if result["hit"]:
+        state["target_hits"].append([x, y])
+        if len(state["target_hits"]) == 1:
+            state["mode"] = "target"
+        elif len(state["target_hits"]) >= 2:
+            # Deduce orientation based on the first two hits.
+            hit1 = state["target_hits"][0]
+            hit2 = state["target_hits"][1]
+            potential = []
+            if hit1[0] == hit2[0]:
+                # Vertical ship: try one cell above and one below.
+                col = hit1[0]
+                ys = [hit[1] for hit in state["target_hits"]]
+                min_y, max_y = min(ys), max(ys)
+                if min_y - 1 >= 0 and not already_fired(bot, col, min_y - 1):
+                    potential.append([col, min_y - 1])
+                if max_y + 1 < BOARD_SIZE and not already_fired(bot, col, max_y + 1):
+                    potential.append([col, max_y + 1])
+            elif hit1[1] == hit2[1]:
+                # Horizontal ship: try one cell left and one cell right.
+                row = hit1[1]
+                xs = [hit[0] for hit in state["target_hits"]]
+                min_x, max_x = min(xs), max(xs)
+                if min_x - 1 >= 0 and not already_fired(bot, min_x - 1, row):
+                    potential.append([min_x - 1, row])
+                if max_x + 1 < BOARD_SIZE and not already_fired(bot, max_x + 1, row):
+                    potential.append([max_x + 1, row])
+            state["potential_targets"] = potential
+
+        # Reset targeting if a ship was sunk.
+        if result.get("sunk"):
+            state["mode"] = "search"
+            state["target_hits"] = []
+            state["potential_targets"] = []
+
+        # If the bot still has the turn, let it fire again.
+        if game["status"] == "battle" and game["turn"] == "player2":
+            time.sleep(0.5)
+            bot_move(game_code)
+    else:
+        # In target mode, remove this move from potential targets.
+        if state["mode"] == "target" and move in state["potential_targets"]:
+            state["potential_targets"].remove(move)
+    return result
+
+#---------------------------------Template routes--------------------------------
+
 @app.errorhandler(404)
 def page_note_found(error):
     return render_template('404.html'), 404
@@ -214,6 +399,31 @@ def admin_page():
 def group_notes():
     return render_template("group_index.html")
 
+@app.route('/setup')
+def setup():
+    return render_template('setup.html')
+
+@app.route('/pws')
+def pws():
+    return render_template('pws.html')
+
+@app.route('/battle')
+def battle():
+    return render_template('battle.html')
+
+@app.route('/spectate_callback')
+def spectate():
+    return render_template('spectate.html')
+
+@app.route('/spectate')
+def spectate_setup():
+    return render_template('spectate_list.html')
+
+
+#---------------------------------API routes--------------------------------
+
+# Homepage
+
 @app.route('/contact', methods=['POST'])
 def contact():
     data = request.json
@@ -227,6 +437,25 @@ def contact():
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
+
+# User info
+
+@app.route('/user-info', methods=['GET'])
+@require_session_key
+def get_user_info():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "username": user.username,
+        "profile_picture": user.profile_picture,
+        "allows_sharing": user.allows_sharing,
+        "role": user.role
+    }), 200
+
+# Groups
+
 @app.route('/check-group')
 @require_session_key
 def group_info_lol():
@@ -424,6 +653,7 @@ def delete_group():
     db.session.commit()
     return jsonify({"message": "Group deleted successfully."}), 200
 
+# Group notes
 
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
@@ -507,6 +737,7 @@ def update_delete_group_note(group_id):
         print("Note deleted successfully")
         return jsonify({"message": "Note deleted successfully!"}), 200
 
+# Sharing notes
 
 @app.route('/share-note/<int:note_id>', methods=['POST'])
 @require_session_key
@@ -545,6 +776,61 @@ def share_note(note_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+# Profile
+
+@app.route('/update-password', methods=['PUT'])
+@require_session_key
+def update_password():
+    data = request.json
+    user = User.query.get(g.user_id)  # Use g.user_id directly
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if bcrypt.check_password_hash(user.password, data['current_password']):
+        hashed_password = bcrypt.generate_password_hash(data['new_password']).decode('utf-8')
+        user.password = hashed_password
+        db.session.commit()
+        return jsonify({"message": "Password updated successfully!"}), 200
+    else:
+        return jsonify({"error": "Current password is incorrect"}), 400
+
+@app.route('/update-username', methods=['PUT'])
+@require_session_key
+def update_username():
+    data = request.json
+    user = User.query.get(g.user_id)  # Use g.user_id directly
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if User.query.filter_by(username=data['new_username']).first():
+        return jsonify({"error": "Username already exists"}), 400
+
+    user.username = data['new_username']
+    db.session.commit()
+    return jsonify({"message": "Username updated successfully!"}), 200
+
+@app.route('/delete-account', methods=['DELETE'])
+@require_session_key
+def delete_account():
+    data = request.json
+    user = User.query.get(g.user_id)
+    
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if not bcrypt.check_password_hash(user.password, data['password']):
+        return jsonify({"error": "Incorrect password"}), 400
+
+    try:
+        delete_profile_pictures(user.username)
+        handle_group_membership(user.id)
+        delete_user_and_data(user)
+        
+        db.session.commit()
+        return jsonify({"message": "Account and all related data deleted successfully!"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
     
 @app.route('/update-profile-picture', methods=['POST', 'DELETE'])
 @require_session_key
@@ -587,21 +873,7 @@ def update_profile_picture():
             return jsonify({"message": "Profile picture deleted successfully!"}), 200
 
         return jsonify({"error": "No profile picture to delete"}), 400
-
-@app.route('/user-info', methods=['GET'])
-@require_session_key
-def get_user_info():
-    user = User.query.get(g.user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    return jsonify({
-        "username": user.username,
-        "profile_picture": user.profile_picture,
-        "allows_sharing": user.allows_sharing,
-        "role": user.role
-    }), 200
-
+    
 @app.route('/allow-sharing', methods=['PUT'])
 @require_session_key
 def allow_sharing():
@@ -621,7 +893,8 @@ def allow_sharing():
         db.session.rollback()
         print(f"Error updating sharing preference: {e}")
         return jsonify({"error": "Failed to update sharing preference"}), 500
-
+    
+# Admin
 
 @app.route('/admin', methods=['GET', 'DELETE', 'PUT'])
 @require_session_key
@@ -720,8 +993,8 @@ def admin_dump():
     response.headers["Content-Type"] = "application/json"
     return response
 
+# Authentication
 
-# Routes
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.json
@@ -734,7 +1007,6 @@ def signup():
     except:
         return jsonify({"error": "Username already exists"}), 400
 
-# Routes
 @app.route('/login', methods=['POST'])
 def login():
     try:
@@ -790,6 +1062,8 @@ def logout():
 def test_session():
     return jsonify({"message": "Session is valid!"}), 200
 
+# Personal notes
+
 @app.route('/notes', methods=['GET', 'POST'])
 @require_session_key
 def manage_notes():
@@ -806,7 +1080,6 @@ def manage_notes():
         notes = Note.query.filter_by(user_id=g.user_id).all()
         sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
         return jsonify(sanitized_notes)
-
 
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
@@ -827,90 +1100,47 @@ def update_delete_note(note_id):
         db.session.commit()
         return jsonify({"message": "Note deleted successfully!"}), 200
     
-@app.route('/update-password', methods=['PUT'])
-@require_session_key
-def update_password():
-    data = request.json
-    user = User.query.get(g.user_id)  # Use g.user_id directly
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    if bcrypt.check_password_hash(user.password, data['current_password']):
-        hashed_password = bcrypt.generate_password_hash(data['new_password']).decode('utf-8')
-        user.password = hashed_password
-        db.session.commit()
-        return jsonify({"message": "Password updated successfully!"}), 200
-    else:
-        return jsonify({"error": "Current password is incorrect"}), 400
-
-@app.route('/update-username', methods=['PUT'])
-@require_session_key
-def update_username():
-    data = request.json
-    user = User.query.get(g.user_id)  # Use g.user_id directly
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    if User.query.filter_by(username=data['new_username']).first():
-        return jsonify({"error": "Username already exists"}), 400
-
-    user.username = data['new_username']
-    db.session.commit()
-    return jsonify({"message": "Username updated successfully!"}), 200
-
-@app.route('/delete-account', methods=['DELETE'])
-@require_session_key
-def delete_account():
-    data = request.json
-    user = User.query.get(g.user_id)
-    
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    if not bcrypt.check_password_hash(user.password, data['password']):
-        return jsonify({"error": "Incorrect password"}), 400
-
-    try:
-        delete_profile_pictures(user.username)
-        handle_group_membership(user.id)
-        delete_user_and_data(user)
-        
-        db.session.commit()
-        return jsonify({"message": "Account and all related data deleted successfully!"}), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
-    
-# Global in‑memory game store.
-games = {}
-
-def generate_game_code(length=6):
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+#---------------------------------Battleship routes--------------------------------
 
 # --- Create Game ---
 @app.route('/create', methods=['POST'])
 def create_game():
     data = request.json
     player_name = data.get('playerName')
+    play_bot = data.get('playAgainstBot', False)
     if not player_name:
         return jsonify({"error": "Missing player name"}), 400
-    
+
     game_code = generate_game_code()
-    games[game_code] = {
+    game = {
         "players": {
             "player1": {
                 "name": player_name,
                 "ships": None,
                 "hits": [],
                 "misses": [],
-                "incoming_misses": []  # NEW: For showing opponent’s missed shots briefly
+                "incoming_misses": []
             },
-            "player2": None  # Will be set when another player joins.
+            "player2": None  # To be filled either by join or by bot creation.
         },
         "status": "waiting",  # waiting -> placing -> battle -> gameover
         "turn": None,
         "winner": None
     }
+
+    if play_bot:
+        # Create bot player with pre-generated random ship placements.
+        bot_ships = generate_bot_ships()
+        game["players"]["player2"] = {
+            "name": "Bot",
+            "ships": bot_ships,
+            "hits": [],
+            "misses": [],
+            "incoming_misses": []
+        }
+        # With a bot, both players are present from the start.
+        game["status"] = "placing"
+    games[game_code] = game
     return jsonify({"gameCode": game_code})
 
 # --- Join Game ---
@@ -921,25 +1151,27 @@ def join_game():
     game_code = data.get('gameCode')
     if not player_name or not game_code:
         return jsonify({"error": "Missing player name or game code"}), 400
-    
-    # Uppercase only the letters in the game code.
+
+    # Ensure the game code letters are uppercase.
     game_code = ''.join(char.upper() if char.isalpha() else char for char in game_code)
-    
+
     if game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
-    
+
     game = games[game_code]
     if game["players"]["player2"] is not None:
-        return jsonify({"error": "Game heeft al 2 spelers"}), 400
-    
+        # If playing against a bot, joining is not allowed.
+        if game["players"]["player2"]["name"] == "Bot":
+            return jsonify({"error": "Cannot join a bot game"}), 400
+        return jsonify({"error": "Game already has 2 players"}), 400
+
     game["players"]["player2"] = {
         "name": player_name,
         "ships": None,
         "hits": [],
         "misses": [],
-        "incoming_misses": []  # NEW
+        "incoming_misses": []
     }
-    # Both players are now connected; transition to the ship placement phase.
     game["status"] = "placing"
     return jsonify({"message": "Joined game", "gameCode": game_code})
 
@@ -948,35 +1180,36 @@ def join_game():
 def place_ships():
     data = request.json
     game_code = data.get("gameCode")
-    player = data.get("player")  # Expected to be "player1" or "player2"
-    ships = data.get("ships")    # List of ship objects (with positions, etc.)
-    
+    player = data.get("player")  # Expected: "player1" or "player2"
+    ships = data.get("ships")    # List of ship objects with positions
     if not game_code or not player or ships is None:
         return jsonify({"error": "Missing data"}), 400
     if game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
-    
-    # Add a "sunk" flag to each ship if not already provided.
+
+    # Ensure each ship has a "sunk" flag.
     for ship in ships:
         if "sunk" not in ship:
             ship["sunk"] = False
-    
+
     game = games[game_code]
     if player not in game["players"]:
         return jsonify({"error": "Invalid player"}), 400
-    
-    # Save the ship placements.
+
     game["players"][player]["ships"] = ships
 
-    # If both players have placed their ships, transition to battle phase.
+    # Check if both players have placed their ships.
     p1_ships = game["players"]["player1"]["ships"]
     p2_ships = game["players"]["player2"]["ships"] if game["players"]["player2"] else None
 
     if p1_ships and p2_ships:
         game["status"] = "battle"
-        # Randomly choose which player starts.
+        # Randomly choose who starts.
         game["turn"] = "player1" if random.random() < 0.5 else "player2"
-    
+        # If the bot gets the first turn, have it move.
+        if game["turn"] == "player2" and game["players"]["player2"]["name"] == "Bot":
+            time.sleep(0.5)
+            bot_move(game_code)
     return jsonify({"message": "Ships placed", "status": game["status"]})
 
 # --- Fire (Make a Move) ---
@@ -987,12 +1220,11 @@ def fire():
     player = data.get("player")  # "player1" or "player2"
     x = data.get("x")
     y = data.get("y")
-    
     if not game_code or not player or x is None or y is None:
         return jsonify({"error": "Missing data"}), 400
     if game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
-    
+
     game = games[game_code]
     if game["status"] != "battle":
         return jsonify({"error": "Game is not in battle phase"}), 400
@@ -1000,51 +1232,15 @@ def fire():
     if game["turn"] != player:
         return jsonify({"error": "Not your turn"}), 400
 
-    opponent = "player1" if player == "player2" else "player2"
-    opponent_ships = game["players"][opponent]["ships"]
-    
-    hit = False
-    for ship in opponent_ships:
-        # Each ship is a dict: {"positions": [[x1, y1], [x2, y2], ...]}
-        if [x, y] in ship["positions"]:
-            hit = True
-            game["players"][player]["hits"].append([x, y])
-            break
-    if not hit:
-        game["players"][player]["misses"].append([x, y])
-        # NEW: Also record the miss on the defender’s record with a timestamp.
-        game["players"][opponent]["incoming_misses"].append({"pos": [x, y], "timestamp": time.time()})
-    
-    # Check win condition: if every opponent ship cell has been hit.
-    all_opponent_positions = []
-    for ship in opponent_ships:
-        all_opponent_positions.extend(ship["positions"])
-    
-    if all([pos in game["players"][player]["hits"] for pos in all_opponent_positions]):
-        game["status"] = "gameover"
-        game["winner"] = player
+    result = process_fire(game, player, x, y)
 
-    # NEW: Check if a ship was sunk by this hit.
-    sunk_ship = None
-    if hit:
-        for ship in opponent_ships:
-            if not ship.get("sunk", False) and all(pos in game["players"][player]["hits"] for pos in ship["positions"]):
-                ship["sunk"] = True
-                sunk_ship = ship
-                break
-    else:
-        # Change turn only if it was a miss.
-        game["turn"] = opponent
+    # If it is now the bot's turn, call bot_move.
+    if (game["status"] == "battle" and game["turn"] == "player2" and
+            game["players"]["player2"]["name"] == "Bot"):
+        time.sleep(0.5)
+        bot_move(game_code)
 
-    response = {
-        "hit": hit,
-        "status": game["status"],
-        "turn": game["turn"],
-        "winner": game["winner"],
-        "sunk": sunk_ship  # Will be non-null if a ship was just sunk.
-    }
-
-    return jsonify(response)
+    return jsonify(result)
 
 # --- Get Game State (for polling) ---
 @app.route('/game_state', methods=['GET'])
@@ -1062,15 +1258,17 @@ def game_state():
     }
     return jsonify(response)
 
+# --- Stop Game ---
 @app.route('/stop', methods=['POST'])
 def stop():
     game_code = request.args.get("gameCode")
     if not game_code or game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
-    
+
     del games[game_code]
     return jsonify({"message": f"Game {game_code} stopped"})
 
+# --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])
 def spectate_state():
     game_code = request.args.get("gameCode")
@@ -1083,20 +1281,19 @@ def spectate_state():
         if pdata is None:
             filtered_players[player] = None
         else:
-            # Only include sunk ships for spectate view.
+            # Only show sunk ships.
             sunk_ships = []
             if pdata.get("ships"):
                 for ship in pdata["ships"]:
                     if ship.get("sunk"):
                         sunk_ships.append(ship)
             filtered_players[player] = {
-                "name": pdata["name"],  # Player's name included!
+                "name": pdata["name"],
                 "hits": pdata.get("hits", []),
                 "misses": pdata.get("misses", []),
                 "sunk_ships": sunk_ships
             }
 
-    # If there is a winner, look up and return the player's actual name.
     winner_name = None
     if game["winner"]:
         winning_player = game["players"].get(game["winner"])
@@ -1107,12 +1304,12 @@ def spectate_state():
         "players": filtered_players,
         "status": game["status"],
         "turn": game["turn"],
-        "winner": winner_name,  # now returns the winning player's name, if any.
+        "winner": winner_name,
         "opponentJoined": game["players"]["player2"] is not None
     }
     return jsonify(response)
 
-
+# --- List Games ---
 @app.route('/list_games', methods=['GET'])
 def list_games():
     ongoing_games = []
@@ -1125,80 +1322,7 @@ def list_games():
             })
     return jsonify({"games": ongoing_games})
 
-
-# --- Page Routes ---
-@app.route('/setup')
-def setup():
-    return render_template('setup.html')
-
-@app.route('/pws')
-def pws():
-    return render_template('pws.html')
-
-@app.route('/battle')
-def battle():
-    return render_template('battle.html')
-
-@app.route('/spectate_callback')
-def spectate():
-    return render_template('spectate.html')
-
-@app.route('/spectate')
-def spectate_setup():
-    return render_template('spectate_list.html')
-
-
-def delete_profile_pictures(username):
-    """ Deletes all profile pictures associated with the given username. """
-    profile_pictures_path = os.path.join(UPLOAD_FOLDER)
-    user_pictures = glob.glob(os.path.join(profile_pictures_path, f"{username}_*"))
-
-    for picture in user_pictures:
-        try:
-            os.remove(picture)
-        except Exception as e:
-            print(f"Failed to delete {picture}: {e}")
-
-
-def handle_group_membership(user_id):
-    """ Handles removal or admin transfer for groups the user is in. """
-    memberships = GroupMember.query.filter_by(user_id=user_id).all()
-
-    for membership in memberships:
-        if not membership.admin:
-            db.session.delete(membership)
-        else:
-            group_id = membership.group_id
-            group_members = GroupMember.query.filter_by(group_id=group_id).all()
-
-            if len(group_members) == 1:
-                delete_group_and_notes(group_id)
-            else:
-                transfer_admin_rights(group_id, user_id)
-
-            db.session.delete(membership)
-
-
-def transfer_admin_rights(group_id, admin_id):
-    """ Transfers admin rights to the next available group member. """
-    next_admin = GroupMember.query.filter(GroupMember.group_id == group_id, GroupMember.user_id != admin_id).first()
-
-    if next_admin:
-        next_admin.admin = True
-    else:
-        raise Exception("No other members found to transfer admin rights.")
-
-
-def delete_group_and_notes(group_id):
-    """ Deletes all notes associated with the group and removes the group. """
-    Note.query.filter_by(group_id=group_id).delete()
-    Group.query.filter_by(id=group_id).delete()
-
-
-def delete_user_and_data(user):
-    """ Deletes all notes and the user itself. """
-    Note.query.filter_by(user_id=user.id).delete()
-    db.session.delete(user)
+# ---------------------------------Run the app--------------------------------
 
 if __name__ == "__main__":
     with app.app_context():

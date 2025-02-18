@@ -57,6 +57,9 @@
     .clickable {
       cursor: pointer;
     }
+    .disabled-cell {
+      cursor: not-allowed;
+    }
     .sunk {
       background-color: darkred;
       color: white;
@@ -269,32 +272,8 @@
     <h2>Tegenstander bord</h2>
     <table id="enemyBoard"></table>
   </div>
-  <audio id="soundtrack" loop>
-    <source src="static/soundtrack.mp3" type="audio/mpeg">
-    Your browser does not support the audio element.
-  </audio>
-  <button id="muteButton">Dempen</button>
 
   <script>
-
-    // Get references to the audio element and mute button.
-    const soundtrack = document.getElementById('soundtrack');
-    const muteButton = document.getElementById('muteButton');
-
-    // Attempt to play the audio (some browsers may require user interaction for autoplay).
-    // If autoplay is blocked, you might want to call soundtrack.play() in response to a user action.
-    soundtrack.play().catch(err => {
-      console.log('Autoplay failed; will play when user interacts.', err);
-    });
-
-    // Set up the mute/unmute toggle.
-    muteButton.addEventListener('click', () => {
-      // Toggle the muted property
-      soundtrack.muted = !soundtrack.muted;
-
-      // Update the button text
-      muteButton.innerText = soundtrack.muted ? 'Dempen opheffen' : 'Dempen';
-    });
     // Fullscreen request.
     document.getElementById('fullscreenButton').addEventListener('click', function() {
       const docElm = document.documentElement;
@@ -576,7 +555,8 @@
           for (let y = 0; y < boardSize; y++) {
             for (let x = 0; x < boardSize; x++) {
               const cell = document.getElementById(`enemyBoard-${x}-${y}`);
-              cell.className = "clickable";
+              // If it's your turn, cells are clickable; otherwise, show disabled cursor.
+              cell.className = canFire ? "clickable" : "disabled-cell";
               cell.innerText = "";
             }
           }

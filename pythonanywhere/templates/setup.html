@@ -132,6 +132,9 @@
     <!-- The Board -->
     <div id="boardContainer"></div>
     
+    <!-- New Randomize Button -->
+    <button id="randomize">Plaats Schepen Willekeurig</button>
+    
     <button id="done" class="disabled" disabled>Klaar</button>
   </div>
   
@@ -338,11 +341,11 @@
     function updateDoneButton() {
       const doneBtn = document.getElementById('done');
       if (availableShips.length > 0) {
-      doneBtn.disabled = true;
-      doneBtn.classList.add('disabled');
+        doneBtn.disabled = true;
+        doneBtn.classList.add('disabled');
       } else {
-      doneBtn.disabled = false;
-      doneBtn.classList.remove('disabled');
+        doneBtn.disabled = false;
+        doneBtn.classList.remove('disabled');
       }
     }
     
@@ -377,6 +380,81 @@
         }
       });
     });
+    
+    /* --- Random Placement Code --- */
+    // Try to place a single ship randomly. Returns true if placement succeeds.
+    function tryPlaceRandomShip(ship) {
+      let attempts = 0;
+      while (attempts < 100) { // Try up to 100 times.
+        // Randomly choose an orientation.
+        const orientation = Math.random() < 0.5 ? 'H' : 'V';
+        // Adjust max starting positions so the ship fits.
+        let maxX = boardSize, maxY = boardSize;
+        if (orientation === 'H') {
+          maxX = boardSize - ship.length + 1;
+        } else {
+          maxY = boardSize - ship.length + 1;
+        }
+        const startX = Math.floor(Math.random() * maxX);
+        const startY = Math.floor(Math.random() * maxY);
+        const proposed = [];
+        if (orientation === 'H') {
+          for (let i = 0; i < ship.length; i++) {
+            proposed.push({ x: startX + i, y: startY });
+          }
+        } else {
+          for (let i = 0; i < ship.length; i++) {
+            proposed.push({ x: startX, y: startY + i });
+          }
+        }
+        // Check for overlap with already placed ships.
+        let valid = true;
+        for (let placed of placedShips) {
+          for (let pos of placed.positions) {
+            if (proposed.some(p => p.x === pos.x && p.y === pos.y)) {
+              valid = false;
+              break;
+            }
+          }
+          if (!valid) break;
+        }
+        if (valid) {
+          // If valid, add the ship placement.
+          placedShips.push({ id: ship.id, length: ship.length, orientation: orientation, positions: proposed });
+          return true;
+        }
+        attempts++;
+      }
+      return false;
+    }
+    
+    // Randomize placement for all ships.
+    function randomizeShips() {
+      // Reset board placements.
+      placedShips = [];
+      availableShips = [];
+      shipSizes.forEach((length, index) => {
+        availableShips.push({ id: 'ship-' + index, length: length });
+      });
+      // Copy list so we can iterate without interference.
+      const shipsToPlace = availableShips.slice();
+      shipsToPlace.forEach(ship => {
+        if (tryPlaceRandomShip(ship)) {
+          // Remove ship from availableShips once placed.
+          const idx = availableShips.findIndex(s => s.id === ship.id);
+          if (idx > -1) availableShips.splice(idx, 1);
+        } else {
+          console.error("Could not randomly place ship", ship);
+        }
+      });
+      renderBoard();
+      renderShipSelection();
+      updateDoneButton();
+    }
+    
+    // Attach the event listener to the randomize button.
+    document.getElementById('randomize').addEventListener('click', randomizeShips);
+    /* --- End Random Placement Code --- */
     
     // Initialize the page.
     renderShipSelection();
