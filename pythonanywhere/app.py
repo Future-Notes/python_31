@@ -181,7 +181,7 @@ def generate_game_code(length=6):
 def generate_bot_ships():
     """
     Randomly generates ship placements for the bot.
-    Example ships: sizes 5, 4, 3, 3, 2.
+    Example ships: sizes 4, 3, 3, 2.
     Ships do not overlap.
     """
     ship_sizes = [4, 3, 3, 2]
