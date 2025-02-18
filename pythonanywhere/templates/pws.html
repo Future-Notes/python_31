@@ -108,6 +108,7 @@
     </div>
     <input id="createPlayerName" type="text" placeholder="Jouw naam">
     <button id="createGame">Game aanmaken</button>
+    <button id="createGameBot">Game aanmaken met Bot</button>
     <div style="text-align: center; margin: 20px 0;">
       <hr style="border: 1px solid #fff;">
       <p style="margin: 10px 0;">Of join een game:</p>
@@ -121,7 +122,7 @@
     let gameCode = null;
     let player = null;
 
-    // Create game: send a POST to /create and then clear the DOM to show a confirmation screen.
+    // Create game without bot: send a POST to /create
     document.getElementById('createGame').addEventListener('click', () => {
       const name = document.getElementById('createPlayerName').value.trim();
       if (!name) {
@@ -139,7 +140,6 @@
         if (data.gameCode) {
           gameCode = data.gameCode;
           player = "player1";
-          // Clear the entire DOM and show a confirmation message with the logo.
           document.body.innerHTML = `
             <div class="confirmation">
               <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
@@ -147,6 +147,42 @@
               <p>Je Game Code is:</p>
               <p style="font-size:2em; font-weight:bold;">${gameCode}</p>
               <p>Deel deze code met je tegenstander om te starten.</p>
+            </div>
+          `;
+        } else if (data.error) {
+          alert(data.error);
+        }
+      })
+      .catch(error => console.error("Error:", error));
+    });
+
+    // Create game against bot: send a POST to /create with playAgainstBot true
+    document.getElementById('createGameBot').addEventListener('click', () => {
+      const name = document.getElementById('createPlayerName').value.trim();
+      if (!name) {
+        alert("Voer alsjeblieft je naam in.");
+        return;
+      }
+      localStorage.setItem('playerName', name);
+      fetch('/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({playerName: name, playAgainstBot: true})
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.gameCode) {
+          gameCode = data.gameCode;
+          player = "player1";
+          // In a bot game, inform the user that they will play against the bot.
+          document.body.innerHTML = `
+            <div class="confirmation">
+              <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+              <h1>Game aangemaakt!</h1>
+              <p>Je speelt nu tegen de Bot.</p>
+              <p>Je Game Code is:</p>
+              <p style="font-size:2em; font-weight:bold;">${gameCode}</p>
+              <p>Wacht tot je wordt doorgestuurd naar de setup pagina...</p>
             </div>
           `;
         } else if (data.error) {
@@ -175,7 +211,6 @@
         if (!data.error) {
           gameCode = code;
           player = "player2";
-          // Update the lobby container to show a waiting message along with the logo.
           document.getElementById('lobby').innerHTML = `
             <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
             <h1>Zeeslag Lobby</h1>
@@ -196,7 +231,6 @@
           .then(game => {
             // Once both players have joined and the status is "placing", redirect to the setup page.
             if (game.opponentJoined && game.status === "placing") {
-              // Save game info so the setup page can use it.
               localStorage.setItem('gameCode', gameCode);
               localStorage.setItem('player', player);
               window.location.href = '/setup';
