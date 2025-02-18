@@ -104,17 +104,6 @@ class User(db.Model):
     )
 
 
-class Note(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
-    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)  # New field
-    title = db.Column(db.String(100), nullable=True)
-    note = db.Column(db.Text, nullable=False)
-    tag = db.Column(db.String(100), nullable=True)
-
-    group = db.relationship("Group", backref="notes")
-
-
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False, unique=True)
@@ -134,12 +123,11 @@ class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    # Using a single datetime field for both date and time.
     appointment_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    # Relationship back to the User model (assuming your User model's table name is "user")
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
+    notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
 
     def to_dict(self):
         return {
@@ -147,8 +135,39 @@ class Appointment(db.Model):
             "title": self.title,
             "description": self.description,
             "appointment_datetime": self.appointment_datetime.isoformat(),
-            "user_id": self.user_id
+            "user_id": self.user_id,
+            "notes": [note.to_dict() for note in self.notes]  # Include attached notes
         }
+
+
+# Many-to-Many Association Table (Appointments <-> Notes)
+appointment_note = db.Table(
+    'appointment_note',
+    db.Column('appointment_id', db.Integer, db.ForeignKey('appointment.id'), primary_key=True),
+    db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
+)
+
+
+class Note(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
+    title = db.Column(db.String(100), nullable=True)
+    note = db.Column(db.Text, nullable=False)
+    tag = db.Column(db.String(100), nullable=True)
+
+    group = db.relationship("Group", backref="notes")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "note": self.note,
+            "tag": self.tag,
+            "user_id": self.user_id,
+            "group_id": self.group_id
+        }
+
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -267,12 +286,12 @@ def create_appointment():
     title = data.get('title')
     description = data.get('description', '')
     appointment_datetime_str = data.get('appointment_datetime')
+    note_ids = data.get('note_ids', [])  # List of note IDs to attach
 
     if not title or not appointment_datetime_str:
         return jsonify({"error": "Missing required fields: title and appointment_datetime"}), 400
 
     try:
-        # Expecting ISO 8601 format (e.g. "2025-02-14T15:30:00")
         appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
     except ValueError:
         return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
@@ -283,6 +302,11 @@ def create_appointment():
         appointment_datetime=appointment_datetime,
         user_id=g.user_id
     )
+
+    # Attach existing notes if provided
+    if note_ids:
+        notes = Note.query.filter(Note.id.in_(note_ids)).all()
+        new_appointment.notes.extend(notes)
 
     db.session.add(new_appointment)
     db.session.commit()
@@ -299,13 +323,13 @@ def update_appointment(appointment_id):
     data = request.get_json() or {}
     appointment = Appointment.query.get(appointment_id)
 
-    # Check if appointment exists and belongs to the current user.
     if not appointment or appointment.user_id != g.user_id:
         return jsonify({"error": "Appointment not found"}), 404
 
     title = data.get('title')
     description = data.get('description')
     appointment_datetime_str = data.get('appointment_datetime')
+    note_ids = data.get('note_ids')  # Optional update to attached notes
 
     if title:
         appointment.title = title
@@ -316,6 +340,11 @@ def update_appointment(appointment_id):
             appointment.appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
         except ValueError:
             return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    # Update attached notes if provided
+    if note_ids is not None:
+        notes = Note.query.filter(Note.id.in_(note_ids)).all()
+        appointment.notes = notes
 
     db.session.commit()
 
@@ -329,8 +358,7 @@ def update_appointment(appointment_id):
 @require_session_key
 def delete_appointment(appointment_id):
     appointment = Appointment.query.get(appointment_id)
-    
-    # Ensure the appointment exists and belongs to the current user.
+
     if not appointment or appointment.user_id != g.user_id:
         return jsonify({"error": "Appointment not found"}), 404
 
@@ -338,6 +366,7 @@ def delete_appointment(appointment_id):
     db.session.commit()
 
     return jsonify({"message": "Appointment deleted successfully"}), 200
+
     
 @app.route('/check-group')
 @require_session_key
