@@ -209,7 +209,7 @@
       padding: 10px 20px;
       font-size: 18px;
       color: white;
-      background-color: #007BFF; /* starting tint */
+      background-color: #007BFF;
       border: none;
       border-radius: 5px;
       cursor: pointer;
@@ -219,35 +219,32 @@
     }
     .logo-transition {
       position: fixed;
-      z-index: 3000; /* Ensure it's on top */
+      z-index: 3000;
       transition: transform 1.5s ease-in-out;
       will-change: transform;
-      /* Optional: set pointer-events to none so it doesn't block clicks */
       pointer-events: none;
     }
     #muteButton {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    background-color: #007BFF;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    padding: 10px 15px;
-    cursor: pointer;
-    font-size: 16px;
-    z-index: 1001; /* Ensures the button stays on top */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    transition: background-color 0.3s ease;
-  }
-
-  #muteButton:hover {
-    background-color: #0056b3;
-  }
-  .hidden {
-    display: none;
-  }
-
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      padding: 10px 15px;
+      cursor: pointer;
+      font-size: 16px;
+      z-index: 1001;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      transition: background-color 0.3s ease;
+    }
+    #muteButton:hover {
+      background-color: #0056b3;
+    }
+    .hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -267,8 +264,15 @@
   <div id="gameoverOverlay" class="gameover-overlay">
     <img id="gameoverLogo" src="static/zeeslag.png" alt="Zeeslag Logo" class="gameover-logo">
     <h1 id="gameoverText" class="gameover-text"></h1>
+    <!-- New End Screen Board -->
+    <div id="endScreenContainer" style="margin-top:20px;">
+      <h2 id="endTitle" style="color:white;"></h2>
+      <div class="board-container">
+        <table id="endBoard"></table>
+      </div>
+    </div>
     <!-- New Game Button with integrated timer/progress -->
-    <button id="newGameButton">New Game (start automatisch in 10 seconden)</button>
+    <button id="newGameButton">New Game (start automatisch in 30 seconden)</button>
   </div>
   
   <div class="board-container">
@@ -344,21 +348,23 @@
       .catch(err => console.error('Error firing:', err));
     }
   
-    // Show game over overlay with special effects and start the new game timer.
+    // Show game over overlay with special effects, display the new board, and start the new game timer.
     function showGameOverScreen(won) {
       const overlay = document.getElementById('gameoverOverlay');
       const logo = document.getElementById('gameoverLogo');
       const gameoverText = document.getElementById('gameoverText');
+      const endTitle = document.getElementById('endTitle');
       
-      // Set overlay styling and text based on win or lose.
       if (won) {
         overlay.classList.add('win');
         gameoverText.innerText = "Je hebt gewonnen!";
         gameoverText.classList.add('win');
+        endTitle.innerText = "Hier zijn de gezonken schepen van de tegenstander:";
       } else {
         overlay.classList.add('lose');
         gameoverText.innerText = "Je hebt verloren!";
         gameoverText.classList.add('lose');
+        endTitle.innerText = "Hier had de tegenstander zijn schepen verstopt:";
       }
       overlay.classList.add('show');
       
@@ -372,8 +378,7 @@
       });
   
       animateLogoTransition();
-      
-      // Start the New Game timer with progress.
+      loadEndBoard(); // Load the enemy ship positions into the end screen board.
       startNewGameTimer();
     }
   
@@ -420,56 +425,108 @@
       });
     }
   
-    // Start a 10-second countdown that updates the new game button.
+    // Fetch enemy ship positions, your misses, and your hits, then render them on a non-clickable board.
+    function loadEndBoard() {
+      fetch(`/game_result?gameCode=${gameCode}&player=${player}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            console.error(data.error);
+            return;
+          }
+          const endBoard = document.getElementById('endBoard');
+          endBoard.innerHTML = "";
+          // Build an empty 10x10 board.
+          for (let y = 0; y < boardSize; y++) {
+            const tr = document.createElement('tr');
+            for (let x = 0; x < boardSize; x++) {
+              const td = document.createElement('td');
+              td.id = `endBoard-${x}-${y}`;
+              tr.appendChild(td);
+            }
+            endBoard.appendChild(tr);
+          }
+          // Mark enemy ship positions.
+          if (data.enemyShips) {
+            data.enemyShips.forEach(ship => {
+              ship.positions.forEach(pos => {
+                const [x, y] = pos;
+                const cell = document.getElementById(`endBoard-${x}-${y}`);
+                if (cell) {
+                  if (data.winner === player) {
+                    // Winning player: mark all enemy ship cells as hit.
+                    cell.classList.add('hit');
+                    cell.innerText = "X";
+                  } else {
+                    // Losing player: only mark as hit if this cell is in your hit list.
+                    const wasHit = data.myHits.some(hit => hit[0] === x && hit[1] === y);
+                    if (wasHit) {
+                      cell.classList.add('hit');
+                      cell.innerText = "X";
+                    } else {
+                      cell.classList.add('ship');
+                    }
+                  }
+                }
+              });
+            });
+          }
+          // Mark your own misses.
+          if (data.myMisses) {
+            data.myMisses.forEach(pos => {
+              const [x, y] = pos;
+              const cell = document.getElementById(`endBoard-${x}-${y}`);
+              if (cell) {
+                cell.classList.add('miss');
+                cell.innerText = "O";
+              }
+            });
+          }
+        })
+        .catch(err => console.error("Error loading end board: ", err));
+    }
+
+    // Start a 30-second countdown that updates the new game button.
     function startNewGameTimer() {
       const button = document.getElementById('newGameButton');
-      let timeLeft = 10; // seconds
-      const totalTime = 10;
-      // Colors for progress (you can change these values)
-      const startColor = { r: 0, g: 123, b: 255 };   // #007BFF
-      const endColor   = { r: 102, g: 179, b: 255 };  // #66B3FF
+      let timeLeft = 30; // seconds
+      const totalTime = 30;
+      const startColor = { r: 0, g: 123, b: 255 };
+      const endColor   = { r: 102, g: 179, b: 255 };
       
-      // Update the button text immediately.
-      button.innerText = `Nieuwe game (start automatisch in 10 seconden)`;
+      button.innerText = `Nieuwe game (start automatisch in 30 seconden)`;
+      
+      const newButton = button.cloneNode(true);
+      newButton.addEventListener('click', function() {
+        clearInterval(interval);
+        window.location.href = '/pws';
+      });
+      button.parentNode.replaceChild(newButton, button);
       
       const interval = setInterval(() => {
-        timeLeft -= 0.1; // update every 100ms
+        timeLeft -= 0.1;
         if (timeLeft <= 0) {
           clearInterval(interval);
           window.location.href = '/pws';
           return;
         }
-        // Update button text with whole seconds remaining.
         const displayTime = Math.ceil(timeLeft);
-        button.innerText = `New Game (${displayTime})`;
-        // Calculate progress fraction.
+        newButton.innerText = `New Game (${displayTime})`;
         const progress = (totalTime - timeLeft) / totalTime;
-        // Interpolate between startColor and endColor.
         const r = Math.round(startColor.r + (endColor.r - startColor.r) * progress);
         const g = Math.round(startColor.g + (endColor.g - startColor.g) * progress);
         const b = Math.round(startColor.b + (endColor.b - startColor.b) * progress);
-        button.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+        newButton.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
       }, 100);
-      
-      // Remove any existing event listeners to prevent multiple intervals.
-      const newButton = button.cloneNode(true);
-      button.parentNode.replaceChild(newButton, button);
-      // Clicking the button immediately starts a new game.
-      newButton.addEventListener('click', function() {
-        clearInterval(interval);
-        window.location.href = '/pws';
-      });
     }
   
     // --- Updated Game State Polling ---
-    // Store the interval ID so we can clear it if needed.
     let pollingInterval = setInterval(updateGameState, 500);
   
     function updateGameState() {
       fetch(`/game_state?gameCode=${gameCode}`)
         .then(res => res.json())
         .then(game => {
-          // If the server returns "Invalid game code", handle it.
           if (game.error && game.error === "Invalid game code") {
             clearInterval(pollingInterval);
             const statusMsg = document.getElementById('statusMessage');
@@ -477,24 +534,21 @@
             const playersInfo = document.getElementById('playersInfo');
             playersInfo.classList.add('hidden');
             
-            // Reveal the pre-existing new game button.
             const newGameButton = document.getElementById('newGameButton');
             newGameButton.classList.remove('hidden');
             newGameButton.addEventListener('click', function() {
               localStorage.clear();
               window.location.href = '/pws';
             });
-            return; // Exit early.
+            return;
           }
-
-          // Otherwise, continue with updating the game state.
+  
           const myData = game.players[player];
           const enemyData = game.players[opponent];
           const statusMsg = document.getElementById('statusMessage');
           const sunkMsg = document.getElementById('sunkMessage');
           const playersInfo = document.getElementById('playersInfo');
   
-          // Update player info.
           if (enemyData && enemyData.name) {
             playersInfo.innerText = "Tegenstander: " + enemyData.name;
           } else {
