@@ -15,6 +15,7 @@ import random
 import string
 import time
 import glob
+import threading
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -1220,6 +1221,7 @@ def fire():
     player = data.get("player")  # "player1" or "player2"
     x = data.get("x")
     y = data.get("y")
+
     if not game_code or not player or x is None or y is None:
         return jsonify({"error": "Missing data"}), 400
     if game_code not in games:
@@ -1234,13 +1236,16 @@ def fire():
 
     result = process_fire(game, player, x, y)
 
-    # If it is now the bot's turn, call bot_move.
+    # Return the result immediately
+    response = jsonify(result)
+
+    # If it's the bot's turn, execute bot_move in a separate thread
     if (game["status"] == "battle" and game["turn"] == "player2" and
             game["players"]["player2"]["name"] == "Bot"):
-        time.sleep(0.5)
-        bot_move(game_code)
+        bot_thread = threading.Thread(target=bot_move, args=(game_code,))
+        bot_thread.start()
 
-    return jsonify(result)
+    return response
 
 # --- Get Game State (for polling) ---
 @app.route('/game_state', methods=['GET'])

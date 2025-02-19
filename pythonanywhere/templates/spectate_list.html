@@ -58,9 +58,26 @@
     .game-list li:hover {
       background: rgba(255,255,255,0.4);
     }
+    .back-button {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 5px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: bold;
+      transition: background 0.3s;
+    }
+    .back-button:hover {
+      background: rgba(0, 0, 0, 1);
+    }
   </style>
 </head>
 <body>
+  <a href="/pws" class="back-button">← Back</a>
   <h1>Zeeslag - Ongoing Games</h1>
   <div class="container">
     <!-- PIN section -->
@@ -107,6 +124,7 @@
 
     // Function to fetch ongoing games from the backend.
     function fetchGames() {
+      console.log("Fetching ongoing games...");
       fetch('/list_games')
         .then(response => response.json())
         .then(data => {

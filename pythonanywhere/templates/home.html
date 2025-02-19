@@ -629,6 +629,37 @@
                 font-size: 1rem;
             }
         }
+        .pws-button {
+            position: fixed;
+            top: 25px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: rotate(9deg);
+            transition: transform 0.3s ease-in-out, scale 0.3s ease-in-out;
+            z-index: 1000;
+        }
+
+        .pws-button img {
+            width: 30px;
+            height: 30px;
+        }
+
+        .pws-button:hover {
+            transform: rotate(-10deg) scale(1.1);
+        }
+
+        .pws-button:active {
+            transform: rotate(-10deg) scale(0.9);
+        }
 </style>
 
 </head>
@@ -767,6 +798,10 @@
 <footer>
     &copy; 2025 Future Notes. All Rights Reserved.
 </footer>
+<a href="/pws" class="pws-button">
+    <img src="static/zeeslag.png" alt="Zeeslag Logo">
+    PWS hier!!!
+  </a>
 
 <script>
     const loginButtons = document.querySelectorAll('#login-button'); // Fix selector with # for ID
