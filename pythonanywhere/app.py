@@ -1200,10 +1200,10 @@ def create_game():
     player_name = data.get('playerName')
     play_bot = data.get('playAgainstBot', False)
     if not player_name:
-        return jsonify({"error": "Missing player name"}), 400
+        return jsonify({"error": "Ik mis de spelersnaam!"}), 400
     
     if player_name == "Bot":
-        return jsonify({"error": "You cannot choose that name!"}), 400
+        return jsonify({"error": "Die naam mag je niet kiezen!"}), 400
 
     game_code = generate_game_code()
     game = {
