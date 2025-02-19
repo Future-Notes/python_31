@@ -1,6 +1,6 @@
 # ------------------------------Imports--------------------------------
 
-from flask import Flask, request, jsonify, g, render_template, make_response
+from flask import Flask, request, jsonify, g, render_template, make_response, session
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint                        
 from flask_bcrypt import Bcrypt                                 
@@ -33,6 +33,8 @@ if not os.path.exists(UPLOAD_FOLDER):
 session_keys = {}
 games = {}
 BOARD_SIZE = 10
+CORRECT_PIN = "1234"
+app.secret_key = os.urandom(24)
 
 # --------------------------------Models--------------------------------------
 class User(db.Model):
@@ -1200,10 +1202,10 @@ def create_game():
     player_name = data.get('playerName')
     play_bot = data.get('playAgainstBot', False)
     if not player_name:
-        return jsonify({"error": "Missing player name"}), 400
+        return jsonify({"error": "Ik mis de spelersnaam!"}), 400
     
     if player_name == "Bot":
-        return jsonify({"error": "You cannot choose that name!"}), 400
+        return jsonify({"error": "Die naam mag je niet kiezen!"}), 400
 
     game_code = generate_game_code()
     game = {
@@ -1409,6 +1411,8 @@ def game_result():
 # --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])
 def spectate_state():
+    if not session.get("authenticated"):
+        return jsonify({"error": "Unauthorized"}), 403
     game_code = request.args.get("gameCode")
     if not game_code or game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
@@ -1450,6 +1454,8 @@ def spectate_state():
 # --- List Games ---
 @app.route('/list_games', methods=['GET'])
 def list_games():
+    if not session.get("authenticated"):
+        return jsonify({"error": "Unauthorized"}), 403
     ongoing_games = []
     for game_code, game in games.items():
         if game.get("status") != "gameover":
@@ -1459,6 +1465,18 @@ def list_games():
                 "opponentJoined": game["players"]["player2"] is not None
             })
     return jsonify({"games": ongoing_games})
+
+# --- Validate Pin ---
+@app.route("/validate_pin", methods=["POST"])
+def validate_pin():
+    data = request.get_json()
+    entered_pin = data.get("pin")
+
+    if entered_pin == CORRECT_PIN:
+        session["authenticated"] = True
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False}), 401
 
 # ---------------------------------Run the app--------------------------------
 

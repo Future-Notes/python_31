@@ -99,47 +99,65 @@
   </div>
 
   <script>
-    // Set your PIN here
-    const CORRECT_PIN = "1234";
-
     // Handle PIN submission
-    document.getElementById("pinButton").addEventListener("click", function() {
+    document.getElementById("pinButton").addEventListener("click", function () {
       const enteredPin = document.getElementById("pinInput").value;
-      if (enteredPin === CORRECT_PIN) {
-        document.getElementById("pinSection").style.display = "none";
-        document.getElementById("gamesSection").style.display = "block";
-        fetchGames();
-        // Poll for ongoing games every 10 seconds (10000ms)
-        setInterval(fetchGames, 10000);
-      } else {
-        document.getElementById("pinError").style.display = "block";
-      }
+  
+      fetch("/validate_pin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pin: enteredPin }),
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            sessionStorage.setItem("authenticated", "true"); // Store session status in sessionStorage
+            document.getElementById("pinSection").style.display = "none";
+            document.getElementById("gamesSection").style.display = "block";
+            fetchGames();
+            setInterval(fetchGames, 10000);
+          } else {
+            document.getElementById("pinError").style.display = "block";
+          }
+        })
+        .catch(error => {
+          console.error("Error validating PIN:", error);
+        });
     });
-
-    // Optionally, allow the Enter key to submit the PIN.
-    document.getElementById("pinInput").addEventListener("keyup", function(e) {
+  
+    // Allow the Enter key to submit the PIN.
+    document.getElementById("pinInput").addEventListener("keyup", function (e) {
       if (e.key === "Enter") {
         document.getElementById("pinButton").click();
       }
     });
-
+  
     // Function to fetch ongoing games from the backend.
     function fetchGames() {
       console.log("Fetching ongoing games...");
-      fetch('/list_games')
-        .then(response => response.json())
+  
+      fetch("/list_games")
+        .then(response => {
+          if (response.status === 403) {
+            sessionStorage.removeItem("authenticated");
+            location.reload(); // Force re-authentication
+            throw new Error("Unauthorized");
+          }
+          return response.json();
+        })
         .then(data => {
           const gamesList = document.getElementById("gamesList");
           gamesList.innerHTML = "";
+  
           if (!data.games || data.games.length === 0) {
             gamesList.innerHTML = "<li>No ongoing games available.</li>";
           } else {
             data.games.forEach(game => {
-              // Create a clickable list item for each game.
               const li = document.createElement("li");
               li.innerText = `Game Code: ${game.gameCode} - Status: ${game.status}`;
-              li.addEventListener("click", function() {
-                // Redirect to spectate page with gameCode as a query parameter.
+              li.addEventListener("click", function () {
                 window.location.href = `/spectate_callback?gameCode=${game.gameCode}`;
               });
               gamesList.appendChild(li);
@@ -151,6 +169,16 @@
           document.getElementById("gamesList").innerHTML = "<li>Error fetching games.</li>";
         });
     }
-  </script>
+  
+    // Check if user was authenticated in sessionStorage
+    document.addEventListener("DOMContentLoaded", function () {
+      if (sessionStorage.getItem("authenticated") === "true") {
+        document.getElementById("pinSection").style.display = "none";
+        document.getElementById("gamesSection").style.display = "block";
+        fetchGames();
+        setInterval(fetchGames, 10000);
+      }
+    });
+  </script>  
 </body>
 </html>
