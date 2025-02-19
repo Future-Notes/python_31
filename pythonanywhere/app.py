@@ -16,6 +16,7 @@ import string
 import time
 import glob
 import threading
+import math
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -179,21 +180,39 @@ def delete_user_and_data(user):
 def generate_game_code(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
+def human_guess_weight(x, y, board_size):
+    """
+    Returns a weight representing how likely a human is to guess cell (x, y).
+    Assumes players tend to aim toward the board's center.
+    Cells closer to the center get a higher weight.
+    """
+    print(f"Calculating human guess weight for cell ({x}, {y}) on a board of size {board_size}")
+    center = (board_size - 1) / 2.0
+    dx = abs(x - center)
+    dy = abs(y - center)
+    distance = math.sqrt(dx**2 + dy**2)
+    max_distance = math.sqrt(2 * (center**2))
+    weight = 1 - (distance / max_distance)
+    print(f"Center: {center}, Distance: {distance}, Max Distance: {max_distance}, Weight: {weight}")
+    return weight
+
 def generate_bot_ships():
     """
-    Randomly generates ship placements for the bot.
-    Example ships: sizes 4, 3, 3, 2.
-    Ships do not overlap.
+    Generates ship placements for the bot.
+    Ships: sizes 5, 4, 3, 3, 2.
+    This improved version picks placements that minimize the chance of being guessed
+    by favoring placements with lower cumulative human_guess_weight.
     """
-    ship_sizes = [4, 3, 3, 2]
+    print("Generating bot ships")
+    ship_sizes = [5, 4, 3, 3, 2]
     ships = []
-    occupied = set()  # to track positions already used
+    occupied = set()
 
     for size in ship_sizes:
-        placed = False
-        attempts = 0
-        while not placed and attempts < 100:
-            attempts += 1
+        best_candidate = None
+        best_score = float('inf')
+        print(f"Placing ship of size {size}")
+        for _ in range(100):
             orientation = random.choice(['horizontal', 'vertical'])
             if orientation == 'horizontal':
                 x = random.randint(0, BOARD_SIZE - size)
@@ -203,164 +222,248 @@ def generate_bot_ships():
                 x = random.randint(0, BOARD_SIZE - 1)
                 y = random.randint(0, BOARD_SIZE - size)
                 positions = [[x, y + i] for i in range(size)]
-            # Check for conflicts with already occupied positions.
             if any((pos[0], pos[1]) in occupied for pos in positions):
                 continue
-            for pos in positions:
+            candidate_score = sum(human_guess_weight(pos[0], pos[1], BOARD_SIZE) for pos in positions)
+            if candidate_score < best_score:
+                best_score = candidate_score
+                best_candidate = positions
+        if best_candidate:
+            for pos in best_candidate:
                 occupied.add((pos[0], pos[1]))
             ships.append({
-                "positions": positions,
+                "positions": best_candidate,
                 "sunk": False
             })
-            placed = True
-        if not placed:
+            print(f"Placed ship at positions: {best_candidate} with score: {best_score}")
+        else:
             print(f"Failed to place ship of size {size}")
     return ships
 
 def process_fire(game, player, x, y):
     """
-    Processes a fire action for the given player at (x,y).
-    Returns a dict with the result (hit/miss, status, turn, winner, and sunk ship if any).
+    Processes a fire action for the given player at (x, y).
+    Returns a dict with result details: hit/miss, status, turn, winner, and sunk ship (if any).
     """
+    print(f"Processing fire action for {player} at ({x}, {y})")
     opponent = "player1" if player == "player2" else "player2"
     opponent_ships = game["players"][opponent]["ships"]
 
     hit = False
+    sunk_ship = None
     for ship in opponent_ships:
         if [x, y] in ship["positions"]:
             hit = True
             game["players"][player]["hits"].append([x, y])
+            print(f"Hit detected on ship at ({x}, {y})")
             break
 
     if not hit:
         game["players"][player]["misses"].append([x, y])
-        game["players"][opponent]["incoming_misses"].append({"pos": [x, y], "timestamp": time.time()})
+        game["players"][opponent].setdefault("incoming_misses", []).append({"pos": [x, y], "timestamp": time.time()})
+        print(f"Miss detected at ({x}, {y})")
 
-    # Check win condition.
     all_opponent_positions = []
     for ship in opponent_ships:
         all_opponent_positions.extend(ship["positions"])
-    if all([pos in game["players"][player]["hits"] for pos in all_opponent_positions]):
+    if all(pos in game["players"][player]["hits"] for pos in all_opponent_positions):
         game["status"] = "gameover"
         game["winner"] = player
+        print(f"Game over! {player} wins!")
 
-    sunk_ship = None
     if hit:
         for ship in opponent_ships:
             if not ship.get("sunk", False) and all(pos in game["players"][player]["hits"] for pos in ship["positions"]):
                 ship["sunk"] = True
                 sunk_ship = ship
+                print(f"Ship sunk: {ship}")
                 break
     else:
-        # On a miss, change turn.
         game["turn"] = opponent
+        print(f"Turn changed to {opponent}")
 
     return {
         "hit": hit,
-        "status": game["status"],
-        "turn": game["turn"],
-        "winner": game["winner"],
+        "status": game.get("status", "battle"),
+        "turn": game.get("turn", opponent),
+        "winner": game.get("winner"),
         "sunk": sunk_ship
     }
 
 def already_fired(bot, x, y):
-    """Checks if the bot has already fired at the given (x,y)."""
     return [x, y] in bot.get("hits", []) or [x, y] in bot.get("misses", [])
+
+def compute_probability_map(bot, board_size):
+    """
+    Computes a heatmap of scores for each cell based on remaining unsunk ships.
+    For each remaining ship, every possible horizontal and vertical placement that does not
+    overlap a fired cell adds the ship’s count to each cell in that placement.
+    """
+    print("Computing probability map")
+    fired = set(tuple(cell) for cell in bot.get("hits", []) + bot.get("misses", []))
+    remaining_ships = bot.get("remaining_ships", {5: 1, 4: 1, 3: 2, 2: 1})
+    heatmap = [[0 for _ in range(board_size)] for _ in range(board_size)]
+
+    for ship_size, count in remaining_ships.items():
+        if count <= 0:
+            continue
+        for x in range(board_size):
+            for y in range(board_size - ship_size + 1):
+                placement = [(x, y + i) for i in range(ship_size)]
+                if any(cell in fired for cell in placement):
+                    continue
+                for (px, py) in placement:
+                    heatmap[px][py] += count
+        for x in range(board_size - ship_size + 1):
+            for y in range(board_size):
+                placement = [(x + i, y) for i in range(ship_size)]
+                if any(cell in fired for cell in placement):
+                    continue
+                for (px, py) in placement:
+                    heatmap[px][py] += count
+    print(f"Probability map: {heatmap}")
+    return heatmap
 
 def bot_move(game_code):
     """
-    Called when it is the bot's turn. Uses two modes:
-    1. "search": picks a random unfired cell.
-    2. "target": after a hit, picks an adjacent cell and, if a second hit occurs,
-       deduces the ship’s orientation and continues in that direction.
-    If a move is a miss, turn passes to the human.
+    Determines and executes the bot's move.
+    The bot uses two modes:
+      - SEARCH: Uses a probability map (with parity filtering) to hunt for ships.
+      - TARGET: Once a hit is made, targets adjacent cells using refined heuristics.
     """
+    print(f"Bot making a move in game {game_code}")
     game = games[game_code]
     bot = game["players"]["player2"]
 
-    # Initialize bot state if not already set.
     if "botState" not in bot:
         bot["botState"] = {
-            "mode": "search",       # can be "search" or "target"
-            "target_hits": [],      # list of consecutive hit coordinates
-            "potential_targets": [] # list of next coordinates to try
+            "mode": "search",
+            "target_hits": [],
+            "potential_targets": []
         }
     state = bot["botState"]
 
+    if "remaining_ships" not in bot:
+        bot["remaining_ships"] = {5: 1, 4: 1, 3: 2, 2: 1}
+
+    board_size = game.get("board_size", BOARD_SIZE)
+
     if state["mode"] == "search":
-        # Build list of all cells not already fired at.
+        heatmap = compute_probability_map(bot, board_size)
         possible_moves = []
-        for x in range(BOARD_SIZE):
-            for y in range(BOARD_SIZE):
-                if not already_fired(bot, x, y):
-                    possible_moves.append([x, y])
+        max_prob = -1
+        for x in range(board_size):
+            for y in range(board_size):
+                if not already_fired(bot, x, y) and ((x + y) % 2 == 0):
+                    prob = heatmap[x][y]
+                    if prob > max_prob:
+                        max_prob = prob
+                        possible_moves = [[x, y]]
+                    elif prob == max_prob:
+                        possible_moves.append([x, y])
+        if not possible_moves:
+            for x in range(board_size):
+                for y in range(board_size):
+                    if not already_fired(bot, x, y):
+                        possible_moves.append([x, y])
         if not possible_moves:
             return {"error": "No more moves available"}
         move = random.choice(possible_moves)
+        print(f"Bot search move: {move}")
+
     else:
-        # In "target" mode, if potential targets are not computed, use the first hit.
         if not state["potential_targets"]:
-            first_hit = state["target_hits"][0]
-            x, y = first_hit
-            adjacent = []
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < BOARD_SIZE and 0 <= ny < BOARD_SIZE and not already_fired(bot, nx, ny):
-                    adjacent.append([nx, ny])
-            state["potential_targets"] = adjacent
+            if len(state["target_hits"]) == 1:
+                hit = state["target_hits"][0]
+                x, y = hit
+                adjacent = []
+                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < board_size and 0 <= ny < board_size and not already_fired(bot, nx, ny):
+                        adjacent.append([nx, ny])
+                state["potential_targets"] = adjacent
+            else:
+                hit1, hit2 = state["target_hits"][0], state["target_hits"][1]
+                potential = []
+                if hit1[0] == hit2[0]:
+                    col = hit1[0]
+                    ys = sorted(hit[1] for hit in state["target_hits"])
+                    min_y, max_y = ys[0], ys[-1]
+                    if min_y - 1 >= 0 and not already_fired(bot, col, min_y - 1):
+                        potential.append([col, min_y - 1])
+                    if max_y + 1 < board_size and not already_fired(bot, col, max_y + 1):
+                        potential.append([col, max_y + 1])
+                elif hit1[1] == hit2[1]:
+                    row = hit1[1]
+                    xs = sorted(hit[0] for hit in state["target_hits"])
+                    min_x, max_x = xs[0], xs[-1]
+                    if min_x - 1 >= 0 and not already_fired(bot, min_x - 1, row):
+                        potential.append([min_x - 1, row])
+                    if max_x + 1 < board_size and not already_fired(bot, max_x + 1, row):
+                        potential.append([max_x + 1, row])
+                if not potential:
+                    hit = state["target_hits"][0]
+                    x, y = hit
+                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < board_size and 0 <= ny < board_size and not already_fired(bot, nx, ny):
+                            potential.append([nx, ny])
+                state["potential_targets"] = potential
 
         if state["potential_targets"]:
-            move = random.choice(state["potential_targets"])
+            heatmap = compute_probability_map(bot, board_size)
+            best_target = None
+            best_prob = -1
+            for target in state["potential_targets"]:
+                tx, ty = target
+                if heatmap[tx][ty] > best_prob:
+                    best_prob = heatmap[tx][ty]
+                    best_target = target
+            move = best_target
+            print(f"Bot target move: {move}")
         else:
-            # Fallback: reset to search mode if no targets available.
             state["mode"] = "search"
             return bot_move(game_code)
 
     x, y = move
     result = process_fire(game, "player2", x, y)
-    print(f"Bot fires at {(x, y)}: {result}")
+    print(f"Bot fires at ({x}, {y}): {result}")
 
     if result["hit"]:
         state["target_hits"].append([x, y])
-        if len(state["target_hits"]) == 1:
+        if state["mode"] != "target":
             state["mode"] = "target"
-        elif len(state["target_hits"]) >= 2:
-            # Deduce orientation based on the first two hits.
-            hit1 = state["target_hits"][0]
-            hit2 = state["target_hits"][1]
+        if len(state["target_hits"]) >= 2:
+            hit1, hit2 = state["target_hits"][0], state["target_hits"][1]
             potential = []
             if hit1[0] == hit2[0]:
-                # Vertical ship: try one cell above and one below.
                 col = hit1[0]
-                ys = [hit[1] for hit in state["target_hits"]]
-                min_y, max_y = min(ys), max(ys)
-                if min_y - 1 >= 0 and not already_fired(bot, col, min_y - 1):
-                    potential.append([col, min_y - 1])
-                if max_y + 1 < BOARD_SIZE and not already_fired(bot, col, max_y + 1):
-                    potential.append([col, max_y + 1])
+                ys = sorted(hit[1] for hit in state["target_hits"])
+                if ys[0] - 1 >= 0 and not already_fired(bot, col, ys[0] - 1):
+                    potential.append([col, ys[0] - 1])
+                if ys[-1] + 1 < board_size and not already_fired(bot, col, ys[-1] + 1):
+                    potential.append([col, ys[-1] + 1])
             elif hit1[1] == hit2[1]:
-                # Horizontal ship: try one cell left and one cell right.
                 row = hit1[1]
-                xs = [hit[0] for hit in state["target_hits"]]
-                min_x, max_x = min(xs), max(xs)
-                if min_x - 1 >= 0 and not already_fired(bot, min_x - 1, row):
-                    potential.append([min_x - 1, row])
-                if max_x + 1 < BOARD_SIZE and not already_fired(bot, max_x + 1, row):
-                    potential.append([max_x + 1, row])
+                xs = sorted(hit[0] for hit in state["target_hits"])
+                if xs[0] - 1 >= 0 and not already_fired(bot, xs[0] - 1, row):
+                    potential.append([xs[0] - 1, row])
+                if xs[-1] + 1 < board_size and not already_fired(bot, xs[-1] + 1, row):
+                    potential.append([xs[-1] + 1, row])
             state["potential_targets"] = potential
 
-        # Reset targeting if a ship was sunk.
         if result.get("sunk"):
+            ship_size = result.get("ship_size")
+            if ship_size:
+                bot["remaining_ships"][ship_size] = max(bot["remaining_ships"].get(ship_size, 0) - 1, 0)
             state["mode"] = "search"
             state["target_hits"] = []
             state["potential_targets"] = []
 
-        # If the bot still has the turn, let it fire again.
-        if game["status"] == "battle" and game["turn"] == "player2":
+        if game.get("status", "battle") == "battle" and game.get("turn") == "player2":
             time.sleep(0.5)
             bot_move(game_code)
     else:
-        # In target mode, remove this move from potential targets.
         if state["mode"] == "target" and move in state["potential_targets"]:
             state["potential_targets"].remove(move)
     return result
@@ -419,6 +522,10 @@ def spectate():
 @app.route('/spectate')
 def spectate_setup():
     return render_template('spectate_list.html')
+
+@app.route('/bot-info')
+def bot_info():
+    return render_template('bot_info.html')
 
 
 #---------------------------------API routes--------------------------------
@@ -1111,6 +1218,9 @@ def create_game():
     play_bot = data.get('playAgainstBot', False)
     if not player_name:
         return jsonify({"error": "Missing player name"}), 400
+    
+    if player_name == "Bot":
+        return jsonify({"error": "You cannot choose that name!"}), 400
 
     game_code = generate_game_code()
     game = {
@@ -1152,9 +1262,12 @@ def join_game():
     game_code = data.get('gameCode')
     if not player_name or not game_code:
         return jsonify({"error": "Missing player name or game code"}), 400
+    
+    if player_name == "Bot":
+        return jsonify({"error": "You cannot choose that name!"}), 400
 
     # Ensure the game code letters are uppercase.
-    game_code = ''.join(char.upper() if char.isalpha() else char for char in game_code)
+    game_code = game_code.upper()
 
     if game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
@@ -1229,10 +1342,10 @@ def fire():
 
     game = games[game_code]
     if game["status"] != "battle":
-        return jsonify({"error": "Game is not in battle phase"}), 400
+        return jsonify({"error": "Game is niet in gevechtsfase!"}), 400
 
     if game["turn"] != player:
-        return jsonify({"error": "Not your turn"}), 400
+        return jsonify({"error": "Niet jouw beurt!"}), 400
 
     result = process_fire(game, player, x, y)
 
@@ -1272,6 +1385,43 @@ def stop():
 
     del games[game_code]
     return jsonify({"message": f"Game {game_code} stopped"})
+
+# --- Game Result ---   
+@app.route('/game_result', methods=['GET'])
+def game_result():
+    game_code = request.args.get("gameCode")
+    player = request.args.get("player")
+    if not game_code or not player:
+        return jsonify({"error": "Missing game code or player identifier"}), 400
+
+    if game_code not in games:
+        return jsonify({"error": "Invalid game code"}), 400
+
+    game = games[game_code]
+    
+    # Only reveal results after the game is over.
+    if game["status"] != "gameover":
+        return jsonify({"error": "Game is not over yet"}), 400
+
+    # Validate the requesting player exists.
+    if player not in game["players"] or game["players"][player] is None:
+        return jsonify({"error": "Invalid player"}), 400
+
+    # Determine the opponent.
+    opponent = "player1" if player == "player2" else "player2"
+    if game["players"][opponent] is None:
+        return jsonify({"error": "Opponent has not joined"}), 400
+
+    enemy_ships = game["players"][opponent].get("ships", [])
+    my_misses = game["players"][player].get("misses", [])
+    my_hits = game["players"][player].get("hits", [])
+    
+    return jsonify({
+        "enemyShips": enemy_ships,
+        "myMisses": my_misses,
+        "myHits": my_hits,
+        "winner": game["winner"]
+    })
 
 # --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])

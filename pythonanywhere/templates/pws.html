@@ -70,6 +70,13 @@
       margin: 15px 0;
     }
 
+    /* Container for the bot info button */
+    #bot-info-btn-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+    }
+
     /* Mobile optimizations */
     @media (max-width: 480px) {
       body {
@@ -92,6 +99,13 @@
 
       .confirmation p {
         font-size: 1em;
+      }
+      
+      #bot-info-btn-container {
+        position: static;
+        text-align: center;
+        margin: 20px auto;
+        width: 95%;
       }
     }
   </style>
@@ -116,6 +130,11 @@
     <input id="joinPlayerName" type="text" placeholder="Jouw naam">
     <input id="joinCode" type="text" placeholder="Game Code">
     <button id="joinGame">Game joinen</button>
+  </div>
+
+  <!-- Bot info button placed outside the main lobby container -->
+  <div id="bot-info-btn-container">
+    <button id="botInfo">Over de Bot</button>
   </div>
 
   <script>
@@ -221,6 +240,11 @@
         }
       })
       .catch(error => console.error("Error:", error));
+    });
+
+    // Redirect to /bot-info when the "Over de Bot" button is clicked.
+    document.getElementById('botInfo').addEventListener('click', () => {
+      window.location.href = '/bot-info';
     });
 
     // Poll the server for the game status every second.
