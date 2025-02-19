@@ -186,14 +186,12 @@ def human_guess_weight(x, y, board_size):
     Assumes players tend to aim toward the board's center.
     Cells closer to the center get a higher weight.
     """
-    print(f"Calculating human guess weight for cell ({x}, {y}) on a board of size {board_size}")
     center = (board_size - 1) / 2.0
     dx = abs(x - center)
     dy = abs(y - center)
     distance = math.sqrt(dx**2 + dy**2)
     max_distance = math.sqrt(2 * (center**2))
     weight = 1 - (distance / max_distance)
-    print(f"Center: {center}, Distance: {distance}, Max Distance: {max_distance}, Weight: {weight}")
     return weight
 
 def generate_bot_ships():
@@ -203,7 +201,6 @@ def generate_bot_ships():
     This improved version picks placements that minimize the chance of being guessed
     by favoring placements with lower cumulative human_guess_weight.
     """
-    print("Generating bot ships")
     ship_sizes = [5, 4, 3, 3, 2]
     ships = []
     occupied = set()
@@ -211,7 +208,6 @@ def generate_bot_ships():
     for size in ship_sizes:
         best_candidate = None
         best_score = float('inf')
-        print(f"Placing ship of size {size}")
         for _ in range(100):
             orientation = random.choice(['horizontal', 'vertical'])
             if orientation == 'horizontal':
@@ -235,7 +231,6 @@ def generate_bot_ships():
                 "positions": best_candidate,
                 "sunk": False
             })
-            print(f"Placed ship at positions: {best_candidate} with score: {best_score}")
         else:
             print(f"Failed to place ship of size {size}")
     return ships
@@ -245,7 +240,6 @@ def process_fire(game, player, x, y):
     Processes a fire action for the given player at (x, y).
     Returns a dict with result details: hit/miss, status, turn, winner, and sunk ship (if any).
     """
-    print(f"Processing fire action for {player} at ({x}, {y})")
     opponent = "player1" if player == "player2" else "player2"
     opponent_ships = game["players"][opponent]["ships"]
 
@@ -255,13 +249,11 @@ def process_fire(game, player, x, y):
         if [x, y] in ship["positions"]:
             hit = True
             game["players"][player]["hits"].append([x, y])
-            print(f"Hit detected on ship at ({x}, {y})")
             break
 
     if not hit:
         game["players"][player]["misses"].append([x, y])
         game["players"][opponent].setdefault("incoming_misses", []).append({"pos": [x, y], "timestamp": time.time()})
-        print(f"Miss detected at ({x}, {y})")
 
     all_opponent_positions = []
     for ship in opponent_ships:
@@ -269,18 +261,15 @@ def process_fire(game, player, x, y):
     if all(pos in game["players"][player]["hits"] for pos in all_opponent_positions):
         game["status"] = "gameover"
         game["winner"] = player
-        print(f"Game over! {player} wins!")
 
     if hit:
         for ship in opponent_ships:
             if not ship.get("sunk", False) and all(pos in game["players"][player]["hits"] for pos in ship["positions"]):
                 ship["sunk"] = True
                 sunk_ship = ship
-                print(f"Ship sunk: {ship}")
                 break
     else:
         game["turn"] = opponent
-        print(f"Turn changed to {opponent}")
 
     return {
         "hit": hit,
@@ -299,7 +288,6 @@ def compute_probability_map(bot, board_size):
     For each remaining ship, every possible horizontal and vertical placement that does not
     overlap a fired cell adds the ship’s count to each cell in that placement.
     """
-    print("Computing probability map")
     fired = set(tuple(cell) for cell in bot.get("hits", []) + bot.get("misses", []))
     remaining_ships = bot.get("remaining_ships", {5: 1, 4: 1, 3: 2, 2: 1})
     heatmap = [[0 for _ in range(board_size)] for _ in range(board_size)]
@@ -321,7 +309,6 @@ def compute_probability_map(bot, board_size):
                     continue
                 for (px, py) in placement:
                     heatmap[px][py] += count
-    print(f"Probability map: {heatmap}")
     return heatmap
 
 def bot_move(game_code):
@@ -331,7 +318,6 @@ def bot_move(game_code):
       - SEARCH: Uses a probability map (with parity filtering) to hunt for ships.
       - TARGET: Once a hit is made, targets adjacent cells using refined heuristics.
     """
-    print(f"Bot making a move in game {game_code}")
     game = games[game_code]
     bot = game["players"]["player2"]
 
@@ -369,7 +355,6 @@ def bot_move(game_code):
         if not possible_moves:
             return {"error": "No more moves available"}
         move = random.choice(possible_moves)
-        print(f"Bot search move: {move}")
 
     else:
         if not state["potential_targets"]:
@@ -420,14 +405,12 @@ def bot_move(game_code):
                     best_prob = heatmap[tx][ty]
                     best_target = target
             move = best_target
-            print(f"Bot target move: {move}")
         else:
             state["mode"] = "search"
             return bot_move(game_code)
 
     x, y = move
     result = process_fire(game, "player2", x, y)
-    print(f"Bot fires at ({x}, {y}): {result}")
 
     if result["hit"]:
         state["target_hits"].append([x, y])
