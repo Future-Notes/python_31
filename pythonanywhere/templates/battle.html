@@ -244,6 +244,10 @@
   #muteButton:hover {
     background-color: #0056b3;
   }
+  .hidden {
+    display: none;
+  }
+
   </style>
 </head>
 <body>
@@ -252,7 +256,10 @@
   <h1>Zeeslag - Vechten</h1>
   <!-- Player information -->
   <div id="playersInfo" style="font-size: 20px; margin-bottom: 10px;"></div>
-  <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
+  <div id="statusMessageContainer">
+    <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
+    <button id="newGameButton" class="hidden">Maak nieuwe game aan</button>
+  </div>
   <!-- Floating sunk message -->
   <div id="sunkMessage" class="sunk-message"></div>
   
@@ -288,12 +295,12 @@
       }
       this.style.display = 'none';
     });
-
+  
     const boardSize = 10;
     const gameCode = localStorage.getItem('gameCode');
     const player = localStorage.getItem('player');
     const opponent = (player === 'player1') ? 'player2' : 'player1';
-
+  
     // Create the boards.
     function createBoard(tableId, isEnemy) {
       const table = document.getElementById(tableId);
@@ -313,11 +320,11 @@
     }
     createBoard('myBoard', false);
     createBoard('enemyBoard', true);
-
+  
     let canFire = false;
     let enemyShots = [];
     let announcedSunkShips = {}; // Track already announced sunk ships
-
+  
     function cellClick(x, y) {
       if (!canFire) return;
       if (enemyShots.some(pos => pos[0] === x && pos[1] === y)) return;
@@ -336,7 +343,7 @@
       })
       .catch(err => console.error('Error firing:', err));
     }
-
+  
     // Show game over overlay with special effects and start the new game timer.
     function showGameOverScreen(won) {
       const overlay = document.getElementById('gameoverOverlay');
@@ -363,13 +370,13 @@
           logo.classList.add('logo-pulse');
         }
       });
-
+  
       animateLogoTransition();
       
       // Start the New Game timer with progress.
       startNewGameTimer();
     }
-
+  
     function animateLogoTransition() {
       const mainLogo = document.getElementById('mainLogo');
       const gameoverLogo = document.getElementById('gameoverLogo');
@@ -379,11 +386,6 @@
       
       // Get starting position and size
       const startRect = mainLogo.getBoundingClientRect();
-      
-      // Ensure the overlay is visible so we can get the target position.
-      // (If your overlay is hidden via opacity or pointer-events, you might need to temporarily display it.)
-      const overlay = document.getElementById('gameoverOverlay');
-      // (If necessary, you can adjust the display style; here we assume the overlay is now visible)
       
       // Get target position and size for the game over logo
       const targetRect = gameoverLogo.getBoundingClientRect();
@@ -417,8 +419,7 @@
         logoClone.remove();
       });
     }
-
-
+  
     // Start a 10-second countdown that updates the new game button.
     function startNewGameTimer() {
       const button = document.getElementById('newGameButton');
@@ -459,24 +460,47 @@
         window.location.href = '/pws';
       });
     }
-
+  
+    // --- Updated Game State Polling ---
+    // Store the interval ID so we can clear it if needed.
+    let pollingInterval = setInterval(updateGameState, 500);
+  
     function updateGameState() {
       fetch(`/game_state?gameCode=${gameCode}`)
         .then(res => res.json())
         .then(game => {
+          // If the server returns "Invalid game code", handle it.
+          if (game.error && game.error === "Invalid game code") {
+            clearInterval(pollingInterval);
+            const statusMsg = document.getElementById('statusMessage');
+            statusMsg.innerText = "Foute gamecode. Waarschijnlijk was de server aan het herstarten";
+            const playersInfo = document.getElementById('playersInfo');
+            playersInfo.classList.add('hidden');
+            
+            // Reveal the pre-existing new game button.
+            const newGameButton = document.getElementById('newGameButton');
+            newGameButton.classList.remove('hidden');
+            newGameButton.addEventListener('click', function() {
+              localStorage.clear();
+              window.location.href = '/pws';
+            });
+            return; // Exit early.
+          }
+
+          // Otherwise, continue with updating the game state.
           const myData = game.players[player];
           const enemyData = game.players[opponent];
           const statusMsg = document.getElementById('statusMessage');
           const sunkMsg = document.getElementById('sunkMessage');
           const playersInfo = document.getElementById('playersInfo');
-
+  
           // Update player info.
           if (enemyData && enemyData.name) {
             playersInfo.innerText = "Tegenstander: " + enemyData.name;
           } else {
             playersInfo.innerText = "Wachten op tegenstander...";
           }
-
+  
           if (game.status === "gameover") {
             const won = (game.winner === player);
             localStorage.setItem('result', won ? 'win' : 'lose');
@@ -494,7 +518,7 @@
             statusMsg.innerText = "Wachten op andere speler...";
             canFire = false;
           }
-
+  
           // --- Update Your Board ---
           for (let y = 0; y < boardSize; y++) {
             for (let x = 0; x < boardSize; x++) {
@@ -549,13 +573,12 @@
               }
             });
           }
-
+  
           // --- Update Enemy Board ---
           enemyShots = [];
           for (let y = 0; y < boardSize; y++) {
             for (let x = 0; x < boardSize; x++) {
               const cell = document.getElementById(`enemyBoard-${x}-${y}`);
-              // If it's your turn, cells are clickable; otherwise, show disabled cursor.
               cell.className = canFire ? "clickable" : "disabled-cell";
               cell.innerText = "";
             }
@@ -623,10 +646,9 @@
           }
         });
     }
-
-    // Poll the server every 500ms.
-    setInterval(updateGameState, 500);
+  
+    // Start polling immediately.
     updateGameState();
-  </script>
+  </script>  
 </body>
 </html>
