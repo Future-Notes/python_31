@@ -12,7 +12,7 @@
       font-family: Arial, sans-serif;
       text-align: center;
       margin: 20px;
-      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background: url('static/ocean2.jpg') no-repeat center center fixed;
       background-size: cover;
       color: #000;
     }
@@ -217,6 +217,7 @@
       transition: background-color 0.1s linear;
       position: relative;
       overflow: hidden;
+      text-decoration: none;
     }
     .logo-transition {
       position: fixed;
@@ -273,7 +274,7 @@
       </div>
     </div>
     <!-- New Game Button with integrated timer/progress -->
-    <button id="newGameButton">New Game (start automatisch in 30 seconden)</button>
+    <a href="/pws" id="newGameButton">New Game (start automatisch in 30 seconden)</a>
   </div>
   
   <div class="board-container">
@@ -491,34 +492,18 @@
     function startNewGameTimer() {
       const button = document.getElementById('newGameButton');
       let timeLeft = 30; // seconds
-      const totalTime = 30;
-      const startColor = { r: 0, g: 123, b: 255 };
-      const endColor   = { r: 102, g: 179, b: 255 };
-      
-      button.innerText = `Nieuwe game (start automatisch in 30 seconden)`;
-      
-      const newButton = button.cloneNode(true);
-      newButton.addEventListener('click', function() {
-        clearInterval(interval);
-        window.location.href = '/pws';
-      });
-      button.parentNode.replaceChild(newButton, button);
-      
+
+      button.addEventListener('click', () => window.location.href = '/pws');
+
       const interval = setInterval(() => {
-        timeLeft -= 0.1;
+        timeLeft -= 1;
+        button.innerText = `New Game (${timeLeft})`;
+
         if (timeLeft <= 0) {
           clearInterval(interval);
           window.location.href = '/pws';
-          return;
         }
-        const displayTime = Math.ceil(timeLeft);
-        newButton.innerText = `New Game (${displayTime})`;
-        const progress = (totalTime - timeLeft) / totalTime;
-        const r = Math.round(startColor.r + (endColor.r - startColor.r) * progress);
-        const g = Math.round(startColor.g + (endColor.g - startColor.g) * progress);
-        const b = Math.round(startColor.b + (endColor.b - startColor.b) * progress);
-        newButton.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-      }, 100);
+      }, 1000);
     }
   
     // --- Updated Game State Polling ---
@@ -559,6 +544,7 @@
           if (game.status === "gameover") {
             const won = (game.winner === player);
             localStorage.setItem('result', won ? 'win' : 'lose');
+            clearInterval(pollingInterval);
             showGameOverScreen(won);
             return;
           } else if (game.status === "battle") {
