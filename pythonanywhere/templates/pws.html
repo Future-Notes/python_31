@@ -13,7 +13,7 @@
       font-family: 'Roboto', sans-serif;
       margin: 0;
       padding: 0;
-      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background: url('static/ocean2.jpg') no-repeat center center fixed;
       background-size: cover;
       color: #fff;
     }
@@ -215,7 +215,8 @@
     // Join game: send a POST to /join and show a waiting message.
     document.getElementById('joinGame').addEventListener('click', () => {
       const name = document.getElementById('joinPlayerName').value.trim();
-      const code = document.getElementById('joinCode').value.trim();
+      const code = document.getElementById('joinCode').value.trim().toUpperCase();
+      console.log(name, code);
       if (!name || !code) {
         alert("Voer alsjeblieft je naam en game code in.");
         return;
