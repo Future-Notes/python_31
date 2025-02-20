@@ -17,18 +17,49 @@
       background-size: cover;
       color: #fff;
     }
-
-    /* Container for the lobby and confirmation screens */
-    #lobby, .confirmation {
+    /* Container for the page content */
+    #page-container {
+      padding: 20px;
+    }
+    /* Default lobby styling */
+    #lobby {
       background: rgba(0, 0, 0, 0.75);
       padding: 30px;
       border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+      color: #fff;
       max-width: 400px;
       margin: 80px auto;
-      box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
     }
-
-    /* Header styling to evoke a bold battleship title */
+    /* User panel styling for authenticated users */
+    #user-panel {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+      color: #fff;
+      margin: 80px auto;
+      display: none; /* hidden by default */
+      text-align: center;
+      width: 400px;
+    }
+    /* Profile picture styling */
+    #profile-pic {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      margin: 0 auto;
+      background-size: cover;
+      background-position: center;
+      background-color: #555;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2em;
+      color: #fff;
+      cursor: pointer;
+    }
+    /* Title styling */
     h1 {
       text-align: center;
       font-size: 2.5em;
@@ -36,8 +67,7 @@
       text-transform: uppercase;
       letter-spacing: 2px;
     }
-
-    /* Input and button styling for consistency */
+    /* Input and button styling */
     input, button {
       width: 100%;
       padding: 12px;
@@ -47,224 +77,360 @@
       font-size: 1em;
       box-sizing: border-box;
     }
-
     input {
       background: rgba(255, 255, 255, 0.9);
       color: #333;
     }
-
     button {
       background: #007BFF;
       color: #fff;
       cursor: pointer;
       transition: background 0.3s ease;
     }
-
     button:hover {
       background: #0056b3;
     }
-
-    /* Styling for paragraphs in the confirmation message */
+    /* Confirmation message styling */
+    .confirmation {
+      background: rgba(0, 0, 0, 0.75);
+      padding: 30px;
+      border-radius: 10px;
+      max-width: 400px;
+      margin: 80px auto;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+    }
     .confirmation p {
       font-size: 1.2em;
       text-align: center;
       margin: 15px 0;
     }
-
-    /* Container for the bot info button */
+    /* Bot info button styling */
     #bot-info-btn-container {
       position: fixed;
       bottom: 20px;
       right: 20px;
     }
-
-    /* Mobile optimizations */
+    /* When authenticated, display a flex container with two equal columns */
+    .auth-container {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+    }
+    /* Remove auto margins for flex items */
+    .auth-container #lobby,
+    .auth-container #user-panel {
+      margin: 80px 0;
+    }
+    /* Responsive styling */
     @media (max-width: 480px) {
       body {
         padding: 10px;
       }
-
-      #lobby, .confirmation {
+      #lobby, .confirmation, #user-panel {
         padding: 20px;
-        width: 95%;
+        max-width: 95%;
+        margin: 20px auto;
       }
-
       h1 {
         font-size: 1.8em;
       }
-
       input, button {
         font-size: 0.9em;
         padding: 10px;
       }
-
       .confirmation p {
         font-size: 1em;
       }
-      
       #bot-info-btn-container {
         position: static;
         text-align: center;
         margin: 20px auto;
         width: 95%;
       }
+      .auth-container {
+        flex-direction: column;
+      }
     }
   </style>
 </head>
 <body>
-  <!-- Lobby container -->
-  <div id="lobby">
-    <!-- Logo added above the title -->
-    <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
-    <h1>Zeeslag Lobby</h1>
-    <div style="text-align: center; margin: 20px 0;">
-      <hr style="border: 1px solid #fff;">
-      <p style="margin: 10px 0;">Maak een game aan:</p>
+  <div id="page-container">
+    <!-- Content container; when authenticated, .auth-container will be added -->
+    <div id="content-container">
+      <!-- Lobby section -->
+      <div id="lobby">
+        <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+        <h1>Zeeslag Lobby</h1>
+        <div id="game-options">
+          <div style="text-align: center; margin: 20px 0;">
+            <hr style="border: 1px solid #fff;">
+            <p style="margin: 10px 0;">Maak een game aan:</p>
+          </div>
+          <input id="createPlayerName" type="text" placeholder="Jouw naam">
+          <button id="createGame">Game aanmaken</button>
+          <button id="createGameBot">Game aanmaken met Bot</button>
+          <div style="text-align: center; margin: 20px 0;">
+            <hr style="border: 1px solid #fff;">
+            <p style="margin: 10px 0;">Of join een game:</p>
+          </div>
+          <input id="joinPlayerName" type="text" placeholder="Jouw naam">
+          <input id="joinCode" type="text" placeholder="Game Code">
+          <button id="joinGame">Game joinen</button>
+        </div>
+      </div>
+
+      <!-- User panel for authenticated users -->
+      <div id="user-panel">
+        <div id="profile" onclick="showAccountMenu()">
+          <div id="profile-pic"></div>
+          <h2 id="profile-username"></h2>
+        </div>
+        <div id="achievements" style="margin-top: 20px;">
+          <h3>Achievements</h3>
+          <p>(Coming soon)</p>
+        </div>
+      </div>
     </div>
-    <input id="createPlayerName" type="text" placeholder="Jouw naam">
-    <button id="createGame">Game aanmaken</button>
-    <button id="createGameBot">Game aanmaken met Bot</button>
-    <div style="text-align: center; margin: 20px 0;">
-      <hr style="border: 1px solid #fff;">
-      <p style="margin: 10px 0;">Of join een game:</p>
-    </div>
-    <input id="joinPlayerName" type="text" placeholder="Jouw naam">
-    <input id="joinCode" type="text" placeholder="Game Code">
-    <button id="joinGame">Game joinen</button>
   </div>
 
-  <!-- Bot info button placed outside the main lobby container -->
+  <!-- Bot info button -->
   <div id="bot-info-btn-container">
     <button id="botInfo">Over de Bot</button>
   </div>
 
   <script>
+    function showAccountMenu() {
+      window.location.href = "/account_page";
+    }
+
+    async function authenticateUser() {
+      let sessionKey = sessionStorage.getItem("session_key");
+      const lastingKey = localStorage.getItem("lasting_key");
+
+      async function attemptAutoLogin() {
+        try {
+          console.log("Attempting auto-login...");
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lasting_key: lastingKey }),
+          });
+          if (!response.ok) {
+            console.error("Auto-login failed");
+            localStorage.removeItem("lasting_key");
+            return null;
+          }
+          const data = await response.json();
+          sessionStorage.setItem("session_key", data.session_key);
+          console.log("Auto-login successful!");
+          return data.session_key;
+        } catch (error) {
+          console.error("Error during auto-login:", error);
+          return null;
+        }
+      }
+
+      if (!sessionKey && lastingKey) {
+        console.log("No session key found, attempting auto-login...");
+        sessionKey = await attemptAutoLogin();
+      }
+
+      if (sessionKey) {
+        try {
+          console.log("Validating session key...");
+          const response = await fetch("/test-session", {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${sessionKey}` },
+          });
+          if (response.status === 401) {
+            console.log("Session key invalid, attempting auto-login...");
+            sessionKey = lastingKey ? await attemptAutoLogin() : null;
+          }
+        } catch (error) {
+          console.error("Error during session validation:", error);
+        }
+      }
+      return sessionKey;
+    }
+
+    function setupGameEvents(isAuthenticated) {
+      document.getElementById('createGame').addEventListener('click', () => {
+        let name = isAuthenticated 
+                  ? localStorage.getItem('playerName') 
+                  : document.getElementById('createPlayerName').value.trim();
+        if (!name) {
+          alert("Voer alsjeblieft je naam in.");
+          return;
+        }
+        localStorage.setItem('playerName', name);
+        localStorage.setItem('botGame', false);
+        fetch('/create', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({playerName: name})
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.gameCode) {
+            gameCode = data.gameCode;
+            player = "player1";
+            document.body.innerHTML = `
+              <div class="confirmation">
+                <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+                <h1>Game aangemaakt!</h1>
+                <p>Je Game Code is:</p>
+                <p style="font-size:2em; font-weight:bold;">${data.gameCode}</p>
+                <p>Deel deze code met je tegenstander om te starten.</p>
+              </div>
+            `;
+          } else if (data.error) {
+            alert(data.error);
+          }
+        })
+        .catch(error => console.error("Error:", error));
+      });
+
+      document.getElementById('createGameBot').addEventListener('click', () => {
+        let name = isAuthenticated 
+                  ? localStorage.getItem('playerName') 
+                  : document.getElementById('createPlayerName').value.trim();
+        if (!name) {
+          alert("Voer alsjeblieft je naam in.");
+          return;
+        }
+        localStorage.setItem('playerName', name);
+        localStorage.setItem('botGame', true);
+        fetch('/create', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({playerName: name, playAgainstBot: true})
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.gameCode) {
+            gameCode = data.gameCode;
+            player = "player1";
+            document.body.innerHTML = `
+              <div class="confirmation">
+                <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+                <h1>Game aangemaakt!</h1>
+                <p>Je speelt nu tegen de Bot.</p>
+                <p>Je Game Code is:</p>
+                <p style="font-size:2em; font-weight:bold;">${data.gameCode}</p>
+                <p>Wacht tot je wordt doorgestuurd naar de setup pagina...</p>
+              </div>
+            `;
+          } else if (data.error) {
+            alert(data.error);
+          }
+        })
+        .catch(error => console.error("Error:", error));
+      });
+
+      document.getElementById('joinGame').addEventListener('click', () => {
+        let name = isAuthenticated 
+                  ? localStorage.getItem('playerName') 
+                  : document.getElementById('joinPlayerName').value.trim();
+        const code = document.getElementById('joinCode').value.trim().toUpperCase();
+        if (!name || !code) {
+          alert("Voer alsjeblieft je naam en game code in.");
+          return;
+        }
+        localStorage.setItem('playerName', name);
+        fetch('/join', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({playerName: name, gameCode: code})
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (!data.error) {
+            gameCode = code;
+            player = "player2";
+            document.getElementById('lobby').innerHTML = `
+              <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+              <h1>Zeeslag Lobby</h1>
+              <p style="text-align:center; font-size:1.2em;">Game met succes gejoined. Wachten totdat beide spelers klaar zijn...</p>
+            `;
+          } else {
+            alert(data.error);
+          }
+        })
+        .catch(error => console.error("Error:", error));
+      });
+    }
+
     let gameCode = null;
     let player = null;
 
-    // Create game without bot: send a POST to /create
-    document.getElementById('createGame').addEventListener('click', () => {
-      const name = document.getElementById('createPlayerName').value.trim();
-      if (!name) {
-        alert("Voer alsjeblieft je naam in.");
-        return;
-      }
-      localStorage.setItem('playerName', name);
-      fetch('/create', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({playerName: name})
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.gameCode) {
-          gameCode = data.gameCode;
-          player = "player1";
-          document.body.innerHTML = `
-            <div class="confirmation">
-              <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
-              <h1>Game aangemaakt!</h1>
-              <p>Je Game Code is:</p>
-              <p style="font-size:2em; font-weight:bold;">${gameCode}</p>
-              <p>Deel deze code met je tegenstander om te starten.</p>
-            </div>
-          `;
-        } else if (data.error) {
-          alert(data.error);
-        }
-      })
-      .catch(error => console.error("Error:", error));
-    });
+    document.addEventListener("DOMContentLoaded", async () => {
+      const sessionKey = await authenticateUser();
+      const isAuthenticated = !!sessionKey;
 
-    // Create game against bot: send a POST to /create with playAgainstBot true
-    document.getElementById('createGameBot').addEventListener('click', () => {
-      const name = document.getElementById('createPlayerName').value.trim();
-      if (!name) {
-        alert("Voer alsjeblieft je naam in.");
-        return;
-      }
-      localStorage.setItem('playerName', name);
-      fetch('/create', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({playerName: name, playAgainstBot: true})
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.gameCode) {
-          gameCode = data.gameCode;
-          player = "player1";
-          // In a bot game, inform the user that they will play against the bot.
-          document.body.innerHTML = `
-            <div class="confirmation">
-              <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
-              <h1>Game aangemaakt!</h1>
-              <p>Je speelt nu tegen de Bot.</p>
-              <p>Je Game Code is:</p>
-              <p style="font-size:2em; font-weight:bold;">${gameCode}</p>
-              <p>Wacht tot je wordt doorgestuurd naar de setup pagina...</p>
-            </div>
-          `;
-        } else if (data.error) {
-          alert(data.error);
-        }
-      })
-      .catch(error => console.error("Error:", error));
-    });
-
-    // Join game: send a POST to /join and show a waiting message.
-    document.getElementById('joinGame').addEventListener('click', () => {
-      const name = document.getElementById('joinPlayerName').value.trim();
-      const code = document.getElementById('joinCode').value.trim().toUpperCase();
-      console.log(name, code);
-      if (!name || !code) {
-        alert("Voer alsjeblieft je naam en game code in.");
-        return;
-      }
-      localStorage.setItem('playerName', name);
-      fetch('/join', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({playerName: name, gameCode: code})
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (!data.error) {
-          gameCode = code;
-          player = "player2";
-          document.getElementById('lobby').innerHTML = `
-            <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
-            <h1>Zeeslag Lobby</h1>
-            <p style="text-align:center; font-size:1.2em;">Game met succes gejoined. Wachten totdat beide spelers klaar zijn...</p>
-          `;
-        } else {
-          alert(data.error);
-        }
-      })
-      .catch(error => console.error("Error:", error));
-    });
-
-    // Redirect to /bot-info when the "Over de Bot" button is clicked.
-    document.getElementById('botInfo').addEventListener('click', () => {
-      window.location.href = '/bot-info';
-    });
-
-    // Poll the server for the game status every second.
-    setInterval(() => {
-      if (gameCode) {
-        fetch(`/game_state?gameCode=${gameCode}`)
-          .then(res => res.json())
-          .then(game => {
-            // Once both players have joined and the status is "placing", redirect to the setup page.
-            if (game.opponentJoined && game.status === "placing") {
-              localStorage.setItem('gameCode', gameCode);
-              localStorage.setItem('player', player);
-              window.location.href = '/setup';
+      if (isAuthenticated) {
+        try {
+          const userInfoResponse = await fetch("/user-info", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionKey}`,
+            },
+          });
+          if (userInfoResponse.ok) {
+            const userInfo = await userInfoResponse.json();
+            localStorage.setItem("playerName", userInfo.username);
+            const createInput = document.getElementById("createPlayerName");
+            const joinInput = document.getElementById("joinPlayerName");
+            if (createInput) {
+              createInput.value = userInfo.username;
+              createInput.disabled = true;
             }
-          })
-          .catch(error => console.error("Error polling game state:", error));
+            if (joinInput) {
+              joinInput.value = userInfo.username;
+              joinInput.disabled = true;
+            }
+            document.getElementById("profile-username").textContent = userInfo.username;
+            const profilePicElement = document.getElementById("profile-pic");
+            if (userInfo.profile_picture) {
+              const correctedProfilePic = userInfo.profile_picture.replace(/\\/g, "/");
+              profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+              profilePicElement.textContent = "";
+            } else {
+              profilePicElement.textContent = userInfo.username[0].toUpperCase();
+              profilePicElement.classList.add("no-picture");
+            }
+            document.getElementById("user-panel").style.display = "block";
+            // Wrap the lobby and user panel in a flex container
+            const contentContainer = document.getElementById("content-container");
+            contentContainer.classList.add("auth-container");
+          } else {
+            console.error("Failed to fetch user info");
+          }
+        } catch (error) {
+          console.error("Error during fetching user info:", error);
+        }
       }
-    }, 1000);
+      setupGameEvents(isAuthenticated);
+
+      document.getElementById('botInfo').addEventListener('click', () => {
+        window.location.href = '/bot-info';
+      });
+
+      setInterval(() => {
+        if (gameCode) {
+          fetch(`/game_state?gameCode=${gameCode}`)
+            .then(res => res.json())
+            .then(game => {
+              if (game.opponentJoined && game.status === "placing") {
+                localStorage.setItem('gameCode', gameCode);
+                localStorage.setItem('player', player);
+                window.location.href = '/setup';
+              }
+            })
+            .catch(error => console.error("Error polling game state:", error));
+        }
+      }, 1000);
+    });
   </script>
 </body>
 </html>
