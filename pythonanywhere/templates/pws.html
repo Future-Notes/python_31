@@ -151,6 +151,9 @@
         flex-direction: column;
       }
     }
+    .hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -176,6 +179,11 @@
           <input id="joinPlayerName" type="text" placeholder="Jouw naam">
           <input id="joinCode" type="text" placeholder="Game Code">
           <button id="joinGame">Game joinen</button>
+          <div id="advertize-div" style="text-align: center; margin: 20px 0;">
+            <hr style="border: 1px solid #fff;">
+            <p style="margin: 10px 0;">Wil je dat je resultaten opgeslagen worden?</p>
+          </div>
+          <button id="advertize-button" onclick="window.location.href = '/login_page?redirect=/pws'">Login of registreer nu bij Future Notes</button>
         </div>
       </div>
 
@@ -381,13 +389,23 @@
             localStorage.setItem("playerName", userInfo.username);
             const createInput = document.getElementById("createPlayerName");
             const joinInput = document.getElementById("joinPlayerName");
+            const advertizeDiv = document.getElementById("advertize-div");
+            const advertizeButton = document.getElementById("advertize-button");
             if (createInput) {
               createInput.value = userInfo.username;
               createInput.disabled = true;
+              createInput.classList.add("hidden");
             }
             if (joinInput) {
               joinInput.value = userInfo.username;
               joinInput.disabled = true;
+              joinInput.classList.add("hidden");
+            }
+            if (advertizeDiv) {
+              advertizeDiv.classList.add("hidden");
+            }
+            if (advertizeButton) {
+              advertizeButton.classList.add("hidden");
             }
             document.getElementById("profile-username").textContent = userInfo.username;
             const profilePicElement = document.getElementById("profile-pic");

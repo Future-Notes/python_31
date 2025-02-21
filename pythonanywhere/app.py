@@ -511,7 +511,8 @@ def index():
 
 @app.route('/login_page')
 def login_page():
-    return render_template('login.html')
+    args = request.args.to_dict()
+    return render_template('login.html', **args)
 
 @app.route('/signup_page')
 def signup_page():
