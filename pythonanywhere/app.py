@@ -2,7 +2,8 @@
 
 from flask import Flask, request, jsonify, g, render_template, make_response, session
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint                        
+from sqlalchemy import CheckConstraint
+from sqlalchemy.exc import IntegrityError                        
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -1476,9 +1477,13 @@ def game_stats():
     # Retrieve the player's XP record, or create one if it doesn't exist.
     xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
     if not xp_entry:
-        xp_entry = PlayerXp(user_id=g.user_id, xp=0)
-        db.session.add(xp_entry)
-        db.session.commit()  # commit to generate the entry
+        try:
+            xp_entry = PlayerXp(user_id=g.user_id, xp=0)
+            db.session.add(xp_entry)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # Undo the transaction if the entry already exists
+            xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
 
     current_xp = xp_entry.xp
 
@@ -1498,6 +1503,14 @@ def game_stats():
         "xp_gained": xp_gain,
         "total_xp": xp_entry.xp
     }), 200
+
+@app.route('/game-stats-return', methods=['GET'])
+@require_session_key
+def game_stats_return():
+    xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
+    if not xp_entry:
+        return jsonify({"error": "No XP record found"}), 404
+    return jsonify({"xp": xp_entry.xp})
 
 # --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])
