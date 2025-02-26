@@ -287,7 +287,77 @@
   </div>
 
   <script>
-    // Fullscreen request.
+    // --- Authentication Functions ---
+    async function authenticateUser() {
+      let sessionKey = sessionStorage.getItem("session_key");
+      const lastingKey = localStorage.getItem("lasting_key");
+
+      async function attemptAutoLogin() {
+        try {
+          console.log("Attempting auto-login...");
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lasting_key: lastingKey }),
+          });
+          if (!response.ok) {
+            console.error("Auto-login failed");
+            localStorage.removeItem("lasting_key");
+            return null;
+          }
+          const data = await response.json();
+          sessionStorage.setItem("session_key", data.session_key);
+          console.log("Auto-login successful!");
+          return data.session_key;
+        } catch (error) {
+          console.error("Error during auto-login:", error);
+          return null;
+        }
+      }
+
+      if (!sessionKey && lastingKey) {
+        console.log("No session key found, attempting auto-login...");
+        sessionKey = await attemptAutoLogin();
+      }
+
+      if (sessionKey) {
+        try {
+          console.log("Validating session key...");
+          const response = await fetch("/test-session", {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${sessionKey}` },
+          });
+          if (response.status === 401) {
+            console.log("Session key invalid, attempting auto-login...");
+            sessionKey = lastingKey ? await attemptAutoLogin() : null;
+          }
+        } catch (error) {
+          console.error("Error during session validation:", error);
+        }
+      }
+      return sessionKey;
+    }
+
+    async function sendGameStats(stats) {
+      const sessionKey = await authenticateUser();
+      if (!sessionKey) {
+        console.error("No valid session key. Cannot send game stats.");
+        return;
+      }
+      fetch('/game-stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify(stats)
+      })
+        .then(response => response.json())
+        .then(data => console.log("Game stats submitted:", data))
+        .catch(error => console.error("Error sending game stats:", error));
+    }
+
+    // --- Existing Battle Code ---
     document.getElementById('fullscreenButton').addEventListener('click', function() {
       const docElm = document.documentElement;
       if (docElm.requestFullscreen) {
@@ -301,13 +371,12 @@
       }
       this.style.display = 'none';
     });
-  
+
     const boardSize = 10;
     const gameCode = localStorage.getItem('gameCode');
     const player = localStorage.getItem('player');
     const opponent = (player === 'player1') ? 'player2' : 'player1';
-  
-    // Create the boards.
+
     function createBoard(tableId, isEnemy) {
       const table = document.getElementById(tableId);
       for (let y = 0; y < boardSize; y++) {
@@ -326,37 +395,36 @@
     }
     createBoard('myBoard', false);
     createBoard('enemyBoard', true);
-  
+
     let canFire = false;
     let enemyShots = [];
-    let announcedSunkShips = {}; // Track already announced sunk ships
-  
+    let announcedSunkShips = {};
+
     function cellClick(x, y) {
       if (!canFire) return;
       if (enemyShots.some(pos => pos[0] === x && pos[1] === y)) return;
-      
+
       fetch('/fire', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gameCode: gameCode, player: player, x: x, y: y })
       })
-      .then(response => response.json())
-      .then(data => {
-        if (data.error) {
-          alert(data.error);
-        }
-        updateGameState();
-      })
-      .catch(err => console.error('Error firing:', err));
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            alert(data.error);
+          }
+          updateGameState();
+        })
+        .catch(err => console.error('Error firing:', err));
     }
-  
-    // Show game over overlay with special effects, display the new board, and start the new game timer.
+
     function showGameOverScreen(won) {
       const overlay = document.getElementById('gameoverOverlay');
       const logo = document.getElementById('gameoverLogo');
       const gameoverText = document.getElementById('gameoverText');
       const endTitle = document.getElementById('endTitle');
-      
+
       if (won) {
         overlay.classList.add('win');
         gameoverText.innerText = "Je hebt gewonnen!";
@@ -369,7 +437,7 @@
         endTitle.innerText = "Hier had de tegenstander zijn schepen verstopt:";
       }
       overlay.classList.add('show');
-      
+
       // Start logo fly-in animation.
       logo.classList.add('logo-fly');
       logo.addEventListener('animationend', function(e) {
@@ -378,56 +446,37 @@
           logo.classList.add('logo-pulse');
         }
       });
-  
+
       animateLogoTransition();
-      loadEndBoard(); // Load the enemy ship positions into the end screen board.
+      loadEndBoard();
       startNewGameTimer();
     }
-  
+
     function animateLogoTransition() {
       const mainLogo = document.getElementById('mainLogo');
       const gameoverLogo = document.getElementById('gameoverLogo');
-      
-      // Hide the game over logo initially so only the clone is visible during the animation
       gameoverLogo.style.visibility = 'hidden';
-      
-      // Get starting position and size
       const startRect = mainLogo.getBoundingClientRect();
-      
-      // Get target position and size for the game over logo
       const targetRect = gameoverLogo.getBoundingClientRect();
-      
-      // Create a clone of the main logo
       const logoClone = mainLogo.cloneNode(true);
       logoClone.classList.add('logo-transition');
       document.body.appendChild(logoClone);
-      
-      // Position the clone exactly over the original logo
       logoClone.style.top = startRect.top + 'px';
       logoClone.style.left = startRect.left + 'px';
       logoClone.style.width = startRect.width + 'px';
       logoClone.style.height = startRect.height + 'px';
-      
-      // Force a reflow so the browser registers the starting position
       logoClone.getBoundingClientRect();
-      
-      // Calculate the difference in position and size
       const deltaX = targetRect.left - startRect.left;
       const deltaY = targetRect.top - startRect.top;
       const scaleX = targetRect.width / startRect.width;
       const scaleY = targetRect.height / startRect.height;
-      
-      // Apply the transform to animate the movement and zoom
       logoClone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
-      
-      // When the transition ends, remove the clone and reveal the game over logo
       logoClone.addEventListener('transitionend', () => {
         gameoverLogo.style.visibility = 'visible';
         logoClone.remove();
       });
     }
-  
-    // Fetch enemy ship positions, your misses, and your hits, then render them on a non-clickable board.
+
     function loadEndBoard() {
       fetch(`/game_result?gameCode=${gameCode}&player=${player}`)
         .then(response => response.json())
@@ -438,7 +487,6 @@
           }
           const endBoard = document.getElementById('endBoard');
           endBoard.innerHTML = "";
-          // Build an empty 10x10 board.
           for (let y = 0; y < boardSize; y++) {
             const tr = document.createElement('tr');
             for (let x = 0; x < boardSize; x++) {
@@ -448,7 +496,6 @@
             }
             endBoard.appendChild(tr);
           }
-          // Mark enemy ship positions.
           if (data.enemyShips) {
             data.enemyShips.forEach(ship => {
               ship.positions.forEach(pos => {
@@ -456,11 +503,9 @@
                 const cell = document.getElementById(`endBoard-${x}-${y}`);
                 if (cell) {
                   if (data.winner === player) {
-                    // Winning player: mark all enemy ship cells as hit.
                     cell.classList.add('hit');
                     cell.innerText = "X";
                   } else {
-                    // Losing player: only mark as hit if this cell is in your hit list.
                     const wasHit = data.myHits.some(hit => hit[0] === x && hit[1] === y);
                     if (wasHit) {
                       cell.classList.add('hit');
@@ -473,7 +518,6 @@
               });
             });
           }
-          // Mark your own misses.
           if (data.myMisses) {
             data.myMisses.forEach(pos => {
               const [x, y] = pos;
@@ -488,27 +532,23 @@
         .catch(err => console.error("Error loading end board: ", err));
     }
 
-    // Start a 30-second countdown that updates the new game button.
     function startNewGameTimer() {
       const button = document.getElementById('newGameButton');
-      let timeLeft = 30; // seconds
-
+      let timeLeft = 30;
       button.addEventListener('click', () => window.location.href = '/pws');
-
       const interval = setInterval(() => {
         timeLeft -= 1;
         button.innerText = `New Game (${timeLeft})`;
-
         if (timeLeft <= 0) {
           clearInterval(interval);
           window.location.href = '/pws';
         }
       }, 1000);
     }
-  
-    // --- Updated Game State Polling ---
+
+    // --- Modified Game State Polling ---
     let pollingInterval = setInterval(updateGameState, 500);
-  
+
     function updateGameState() {
       fetch(`/game_state?gameCode=${gameCode}`)
         .then(res => res.json())
@@ -519,32 +559,59 @@
             statusMsg.innerText = "Foute gamecode. Waarschijnlijk was de server aan het herstarten";
             const playersInfo = document.getElementById('playersInfo');
             playersInfo.classList.add('hidden');
-            
             const newGameButton = document.getElementById('newGameButton');
             newGameButton.classList.remove('hidden');
             newGameButton.addEventListener('click', function() {
-              localStorage.clear();
+              localStorage.removeItem("gameCode");
+              localStorage.removeItem("player");
               window.location.href = '/pws';
             });
             return;
           }
-  
+
           const myData = game.players[player];
           const enemyData = game.players[opponent];
           const statusMsg = document.getElementById('statusMessage');
           const sunkMsg = document.getElementById('sunkMessage');
           const playersInfo = document.getElementById('playersInfo');
-  
+
           if (enemyData && enemyData.name) {
             playersInfo.innerText = "Tegenstander: " + enemyData.name;
           } else {
             playersInfo.innerText = "Wachten op tegenstander...";
           }
-  
+
           if (game.status === "gameover") {
             const won = (game.winner === player);
             localStorage.setItem('result', won ? 'win' : 'lose');
             clearInterval(pollingInterval);
+
+            // --- Compute Game Statistics ---
+            const myHits = myData && myData.hits ? myData.hits.length : 0;
+            const myMisses = myData && myData.misses ? myData.misses.length : 0;
+            const shotsFired = myHits + myMisses;
+            let sunkShips = 0;
+            if (enemyData && enemyData.ships) {
+              enemyData.ships.forEach(ship => {
+                if (ship.sunk) sunkShips++;
+              });
+            }
+            const accuracy = shotsFired > 0 ? (myHits / shotsFired) : 0;
+            const botGame = localStorage.getItem("botGame") === "true";
+
+            const statsPayload = {
+              result: won ? "win" : "lose",
+              bot_game: botGame,
+              shots_fired: shotsFired,
+              hits: myHits,
+              misses: myMisses,
+              sunk_ships: sunkShips,
+              accuracy: accuracy
+            };
+
+            // --- Send Game Stats ---
+            sendGameStats(statsPayload);
+
             showGameOverScreen(won);
             return;
           } else if (game.status === "battle") {
@@ -559,7 +626,7 @@
             statusMsg.innerText = "Wachten op andere speler...";
             canFire = false;
           }
-  
+
           // --- Update Your Board ---
           for (let y = 0; y < boardSize; y++) {
             for (let x = 0; x < boardSize; x++) {
@@ -614,7 +681,7 @@
               }
             });
           }
-  
+
           // --- Update Enemy Board ---
           enemyShots = [];
           for (let y = 0; y < boardSize; y++) {
@@ -687,7 +754,7 @@
           }
         });
     }
-  
+
     // Start polling immediately.
     updateGameState();
   </script>  

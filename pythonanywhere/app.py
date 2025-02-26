@@ -2,7 +2,8 @@
 
 from flask import Flask, request, jsonify, g, render_template, make_response, session
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint                        
+from sqlalchemy import CheckConstraint
+from sqlalchemy.exc import IntegrityError                        
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -75,6 +76,14 @@ class GroupMember(db.Model):
 
     user = db.relationship("User", backref="group_memberships")
     group = db.relationship("Group", backref="members")
+
+class PlayerXp(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    xp = db.Column(db.Float, default=0)
+
+    def __repr__(self):
+        return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -157,7 +166,6 @@ def handle_group_membership(user_id):
 
             db.session.delete(membership)
 
-
 def transfer_admin_rights(group_id, admin_id):
     """ Transfers admin rights to the next available group member. """
     next_admin = GroupMember.query.filter(GroupMember.group_id == group_id, GroupMember.user_id != admin_id).first()
@@ -167,12 +175,10 @@ def transfer_admin_rights(group_id, admin_id):
     else:
         raise Exception("No other members found to transfer admin rights.")
 
-
 def delete_group_and_notes(group_id):
     """ Deletes all notes associated with the group and removes the group. """
     Note.query.filter_by(group_id=group_id).delete()
     Group.query.filter_by(id=group_id).delete()
-
 
 def delete_user_and_data(user):
     """ Deletes all notes and the user itself. """
@@ -453,6 +459,43 @@ def bot_move(game_code):
             state["potential_targets"].remove(move)
     return result
 
+def calculate_xp_gain(current_xp, result, accuracy, sunk_ships):
+    """
+    Computes XP gain based on current XP, win/loss result, accuracy and enemy ships sunk.
+    A quadratic scaling factor makes XP gains larger at low XP and smaller at high XP.
+    - Win bonus: 500 XP (if win) or (for losses, below a threshold no win bonus,
+      but above that, subtract xp gradually)
+    - Accuracy: up to 100 XP (linear with accuracy)
+    - Each sunk enemy ship: 50 XP bonus
+    """
+    # Scaling factor decreases as current XP increases (threshold set at 5000 XP)
+    scaling = 1 / (1 + (current_xp / 5000) ** 2)
+    
+    # Determine win/loss bonus
+    base_win_bonus = 500
+    if result == "win":
+        win_loss_bonus = base_win_bonus
+    else:
+        # Below 5000 XP, a loss gives no win/loss bonus.
+        # Above that, subtract XP gradually based on how much XP the user already has.
+        if current_xp < 5000:
+            win_loss_bonus = 0
+        else:
+            # Subtract up to 500 XP gradually; adjust divisor for tuning.
+            win_loss_bonus = -min(base_win_bonus, (current_xp - 5000) / 10)
+    
+    # Accuracy bonus: linear bonus up to 100 XP for 100% accuracy.
+    accuracy_bonus = accuracy * 100
+    
+    # Bonus per sunk enemy ship (each sunk ship gives 50 XP)
+    sunk_bonus = sunk_ships * 50
+
+    # Total raw bonus before scaling
+    total_bonus = win_loss_bonus + accuracy_bonus + sunk_bonus
+    
+    # Apply scaling
+    xp_gain = total_bonus * scaling
+    return xp_gain
 #---------------------------------Template routes--------------------------------
 
 @app.errorhandler(404)
@@ -469,7 +512,8 @@ def index():
 
 @app.route('/login_page')
 def login_page():
-    return render_template('login.html')
+    args = request.args.to_dict()
+    return render_template('login.html', **args)
 
 @app.route('/signup_page')
 def signup_page():
@@ -1407,6 +1451,66 @@ def game_result():
         "myHits": my_hits,
         "winner": game["winner"]
     })
+
+@app.route('/game-stats', methods=['POST'])
+@require_session_key
+def game_stats():
+    # Parse the JSON payload
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Expected fields from the frontend:
+    # result: "win" or "lose"
+    # bot_game: boolean indicating whether played against a bot
+    # shots_fired, hits, misses (optional, for further statistics)
+    # sunk_ships: number of enemy ships sunk
+    # accuracy: float between 0 and 1
+    try:
+        result = data["result"]
+        bot_game = data.get("bot_game", False)
+        accuracy = float(data.get("accuracy", 0))
+        sunk_ships = int(data.get("sunk_ships", 0))
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": "Invalid data format"}), 400
+
+    # Retrieve the player's XP record, or create one if it doesn't exist.
+    xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
+    if not xp_entry:
+        try:
+            xp_entry = PlayerXp(user_id=g.user_id, xp=0)
+            db.session.add(xp_entry)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # Undo the transaction if the entry already exists
+            xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
+
+    current_xp = xp_entry.xp
+
+    # Calculate XP gain based on game results.
+    xp_gain = calculate_xp_gain(current_xp, result, accuracy, sunk_ships)
+    
+    # If played against a bot, reduce the XP gain (e.g. by 50%).
+    if bot_game:
+        xp_gain *= 0.5
+
+    # Update the player's XP.
+    xp_entry.xp += xp_gain
+    db.session.commit()
+
+    return jsonify({
+        "message": "XP updated",
+        "xp_gained": xp_gain,
+        "total_xp": xp_entry.xp
+    }), 200
+
+@app.route('/game-stats-return', methods=['GET'])
+@require_session_key
+def game_stats_return():
+    xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
+    if not xp_entry:
+        return jsonify({"error": "No XP record found"}), 404
+    return jsonify({"xp": xp_entry.xp})
 
 # --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])
