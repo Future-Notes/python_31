@@ -216,6 +216,23 @@
         color: #fff;
     }
 
+    /* Leaderboard button styling */
+    #lb-button-container {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+    }
+
+    /* Leaderboard button styling */
+    #leaderboard-button {
+      background: #007BFF;
+      color: #fff;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
 
 
     /* Responsive styling */
@@ -307,6 +324,10 @@
   <!-- Bot info button -->
   <div id="bot-info-btn-container">
     <button id="botInfo">Over de Bot</button>
+  </div>
+
+  <div id="lb-button-container">
+    <button id="leaderboard-button">Leaderboard</button>
   </div>
 
   <script>
@@ -699,6 +720,10 @@
 
       document.getElementById('botInfo').addEventListener('click', () => {
         window.location.href = '/bot-info';
+      });
+
+      document.getElementById('leaderboard-button').addEventListener('click', () => {
+        window.location.href = '/leaderboard';
       });
 
       setInterval(() => {
