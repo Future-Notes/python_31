@@ -78,6 +78,23 @@
             font-size: 14px;
             color: #bbb;
         }
+        /* Hover effect for leaderboard items */
+        .leaderboard-item:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        /* Entry animation for new list items */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-entry {
+            animation: fadeIn 0.5s ease-in;
+        }
+
     </style>
 </head>
 <body>
@@ -90,61 +107,66 @@
 
     <script>
         window.onload = async () => {
-            try {
-                const response = await fetch("/leaderboard-info", {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json"
-                    }
-                });
-
-                if (response.ok) {
-                    const leaderboard = await response.json();
-                    const leaderboardList = document.getElementById("leaderboard-list");
-
-                    leaderboard.forEach((player, index) => {
-                        const listItem = document.createElement("li");
-                        listItem.className = "leaderboard-item";
-
-                        const profilePicElement = document.createElement("div");
-                        profilePicElement.className = "profile-pic";
-
-                        if (player.profile_picture) {
-                            const correctedProfilePic = player.profile_picture.replace(/\\/g, "/");
-                            profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
-                            profilePicElement.classList.remove("no-picture");
-                            profilePicElement.textContent = "";
-                        } else {
-                            profilePicElement.textContent = player.username[0].toUpperCase();
-                            profilePicElement.classList.add("no-picture");
+            const fetchLeaderboard = async () => {
+                try {
+                    const response = await fetch("/leaderboard-info", {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json"
                         }
-
-                        const playerInfo = document.createElement("div");
-                        playerInfo.className = "player-info";
-
-                        const playerUsername = document.createElement("div");
-                        playerUsername.className = "player-username";
-                        playerUsername.textContent = `#${index + 1} ${player.username}`;
-
-                        const playerXp = document.createElement("div");
-                        playerXp.className = "player-xp";
-                        playerXp.textContent = `XP: ${player.xp}`;
-
-                        playerInfo.appendChild(playerUsername);
-                        playerInfo.appendChild(playerXp);
-
-                        listItem.appendChild(profilePicElement);
-                        listItem.appendChild(playerInfo);
-
-                        leaderboardList.appendChild(listItem);
                     });
-                } else {
-                    console.error("Failed to fetch leaderboard info");
+                    if (response.ok) {
+                        const leaderboard = await response.json();
+                        const leaderboardList = document.getElementById("leaderboard-list");
+                        leaderboardList.innerHTML = ""; // Clear the list for a fresh update
+
+                        leaderboard.forEach((player, index) => {
+                            const listItem = document.createElement("li");
+                            listItem.className = "leaderboard-item animate-entry";
+
+                            const profilePicElement = document.createElement("div");
+                            profilePicElement.className = "profile-pic";
+                            if (player.profile_picture) {
+                                const correctedProfilePic = player.profile_picture.replace(/\\/g, "/");
+                                profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+                                profilePicElement.classList.remove("no-picture");
+                                profilePicElement.textContent = "";
+                            } else {
+                                profilePicElement.textContent = player.username[0].toUpperCase();
+                                profilePicElement.classList.add("no-picture");
+                            }
+
+                            const playerInfo = document.createElement("div");
+                            playerInfo.className = "player-info";
+                            
+                            const playerUsername = document.createElement("div");
+                            playerUsername.className = "player-username";
+                            playerUsername.textContent = `#${index + 1} ${player.username}`;
+
+                            const playerXp = document.createElement("div");
+                            playerXp.className = "player-xp";
+                            playerXp.textContent = `XP: ${player.xp}`;
+
+                            playerInfo.appendChild(playerUsername);
+                            playerInfo.appendChild(playerXp);
+                            listItem.appendChild(profilePicElement);
+                            listItem.appendChild(playerInfo);
+                            leaderboardList.appendChild(listItem);
+                        });
+                    } else {
+                        console.error("Failed to fetch leaderboard info");
+                    }
+                } catch (error) {
+                    console.error("Error fetching leaderboard info:", error);
                 }
-            } catch (error) {
-                console.error("Error fetching leaderboard info:", error);
-            }
+            };
+
+            // Initial load
+            await fetchLeaderboard();
+            // Refresh every 30 seconds for live updates
+            setInterval(fetchLeaderboard, 30000);
         };
+
     </script>
 </body>
 </html></ul></div></html>
