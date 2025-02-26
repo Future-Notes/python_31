@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaderboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .leaderboard-container {
+            width: 80%;
+            max-width: 600px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .leaderboard-header {
+            background-color: #4CAF50;
+            color: white;
+            text-align: center;
+            padding: 10px 0;
+            font-size: 24px;
+        }
+        .leaderboard-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .leaderboard-item:last-child {
+            border-bottom: none;
+        }
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+            margin-right: 10px;
+        }
+        .profile-pic.no-picture {
+            background-color: #cc4f4f;
+            color: white;
+        }
+        .player-info {
+            flex-grow: 1;
+        }
+        .player-username {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .player-xp {
+            font-size: 14px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="leaderboard-container">
+        <div class="leaderboard-header">Leaderboard</div>
+        <ul class="leaderboard-list" id="leaderboard-list">
+            <!-- Leaderboard items will be populated here -->
+        </ul>
+    </div>
+
+    <script>
+        window.onload = async () => {
+            try {
+                const response = await fetch("/leaderboard-info", {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json"
+                    }
+                });
+
+                if (response.ok) {
+                    const leaderboard = await response.json();
+                    const leaderboardList = document.getElementById("leaderboard-list");
+
+                    leaderboard.forEach(player => {
+                        const listItem = document.createElement("li");
+                        listItem.className = "leaderboard-item";
+
+                        const profilePicElement = document.createElement("div");
+                        profilePicElement.className = "profile-pic";
+
+                        if (player.profile_picture) {
+                            const correctedProfilePic = player.profile_picture.replace(/\\/g, "/");
+                            profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+                            profilePicElement.classList.remove("no-picture");
+                            profilePicElement.textContent = "";
+                        } else {
+                            profilePicElement.textContent = player.username[0].toUpperCase();
+                            profilePicElement.classList.add("no-picture");
+                        }
+
+                        const playerInfo = document.createElement("div");
+                        playerInfo.className = "player-info";
+
+                        const playerUsername = document.createElement("div");
+                        playerUsername.className = "player-username";
+                        playerUsername.textContent = player.username;
+
+                        const playerXp = document.createElement("div");
+                        playerXp.className = "player-xp";
+                        playerXp.textContent = `XP: ${player.xp}`;
+
+                        playerInfo.appendChild(playerUsername);
+                        playerInfo.appendChild(playerXp);
+
+                        listItem.appendChild(profilePicElement);
+                        listItem.appendChild(playerInfo);
+
+                        leaderboardList.appendChild(listItem);
+                    });
+                } else {
+                    console.error("Failed to fetch leaderboard info");
+                }
+            } catch (error) {
+                console.error("Error fetching leaderboard info:", error);
+            }
+        };
+    </script>
+</body>
+</html></ul></div></html>

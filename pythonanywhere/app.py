@@ -556,6 +556,10 @@ def spectate_setup():
 def bot_info():
     return render_template('bot_info.html')
 
+@app.route('/leaderboard')
+def leaderboard():
+    return render_template('leaderboard.html')
+
 
 #---------------------------------API routes--------------------------------
 
@@ -1512,6 +1516,20 @@ def game_stats_return():
         return jsonify({"error": "No XP record found"}), 404
     return jsonify({"xp": xp_entry.xp})
 
+@app.route('/leaderboard-info', methods=['GET'])
+def leaderboard_info():
+    # Fetch the top 10 players by XP.
+    top_players = PlayerXp.query.order_by(PlayerXp.xp.desc()).limit(10).all()
+    leaderboard = []
+    for player in top_players:
+        user = User.query.get(player.user_id)
+        leaderboard.append({
+            "username": user.username,
+            "xp": player.xp,
+            "profile_picture": user.profile_picture
+        })
+    return jsonify(leaderboard)
+
 # --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])
 def spectate_state():
@@ -1587,4 +1605,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True, host="0.0.0.0")
+    app.run(debug=True)
