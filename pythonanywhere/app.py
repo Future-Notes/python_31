@@ -1116,16 +1116,22 @@ def admin_dump():
 
     # Fetch raw database data
     users = User.query.with_entities(
-        User.id, User.username, User.profile_picture, User.allows_sharing, User.role
+        User.id, User.username, User.profile_picture, User.allows_sharing, User.role, User.database_dump_tag, User.lasting_key
     ).all()
     messages = Messages.query.with_entities(Messages.id, Messages.email, Messages.message).all()
     notes = Note.query.with_entities(Note.id, Note.title, Note.tag, Note.note, Note.user_id)
+    playerxp = PlayerXp.query.with_entities(PlayerXp.id, PlayerXp.user_id, PlayerXp.xp).all()
+    group_members = GroupMember.query.with_entities(GroupMember.id, GroupMember.user_id, GroupMember.group_id, GroupMember.admin).all()
+    groups = Group.query.with_entities(Group.id, Group.name).all()
 
     # Prepare data for dumping
     dump_data = {
         "users": [user._asdict() for user in users],
         "messages": [message._asdict() for message in messages],
         "notes": [note._asdict() for note in notes],
+        "playerxp": [xp._asdict() for xp in playerxp],
+        "group_members": [member._asdict() for member in group_members],
+        "groups": [group._asdict() for group in groups],
     }
 
     # Return as downloadable JSON file
