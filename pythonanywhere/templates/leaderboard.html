@@ -6,10 +6,12 @@
     <title>Leaderboard</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
+            font-family: 'Roboto', sans-serif;
             margin: 0;
             padding: 0;
+            background: url('static/ocean2.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: #fff;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -18,13 +20,14 @@
         .leaderboard-container {
             width: 80%;
             max-width: 600px;
-            background-color: #fff;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            background-color: rgba(0, 0, 0, 0.75);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
             border-radius: 10px;
             overflow: hidden;
+            color: #fff;
         }
         .leaderboard-header {
-            background-color: #4CAF50;
+            background-color: #007BFF;
             color: white;
             text-align: center;
             padding: 10px 0;
@@ -48,8 +51,8 @@
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background-color: #3a3a3a;
-            color: #e0e0e0;
+            background-color: #555;
+            color: #fff;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -74,7 +77,7 @@
         }
         .player-xp {
             font-size: 14px;
-            color: #777;
+            color: #bbb;
         }
     </style>
 </head>
@@ -100,7 +103,7 @@
                     const leaderboard = await response.json();
                     const leaderboardList = document.getElementById("leaderboard-list");
 
-                    leaderboard.forEach(player => {
+                    leaderboard.forEach((player, index) => {
                         const listItem = document.createElement("li");
                         listItem.className = "leaderboard-item";
 
@@ -122,7 +125,7 @@
 
                         const playerUsername = document.createElement("div");
                         playerUsername.className = "player-username";
-                        playerUsername.textContent = player.username;
+                        playerUsername.textContent = `#${index + 1} ${player.username}`;
 
                         const playerXp = document.createElement("div");
                         playerXp.className = "player-xp";
