@@ -469,7 +469,13 @@ def calculate_xp_gain(current_xp, result, accuracy, sunk_ships):
     - Each sunk enemy ship: 50 XP bonus
     """
     # Scaling factor decreases as current XP increases (threshold set at 5000 XP)
-    scaling = 1 / (1 + (current_xp / 5000) ** 2)
+    # and stops decreasing further after 10000 XP
+    if current_xp < 5000:
+        scaling = 1
+    elif current_xp < 10000:
+        scaling = 1 / (1 + (current_xp / 5000) ** 2)
+    else:
+        scaling = 1 / (1 + (10000 / 5000) ** 2)
     
     # Determine win/loss bonus
     base_win_bonus = 500
