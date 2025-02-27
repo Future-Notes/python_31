@@ -8,39 +8,58 @@
   <!-- Preload the logo image for smoother animations -->
   <link rel="preload" as="image" href="static/zeeslag.png">
   <style>
+    /* Global styling */
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      margin: 20px;
+      margin: 1rem;
       background: url('static/ocean2.jpg') no-repeat center center fixed;
       background-size: cover;
       color: #000;
     }
+    
     h1, h2 {
-      margin-bottom: 10px;
+      margin-bottom: 0.5rem;
     }
+    
+    /* Main Logo Styling */
+    /* Remove inline styles from the HTML <img id="mainLogo"> and use this instead */
+    #mainLogo {
+      display: block;
+      margin: 0 auto 1rem;
+      max-width: 10rem; /* relative unit so it scales */
+      width: 100%;
+      height: auto;
+    }
+    
+    /* Board Container */
     .board-container {
       display: inline-block;
-      margin: 20px;
-      background: rgba(0,0,0,0.75);
-      padding: 20px;
+      margin: 1rem;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 1rem;
       border-radius: 10px;
       color: white;
     }
+    
+    /* Table styling */
     table {
       border-collapse: collapse;
       margin: auto;
     }
+    
+    /* Table cell styling using relative sizes */
     td {
-      width: 30px;
-      height: 30px;
+      width: 2.5rem;
+      height: 2.5rem;
       border: 1px solid #333;
       text-align: center;
       vertical-align: middle;
       font-weight: bold;
       cursor: default;
-      background: rgba(0,0,0,0.1);
+      background: rgba(0, 0, 0, 0.1);
     }
+    
     /* --- Board Cell Styles --- */
     .ship {
       background-color: lightblue;
@@ -52,8 +71,8 @@
     .miss {
       background-color: lightgray;
       color: black;
-      font-size: 18px;
-      line-height: 30px;
+      font-size: 1.125rem; /* approx 18px */
+      line-height: 2.5rem;
     }
     .clickable {
       cursor: pointer;
@@ -70,6 +89,8 @@
       -webkit-animation: fadeOut 2s forwards;
       animation: fadeOut 2s forwards;
     }
+    
+    /* Animations */
     @-webkit-keyframes fadeOut {
       0% { opacity: 1; }
       100% { opacity: 0; }
@@ -78,6 +99,7 @@
       0% { opacity: 1; }
       100% { opacity: 0; }
     }
+    
     /* --- Floating Sunk Message --- */
     .sunk-message {
       position: fixed;
@@ -86,9 +108,9 @@
       transform: translateX(-50%);
       background: rgba(0, 0, 0, 0.8);
       color: #FFD700;
-      padding: 10px 20px;
+      padding: 0.5rem 1rem;
       border-radius: 5px;
-      font-size: 18px;
+      font-size: 1.125rem;
       z-index: 1000;
       opacity: 0;
       pointer-events: none;
@@ -106,19 +128,21 @@
         opacity: 1;
       }
     }
+    
     /* --- Fullscreen Button --- */
     #fullscreenButton {
       position: fixed;
-      top: 10px;
-      right: 10px;
+      top: 0.5rem;
+      right: 0.5rem;
       z-index: 1;
-      padding: 10px;
+      padding: 0.5rem 1rem;
       background: #007BFF;
       color: white;
       border: none;
       border-radius: 5px;
       cursor: pointer;
     }
+    
     /* --- Game Over Overlay (Final End Screen) --- */
     .gameover-overlay {
       position: fixed;
@@ -143,6 +167,7 @@
       from { opacity: 0; }
       to { opacity: 1; }
     }
+    
     /* Different backgrounds for win/lose */
     .gameover-overlay.win {
       background: linear-gradient(135deg, #004d00, #007700);
@@ -150,10 +175,11 @@
     .gameover-overlay.lose {
       background: linear-gradient(135deg, #330000, #770000);
     }
+    
     /* --- Game Over Logo Animations --- */
     .gameover-logo {
-      width: 150px;
-      margin-bottom: 20px;
+      width: 8rem;
+      margin-bottom: 1rem;
     }
     .logo-fly {
       animation: logoFly 1.5s ease-out forwards;
@@ -181,9 +207,10 @@
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.1); }
     }
+    
     /* --- Game Over Text Animations --- */
     .gameover-text {
-      font-size: 48px;
+      font-size: 3rem;
       color: white;
     }
     .gameover-text.win {
@@ -199,16 +226,17 @@
     }
     @keyframes shake {
       0% { transform: translate(0, 0); }
-      25% { transform: translate(-10px, 0); }
-      50% { transform: translate(10px, 0); }
-      75% { transform: translate(-10px, 0); }
+      25% { transform: translate(-0.625rem, 0); }
+      50% { transform: translate(0.625rem, 0); }
+      75% { transform: translate(-0.625rem, 0); }
       100% { transform: translate(0, 0); }
     }
+    
     /* --- New Game Button as Progress Bar --- */
     #newGameButton {
-      margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 18px;
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1.125rem;
       color: white;
       background-color: #007BFF;
       border: none;
@@ -219,6 +247,8 @@
       overflow: hidden;
       text-decoration: none;
     }
+    
+    /* --- Logo Transition --- */
     .logo-transition {
       position: fixed;
       z-index: 3000;
@@ -226,28 +256,67 @@
       will-change: transform;
       pointer-events: none;
     }
+    
+    /* --- Mute Button --- */
     #muteButton {
       position: fixed;
-      top: 10px;
-      left: 10px;
+      top: 0.5rem;
+      left: 0.5rem;
       background-color: #007BFF;
       color: white;
       border: none;
       border-radius: 5px;
-      padding: 10px 15px;
+      padding: 0.5rem 0.75rem;
       cursor: pointer;
-      font-size: 16px;
+      font-size: 1rem;
       z-index: 1001;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.2);
       transition: background-color 0.3s ease;
     }
     #muteButton:hover {
       background-color: #0056b3;
     }
+    
     .hidden {
       display: none;
     }
-  </style>
+    
+    /* --- Responsive Adjustments --- */
+    @media (max-width: 600px) {
+      body {
+        margin: 0.5rem;
+      }
+      .board-container {
+        width: 90%;
+        padding: 0.5rem;
+        margin: 0.5rem auto;
+      }
+      td {
+        width: 2rem;
+        height: 2rem;
+      }
+      h1 {
+        font-size: 1.5rem;
+      }
+      h2 {
+        font-size: 1.25rem;
+      }
+      .gameover-text {
+        font-size: 2rem;
+      }
+      .gameover-logo {
+        width: 6rem;
+      }
+      #fullscreenButton, #muteButton {
+        padding: 0.5rem;
+        font-size: 0.875rem;
+      }
+      #newGameButton {
+        padding: 0.5rem;
+        font-size: 1rem;
+      }
+    }
+  </style>   
 </head>
 <body>
   <button id="fullscreenButton">Volledig scherm</button>
@@ -264,7 +333,6 @@
   
   <!-- Game Over Overlay (Final End Screen) -->
   <div id="gameoverOverlay" class="gameover-overlay">
-    <img id="gameoverLogo" src="static/zeeslag.png" alt="Zeeslag Logo" class="gameover-logo">
     <h1 id="gameoverText" class="gameover-text"></h1>
     <!-- New End Screen Board -->
     <div id="endScreenContainer" style="margin-top:20px;">
@@ -421,7 +489,6 @@
 
     function showGameOverScreen(won) {
       const overlay = document.getElementById('gameoverOverlay');
-      const logo = document.getElementById('gameoverLogo');
       const gameoverText = document.getElementById('gameoverText');
       const endTitle = document.getElementById('endTitle');
 
@@ -438,43 +505,9 @@
       }
       overlay.classList.add('show');
 
-      // Start logo fly-in animation.
-      logo.classList.add('logo-fly');
-      logo.addEventListener('animationend', function(e) {
-        if (e.animationName === 'logoFly') {
-          logo.classList.remove('logo-fly');
-          logo.classList.add('logo-pulse');
-        }
-      });
 
-      animateLogoTransition();
       loadEndBoard();
       startNewGameTimer();
-    }
-
-    function animateLogoTransition() {
-      const mainLogo = document.getElementById('mainLogo');
-      const gameoverLogo = document.getElementById('gameoverLogo');
-      gameoverLogo.style.visibility = 'hidden';
-      const startRect = mainLogo.getBoundingClientRect();
-      const targetRect = gameoverLogo.getBoundingClientRect();
-      const logoClone = mainLogo.cloneNode(true);
-      logoClone.classList.add('logo-transition');
-      document.body.appendChild(logoClone);
-      logoClone.style.top = startRect.top + 'px';
-      logoClone.style.left = startRect.left + 'px';
-      logoClone.style.width = startRect.width + 'px';
-      logoClone.style.height = startRect.height + 'px';
-      logoClone.getBoundingClientRect();
-      const deltaX = targetRect.left - startRect.left;
-      const deltaY = targetRect.top - startRect.top;
-      const scaleX = targetRect.width / startRect.width;
-      const scaleY = targetRect.height / startRect.height;
-      logoClone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
-      logoClone.addEventListener('transitionend', () => {
-        gameoverLogo.style.visibility = 'visible';
-        logoClone.remove();
-      });
     }
 
     function loadEndBoard() {
