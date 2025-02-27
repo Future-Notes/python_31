@@ -379,11 +379,11 @@
       <h2>XP Verdien Systeem</h2>
       <p>XP wordt berekend op basis van je prestaties:</p>
       <ul style="text-align: left;">
-          <li><b>Winstbonus:</b> 500 XP (of straf bij verliezen met veel XP)</li>
-          <li><b>Nauwkeurigheidsbonus:</b> Tot 100 XP (lineaire schaal)</li>
+          <li><b>Winstbonus:</b> 500 XP (of straf bij verliezen vanaf 5000 XP, max XP verlies is 500, gebaseerd op hoeveel XP je op dat moment hebt)</li>
+          <li><b>Nauwkeurigheidsbonus:</b> Tot 100 XP gebaseerd op hoe weinig missers je had (lineaire schaal)</li>
           <li><b>Gezonken schepen:</b> 50 XP per gezonken schip</li>
-          <li><b>Schaalfactor:</b> Meer XP verlaagt winsten</li>
-          <li><b>Bot-wedstrijden:</b> XP wordt met 20% verminderd</li>
+          <li><b>Schaalfactor:</b> Vanaf 5000 XP gaan de winsten langzaam omlaag gebaseerd op je huidige XP, totdat ze niet verder omlaag gaan bij 10000 XP <b> Let op! Schaling wordt berekent over je winstbonus, nauwkeurigheidsbonus en gezonken schepen, en dit heeft nog niks te maken of je een bot-wedstrijd gespeeld hebt!</b></li>
+          <li><b>Bot-wedstrijden:</b> Als je een bot-wedstrijd gespeeld hebt, wordt over het volledige resultaat nog 20% afgehaald</li>
       </ul>
       <button class="close-btn" onclick="closePopup()">Sluiten</button>
   </div>
