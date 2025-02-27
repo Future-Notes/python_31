@@ -23,7 +23,7 @@
       padding: 30px;
       border-radius: 10px;
       max-width: 500px;
-      margin: 80px auto;
+      margin: 10px auto;
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
       text-align: center;
     }
@@ -115,12 +115,48 @@
         max-width: 90%;
         margin: 20px auto;
       }
+      #ship-selection {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+
+    @media (max-height: 900px) {
+      #setup-container {
+        max-width: 90%;
+        margin: 20px auto;
+        padding: 20px;
+      }
+
+      #ship-selection {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      #boardContainer {
+        margin: 10px auto;
+      }
+    }
+    @media (max-height: 820px) {
+      #setup-container {
+        max-width: 90%;
+        margin: 5px auto;
+        padding: 5px;
+      }
+
+      #ship-selection {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      #boardContainer {
+        margin: 2px auto;
+      }
     }
   </style>
 </head>
 <body>
   <div id="setup-container">
-    <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
     <h1>Plaats je schepen!</h1>
     <p>Sleep de schepen naar het speelveld en klik op "Klaar" als je klaar bent. Dubbelklik een schip om te verwijderen.</p>
     <p>

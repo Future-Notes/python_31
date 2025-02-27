@@ -17,7 +17,6 @@ import string
 import time
 import glob
 import threading
-import math
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -117,6 +116,12 @@ def validate_session_key():
         del session_keys[key]
         return False, "Session expired. Please log in again."
 
+    # Check if user exists in the database
+    user = User.query.get(session["user_id"])
+    if not user:
+        del session_keys[key]
+        return False, "Invalid or missing session API key"
+
     # Update last active time
     session["last_active"] = now
     return True, session
@@ -188,59 +193,37 @@ def delete_user_and_data(user):
 def generate_game_code(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-def human_guess_weight(x, y, board_size):
-    """
-    Returns a weight representing how likely a human is to guess cell (x, y).
-    Assumes players tend to aim toward the board's center.
-    Cells closer to the center get a higher weight.
-    """
-    center = (board_size - 1) / 2.0
-    dx = abs(x - center)
-    dy = abs(y - center)
-    distance = math.sqrt(dx**2 + dy**2)
-    max_distance = math.sqrt(2 * (center**2))
-    weight = 1 - (distance / max_distance)
-    return weight
-
 def generate_bot_ships():
-    """
-    Generates ship placements for the bot.
-    Ships: sizes 5, 4, 3, 3, 2.
-    This improved version picks placements that minimize the chance of being guessed
-    by favoring placements with lower cumulative human_guess_weight.
-    """
-    ship_sizes = [5, 4, 3, 3, 2]
+    ship_sizes = [5, 4, 3, 3, 2]  # Standard Battleship sizes
     ships = []
-    occupied = set()
+    occupied_positions = set()
 
     for size in ship_sizes:
-        best_candidate = None
-        best_score = float('inf')
-        for _ in range(100):
-            orientation = random.choice(['horizontal', 'vertical'])
-            if orientation == 'horizontal':
-                x = random.randint(0, BOARD_SIZE - size)
-                y = random.randint(0, BOARD_SIZE - 1)
-                positions = [[x + i, y] for i in range(size)]
+        placed = False
+        
+        while not placed:
+            x = random.randint(0, 9)
+            y = random.randint(0, 9)
+            orientation = random.choice(["horizontal", "vertical"])
+            
+            if orientation == "horizontal":
+                if x + size > 10:
+                    continue  # Ship would be out of bounds
+                positions = [(x + i, y) for i in range(size)]
             else:
-                x = random.randint(0, BOARD_SIZE - 1)
-                y = random.randint(0, BOARD_SIZE - size)
-                positions = [[x, y + i] for i in range(size)]
-            if any((pos[0], pos[1]) in occupied for pos in positions):
+                if y + size > 10:
+                    continue  # Ship would be out of bounds
+                positions = [(x, y + i) for i in range(size)]
+            
+            # Check for overlap
+            if any(pos in occupied_positions for pos in positions):
                 continue
-            candidate_score = sum(human_guess_weight(pos[0], pos[1], BOARD_SIZE) for pos in positions)
-            if candidate_score < best_score:
-                best_score = candidate_score
-                best_candidate = positions
-        if best_candidate:
-            for pos in best_candidate:
-                occupied.add((pos[0], pos[1]))
-            ships.append({
-                "positions": best_candidate,
-                "sunk": False
-            })
-        else:
-            print(f"Failed to place ship of size {size}")
+            
+            # Place ship
+            occupied_positions.update(positions)
+            ships.append({"positions": [list(pos) for pos in positions], "sunk": False})
+            placed = True
+    
     return ships
 
 def process_fire(game, player, x, y):
@@ -548,8 +531,8 @@ def login_page():
 
 @app.route('/signup_page')
 def signup_page():
-    return render_template('signup.html')
-
+    args = request.args.to_dict()
+    return render_template('signup.html', **args)
 
 @app.route('/account_page')
 def account_page():
@@ -1192,15 +1175,20 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
+        # Handle auto login with lasting_key if provided
         lasting_key = data.get('lasting_key')
         if lasting_key:
             user = User.query.filter_by(lasting_key=lasting_key).first()
             if user:
                 key = generate_session_key(user.id)
-                return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
+                return jsonify({
+                    "message": "Login successful!",
+                    "session_key": key,
+                    "user_id": user.id
+                }), 200
             return jsonify({"error": "Invalid lasting key"}), 400
 
-        # Only check for username and password if lasting_key is not provided
+        # Validate credentials when lasting_key isn't provided
         username = data.get('username')
         password = data.get('password')
         if not username or not password:
@@ -1210,19 +1198,28 @@ def login():
         if not user or not bcrypt.check_password_hash(user.password, password):
             return jsonify({"error": "Invalid credentials"}), 400
 
+        # Generate a new session key for this login
         key = generate_session_key(user.id)
+
+        # If the user wants to stay logged in, reuse an existing lasting_key if available,
+        # or generate a new one if not.
         if data.get('keep_login'):
-            new_lasting_key = secrets.token_hex(32)
-            user.lasting_key = new_lasting_key
-            db.session.commit()
+            if not user.lasting_key:
+                user.lasting_key = secrets.token_hex(32)
+                db.session.commit()
             return jsonify({
                 "message": "Login successful!",
                 "session_key": key,
                 "user_id": user.id,
-                "lasting_key": new_lasting_key
+                "lasting_key": user.lasting_key
             }), 200
 
-        return jsonify({"message": "Login successful!", "session_key": key, "user_id": user.id}), 200
+        # Standard login response
+        return jsonify({
+            "message": "Login successful!",
+            "session_key": key,
+            "user_id": user.id
+        }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1429,6 +1426,20 @@ def fire():
         bot_thread.start()
 
     return response
+
+# --- Helper route to make the first user xp record ---
+@app.route('/first-xp-record', methods=['POST'])
+@require_session_key
+def first_user_record():
+    try:
+        xp_entry = PlayerXp(user_id=g.user_id, xp=0)
+        db.session.add(xp_entry)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
+
+    return jsonify({"message":"Succesfully made a new record"}), 200
 
 # --- Get Game State (for polling) ---
 @app.route('/game_state', methods=['GET'])

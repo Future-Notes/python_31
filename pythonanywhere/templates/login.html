@@ -175,11 +175,18 @@
             </label>
             <button type="submit">Login</button>
         </form>
-        <p>Don't have an account? <a href="/signup_page">Sign Up</a></p>
+        <p>Don't have an account? <a id="signup-link" href="/signup_page">Sign Up</a></p>
     </div>
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
+            // Append query parameters to the signup link if they exist
+            const queryParams = window.location.search;
+            if (queryParams) {
+                const signupLink = document.getElementById("signup-link");
+                signupLink.href = "/signup_page" + queryParams;
+            }
+            
             const lastingKey = localStorage.getItem("lasting_key");
             const urlParams = new URLSearchParams(window.location.search);
             const redirectUrl = urlParams.get("redirect") || "/index";
