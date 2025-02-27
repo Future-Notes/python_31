@@ -376,17 +376,19 @@
   <!-- Overlay en Popup -->
   <div class="overlay" id="overlay" onclick="closePopup()"></div>
   <div class="popup" id="popup">
-      <h2>XP Verdien Systeem</h2>
-      <p>XP wordt berekend op basis van je prestaties:</p>
-      <ul style="text-align: left;">
-          <li><b>Winstbonus:</b> 500 XP (of straf bij verliezen vanaf 5000 XP, max XP verlies is 500, gebaseerd op hoeveel XP je op dat moment hebt)</li>
-          <li><b>Nauwkeurigheidsbonus:</b> Tot 100 XP gebaseerd op hoe weinig missers je had (lineaire schaal)</li>
-          <li><b>Gezonken schepen:</b> 50 XP per gezonken schip</li>
-          <li><b>Schaalfactor:</b> Vanaf 5000 XP gaan de winsten langzaam omlaag gebaseerd op je huidige XP, totdat ze niet verder omlaag gaan bij 10000 XP <b> Let op! Schaling wordt berekent over je winstbonus, nauwkeurigheidsbonus en gezonken schepen, en dit heeft nog niks te maken of je een bot-wedstrijd gespeeld hebt!</b></li>
-          <li><b>Bot-wedstrijden:</b> Als je een bot-wedstrijd gespeeld hebt, wordt over het volledige resultaat nog 20% afgehaald</li>
-      </ul>
-      <button class="close-btn" onclick="closePopup()">Sluiten</button>
+    <h2>XP Systeem</h2>
+    <p>XP wordt berekend op basis van je wedstrijd:</p>
+    <ul style="text-align: left;">
+        <li><b>Winst of verlies:</b> Bij winst krijg je <i>500 XP</i>; bij verlies (boven 5000 XP) trek je tot max <i>250 XP</i> af.</li>
+        <li><b>Nauwkeurigheid:</b> Tot <i>100 XP</i> afhankelijk van hoe goed je mikte.</li>
+        <li><b>Gezonken schepen:</b> Elk schip is <i>50 XP</i>. Meer dan 3 schepen geeft <i>+25 XP</i> extra per schip.</li>
+        <li><b>Extra bonussen:</b> Bij ≥98% nauwkeurigheid krijg je <i>+50 XP</i>; winst met ≥85% nauwkeurigheid en ≥2 schepen levert <i>+200 XP</i> op; bij winst met >90% nauwkeurigheid wordt je totaal met <i>10%</i> verhoogd.</li>
+        <li><b>Schaalfactor:</b> Boven 5000 XP worden alle bonussen langzaam verlaagd tot een minimum bij 10000 XP.</li>
+        <li><b>Bot-wedstrijden:</b> Speel je tegen een bot, dan krijg je 20% minder XP.</li>
+    </ul>
+    <button class="close-btn" onclick="closePopup()">Sluiten</button>
   </div>
+  
 
   <button class="info-button" onclick="openPopup()">ℹ️</button>
 
