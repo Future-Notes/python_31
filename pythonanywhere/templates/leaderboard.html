@@ -163,7 +163,7 @@
 
                             const playerXp = document.createElement("div");
                             playerXp.className = "player-xp";
-                            playerXp.textContent = `XP: ${player.xp}`;
+                            playerXp.textContent = `XP: ${Math.round(player.xp)}`; // Round XP to nearest whole number
 
                             playerInfo.appendChild(playerUsername);
                             playerInfo.appendChild(playerXp);
