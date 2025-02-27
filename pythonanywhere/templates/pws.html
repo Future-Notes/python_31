@@ -476,11 +476,7 @@
 
             const data = await response.json();
             let xp = data.xp || 0;
-            console.log("Current XP:", xp);
-
-            // Retrieve the last XP from localStorage
-            let lastXp = parseInt(localStorage.getItem("lastXp")) || 0;
-            console.log("Last XP:", lastXp);
+            console.log("XP:", xp);
 
             function calculateLevel(xp) {
                 let level = 1;
@@ -513,7 +509,6 @@
             }
 
             let { level, progress, nextLevelXp } = calculateLevel(xp);
-            let { level: lastLevel } = calculateLevel(lastXp);
 
             updateTrophySection(level);
 
@@ -531,44 +526,28 @@
             const levelText = document.querySelector(".xp-level");
             const xpText = document.querySelector(".xp-progress");
 
-            async function animateXpGain(startXp, endXp) {
-                let { level, progress, nextLevelXp } = calculateLevel(startXp);
-
-                while (startXp < endXp) {
-                    let requiredXp = nextLevelXp - progress;
-
-                    if (endXp >= startXp + requiredXp) {
-                        await animateXpBar(xpFill, levelText, xpText, requiredXp, nextLevelXp, () => {
-                            startXp += requiredXp;
-                            level++;
-                            nextLevelXp = Math.floor(nextLevelXp * 1.2);
-                            levelText.textContent = `Level ${level}`;
-                            xpText.textContent = `0 / ${Math.round(nextLevelXp)} XP`;
-                        });
-                    } else {
-                        let newProgress = endXp - startXp;
-                        xpFill.style.width = `${(newProgress / nextLevelXp) * 100}%`;
-                        xpText.textContent = `${Math.round(newProgress)} / ${Math.round(nextLevelXp)} XP`;
-                        startXp = endXp;
-                    }
+            async function animateXpGain(xp) {
+                while (xp >= nextLevelXp) {
+                    await animateXpBar(xpFill, levelText, xpText, nextLevelXp, nextLevelXp, () => {
+                        xp -= nextLevelXp;
+                        level++;
+                        nextLevelXp = Math.floor(nextLevelXp * 1.2);
+                        levelText.textContent = `Level ${level}`;
+                        xpText.textContent = `0 / ${Math.round(nextLevelXp)} XP`;
+                    });
                 }
 
-                // Save the new XP in localStorage
-                localStorage.setItem("lastXp", xp);
+                xpFill.style.width = `${(xp / nextLevelXp) * 100}%`;
+                xpText.textContent = `${Math.round(xp)} / ${Math.round(nextLevelXp)} XP`;
             }
 
-            setTimeout(() => {
-                if (xp > lastXp) {
-                    animateXpGain(lastXp, xp);
-                } else {
-                    xpFill.style.width = `${(progress / nextLevelXp) * 100}%`;
-                }
-            }, 300);
+            setTimeout(() => animateXpGain(progress), 300);
 
         } catch (error) {
             achievementsContainer.innerHTML = "<p>Geen achievements beschikbaar</p>";
         }
     });
+
 
 
 
