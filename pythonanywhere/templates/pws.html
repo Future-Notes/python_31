@@ -127,34 +127,48 @@
     }
 
     .xp-level {
-        font-size: 18px;
+        font-size: 20px;
         font-weight: bold;
         margin-bottom: 5px;
+        color: #c7c7c7;
     }
 
     .xp-bar {
         width: 100%;
-        max-width: 250px;
-        height: 12px;
-        background-color: #ddd;
-        border-radius: 6px;
+        max-width: 300px;
+        height: 16px;
+        background-color: #222;
+        border-radius: 8px;
         overflow: hidden;
         margin: auto;
         position: relative;
+        box-shadow: 0px 0px 8px rgba(0, 0, 0, 0.2);
     }
 
     .xp-fill {
         height: 100%;
         width: 0%;
-        background: linear-gradient(90deg, #4caf50, #8bc34a);
-        transition: width 1.5s ease-in-out;
+        background: linear-gradient(90deg, #ff5722, #ff9800, #ffeb3b, #8bc34a, #00bcd4);
+        transition: width 2s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 8px;
+        animation: pulse 2s infinite alternate;
+    }
+
+    @keyframes pulse {
+        0% {
+            filter: brightness(1);
+        }
+        100% {
+            filter: brightness(1.3);
+        }
     }
 
     .xp-progress {
-        font-size: 14px;
+        font-size: 16px;
         margin-top: 5px;
-        color: #555;
+        color: #c7c7c7;
     }
+
 
     /* Trophy Section Container */
     /* Trophy Section Container with Dark Theme */
@@ -444,66 +458,119 @@
     });
 
     document.addEventListener("DOMContentLoaded", async function () {
-      const achievementsContainer = document.getElementById("achievements-list");
+        const achievementsContainer = document.getElementById("achievements-list");
 
-      try {
-        const sessionKey = await authenticateUser();
-        const response = await fetch("/game-stats-return", {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${sessionKey}`
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error("No XP data found");
+        try {
+            const sessionKey = await authenticateUser();
+            const response = await fetch("/game-stats-return", {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${sessionKey}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error("No XP data found");
+            }
+
+            const data = await response.json();
+            let xp = data.xp || 0;
+            console.log("Current XP:", xp);
+
+            // Retrieve the last XP from localStorage
+            let lastXp = parseInt(localStorage.getItem("lastXp")) || 0;
+            console.log("Last XP:", lastXp);
+
+            function calculateLevel(xp) {
+                let level = 1;
+                let requiredXp = 50;
+
+                while (xp >= requiredXp) {
+                    xp -= requiredXp;
+                    level++;
+                    requiredXp = Math.floor(requiredXp * 1.2);
+                }
+
+                return { level, progress: xp, nextLevelXp: requiredXp };
+            }
+
+            function animateXpBar(xpFill, levelText, xpText, currentXp, requiredXp, callback) {
+                return new Promise(resolve => {
+                    xpFill.style.width = "100%";
+
+                    setTimeout(() => {
+                        callback(); // Execute level up
+                        xpFill.style.transition = "none"; 
+                        xpFill.style.width = "0%"; // Reset bar
+                        setTimeout(() => {
+                            xpFill.style.transition = "width 1.5s ease-in-out";
+                            xpFill.style.width = `${(currentXp / requiredXp) * 100}%`; // Fill remainder
+                            setTimeout(resolve, 1500);
+                        }, 200);
+                    }, 1500);
+                });
+            }
+
+            let { level, progress, nextLevelXp } = calculateLevel(xp);
+            let { level: lastLevel } = calculateLevel(lastXp);
+
+            updateTrophySection(level);
+
+            achievementsContainer.innerHTML = `
+                <div class="xp-container">
+                    <div class="xp-level">Level ${level}</div>
+                    <div class="xp-bar">
+                        <div class="xp-fill" style="width: 0%;"></div>
+                    </div>
+                    <div class="xp-progress">${Math.round(progress)} / ${Math.round(nextLevelXp)} XP</div>
+                </div>
+            `;
+
+            const xpFill = document.querySelector(".xp-fill");
+            const levelText = document.querySelector(".xp-level");
+            const xpText = document.querySelector(".xp-progress");
+
+            async function animateXpGain(startXp, endXp) {
+                let { level, progress, nextLevelXp } = calculateLevel(startXp);
+
+                while (startXp < endXp) {
+                    let requiredXp = nextLevelXp - progress;
+
+                    if (endXp >= startXp + requiredXp) {
+                        await animateXpBar(xpFill, levelText, xpText, requiredXp, nextLevelXp, () => {
+                            startXp += requiredXp;
+                            level++;
+                            nextLevelXp = Math.floor(nextLevelXp * 1.2);
+                            levelText.textContent = `Level ${level}`;
+                            xpText.textContent = `0 / ${Math.round(nextLevelXp)} XP`;
+                        });
+                    } else {
+                        let newProgress = endXp - startXp;
+                        xpFill.style.width = `${(newProgress / nextLevelXp) * 100}%`;
+                        xpText.textContent = `${Math.round(newProgress)} / ${Math.round(nextLevelXp)} XP`;
+                        startXp = endXp;
+                    }
+                }
+
+                // Save the new XP in localStorage
+                localStorage.setItem("lastXp", xp);
+            }
+
+            setTimeout(() => {
+                if (xp > lastXp) {
+                    animateXpGain(lastXp, xp);
+                } else {
+                    xpFill.style.width = `${(progress / nextLevelXp) * 100}%`;
+                }
+            }, 300);
+
+        } catch (error) {
+            achievementsContainer.innerHTML = "<p>Geen achievements beschikbaar</p>";
         }
-
-        const data = await response.json();
-        const xp = data.xp || 0;
-        console.log("XP:", xp);
-
-        // Calculate level based on XP
-        function calculateLevel(xp) {
-          let level = 1;
-          let requiredXp = 50; // XP needed to reach level 2
-
-          while (xp >= requiredXp) {
-            xp -= requiredXp;
-            level++;
-            requiredXp = Math.floor(requiredXp * 1.2); // Increasing difficulty
-          }
-
-          return { level, progress: xp, nextLevelXp: requiredXp };
-        }
-
-        const { level, progress, nextLevelXp } = calculateLevel(xp);
-
-        updateTrophySection(level);
-
-        // Clear existing content
-        achievementsContainer.innerHTML = `
-          <div class="xp-container">
-            <div class="xp-level">Level ${level}</div>
-            <div class="xp-bar">
-              <div class="xp-fill" style="width: 0%;"></div>
-            </div>
-            <div class="xp-progress">${Math.round(progress)} / ${Math.round(nextLevelXp)} XP</div>
-          </div>
-        `;
-
-        // Animate XP bar fill
-        setTimeout(() => {
-          const xpFill = document.querySelector(".xp-fill");
-          const progressPercent = (progress / nextLevelXp) * 100;
-          xpFill.style.width = `${progressPercent}%`;
-        }, 300);
-
-      } catch (error) {
-        achievementsContainer.innerHTML = "<p>Geen achievements beschikbaar</p>";
-      }
     });
+
+
 
     const trophies = [
       { level: 1, name: "Beginner Badge", icon: "🥉" },
