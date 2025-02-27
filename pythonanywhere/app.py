@@ -476,12 +476,15 @@ def calculate_xp_gain(current_xp, result, accuracy, sunk_ships):
     accuracy = max(0, min(accuracy, 1))
 
     # Determine scaling factor based on current XP
+    # Updated scaling factor: easier XP gain at high levels
     if current_xp < 5000:
-        scaling = 1
+        scaling = 0.8
     elif current_xp < 10000:
-        scaling = 1 / (1 + (current_xp / 5000) ** 2)
+        # Linear interpolation: scaling drops from 1 at 5000 XP to 0.5 at 10000 XP
+        scaling = 1 - 0.5 * ((current_xp - 5000) / 5000)
     else:
-        scaling = 1 / (1 + (10000 / 5000) ** 2)
+        scaling = 0.5
+
 
     # Determine win/loss bonus
     base_win_bonus = 500
