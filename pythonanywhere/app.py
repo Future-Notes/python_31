@@ -461,45 +461,70 @@ def bot_move(game_code):
 
 def calculate_xp_gain(current_xp, result, accuracy, sunk_ships):
     """
-    Computes XP gain based on current XP, win/loss result, accuracy and enemy ships sunk.
-    A quadratic scaling factor makes XP gains larger at low XP and smaller at high XP.
-    - Win bonus: 500 XP (if win) or (for losses, below a threshold no win bonus,
-      but above that, subtract xp gradually)
-    - Accuracy: up to 100 XP (linear with accuracy)
-    - Each sunk enemy ship: 50 XP bonus
+    Computes XP gain based on current XP, win/loss result, accuracy, and enemy ships sunk.
+    Uses additional conditions to buff XP gains for high performance:
+      - Base win bonus: +500 XP for a win; a reduced penalty for losses.
+      - Accuracy bonus: up to +100 XP (linear).
+      - Nearly perfect accuracy (>=98%): +50 XP extra.
+      - Sunk ships: 50 XP per sunk ship.
+      - Combo bonus: if win with accuracy >=85% and at least 2 sunk ships, add +200 XP.
+      - Multi-kill bonus: each sunk ship beyond 3 grants an extra +25 XP.
+      - Performance multiplier: if win and accuracy >90%, total bonus is increased by 10%.
+      - A quadratic scaling factor reduces gains as current XP increases.
     """
-    # Scaling factor decreases as current XP increases (threshold set at 5000 XP)
-    # and stops decreasing further after 10000 XP
+    # Ensure accuracy is within the valid range [0, 1]
+    accuracy = max(0, min(accuracy, 1))
+
+    # Determine scaling factor based on current XP
+    # Updated scaling factor: easier XP gain at high levels
     if current_xp < 5000:
-        scaling = 1
+        scaling = 0.8
     elif current_xp < 10000:
-        scaling = 1 / (1 + (current_xp / 5000) ** 2)
+        # Linear interpolation: scaling drops from 1 at 5000 XP to 0.5 at 10000 XP
+        scaling = 1 - 0.5 * ((current_xp - 5000) / 5000)
     else:
-        scaling = 1 / (1 + (10000 / 5000) ** 2)
-    
+        scaling = 0.5
+
+
     # Determine win/loss bonus
     base_win_bonus = 500
     if result == "win":
         win_loss_bonus = base_win_bonus
     else:
-        # Below 5000 XP, a loss gives no win/loss bonus.
-        # Above that, subtract XP gradually based on how much XP the user already has.
+        # For losses, apply a gentler penalty to avoid overly punishing high-level players.
         if current_xp < 5000:
             win_loss_bonus = 0
         else:
-            # Subtract up to 500 XP gradually; adjust divisor for tuning.
-            win_loss_bonus = -min(base_win_bonus, (current_xp - 5000) / 10)
-    
-    # Accuracy bonus: linear bonus up to 100 XP for 100% accuracy.
+            win_loss_bonus = -min(250, (current_xp - 5000) / 20)
+
+    # Base bonus from accuracy (up to 100 XP)
     accuracy_bonus = accuracy * 100
-    
-    # Bonus per sunk enemy ship (each sunk ship gives 50 XP)
+
+    # Base bonus from sunk enemy ships (50 XP each)
     sunk_bonus = sunk_ships * 50
 
-    # Total raw bonus before scaling
-    total_bonus = win_loss_bonus + accuracy_bonus + sunk_bonus
-    
-    # Apply scaling
+    # Additional bonus conditions
+    extra_bonus = 0
+
+    # Bonus for nearly perfect accuracy (≥98%)
+    if accuracy >= 0.98:
+        extra_bonus += 50
+
+    # Combo bonus: winning with high accuracy and sinking at least 2 enemy ships
+    if result == "win" and accuracy >= 0.85 and sunk_ships >= 2:
+        extra_bonus += 200
+
+    # Multi-kill bonus: bonus for every sunk ship beyond 3
+    if sunk_ships > 3:
+        extra_bonus += (sunk_ships - 3) * 25
+
+    # Total bonus before scaling
+    total_bonus = win_loss_bonus + accuracy_bonus + sunk_bonus + extra_bonus
+
+    # Performance multiplier for exceptional wins (accuracy >90%)
+    if result == "win" and accuracy > 0.9:
+        total_bonus *= 1.1
+
     xp_gain = total_bonus * scaling
     return xp_gain
 #---------------------------------Template routes--------------------------------
@@ -1476,12 +1501,8 @@ def game_stats():
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    # Expected fields from the frontend:
-    # result: "win" or "lose"
-    # bot_game: boolean indicating whether played against a bot
-    # shots_fired, hits, misses (optional, for further statistics)
-    # sunk_ships: number of enemy ships sunk
-    # accuracy: float between 0 and 1
+    # Expected fields: result ("win" or "lose"), bot_game (boolean), accuracy (0 to 1),
+    # and sunk_ships (number of enemy ships sunk)
     try:
         result = data["result"]
         bot_game = data.get("bot_game", False)
@@ -1498,15 +1519,15 @@ def game_stats():
             db.session.add(xp_entry)
             db.session.commit()
         except IntegrityError:
-            db.session.rollback()  # Undo the transaction if the entry already exists
+            db.session.rollback()
             xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
 
     current_xp = xp_entry.xp
 
-    # Calculate XP gain based on game results.
+    # Calculate XP gain using the enhanced logic.
     xp_gain = calculate_xp_gain(current_xp, result, accuracy, sunk_ships)
     
-    # If played against a bot, reduce the XP gain (e.g. by 50%).
+    # If played against a bot, reduce the XP gain.
     if bot_game:
         xp_gain *= 0.8
 
