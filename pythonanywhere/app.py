@@ -1502,7 +1502,7 @@ def game_stats():
     
     # If played against a bot, reduce the XP gain (e.g. by 50%).
     if bot_game:
-        xp_gain *= 0.5
+        xp_gain *= 0.8
 
     # Update the player's XP.
     xp_entry.xp += xp_gain

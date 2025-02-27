@@ -275,6 +275,51 @@
     .hidden {
       display: none;
     }
+
+    /* Style for the info button */
+    .info-button {
+        background: none;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: #007BFF;
+    }
+
+    /* Style for the popup */
+    .popup {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgb(15, 15, 15);
+        padding: 20px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        max-width: 400px;
+        text-align: center;
+    }
+
+    /* Overlay */
+    .overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    /* Close button */
+    .close-btn {
+        background: red;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -328,6 +373,23 @@
     </div>
   </div>
 
+  <!-- Overlay en Popup -->
+  <div class="overlay" id="overlay" onclick="closePopup()"></div>
+  <div class="popup" id="popup">
+      <h2>XP Verdien Systeem</h2>
+      <p>XP wordt berekend op basis van je prestaties:</p>
+      <ul style="text-align: left;">
+          <li><b>Winstbonus:</b> 500 XP (of straf bij verliezen met veel XP)</li>
+          <li><b>Nauwkeurigheidsbonus:</b> Tot 100 XP (lineaire schaal)</li>
+          <li><b>Gezonken schepen:</b> 50 XP per gezonken schip</li>
+          <li><b>Schaalfactor:</b> Meer XP verlaagt winsten</li>
+          <li><b>Bot-wedstrijden:</b> XP wordt met 20% verminderd</li>
+      </ul>
+      <button class="close-btn" onclick="closePopup()">Sluiten</button>
+  </div>
+
+  <button class="info-button" onclick="openPopup()">ℹ️</button>
+
   <!-- Bot info button -->
   <div id="bot-info-btn-container">
     <button id="botInfo">Over de Bot</button>
@@ -341,6 +403,16 @@
     function showAccountMenu() {
       sessionStorage.setItem("last_page", "/pws")
       window.location.href = "/account_page";
+    }
+
+    function openPopup() {
+        document.getElementById('popup').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block';
+    }
+
+    function closePopup() {
+        document.getElementById('popup').style.display = 'none';
+        document.getElementById('overlay').style.display = 'none';
     }
 
     const logoutButton = document.getElementById("logout");
