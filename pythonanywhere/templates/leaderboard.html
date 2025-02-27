@@ -16,6 +16,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            flex-direction: column;
         }
         .leaderboard-container {
             width: 80%;
@@ -25,6 +26,7 @@
             border-radius: 10px;
             overflow: hidden;
             color: #fff;
+            margin-bottom: 20px;
         }
         .leaderboard-header {
             background-color: #007BFF;
@@ -95,6 +97,21 @@
             animation: fadeIn 0.5s ease-in;
         }
 
+        .back-button {
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .back-button:hover {
+            background-color: #0056b3;
+        }
+
     </style>
 </head>
 <body>
@@ -104,6 +121,7 @@
             <!-- Leaderboard items will be populated here -->
         </ul>
     </div>
+    <button class="back-button" onclick="window.location.href='/pws'">Back</button>
 
     <script>
         window.onload = async () => {
@@ -169,4 +187,4 @@
 
     </script>
 </body>
-</html></ul></div></html>
+</html>
