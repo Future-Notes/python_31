@@ -559,7 +559,7 @@
         const unlockedTrophies = trophies.filter(trophy => userLevel >= trophy.level);
 
         if (unlockedTrophies.length === 0) {
-            trophyList.innerHTML = "<p>No trophies yet. Keep leveling up! 💪</p>";
+            trophyList.innerHTML = "<p>Nog geen trofeeën. Stop niet met proberen! 💪</p>";
         } else {
             unlockedTrophies.forEach(trophy => {
                 let trophyElement = document.createElement("div");
