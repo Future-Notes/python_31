@@ -1,10 +1,13 @@
 # update_DB.py
 
 from sqlalchemy import inspect, text
+from flask_sqlalchemy import SQLAlchemy
 
 def update_tables():
     # Delay the import until the function is called
-    from app import db, app
+    from app import app
+
+    db = SQLAlchemy(app)
 
     with app.app_context():
         inspector = inspect(db.engine)
