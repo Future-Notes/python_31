@@ -155,6 +155,7 @@ def generate_session_key(user_id):
         "expires_at": datetime.now() + timedelta(minutes=120),
         "last_active": datetime.now()
     }
+    seed_trophies()
     return key
 
 def validate_session_key():
@@ -584,65 +585,65 @@ def get_unlocked_trophies(user_level):
     return Trophy.query.filter(Trophy.level <= user_level).order_by(Trophy.level).all()
 
 def seed_trophies():
-    # Check if the trophy table is empty
-    if Trophy.query.count() == 0:
-        trophies_data = [
-            {"level": 1, "name": "Beginner Badge", "icon": "🥉"},
-            {"level": 3, "name": "Rookie Medal", "icon": "🥈"},
-            {"level": 5, "name": "Apprentice Trophy", "icon": "🏆"},
-            {"level": 8, "name": "Skilled Warrior", "icon": "⚔️"},
-            {"level": 12, "name": "Master Explorer", "icon": "🗺️"},
-            {"level": 15, "name": "Elite Strategist", "icon": "♟️"},
-            {"level": 18, "name": "Champion Cup", "icon": "🏅"},
-            {"level": 22, "name": "Grandmaster", "icon": "👑"},
-            {"level": 26, "name": "Legendary Hero", "icon": "🔥"},
-            {"level": 30, "name": "Immortal", "icon": "💀"},
-            {"level": 35, "name": "Speedy", "icon": "⚡"},
-            {"level": 40, "name": "Ultimate Conqueror", "icon": "🌟"},
-            {"level": 45, "name": "Mythical Warrior", "icon": "🐉"},
-            {"level": 50, "name": "Unstoppable", "icon": "🦾"},
-            {"level": 55, "name": "Mastermind", "icon": "🧠"},
-            {"level": 60, "name": "Dimensional Traveler", "icon": "🚀"},
-            {"level": 65, "name": "Void Walker", "icon": "🌌"},
-            {"level": 70, "name": "Infinity Breaker", "icon": "♾️"},
-            {"level": 75, "name": "Omnipotent", "icon": "🔱"},
-            {"level": 80, "name": "Beyond Reality", "icon": "🌀"},
-            {"level": 85, "name": "Galactic Ruler", "icon": "🌠"},
-            {"level": 90, "name": "Cosmic Guardian", "icon": "🌌"},
-            {"level": 95, "name": "Eternal Champion", "icon": "🏅"},
-            {"level": 100, "name": "Supreme Deity", "icon": "👑"},
-            {"level": 105, "name": "Celestial Knight", "icon": "🌟"},
-            {"level": 110, "name": "Astral Commander", "icon": "🚀"},
-            {"level": 115, "name": "Quantum Master", "icon": "⚛️"},
-            {"level": 120, "name": "Stellar Conqueror", "icon": "🌠"},
-            {"level": 125, "name": "Nebula Navigator", "icon": "🌌"},
-            {"level": 130, "name": "Galactic Emperor", "icon": "👑"},
-            {"level": 135, "name": "Cosmic Overlord", "icon": "🌌"},
-            {"level": 140, "name": "Universal Ruler", "icon": "🌌"},
-            {"level": 145, "name": "Eternal Sovereign", "icon": "👑"},
-            {"level": 150, "name": "Infinite Monarch", "icon": "♾️"},
-            {"level": 155, "name": "Timeless Titan", "icon": "⏳"},
-            {"level": 160, "name": "Immortal Legend", "icon": "🔥"},
-            {"level": 165, "name": "Supreme Overlord", "icon": "👑"},
-            {"level": 170, "name": "Omniscient Sage", "icon": "🧙"},
-            {"level": 175, "name": "Transcendent Being", "icon": "🌌"},
-            {"level": 180, "name": "Infinite Sage", "icon": "♾️"},
-            {"level": 185, "name": "Eternal Guardian", "icon": "🛡️"},
-            {"level": 190, "name": "Cosmic Sage", "icon": "🌌"},
-            {"level": 195, "name": "Galactic Sage", "icon": "🌌"},
-            {"level": 200, "name": "Supreme Sage", "icon": "👑"}
-        ]
-        for trophy in trophies_data:
-            new_trophy = Trophy(
-                level=trophy["level"],
-                name=trophy["name"],
-                icon=trophy["icon"]
-            )
-            db.session.add(new_trophy)
-        db.session.commit()
-        print("Trophies seeded successfully.")
-    else:
-        print("Trophy table already contains data.")
+    # Remove all existing records
+    Trophy.query.delete()
+    db.session.commit()
+
+    trophies_data = [
+        {"level": 1, "name": "Beginner Badge", "icon": "🥉"},
+        {"level": 3, "name": "Rookie Medal", "icon": "🥈"},
+        {"level": 5, "name": "Apprentice Trophy", "icon": "🏆"},
+        {"level": 8, "name": "Skilled Warrior", "icon": "⚔️"},
+        {"level": 12, "name": "Master Explorer", "icon": "🗺️"},
+        {"level": 15, "name": "Elite Strategist", "icon": "♟️"},
+        {"level": 18, "name": "Champion Cup", "icon": "🏅"},
+        {"level": 22, "name": "Grandmaster", "icon": "👑"},
+        {"level": 26, "name": "Legendary Hero", "icon": "🔥"},
+        {"level": 30, "name": "Immortal", "icon": "💀"},
+        {"level": 35, "name": "Speedy", "icon": "⚡"},
+        {"level": 40, "name": "Ultimate Conqueror", "icon": "🌟"},
+        {"level": 45, "name": "Mythical Warrior", "icon": "🐉"},
+        {"level": 50, "name": "Unstoppable", "icon": "🦾"},
+        {"level": 55, "name": "Mastermind", "icon": "🧠"},
+        {"level": 60, "name": "Dimensional Traveler", "icon": "🚀"},
+        {"level": 65, "name": "Void Walker", "icon": "🌌"},
+        {"level": 70, "name": "Infinity Breaker", "icon": "♾️"},
+        {"level": 75, "name": "Omnipotent", "icon": "🔱"},
+        {"level": 80, "name": "Beyond Reality", "icon": "🌀"},
+        {"level": 85, "name": "Galactic Ruler", "icon": "🌠"},
+        {"level": 90, "name": "Cosmic Guardian", "icon": "🌌"},
+        {"level": 95, "name": "Eternal Champion", "icon": "🏅"},
+        {"level": 100, "name": "Supreme Deity", "icon": "👑"},
+        {"level": 105, "name": "Celestial Knight", "icon": "🌟"},
+        {"level": 110, "name": "Astral Commander", "icon": "🚀"},
+        {"level": 115, "name": "Quantum Master", "icon": "⚛️"},
+        {"level": 120, "name": "Stellar Conqueror", "icon": "🌠"},
+        {"level": 125, "name": "Nebula Navigator", "icon": "🌌"},
+        {"level": 130, "name": "Galactic Emperor", "icon": "👑"},
+        {"level": 135, "name": "Cosmic Overlord", "icon": "🌌"},
+        {"level": 140, "name": "Universal Ruler", "icon": "🌌"},
+        {"level": 145, "name": "Eternal Sovereign", "icon": "👑"},
+        {"level": 150, "name": "Infinite Monarch", "icon": "♾️"},
+        {"level": 155, "name": "Timeless Titan", "icon": "⏳"},
+        {"level": 160, "name": "Immortal Legend", "icon": "🔥"},
+        {"level": 165, "name": "Supreme Overlord", "icon": "👑"},
+        {"level": 170, "name": "Omniscient Sage", "icon": "🧙"},
+        {"level": 175, "name": "Transcendent Being", "icon": "🌌"},
+        {"level": 180, "name": "Infinite Sage", "icon": "♾️"},
+        {"level": 185, "name": "Eternal Guardian", "icon": "🛡️"},
+        {"level": 190, "name": "Cosmic Sage", "icon": "🌌"},
+        {"level": 195, "name": "Galactic Sage", "icon": "🌌"},
+        {"level": 200, "name": "Supreme Sage", "icon": "👑"}
+    ]
+    for trophy in trophies_data:
+        new_trophy = Trophy(
+            level=trophy["level"],
+            name=trophy["name"],
+            icon=trophy["icon"]
+        )
+        db.session.add(new_trophy)
+    db.session.commit()
+    print("Trophies seeded successfully.")
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -1721,6 +1722,7 @@ def game_stats_return():
     xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
     xp = xp_entry.xp if xp_entry else 0
     level, progress, next_level_xp = calculate_level(xp)
+    seed_trophies()
     trophies = get_unlocked_trophies(level)
     trophies_data = [{
         "level": trophy.level,
