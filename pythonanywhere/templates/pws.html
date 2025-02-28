@@ -51,7 +51,7 @@
       margin: 0 auto;
       background-size: cover;
       background-position: center;
-      background-color: #555;
+      background-color: #cc4f4f;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -300,6 +300,14 @@
         text-align: center;
         z-index: 3;
       }
+
+      #info-button-container {
+        display: none;
+      }
+
+      .info-button {
+        display: none;
+      }
       
     }
     .hidden {
@@ -319,7 +327,6 @@
     }
     
     #info-button-container {
-        position: fixed;
         bottom: 20px;
         align-items: center;
         width: 100%;
@@ -366,6 +373,13 @@
         margin-top: 10px;
     }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+  </script>
 </head>
 <body>
   <div id="page-container">
@@ -490,183 +504,84 @@
     });
 
     document.addEventListener("DOMContentLoaded", async function () {
-        const achievementsContainer = document.getElementById("achievements-list");
+      const achievementsContainer = document.getElementById("achievements-list");
+      const trophyList = document.getElementById("trophy-list");
 
-        try {
-            const sessionKey = await authenticateUser();
-            let response = await fetch("/game-stats-return", {
+      try {
+        const sessionKey = await authenticateUser();
+        let response = await fetch("/game-stats-return", {
           method: "GET",
           headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${sessionKey}`
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionKey}`
           }
-            });
+        });
 
-            if (response.status === 404) {
-          response = await fetch("/first-xp-record", {
-              method: "POST",
-              headers: {
+        if (response.status === 404 || response.status === 500) {
+          await fetch("/first-xp-record", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionKey}`
+        }
+          });
+          if (response.status === 500) {
+        response = await fetch("/game-stats-return", {
+          method: "GET",
+          headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${sessionKey}`
-              }
-          });
-            }
+          }
+        });
+          }
+        }
 
-            if (!response.ok) {
+        if (!response.ok) {
           throw new Error("No XP data found");
-            }
+        }
 
-            const data = await response.json();
-            let xp = data.xp || 0;
-            console.log("XP:", xp);
+        const data = await response.json();
+        const { xp, level, progress, next_level_xp, trophies } = data;
+        console.log(data);
 
-            function calculateLevel(xp) {
-          let level = 1;
-          let requiredXp = 50;
-
-          while (xp >= requiredXp) {
-              xp -= requiredXp;
-              level++;
-              requiredXp = Math.floor(requiredXp * 1.2);
-          }
-
-          return { level, progress: xp, nextLevelXp: requiredXp };
-            }
-
-            function animateXpBar(xpFill, levelText, xpText, currentXp, requiredXp, callback) {
-          return new Promise(resolve => {
-              xpFill.style.width = "100%";
-
-              setTimeout(() => {
-            callback(); // Execute level up
-            xpFill.style.transition = "none"; 
-            xpFill.style.width = "0%"; // Reset bar
-            setTimeout(() => {
-                xpFill.style.transition = "width 1.5s ease-in-out";
-                xpFill.style.width = `${(currentXp / requiredXp) * 100}%`; // Fill remainder
-                setTimeout(resolve, 1500);
-            }, 200);
-              }, 1500);
-          });
-            }
-
-            let { level, progress, nextLevelXp } = calculateLevel(xp);
-
-            updateTrophySection(level);
-
-            achievementsContainer.innerHTML = `
+        // Update the XP display.
+        achievementsContainer.innerHTML = `
           <div class="xp-container">
-              <div class="xp-level">Level ${level}</div>
-              <div class="xp-bar">
-            <div class="xp-fill" style="width: 0%;"></div>
-              </div>
-              <div class="xp-progress">${Math.round(progress)} / ${Math.round(nextLevelXp)} XP</div>
+            <div class="xp-level">Level ${level}</div>
+            <div class="xp-bar">
+              <div class="xp-fill" style="width: ${(progress / next_level_xp) * 100}%;"></div>
+            </div>
+            <div class="xp-progress">${Math.round(progress)} / ${Math.round(next_level_xp)} XP</div>
           </div>
-            `;
+        `;
 
-            const xpFill = document.querySelector(".xp-fill");
-            const levelText = document.querySelector(".xp-level");
-            const xpText = document.querySelector(".xp-progress");
-
-            async function animateXpGain(xp) {
-          while (xp >= nextLevelXp) {
-              await animateXpBar(xpFill, levelText, xpText, nextLevelXp, nextLevelXp, () => {
-            xp -= nextLevelXp;
-            level++;
-            nextLevelXp = Math.floor(nextLevelXp * 1.2);
-            levelText.textContent = `Level ${level}`;
-            xpText.textContent = `0 / ${Math.round(nextLevelXp)} XP`;
-              });
-          }
-
-          xpFill.style.width = `${(xp / nextLevelXp) * 100}%`;
-          xpText.textContent = `${Math.round(xp)} / ${Math.round(nextLevelXp)} XP`;
-            }
-
-            setTimeout(() => animateXpGain(progress), 300);
-
-        } catch (error) {
-            achievementsContainer.innerHTML = "<p>Geen achievements beschikbaar</p>";
-        }
-          });
-
-
-
-
-    const trophies = [
-      { level: 1, name: "Beginner Badge", icon: "🥉" },
-      { level: 3, name: "Rookie Medal", icon: "🥈" },
-      { level: 5, name: "Apprentice Trophy", icon: "🏆" },
-      { level: 8, name: "Skilled Warrior", icon: "⚔️" },
-      { level: 12, name: "Master Explorer", icon: "🗺️" },
-      { level: 15, name: "Elite Strategist", icon: "♟️" },
-      { level: 18, name: "Champion Cup", icon: "🏅" },
-      { level: 22, name: "Grandmaster", icon: "👑" },
-      { level: 26, name: "Legendary Hero", icon: "🔥" },
-      { level: 30, name: "Immortal", icon: "💀" },
-      { level: 35, name: "Speedy", icon: "⚡" },
-      { level: 40, name: "Ultimate Conqueror", icon: "🌟" },
-      { level: 45, name: "Mythical Warrior", icon: "🐉" },
-      { level: 50, name: "Unstoppable", icon: "🦾" },
-      { level: 55, name: "Mastermind", icon: "🧠" },
-      { level: 60, name: "Dimensional Traveler", icon: "🚀" },
-      { level: 65, name: "Void Walker", icon: "🌌" },
-      { level: 70, name: "Infinity Breaker", icon: "♾️" },
-      { level: 75, name: "Omnipotent", icon: "🔱" },
-      { level: 80, name: "Beyond Reality", icon: "🌀" },
-      { level: 85, name: "Galactic Ruler", icon: "🌠" },
-      { level: 90, name: "Cosmic Guardian", icon: "🌌" },
-      { level: 95, name: "Eternal Champion", icon: "🏅" },
-      { level: 100, name: "Supreme Deity", icon: "👑" },
-      { level: 105, name: "Celestial Knight", icon: "🌟" },
-      { level: 110, name: "Astral Commander", icon: "🚀" },
-      { level: 115, name: "Quantum Master", icon: "⚛️" },
-      { level: 120, name: "Stellar Conqueror", icon: "🌠" },
-      { level: 125, name: "Nebula Navigator", icon: "🌌" },
-      { level: 130, name: "Galactic Emperor", icon: "👑" },
-      { level: 135, name: "Cosmic Overlord", icon: "🌌" },
-      { level: 140, name: "Universal Ruler", icon: "🌌" },
-      { level: 145, name: "Eternal Sovereign", icon: "👑" },
-      { level: 150, name: "Infinite Monarch", icon: "♾️" },
-      { level: 155, name: "Timeless Titan", icon: "⏳" },
-      { level: 160, name: "Immortal Legend", icon: "🔥" },
-      { level: 165, name: "Supreme Overlord", icon: "👑" },
-      { level: 170, name: "Omniscient Sage", icon: "🧙" },
-      { level: 175, name: "Transcendent Being", icon: "🌌" },
-      { level: 180, name: "Infinite Sage", icon: "♾️" },
-      { level: 185, name: "Eternal Guardian", icon: "🛡️" },
-      { level: 190, name: "Cosmic Sage", icon: "🌌" },
-      { level: 195, name: "Galactic Sage", icon: "🌌" },
-      { level: 200, name: "Supreme Sage", icon: "👑" }
-    ];
-
-    function updateTrophySection(userLevel) {
-        const trophyList = document.getElementById("trophy-list");
-        trophyList.innerHTML = ""; // Clear existing trophies
-
-        const unlockedTrophies = trophies.filter(trophy => userLevel >= trophy.level);
-
-        if (unlockedTrophies.length === 0) {
-            trophyList.innerHTML = "<p>Nog geen trofeeën. Stop niet met proberen! 💪</p>";
+        // Update the trophy section.
+        trophyList.innerHTML = "";
+        if (trophies.length === 0) {
+          trophyList.innerHTML = "<p>Nog geen trofeeën. Stop niet met proberen! 💪</p>";
         } else {
-            unlockedTrophies.forEach(trophy => {
-                let trophyElement = document.createElement("div");
-                trophyElement.classList.add("trophy");
-                
-                let iconElement = document.createElement("div");
-                iconElement.classList.add("icon");
-                iconElement.textContent = trophy.icon;
-                
-                let nameElement = document.createElement("div");
-                nameElement.classList.add("name");
-                nameElement.textContent = `${trophy.name} (Lvl ${trophy.level})`;
-                
-                trophyElement.appendChild(iconElement);
-                trophyElement.appendChild(nameElement);
-                trophyList.appendChild(trophyElement);
-            });
+          trophies.forEach(trophy => {
+            let trophyElement = document.createElement("div");
+            trophyElement.classList.add("trophy");
+
+            let iconElement = document.createElement("div");
+            iconElement.classList.add("icon");
+            iconElement.textContent = trophy.icon;
+
+            let nameElement = document.createElement("div");
+            nameElement.classList.add("name");
+            nameElement.textContent = `${trophy.name} (Lvl ${trophy.level})`;
+
+            trophyElement.appendChild(iconElement);
+            trophyElement.appendChild(nameElement);
+            trophyList.appendChild(trophyElement);
+          });
         }
-    }
+      } catch (error) {
+        achievementsContainer.innerHTML = "<p>Geen achievements beschikbaar</p>";
+      }
+    });
+
 
     async function authenticateUser() {
       let sessionKey = sessionStorage.getItem("session_key");

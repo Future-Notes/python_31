@@ -1,7 +1,11 @@
-from app import db, app
+# update_DB.py
+
 from sqlalchemy import inspect, text
 
 def update_tables():
+    # Delay the import until the function is called
+    from app import db, app
+
     with app.app_context():
         inspector = inspect(db.engine)
 
@@ -24,5 +28,3 @@ def update_tables():
                         conn.commit()
 
         print("Database schema update complete.")
-
-update_tables()

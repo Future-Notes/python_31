@@ -1,9 +1,11 @@
 # ------------------------------Imports--------------------------------
 
-from flask import Flask, request, jsonify, g, render_template, make_response, session
+from flask import Flask, request, jsonify, g, render_template, make_response, session, render_template_string
+import traceback
+from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint
-from sqlalchemy.exc import IntegrityError                        
+from sqlalchemy.exc import IntegrityError, OperationalError                        
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -17,6 +19,8 @@ import string
 import time
 import glob
 import threading
+from update_DB import update_tables
+from math import floor
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -35,6 +39,51 @@ games = {}
 BOARD_SIZE = 10
 CORRECT_PIN = "1234"
 app.secret_key = os.urandom(24)
+ERROR_MESSAGES = {
+    "ERR-1001": "Something went wrong. Please try again later.",
+    "DB-2002": "A database issue occurred. Please retry your request.",
+}
+error_template = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Error Occurred</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f8f8f8;
+      margin: 40px;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    h1 {
+      color: #cc0000;
+    }
+    .error-code {
+      font-size: 18px;
+      font-weight: bold;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Error</h1>
+    <p>{{ message }}</p>
+    <p class="error-code">Error Code: {{ code }}</p>
+  </div>
+</body>
+</html>
+'''
 
 # --------------------------------Models--------------------------------------
 class User(db.Model):
@@ -83,6 +132,15 @@ class PlayerXp(db.Model):
 
     def __repr__(self):
         return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
+
+class Trophy(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    level = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    icon = db.Column(db.String(10), nullable=False)
+
+    def __repr__(self):
+        return f'<Trophy level={self.level} name={self.name}>'
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -134,7 +192,6 @@ def require_session_key(func):
     def wrapper(*args, **kwargs):
         valid, response = validate_session_key()
         if not valid:
-            print("unauthorized")
             return jsonify({"error": response}), 401
         g.user_id = response["user_id"]  # Store user ID for the route
         return func(*args, **kwargs)
@@ -510,11 +567,116 @@ def calculate_xp_gain(current_xp, result, accuracy, sunk_ships):
 
     xp_gain = total_bonus * scaling
     return xp_gain
-#---------------------------------Template routes--------------------------------
+
+def calculate_level(xp):
+    """Calculates the user level from total XP."""
+    level = 1
+    required_xp = 50
+    remaining_xp = xp
+    while remaining_xp >= required_xp:
+        remaining_xp -= required_xp
+        level += 1
+        required_xp = floor(required_xp * 1.2)
+    return level, remaining_xp, required_xp
+
+def get_unlocked_trophies(user_level):
+    """Returns trophies with a required level less than or equal to the user's level."""
+    return Trophy.query.filter(Trophy.level <= user_level).order_by(Trophy.level).all()
+
+def seed_trophies():
+    # Check if the trophy table is empty
+    if Trophy.query.count() == 0:
+        trophies_data = [
+            {"level": 1, "name": "Beginner Badge", "icon": "🥉"},
+            {"level": 3, "name": "Rookie Medal", "icon": "🥈"},
+            {"level": 5, "name": "Apprentice Trophy", "icon": "🏆"},
+            {"level": 8, "name": "Skilled Warrior", "icon": "⚔️"},
+            {"level": 12, "name": "Master Explorer", "icon": "🗺️"},
+            {"level": 15, "name": "Elite Strategist", "icon": "♟️"},
+            {"level": 18, "name": "Champion Cup", "icon": "🏅"},
+            {"level": 22, "name": "Grandmaster", "icon": "👑"},
+            {"level": 26, "name": "Legendary Hero", "icon": "🔥"},
+            {"level": 30, "name": "Immortal", "icon": "💀"},
+            {"level": 35, "name": "Speedy", "icon": "⚡"},
+            {"level": 40, "name": "Ultimate Conqueror", "icon": "🌟"},
+            {"level": 45, "name": "Mythical Warrior", "icon": "🐉"},
+            {"level": 50, "name": "Unstoppable", "icon": "🦾"},
+            {"level": 55, "name": "Mastermind", "icon": "🧠"},
+            {"level": 60, "name": "Dimensional Traveler", "icon": "🚀"},
+            {"level": 65, "name": "Void Walker", "icon": "🌌"},
+            {"level": 70, "name": "Infinity Breaker", "icon": "♾️"},
+            {"level": 75, "name": "Omnipotent", "icon": "🔱"},
+            {"level": 80, "name": "Beyond Reality", "icon": "🌀"},
+            {"level": 85, "name": "Galactic Ruler", "icon": "🌠"},
+            {"level": 90, "name": "Cosmic Guardian", "icon": "🌌"},
+            {"level": 95, "name": "Eternal Champion", "icon": "🏅"},
+            {"level": 100, "name": "Supreme Deity", "icon": "👑"},
+            {"level": 105, "name": "Celestial Knight", "icon": "🌟"},
+            {"level": 110, "name": "Astral Commander", "icon": "🚀"},
+            {"level": 115, "name": "Quantum Master", "icon": "⚛️"},
+            {"level": 120, "name": "Stellar Conqueror", "icon": "🌠"},
+            {"level": 125, "name": "Nebula Navigator", "icon": "🌌"},
+            {"level": 130, "name": "Galactic Emperor", "icon": "👑"},
+            {"level": 135, "name": "Cosmic Overlord", "icon": "🌌"},
+            {"level": 140, "name": "Universal Ruler", "icon": "🌌"},
+            {"level": 145, "name": "Eternal Sovereign", "icon": "👑"},
+            {"level": 150, "name": "Infinite Monarch", "icon": "♾️"},
+            {"level": 155, "name": "Timeless Titan", "icon": "⏳"},
+            {"level": 160, "name": "Immortal Legend", "icon": "🔥"},
+            {"level": 165, "name": "Supreme Overlord", "icon": "👑"},
+            {"level": 170, "name": "Omniscient Sage", "icon": "🧙"},
+            {"level": 175, "name": "Transcendent Being", "icon": "🌌"},
+            {"level": 180, "name": "Infinite Sage", "icon": "♾️"},
+            {"level": 185, "name": "Eternal Guardian", "icon": "🛡️"},
+            {"level": 190, "name": "Cosmic Sage", "icon": "🌌"},
+            {"level": 195, "name": "Galactic Sage", "icon": "🌌"},
+            {"level": 200, "name": "Supreme Sage", "icon": "👑"}
+        ]
+        for trophy in trophies_data:
+            new_trophy = Trophy(
+                level=trophy["level"],
+                name=trophy["name"],
+                icon=trophy["icon"]
+            )
+            db.session.add(new_trophy)
+        db.session.commit()
+        print("Trophies seeded successfully.")
+    else:
+        print("Trophy table already contains data.")
+#---------------------------------Error handlers---------------------------------
+
+@app.errorhandler(OperationalError)
+def handle_operational_error(e):
+    error_str = str(e.orig)
+    if "no such table" in error_str or "no such column" in error_str:
+        # Update the schema if an expected error is encountered
+        update_tables()
+        # Optionally: you can either retry the request or inform the client to retry.
+        return jsonify({"message": "Database schema updated. Please retry your request."}), 500
+    return jsonify({"error": "Internal Server Error"}), 500
 
 @app.errorhandler(404)
 def page_note_found(error):
-    return render_template('404.html'), 404
+    return render_template('404.html'), 200
+
+# Function to generate unique error codes (or use predefined ones)
+def generate_error_code():
+    return f"ERR-{random.randint(1000, 9999)}"
+
+# Global error handler (catches all unhandled exceptions)
+@app.errorhandler(Exception)
+def global_error_handler(e):
+    # If the exception is an HTTP error, let Flask use the standard response
+    if isinstance(e, HTTPException):
+        return e
+
+    # Generate a unique error code
+    error_code = generate_error_code()
+
+    # Display user-friendly error page
+    return render_template_string(error_template, message=ERROR_MESSAGES["ERR-1001"], code=error_code), 500
+
+#---------------------------------Template routes--------------------------------
 
 @app.route('/')
 def home():
@@ -1435,6 +1597,7 @@ def first_user_record():
         xp_entry = PlayerXp(user_id=g.user_id, xp=0)
         db.session.add(xp_entry)
         db.session.commit()
+        seed_trophies()
     except IntegrityError:
         db.session.rollback()
         xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
@@ -1546,6 +1709,8 @@ def game_stats():
     xp_entry.xp += xp_gain
     db.session.commit()
 
+    seed_trophies()
+
     return jsonify({
         "message": "XP updated",
         "xp_gained": xp_gain,
@@ -1556,9 +1721,23 @@ def game_stats():
 @require_session_key
 def game_stats_return():
     xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
-    if not xp_entry:
-        return jsonify({"error": "No XP record found"}), 404
-    return jsonify({"xp": xp_entry.xp})
+    xp = xp_entry.xp if xp_entry else 0
+    level, progress, next_level_xp = calculate_level(xp)
+    seed_trophies()
+    trophies = get_unlocked_trophies(level)
+    trophies_data = [{
+        "level": trophy.level,
+        "name": trophy.name,
+        "icon": trophy.icon
+    } for trophy in trophies]
+
+    return jsonify({
+        "xp": xp,
+        "level": level,
+        "progress": progress,
+        "next_level_xp": next_level_xp,
+        "trophies": trophies_data
+    })
 
 @app.route('/leaderboard-info', methods=['GET'])
 def leaderboard_info():
@@ -1649,4 +1828,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0")
