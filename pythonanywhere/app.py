@@ -1709,8 +1709,6 @@ def game_stats():
     xp_entry.xp += xp_gain
     db.session.commit()
 
-    seed_trophies()
-
     return jsonify({
         "message": "XP updated",
         "xp_gained": xp_gain,
@@ -1723,7 +1721,6 @@ def game_stats_return():
     xp_entry = PlayerXp.query.filter_by(user_id=g.user_id).first()
     xp = xp_entry.xp if xp_entry else 0
     level, progress, next_level_xp = calculate_level(xp)
-    seed_trophies()
     trophies = get_unlocked_trophies(level)
     trophies_data = [{
         "level": trophy.level,
