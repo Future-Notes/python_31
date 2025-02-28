@@ -29,6 +29,11 @@
       }
     }
     </script>
+    <script type="module">
+        import { quicklink } from 'https://unpkg.com/quicklink@2.3.0?module';
+        quicklink();
+    </script>
+    <script src="https://instant.page/5.1.0" type="module"></script>      
     <style>
         body {
             margin: 0;
@@ -661,6 +666,13 @@
             transform: rotate(-10deg) scale(0.9);
         }
 </style>
+<script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+</script>
 
 </head>
 <body>
@@ -804,6 +816,26 @@
   </a>
 
 <script>
+    window.addEventListener('popstate', (event) => {
+        loadPage(event.state.url);
+    });
+
+    function navigate(url) {
+        history.pushState({ url }, '', url);
+        loadPage(url);
+    }
+
+    function loadPage(url) {
+        fetch(url)
+            .then(response => response.text())
+            .then(html => {
+            document.body.innerHTML = html;
+            })
+            .catch(console.error);
+    }
+
+
+
     const loginButtons = document.querySelectorAll('#login-button'); // Fix selector with # for ID
     const blankScreen = document.getElementById('blank-screen');
     const downloadButton = document.getElementById('download-button');

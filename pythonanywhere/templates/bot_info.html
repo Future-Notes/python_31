@@ -32,6 +32,13 @@
       color: #d9534f;
     }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+  </script>
 </head>
 <body>
     <button onclick="window.location.href='/pws'" style="

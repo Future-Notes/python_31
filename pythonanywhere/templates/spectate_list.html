@@ -76,6 +76,13 @@
       background: rgba(0, 0, 0, 1);
     }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+  </script>
 </head>
 <body>
   <a href="/pws" class="back-button">← Back</a>
