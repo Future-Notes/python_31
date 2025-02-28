@@ -121,6 +121,19 @@
       }
     }
 
+    #leaveGameButton {
+      position: fixed;
+      top: 0.5rem;
+      left: 0.5rem;
+      z-index: 1;
+      padding: 0.5rem 1rem;
+      background: #ff0000;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
     @media (max-height: 900px) {
       #setup-container {
         max-width: 90%;
@@ -163,6 +176,7 @@
   </script>
 </head>
 <body>
+  <button id="leaveGameButton">Game verlaten</button>
   <div id="setup-container">
     <h1>Plaats je schepen!</h1>
     <p>Sleep de schepen naar het speelveld en klik op "Klaar" als je klaar bent. Dubbelklik een schip om te verwijderen.</p>
@@ -206,6 +220,32 @@
     // Initialize availableShips with a unique id for each ship.
     shipSizes.forEach((length, index) => {
       availableShips.push({ id: 'ship-' + index, length: length });
+    });
+
+    document.getElementById('leaveGameButton').addEventListener('click', function() {
+      const choice = confirm("Weet je zeker dat je de game wilt verlaten? Dit resulteert in dat de andere speler wint.")
+      if (choice === false) {
+      return;
+      } else {
+      const gameCode = localStorage.getItem('gameCode');
+      const player = localStorage.getItem('player');
+      fetch('/leave-game', {
+        method: 'POST',
+        headers: {
+        'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gameCode: gameCode, player: player })
+      }).then(response => response.json())
+        .then(data => {
+        if (data.error) {
+          alert(data.error);
+        } else {
+          alert("Omdat je nog in de setup fase was, is er geen xp af gegaan.")
+          location.href = '/pws'
+        }
+        })
+        .catch(error => console.error('Error leaving game:', error));
+      }
     });
     
     // Render the ship selection panel.

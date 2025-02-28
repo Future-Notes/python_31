@@ -1622,14 +1622,29 @@ def game_state():
     return jsonify(response)
 
 # --- Stop Game ---
-@app.route('/stop', methods=['POST'])
+@app.route('/leave-game', methods=['POST'])
 def stop():
-    game_code = request.args.get("gameCode")
+    data = request.json
+    game_code = data.get("gameCode")
+    player = data.get("player")
+
     if not game_code or game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
 
-    del games[game_code]
-    return jsonify({"message": f"Game {game_code} stopped"})
+    game = games[game_code]
+    if game["status"] == "gameover":
+        return jsonify({"error": "Game is already over"}), 400
+
+    opponent = "player1" if player == "player2" else "player2"
+    if game["players"][opponent] is None:
+        # If the opponent has not joined, cancel the game and remove the game code
+        del games[game_code]
+        return jsonify({"message": "Game canceled as the opponent has not joined."}), 200
+
+    game["status"] = "gameover"
+    game["winner"] = opponent
+
+    return jsonify({"message": f"Player {player} has left the game. Player {opponent} wins."}), 200
 
 # --- Game Result ---   
 @app.route('/game_result', methods=['GET'])
@@ -1751,6 +1766,35 @@ def leaderboard_info():
             "profile_picture": user.profile_picture
         })
     return jsonify(leaderboard)
+
+@app.route('/leaderboard-info-players', methods=['GET', 'POST'])
+def leaderboard_info_players():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided!"}), 400
+
+    username = data.get("username")
+    if not username:
+        return jsonify({"error": "Username is required!"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found!"}), 404
+
+    xp_entry = PlayerXp.query.filter_by(user_id=user.id).first()
+    if not xp_entry:
+        return jsonify({"error": "XP entry not found for user!"}), 404
+
+    xp = xp_entry.xp
+    level, _, _ = calculate_level(xp)
+    trophies = get_unlocked_trophies(level)
+    trophies_data = [{"name": trophy.name, "icon": trophy.icon} for trophy in trophies]
+
+    return jsonify({
+        "xp": xp,
+        "level": level,
+        "trophies": trophies_data
+    }), 200
 
 # --- Spectate State ---
 @app.route('/spectate_state', methods=['GET'])
