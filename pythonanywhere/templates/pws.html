@@ -634,6 +634,23 @@
       return sessionKey;
     }
 
+    function leaveGame() {
+      fetch("/leave-game", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ gameCode: gameCode })
+            })
+            .then(response => {
+        if (response.ok) {
+          location.reload();
+        } else {
+          console.error("Failed to leave game");
+        }
+            })
+            .catch(error => console.error("Error during leave game:", error));
+    }
 
     function setupGameEvents(isAuthenticated) {
       document.getElementById('createGame').addEventListener('click', () => {
@@ -663,6 +680,7 @@
                 <p>Je Game Code is:</p>
                 <p style="font-size:2em; font-weight:bold;">${data.gameCode}</p>
                 <p>Deel deze code met je tegenstander om te starten.</p>
+                <button onclick="leaveGame()">Annuleren</button>
               </div>
             `;
           } else if (data.error) {

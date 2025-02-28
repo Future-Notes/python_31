@@ -140,6 +140,19 @@
       border-radius: 5px;
       cursor: pointer;
     }
+
+    #leaveGameButton {
+      position: fixed;
+      top: 0.5rem;
+      left: 0.5rem;
+      z-index: 1;
+      padding: 0.5rem 1rem;
+      background: #ff0000;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
     
     /* --- Game Over Overlay (Final End Screen) --- */
     .gameover-overlay {
@@ -255,26 +268,6 @@
       pointer-events: none;
     }
     
-    /* --- Mute Button --- */
-    #muteButton {
-      position: fixed;
-      top: 0.5rem;
-      left: 0.5rem;
-      background-color: #007BFF;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      padding: 0.5rem 0.75rem;
-      cursor: pointer;
-      font-size: 1rem;
-      z-index: 1001;
-      box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.2);
-      transition: background-color 0.3s ease;
-    }
-    #muteButton:hover {
-      background-color: #0056b3;
-    }
-    
     .hidden {
       display: none;
     }
@@ -326,6 +319,7 @@
 </head>
 <body>
   <button id="fullscreenButton">Volledig scherm</button>
+  <button id="leaveGameButton">Game verlaten</button>
   <h1>Zeeslag - Vechten</h1>
   <!-- Player information -->
   <div id="playersInfo" style="font-size: 20px; margin-bottom: 10px;"></div>
@@ -443,6 +437,29 @@
         docElm.msRequestFullscreen();
       }
       this.style.display = 'none';
+    });
+
+    document.getElementById('leaveGameButton').addEventListener('click', function() {
+      const choice = confirm("Weet je zeker dat je de game wilt verlaten? Dit resulteert in dat de andere speler wint.")
+      if (choice === false) {
+      return;
+      } else {
+      const gameCode = localStorage.getItem('gameCode');
+      const player = localStorage.getItem('player');
+      fetch('/leave-game', {
+        method: 'POST',
+        headers: {
+        'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gameCode: gameCode, player: player })
+      }).then(response => response.json())
+        .then(data => {
+        if (data.error) {
+          alert(data.error);
+        }
+        })
+        .catch(error => console.error('Error leaving game:', error));
+      }
     });
 
     const boardSize = 10;
