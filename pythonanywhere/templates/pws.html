@@ -584,7 +584,7 @@
 
 
     async function authenticateUser() {
-      const sessionKey = await getCachedSessionKey();
+      let sessionKey = sessionStorage.getItem("session_key");
       const lastingKey = localStorage.getItem("lasting_key");
 
       async function attemptAutoLogin() {
@@ -595,15 +595,13 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ lasting_key: lastingKey }),
           });
-
           if (!response.ok) {
             console.error("Auto-login failed");
             localStorage.removeItem("lasting_key");
             return null;
           }
-
           const data = await response.json();
-          await cacheSessionKey(data.session_key);
+          sessionStorage.setItem("session_key", data.session_key);
           console.log("Auto-login successful!");
           return data.session_key;
         } catch (error) {
@@ -614,75 +612,26 @@
 
       if (!sessionKey && lastingKey) {
         console.log("No session key found, attempting auto-login...");
-        return await attemptAutoLogin();
+        sessionKey = await attemptAutoLogin();
       }
 
       if (sessionKey) {
-        console.log("Validating session key...");
-        const isValid = await checkSessionWithCache(sessionKey);
-        if (!isValid) {
-          console.log("Session key invalid, attempting auto-login...");
-          await removeCachedSessionKey();
-          return lastingKey ? await attemptAutoLogin() : null;
+        try {
+          console.log("Validating session key...");
+          const response = await fetch("/test-session", {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${sessionKey}` },
+          });
+          if (response.status === 401) {
+            console.log("Session key invalid, attempting auto-login...");
+            sessionStorage.removeItem("session_key")
+            sessionKey = lastingKey ? await attemptAutoLogin() : null;
+          }
+        } catch (error) {
+          console.error("Error during session validation:", error);
         }
       }
-
       return sessionKey;
-    }
-
-    async function getCachedSessionKey() {
-      return new Promise((resolve) => {
-        let request = indexedDB.open('authDB', 1);
-        request.onupgradeneeded = (event) => {
-          event.target.result.createObjectStore('session');
-        };
-        request.onsuccess = (event) => {
-          let db = event.target.result;
-          let txn = db.transaction('session', 'readonly');
-          let store = txn.objectStore('session');
-          let getRequest = store.get('session_key');
-
-          getRequest.onsuccess = () => resolve(getRequest.result);
-          getRequest.onerror = () => resolve(null);
-        };
-        request.onerror = () => resolve(null);
-      });
-    }
-    
-    async function checkSessionWithCache(sessionKey) {
-      try {
-        const response = await fetch("/test-session", {
-          method: "GET",
-          headers: { "Authorization": `Bearer ${sessionKey}` },
-          cache: "force-cache", // Try to use cached response first
-        });
-
-        return response.ok; // Returns `true` if session is valid, `false` if not
-      } catch (error) {
-        console.error("Error during session validation:", error);
-        return false;
-      }
-    }
-
-
-    async function cacheSessionKey(sessionKey) {
-      let request = indexedDB.open('authDB', 1);
-      request.onsuccess = (event) => {
-        let db = event.target.result;
-        let txn = db.transaction('session', 'readwrite');
-        let store = txn.objectStore('session');
-        store.put(sessionKey, 'session_key');
-      };
-    }
-
-    async function removeCachedSessionKey() {
-      let request = indexedDB.open('authDB', 1);
-      request.onsuccess = (event) => {
-        let db = event.target.result;
-        let txn = db.transaction('session', 'readwrite');
-        let store = txn.objectStore('session');
-        store.delete('session_key');
-      };
     }
 
 
