@@ -1,7 +1,6 @@
-from app import app, db
-from app import Trophy
-
-trophies_data = [
+def update_tables():
+    from app import app, db, Trophy  # import here to avoid circular import error
+    trophies_data = [
       { "level": 1, "name": "Beginner Badge", "icon": "🥉" },
       { "level": 3, "name": "Rookie Medal", "icon": "🥈" },
       { "level": 5, "name": "Apprentice Trophy", "icon": "🏆" },
@@ -48,10 +47,10 @@ trophies_data = [
       { "level": 200, "name": "Supreme Sage", "icon": "👑" }
     ]
 
-with app.app_context():
-    for t in trophies_data:
-        trophy = Trophy.query.filter_by(level=t["level"]).first()
-        if not trophy:
-            trophy = Trophy(level=t["level"], name=t["name"], icon=t["icon"])
-            db.session.add(trophy)
-    db.session.commit()
+    with app.app_context():
+        for t in trophies_data:
+            trophy = Trophy.query.filter_by(level=t["level"]).first()
+            if not trophy:
+                trophy = Trophy(level=t["level"], name=t["name"], icon=t["icon"])
+                db.session.add(trophy)
+        db.session.commit()
