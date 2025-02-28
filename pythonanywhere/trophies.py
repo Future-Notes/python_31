@@ -54,3 +54,4 @@ def update_tables():
                 trophy = Trophy(level=t["level"], name=t["name"], icon=t["icon"])
                 db.session.add(trophy)
         db.session.commit()
+        print("Updated")
