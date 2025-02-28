@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-cache-v3';
+const CACHE_NAME = 'my-cache-v4';
 
 // List of all pages to cache
 const pagesToCache = [
@@ -46,6 +46,24 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  if (url.pathname === '/test-session') {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        return cachedResponse || fetch(event.request).then((networkResponse) => {
+          return caches.open('my-cache-v4').then((cache) => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        });
+      })
+    );
+  }
+});
+
 
 // Remove old caches when updating
 self.addEventListener('activate', (event) => {
