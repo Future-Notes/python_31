@@ -100,16 +100,6 @@ class User(db.Model):
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
     )
 
-class Note(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
-    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)  # New field
-    title = db.Column(db.String(100), nullable=True)
-    note = db.Column(db.Text, nullable=False)
-    tag = db.Column(db.String(100), nullable=True)
-
-    group = db.relationship("Group", backref="notes")
-
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False, unique=True)
@@ -787,6 +777,9 @@ def bot_info():
 def leaderboard():
     return render_template('leaderboard.html')
 
+@app.route('/scheduler-page')
+def scheduler_page():
+    return render_template('scheduler.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -822,9 +815,9 @@ def get_user_info():
         "role": user.role
     }), 200
 
-# Groups
-
     
+# Appointments
+
 # 1. Fetch all appointments for the current user
 @app.route('/appointments', methods=['GET'])
 @require_session_key
@@ -923,7 +916,21 @@ def delete_appointment(appointment_id):
 
     return jsonify({"message": "Appointment deleted successfully"}), 200
 
-    
+# 5. Get all user notes for attaching
+
+# Fetch all notes for the current user
+@app.route('/notes-all', methods=['GET'])
+@require_session_key
+def get_all_notes():
+    user_id = g.user_id
+    notes = Note.query.filter_by(user_id=user_id).all()
+    notes_data = [note.to_dict() for note in notes]
+    return jsonify({"notes": notes_data}), 200
+
+
+
+# Groups   
+
 @app.route('/check-group')
 @require_session_key
 def group_info_lol():

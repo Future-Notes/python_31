@@ -410,27 +410,185 @@
       background-color: #1E1E1E;
       padding: 20px 30px;
       border-radius: 12px;
+      max-height: 600px;
+      height: 100%;
       text-align: center;
       width: 100%;
       max-width: 400px;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+      animation: slideDown 0.3s ease-out;
+    }
+    @keyframes slideDown {
+      from {
+      transform: translateY(-20px);
+      opacity: 0;
+      }
+      to {
+      transform: translateY(0);
+      opacity: 1;
+      }
     }
     #add-modal input,
     #add-modal textarea,
     #add-modal button {
       width: 100%;
       margin-bottom: 10px;
-      padding: 10px;
+      padding: 12px;
       background-color: #2E2E2E;
       border: 1px solid #424242;
       color: #E0E0E0;
       border-radius: 8px;
+      font-size: 16px;
     }
     #add-modal textarea {
       resize: vertical;
+      min-height: 100px;
+    }
+    #add-modal button {
+      background-color: #424242;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    #add-modal button:hover {
+      background-color: #616161;
     }
     #delete-appointment {
       background-color: #cc4f4f;
+    }
+    #delete-appointment {
+      background-color: #cc4f4f;
+    }
+
+    #notes-panel {
+      display: none;
+      background-color: #1E1E1E;
+      padding: 10px;
+      margin-left: 20px;
+      max-width: 400px;
+      width: 100%;
+      border-radius: 12px;
+      max-height: 600px;
+      height: 100%;
+      padding: 20px 30px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+      animation: slideDown 0.3s ease-out;
+    }
+
+    .draggable-note {
+      background: #2c2c2c;
+      margin: 5px 0;
+      padding: 5px;
+      cursor: grab;
+      border-radius: 12px;
+    }
+
+    .dropzone {
+      display: none;
+      border: 2px dashed #aaa;
+      padding: 10px;
+      margin-top: 10px;
+      text-align: center;
+      margin-bottom: 5px;
+    }
+
+    .dropzone.dragover {
+      border-color: #333;
+      background: #f9f9f9;
+    }
+
+    .attached-note-tag {
+      display: inline-block;
+      background: #2c2c2c;
+      margin: 3px;
+      padding: 3px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    /* Mobile Styles for Calendar Sidebar and Main Grid */
+    @media (max-width: 600px) {
+      header {
+      flex-direction: column;
+      align-items: flex-start;
+      }
+      header h1 {
+      font-size: 24px;
+      }
+      .homepage-link {
+      padding: 5px 10px;
+      }
+      .profile-pic {
+      width: 30px;
+      height: 30px;
+      font-size: 14px;
+      }
+      main {
+      flex-direction: column;
+      padding: 20px 10px;
+      }
+      #calendar-sidebar {
+      width: 100%;
+      max-height: none;
+      margin-bottom: 20px;
+      }
+      #calendar-main {
+      min-width: 100%;
+      overflow: visible;
+      }
+      #calendar-container {
+      min-width: 100%;
+      max-height: none;
+      overflow: visible;
+      border: none;
+      }
+      #calendar-table th,
+      #calendar-table td {
+      padding: 10px;
+      min-width: 100px;
+      height: 60px;
+      }
+      #calendar-table th.hour-label {
+      width: 60px;
+      }
+      #floating-add-button {
+      width: 50px;
+      height: 50px;
+      font-size: 24px;
+      bottom: 10px;
+      right: 10px;
+      }
+      #add-modal {
+      width: 90%;
+      max-width: none;
+      height: auto;
+      max-height: none;
+      padding: 10px 20px;
+      }
+      #add-modal input,
+      #add-modal textarea,
+      #add-modal button {
+      font-size: 14px;
+      padding: 10px;
+      }
+      #notes-panel {
+      width: 90%;
+      max-width: none;
+      height: auto;
+      max-height: none;
+      padding: 10px 20px;
+      }
+      .draggable-note {
+      padding: 5px;
+      font-size: 14px;
+      }
+      .dropzone {
+      padding: 5px;
+      font-size: 14px;
+      }
+      .attached-note-tag {
+      padding: 3px 5px;
+      font-size: 14px;
+      }
     }
   </style>
 </head>
@@ -447,7 +605,8 @@
   <!-- Mobile Sub-Header -->
   <nav class="mobile-sub-header">
     <a href="/index" class="nav-link">Personal notes</a>
-    <a href="/group-notes" class="nav-link active">Group notes</a>
+    <a href="/group-notes" class="nav-link">Group notes</a>
+    <a href="/group-notes" class="nav-link active">Calendar</a>
   </nav>
 
   <div id="overlay"></div>
@@ -479,6 +638,8 @@
         <!-- Days of the month will be populated here -->
       </ul>
     </aside>
+    
+
     <div id="calendar-main">
       <div id="calendar-container">
         <!-- Calendar grid will be generated here -->
@@ -496,9 +657,21 @@
       <input id="appointment-title" type="text" placeholder="Title" />
       <textarea id="appointment-description" placeholder="Description"></textarea>
       <input id="appointment-datetime" type="datetime-local" step="1" />
+      <!-- Attached Notes Dropzone -->
+      <div id="attached-notes-dropzone" class="dropzone">
+        <p>Drag and drop notes here to attach</p>
+        <div id="attached-notes"></div>
+      </div>
+      <button id="attach-note-button">Attach note(s)</button>
       <button id="submit-appointment">Submit</button>
       <button id="cancel-appointment">Cancel</button>
       <button id="delete-appointment" style="display:none;">Delete</button>
+    </div>
+    <!-- Draggable Notes Panel -->
+    <div id="notes-panel">
+      <h3>Your Notes</h3>
+      <div id="notes-list"></div>
+      <button id="cancel-add-note">Cancel</button>
     </div>
   </div>
 
@@ -558,6 +731,7 @@
         }
       }
       fetchSchedule();
+      fetchNotes();
       // Initialize sidebar with current month
       const today = new Date();
       currentMonthDate = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -579,6 +753,129 @@
     let lastScrollTop = 0;
     const calendarContainer = document.getElementById("calendar-container");
     let scrollTimeout;
+
+    let notesData = [];
+    let attachedNoteIds = [];
+
+    const dropzone = document.getElementById("attached-notes-dropzone");
+    const attachNoteButton = document.getElementById("attach-note-button")
+    const cancelAttachNoteButton = document.getElementById("cancel-add-note")
+
+    attachNoteButton.addEventListener("click", () => {
+      const notesPanel = document.getElementById("notes-panel");
+      const dropzone = document.getElementById("attached-notes-dropzone");
+      attachNoteButton.style.display = "none";
+      notesPanel.style.display = "block";
+      dropzone.style.display = "block";
+    });
+
+    cancelAttachNoteButton.addEventListener("click", () => {
+      const notesPanel = document.getElementById("notes-panel");
+      const dropzone = document.getElementById("attached-notes-dropzone");
+      attachNoteButton.style.display = "block";
+      notesPanel.style.display = "none";
+      dropzone.style.display = "none";
+    });
+
+    dropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+
+    dropzone.addEventListener("dragleave", () => {
+      dropzone.classList.remove("dragover");
+    });
+
+    dropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      const noteId = e.dataTransfer.getData("text/plain");
+      attachNote(parseInt(noteId));
+    });
+
+    // Mobile support: when a touch-dragging note is released over the dropzone
+    dropzone.addEventListener("touchend", () => {
+      const draggingNote = document.querySelector(".draggable-note.touch-dragging");
+      if (draggingNote) {
+        attachNote(parseInt(draggingNote.dataset.noteId));
+        draggingNote.classList.remove("touch-dragging");
+      }
+    });
+
+
+    async function fetchNotes() {
+      const sessionKey = sessionStorage.getItem("session_key");
+      try {
+        const response = await fetch("/notes-all", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${sessionKey}` },
+        });
+        if (response.status === 401) {
+          showModal();
+          return;
+        }
+        const data = await response.json();
+        notesData = data.notes || [];
+        populateNotesPanel();
+      } catch (error) {
+        console.error("Error fetching notes:", error);
+      }
+    }
+
+    function populateNotesPanel() {
+      const notesList = document.getElementById("notes-list");
+      notesList.innerHTML = "";
+      notesData.forEach(note => {
+        const noteItem = document.createElement("div");
+        noteItem.className = "draggable-note";
+        noteItem.textContent = note.title;
+        noteItem.dataset.noteId = note.id;
+        noteItem.draggable = true;
+
+        // Desktop drag events
+        noteItem.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/plain", note.id);
+        });
+
+        // Basic mobile touch support: add a class so we know which note is “active”
+        noteItem.addEventListener("touchstart", () => {
+          noteItem.classList.add("touch-dragging");
+        });
+        noteItem.addEventListener("touchend", () => {
+          noteItem.classList.remove("touch-dragging");
+        });
+
+        notesList.appendChild(noteItem);
+      });
+    }
+
+    function attachNote(noteId) {
+      if (!attachedNoteIds.includes(noteId)) {
+        attachedNoteIds.push(noteId);
+        updateAttachedNotesDisplay();
+      }
+    }
+
+    function updateAttachedNotesDisplay() {
+      const attachedNotesDiv = document.getElementById("attached-notes");
+      attachedNotesDiv.innerHTML = "";
+      attachedNoteIds.forEach(noteId => {
+        const note = notesData.find(n => n.id === noteId);
+        if (note) {
+          const noteTag = document.createElement("span");
+          noteTag.className = "attached-note-tag";
+          noteTag.textContent = note.title;
+          noteTag.dataset.noteId = noteId;
+          // Allow removal on click
+          noteTag.addEventListener("click", () => {
+            attachedNoteIds = attachedNoteIds.filter(id => id !== noteId);
+            updateAttachedNotesDisplay();
+          });
+          attachedNotesDiv.appendChild(noteTag);
+        }
+      });
+    }
+
 
     // Listen for scrolling inside the calendar container
     calendarContainer.addEventListener("scroll", function() {
@@ -776,9 +1073,12 @@
       appointmentTitleInput.value = "";
       appointmentDescriptionInput.value = "";
       appointmentDatetimeInput.value = "";
+      attachedNoteIds = [];  // Clear any previous attachments
+      updateAttachedNotesDisplay();
       deleteAppointmentButton.style.display = "none";
       addModalOverlay.style.display = "flex";
     }
+
     function openEditModal(appt) {
       currentEditingAppointment = appt;
       modalTitle.textContent = "Edit Appointment";
@@ -786,16 +1086,30 @@
       appointmentDescriptionInput.value = appt.description;
       appointmentDatetimeInput.value = appt.appointment_datetime.slice(0, 19);
       deleteAppointmentButton.style.display = "block";
+      
+      // Pre-load attached notes (if any)
+      attachedNoteIds = [];
+      if (appt.notes) {
+        appt.notes.forEach(note => {
+          attachedNoteIds.push(note.id);
+        });
+      }
+      updateAttachedNotesDisplay();
+      
       addModalOverlay.style.display = "flex";
     }
+
+
     function hideAddModal() {
       addModalOverlay.style.display = "none";
     }
+
     async function submitAppointment() {
       const sessionKey = sessionStorage.getItem("session_key");
       const title = appointmentTitleInput.value.trim();
       const description = appointmentDescriptionInput.value.trim();
       const appointment_datetime = appointmentDatetimeInput.value;
+      
       if (!title || !appointment_datetime) {
         alert("Title and datetime are required.");
         return;
@@ -808,7 +1122,7 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({ title, description, appointment_datetime })
+            body: JSON.stringify({ title, description, appointment_datetime, note_ids: attachedNoteIds })
           });
           if (response.status === 401) {
             showModal();
@@ -825,7 +1139,7 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({ title, description, appointment_datetime })
+            body: JSON.stringify({ title, description, appointment_datetime, note_ids: attachedNoteIds })
           });
           if (response.status === 401) {
             showModal();
@@ -842,6 +1156,8 @@
         console.error("Error submitting appointment:", error);
       }
     }
+
+
     async function deleteAppointment() {
       if (!currentEditingAppointment) return;
       const sessionKey = sessionStorage.getItem("session_key");
