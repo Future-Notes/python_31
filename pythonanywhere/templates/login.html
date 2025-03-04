@@ -157,6 +157,13 @@
             }
         }
     </style>
+    <script>
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/static/sw_js/sw.js')
+            .then(() => console.log('Service Worker Registered'))
+            .catch(console.error);
+        }
+    </script>
 </head>
 <body>
     <h1 class="page-title">Future Notes</h1>
@@ -175,12 +182,22 @@
             </label>
             <button type="submit">Login</button>
         </form>
-        <p>Don't have an account? <a href="/signup_page">Sign Up</a></p>
+        <p>Don't have an account? <a id="signup-link" href="/signup_page">Sign Up</a></p>
     </div>
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
+            // Append query parameters to the signup link if they exist
+            const queryParams = window.location.search;
+            if (queryParams) {
+                const signupLink = document.getElementById("signup-link");
+                signupLink.href = "/signup_page" + queryParams;
+            }
+            
             const lastingKey = localStorage.getItem("lasting_key");
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirectUrl = urlParams.get("redirect") || "/index";
+
             if (lastingKey) {
                 const response = await fetch("/login", {
                     method: "POST",
@@ -191,9 +208,9 @@
 
                 if (response.ok) {
                     sessionStorage.setItem("session_key", data.session_key);
-                    window.location.href = "/index";
+                    window.location.href = redirectUrl;
                 } else {
-                    console.log(data)
+                    console.log(data);
                 }
             }
         });
@@ -203,6 +220,8 @@
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
             const rememberMe = document.getElementById("remember-me").checked;
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirectUrl = urlParams.get("redirect") || "/index";
 
             if (!username || !password) {
                 alert("Please enter both username and password.");
@@ -222,12 +241,11 @@
                 if (rememberMe && data.lasting_key) {
                     localStorage.setItem("lasting_key", data.lasting_key);
                 }
-                window.location.href = "/index";
+                window.location.href = redirectUrl;
             } else {
                 alert(data.error || "Login failed");
             }
         });
-
     </script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="theme-color" content="#ADD8E6">
   <title>Battleship Setup</title>
   <!-- Include a Google Font for a modern look -->
   <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
@@ -12,7 +13,7 @@
       font-family: 'Roboto', sans-serif;
       margin: 0;
       padding: 0;
-      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background: url('static/ocean2.jpg') no-repeat center center fixed;
       background-size: cover;
       color: #fff;
     }
@@ -22,7 +23,7 @@
       padding: 30px;
       border-radius: 10px;
       max-width: 500px;
-      margin: 80px auto;
+      margin: 10px auto;
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
       text-align: center;
     }
@@ -114,12 +115,69 @@
         max-width: 90%;
         margin: 20px auto;
       }
+      #ship-selection {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+
+    #leaveGameButton {
+      position: fixed;
+      top: 0.5rem;
+      left: 0.5rem;
+      z-index: 1;
+      padding: 0.5rem 1rem;
+      background: #ff0000;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    @media (max-height: 900px) {
+      #setup-container {
+        max-width: 90%;
+        margin: 20px auto;
+        padding: 20px;
+      }
+
+      #ship-selection {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      #boardContainer {
+        margin: 10px auto;
+      }
+    }
+    @media (max-height: 820px) {
+      #setup-container {
+        max-width: 90%;
+        margin: 5px auto;
+        padding: 5px;
+      }
+
+      #ship-selection {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      #boardContainer {
+        margin: 2px auto;
+      }
     }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+  </script>
 </head>
 <body>
+  <button id="leaveGameButton">Game verlaten</button>
   <div id="setup-container">
-    <img src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
     <h1>Plaats je schepen!</h1>
     <p>Sleep de schepen naar het speelveld en klik op "Klaar" als je klaar bent. Dubbelklik een schip om te verwijderen.</p>
     <p>
@@ -132,6 +190,9 @@
     <!-- The Board -->
     <div id="boardContainer"></div>
     
+    <!-- New Randomize Button -->
+    <button id="randomize">Plaats Schepen Willekeurig</button>
+    
     <button id="done" class="disabled" disabled>Klaar</button>
   </div>
   
@@ -142,7 +203,7 @@
     
     // Define the ships (by length) that need to be placed.
     // For example: one ship of length 2, two ships of length 3, one ship of length 4.
-    const shipSizes = [2, 3, 3, 4];
+    const shipSizes = [2, 3, 3, 4, 5];
     // availableShips holds ship objects that have not yet been placed.
     let availableShips = []; // Each: {id, length}
     // placedShips will hold placed ships: {id, length, orientation, positions}
@@ -159,6 +220,32 @@
     // Initialize availableShips with a unique id for each ship.
     shipSizes.forEach((length, index) => {
       availableShips.push({ id: 'ship-' + index, length: length });
+    });
+
+    document.getElementById('leaveGameButton').addEventListener('click', function() {
+      const choice = confirm("Weet je zeker dat je de game wilt verlaten? Dit resulteert in dat de andere speler wint.")
+      if (choice === false) {
+      return;
+      } else {
+      const gameCode = localStorage.getItem('gameCode');
+      const player = localStorage.getItem('player');
+      fetch('/leave-game', {
+        method: 'POST',
+        headers: {
+        'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gameCode: gameCode, player: player })
+      }).then(response => response.json())
+        .then(data => {
+        if (data.error) {
+          alert(data.error);
+        } else {
+          alert("Omdat je nog in de setup fase was, is er geen xp af gegaan.")
+          location.href = '/pws'
+        }
+        })
+        .catch(error => console.error('Error leaving game:', error));
+      }
     });
     
     // Render the ship selection panel.
@@ -338,11 +425,11 @@
     function updateDoneButton() {
       const doneBtn = document.getElementById('done');
       if (availableShips.length > 0) {
-      doneBtn.disabled = true;
-      doneBtn.classList.add('disabled');
+        doneBtn.disabled = true;
+        doneBtn.classList.add('disabled');
       } else {
-      doneBtn.disabled = false;
-      doneBtn.classList.remove('disabled');
+        doneBtn.disabled = false;
+        doneBtn.classList.remove('disabled');
       }
     }
     
@@ -377,6 +464,81 @@
         }
       });
     });
+    
+    /* --- Random Placement Code --- */
+    // Try to place a single ship randomly. Returns true if placement succeeds.
+    function tryPlaceRandomShip(ship) {
+      let attempts = 0;
+      while (attempts < 100) { // Try up to 100 times.
+        // Randomly choose an orientation.
+        const orientation = Math.random() < 0.5 ? 'H' : 'V';
+        // Adjust max starting positions so the ship fits.
+        let maxX = boardSize, maxY = boardSize;
+        if (orientation === 'H') {
+          maxX = boardSize - ship.length + 1;
+        } else {
+          maxY = boardSize - ship.length + 1;
+        }
+        const startX = Math.floor(Math.random() * maxX);
+        const startY = Math.floor(Math.random() * maxY);
+        const proposed = [];
+        if (orientation === 'H') {
+          for (let i = 0; i < ship.length; i++) {
+            proposed.push({ x: startX + i, y: startY });
+          }
+        } else {
+          for (let i = 0; i < ship.length; i++) {
+            proposed.push({ x: startX, y: startY + i });
+          }
+        }
+        // Check for overlap with already placed ships.
+        let valid = true;
+        for (let placed of placedShips) {
+          for (let pos of placed.positions) {
+            if (proposed.some(p => p.x === pos.x && p.y === pos.y)) {
+              valid = false;
+              break;
+            }
+          }
+          if (!valid) break;
+        }
+        if (valid) {
+          // If valid, add the ship placement.
+          placedShips.push({ id: ship.id, length: ship.length, orientation: orientation, positions: proposed });
+          return true;
+        }
+        attempts++;
+      }
+      return false;
+    }
+    
+    // Randomize placement for all ships.
+    function randomizeShips() {
+      // Reset board placements.
+      placedShips = [];
+      availableShips = [];
+      shipSizes.forEach((length, index) => {
+        availableShips.push({ id: 'ship-' + index, length: length });
+      });
+      // Copy list so we can iterate without interference.
+      const shipsToPlace = availableShips.slice();
+      shipsToPlace.forEach(ship => {
+        if (tryPlaceRandomShip(ship)) {
+          // Remove ship from availableShips once placed.
+          const idx = availableShips.findIndex(s => s.id === ship.id);
+          if (idx > -1) availableShips.splice(idx, 1);
+        } else {
+          console.error("Could not randomly place ship", ship);
+        }
+      });
+      renderBoard();
+      renderShipSelection();
+      updateDoneButton();
+    }
+    
+    // Attach the event listener to the randomize button.
+    document.getElementById('randomize').addEventListener('click', randomizeShips);
+    /* --- End Random Placement Code --- */
     
     // Initialize the page.
     renderShipSelection();

@@ -2,44 +2,62 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="theme-color" content="#ADD8E6">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zeeslag - Game</title>
-  <!-- Preload the logo image for smoother animations -->
-  <link rel="preload" as="image" href="static/zeeslag.png">
   <style>
+    /* Global styling */
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      margin: 20px;
-      background: url('static/ocean.jpg') no-repeat center center fixed;
+      margin: 1rem;
+      background: url('static/ocean2.jpg') no-repeat center center fixed;
       background-size: cover;
       color: #000;
     }
+    
     h1, h2 {
-      margin-bottom: 10px;
+      margin-bottom: 0.5rem;
     }
+    
+    /* Main Logo Styling */
+    /* Remove inline styles from the HTML <img id="mainLogo"> and use this instead */
+    #mainLogo {
+      display: block;
+      margin: 0 auto 1rem;
+      max-width: 10rem; /* relative unit so it scales */
+      width: 100%;
+      height: auto;
+    }
+    
+    /* Board Container */
     .board-container {
       display: inline-block;
-      margin: 20px;
-      background: rgba(0,0,0,0.75);
-      padding: 20px;
+      margin: 1rem;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 1rem;
       border-radius: 10px;
       color: white;
     }
+    
+    /* Table styling */
     table {
       border-collapse: collapse;
       margin: auto;
     }
+    
+    /* Table cell styling using relative sizes */
     td {
-      width: 30px;
-      height: 30px;
+      width: 2.5rem;
+      height: 2.5rem;
       border: 1px solid #333;
       text-align: center;
       vertical-align: middle;
       font-weight: bold;
       cursor: default;
-      background: rgba(0,0,0,0.1);
+      background: rgba(0, 0, 0, 0.1);
     }
+    
     /* --- Board Cell Styles --- */
     .ship {
       background-color: lightblue;
@@ -51,11 +69,14 @@
     .miss {
       background-color: lightgray;
       color: black;
-      font-size: 18px;
-      line-height: 30px;
+      font-size: 1.125rem; /* approx 18px */
+      line-height: 2.5rem;
     }
     .clickable {
       cursor: pointer;
+    }
+    .disabled-cell {
+      cursor: not-allowed;
     }
     .sunk {
       background-color: darkred;
@@ -66,6 +87,8 @@
       -webkit-animation: fadeOut 2s forwards;
       animation: fadeOut 2s forwards;
     }
+    
+    /* Animations */
     @-webkit-keyframes fadeOut {
       0% { opacity: 1; }
       100% { opacity: 0; }
@@ -74,6 +97,7 @@
       0% { opacity: 1; }
       100% { opacity: 0; }
     }
+    
     /* --- Floating Sunk Message --- */
     .sunk-message {
       position: fixed;
@@ -82,9 +106,9 @@
       transform: translateX(-50%);
       background: rgba(0, 0, 0, 0.8);
       color: #FFD700;
-      padding: 10px 20px;
+      padding: 0.5rem 1rem;
       border-radius: 5px;
-      font-size: 18px;
+      font-size: 1.125rem;
       z-index: 1000;
       opacity: 0;
       pointer-events: none;
@@ -102,19 +126,34 @@
         opacity: 1;
       }
     }
+    
     /* --- Fullscreen Button --- */
     #fullscreenButton {
       position: fixed;
-      top: 10px;
-      right: 10px;
+      top: 0.5rem;
+      right: 0.5rem;
       z-index: 1;
-      padding: 10px;
+      padding: 0.5rem 1rem;
       background: #007BFF;
       color: white;
       border: none;
       border-radius: 5px;
       cursor: pointer;
     }
+
+    #leaveGameButton {
+      position: fixed;
+      top: 0.5rem;
+      left: 0.5rem;
+      z-index: 1;
+      padding: 0.5rem 1rem;
+      background: #ff0000;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    
     /* --- Game Over Overlay (Final End Screen) --- */
     .gameover-overlay {
       position: fixed;
@@ -139,6 +178,7 @@
       from { opacity: 0; }
       to { opacity: 1; }
     }
+    
     /* Different backgrounds for win/lose */
     .gameover-overlay.win {
       background: linear-gradient(135deg, #004d00, #007700);
@@ -146,10 +186,11 @@
     .gameover-overlay.lose {
       background: linear-gradient(135deg, #330000, #770000);
     }
+    
     /* --- Game Over Logo Animations --- */
     .gameover-logo {
-      width: 150px;
-      margin-bottom: 20px;
+      width: 8rem;
+      margin-bottom: 1rem;
     }
     .logo-fly {
       animation: logoFly 1.5s ease-out forwards;
@@ -177,9 +218,10 @@
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.1); }
     }
+    
     /* --- Game Over Text Animations --- */
     .gameover-text {
-      font-size: 48px;
+      font-size: 3rem;
       color: white;
     }
     .gameover-text.win {
@@ -195,70 +237,111 @@
     }
     @keyframes shake {
       0% { transform: translate(0, 0); }
-      25% { transform: translate(-10px, 0); }
-      50% { transform: translate(10px, 0); }
-      75% { transform: translate(-10px, 0); }
+      25% { transform: translate(-0.625rem, 0); }
+      50% { transform: translate(0.625rem, 0); }
+      75% { transform: translate(-0.625rem, 0); }
       100% { transform: translate(0, 0); }
     }
+    
     /* --- New Game Button as Progress Bar --- */
     #newGameButton {
-      margin-top: 20px;
-      padding: 10px 20px;
-      font-size: 18px;
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1.125rem;
       color: white;
-      background-color: #007BFF; /* starting tint */
+      background-color: #007BFF;
       border: none;
       border-radius: 5px;
       cursor: pointer;
       transition: background-color 0.1s linear;
       position: relative;
       overflow: hidden;
+      text-decoration: none;
     }
+    
+    /* --- Logo Transition --- */
     .logo-transition {
       position: fixed;
-      z-index: 3000; /* Ensure it's on top */
+      z-index: 3000;
       transition: transform 1.5s ease-in-out;
       will-change: transform;
-      /* Optional: set pointer-events to none so it doesn't block clicks */
       pointer-events: none;
     }
-    #muteButton {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    background-color: #007BFF;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    padding: 10px 15px;
-    cursor: pointer;
-    font-size: 16px;
-    z-index: 1001; /* Ensures the button stays on top */
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    transition: background-color 0.3s ease;
-  }
-
-  #muteButton:hover {
-    background-color: #0056b3;
-  }
+    
+    .hidden {
+      display: none;
+    }
+    
+    /* --- Responsive Adjustments --- */
+    @media (max-width: 600px) {
+      body {
+        margin: 0.5rem;
+      }
+      .board-container {
+        width: 90%;
+        padding: 0.5rem;
+        margin: 0.5rem auto;
+      }
+      td {
+        width: 2rem;
+        height: 2rem;
+      }
+      h1 {
+        font-size: 1.5rem;
+      }
+      h2 {
+        font-size: 1.25rem;
+      }
+      .gameover-text {
+        font-size: 2rem;
+      }
+      .gameover-logo {
+        width: 6rem;
+      }
+      #fullscreenButton, #muteButton {
+        padding: 0.5rem;
+        font-size: 0.875rem;
+      }
+      #newGameButton {
+        padding: 0.5rem;
+        font-size: 1rem;
+      }
+    }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+  </script>
+     
 </head>
 <body>
   <button id="fullscreenButton">Volledig scherm</button>
-  <img id="mainLogo" src="static/zeeslag.png" alt="Zeeslag Logo" style="display: block; margin: 0 auto 20px auto; max-width: 150px;">
+  <button id="leaveGameButton">Game verlaten</button>
   <h1>Zeeslag - Vechten</h1>
   <!-- Player information -->
   <div id="playersInfo" style="font-size: 20px; margin-bottom: 10px;"></div>
-  <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
+  <div id="statusMessageContainer">
+    <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
+    <button id="newGameButton" class="hidden">Maak nieuwe game aan</button>
+  </div>
   <!-- Floating sunk message -->
   <div id="sunkMessage" class="sunk-message"></div>
   
   <!-- Game Over Overlay (Final End Screen) -->
   <div id="gameoverOverlay" class="gameover-overlay">
-    <img id="gameoverLogo" src="static/zeeslag.png" alt="Zeeslag Logo" class="gameover-logo">
     <h1 id="gameoverText" class="gameover-text"></h1>
+    <!-- New End Screen Board -->
+    <div id="endScreenContainer" style="margin-top:20px;">
+      <h2 id="endTitle" style="color:white;"></h2>
+      <div class="board-container">
+        <table id="endBoard"></table>
+      </div>
+    </div>
     <!-- New Game Button with integrated timer/progress -->
-    <button id="newGameButton">New Game (start automatisch in 10 seconden)</button>
+    <a href="/pws" id="newGameButton">New Game (start automatisch in 30 seconden)</a>
   </div>
   
   <div class="board-container">
@@ -269,33 +352,79 @@
     <h2>Tegenstander bord</h2>
     <table id="enemyBoard"></table>
   </div>
-  <audio id="soundtrack" loop>
-    <source src="static/soundtrack.mp3" type="audio/mpeg">
-    Your browser does not support the audio element.
-  </audio>
-  <button id="muteButton">Dempen</button>
 
   <script>
+    // --- Authentication Functions ---
+    async function authenticateUser() {
+      let sessionKey = sessionStorage.getItem("session_key");
+      const lastingKey = localStorage.getItem("lasting_key");
 
-    // Get references to the audio element and mute button.
-    const soundtrack = document.getElementById('soundtrack');
-    const muteButton = document.getElementById('muteButton');
+      async function attemptAutoLogin() {
+        try {
+          console.log("Attempting auto-login...");
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lasting_key: lastingKey }),
+          });
+          if (!response.ok) {
+            console.error("Auto-login failed");
+            localStorage.removeItem("lasting_key");
+            return null;
+          }
+          const data = await response.json();
+          sessionStorage.setItem("session_key", data.session_key);
+          console.log("Auto-login successful!");
+          return data.session_key;
+        } catch (error) {
+          console.error("Error during auto-login:", error);
+          return null;
+        }
+      }
 
-    // Attempt to play the audio (some browsers may require user interaction for autoplay).
-    // If autoplay is blocked, you might want to call soundtrack.play() in response to a user action.
-    soundtrack.play().catch(err => {
-      console.log('Autoplay failed; will play when user interacts.', err);
-    });
+      if (!sessionKey && lastingKey) {
+        console.log("No session key found, attempting auto-login...");
+        sessionKey = await attemptAutoLogin();
+      }
 
-    // Set up the mute/unmute toggle.
-    muteButton.addEventListener('click', () => {
-      // Toggle the muted property
-      soundtrack.muted = !soundtrack.muted;
+      if (sessionKey) {
+        try {
+          console.log("Validating session key...");
+          const response = await fetch("/test-session", {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${sessionKey}` },
+          });
+          if (response.status === 401) {
+            console.log("Session key invalid, attempting auto-login...");
+            sessionKey = lastingKey ? await attemptAutoLogin() : null;
+          }
+        } catch (error) {
+          console.error("Error during session validation:", error);
+        }
+      }
+      return sessionKey;
+    }
 
-      // Update the button text
-      muteButton.innerText = soundtrack.muted ? 'Dempen opheffen' : 'Dempen';
-    });
-    // Fullscreen request.
+    async function sendGameStats(stats) {
+      const sessionKey = await authenticateUser();
+      if (!sessionKey) {
+        console.error("No valid session key. Cannot send game stats.");
+        return;
+      }
+      fetch('/game-stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify(stats)
+      })
+        .then(response => response.json())
+        .then(data => console.log("Game stats submitted:", data))
+        .catch(error => console.error("Error sending game stats:", error));
+    }
+
+    // --- Existing Battle Code ---
     document.getElementById('fullscreenButton').addEventListener('click', function() {
       const docElm = document.documentElement;
       if (docElm.requestFullscreen) {
@@ -310,12 +439,34 @@
       this.style.display = 'none';
     });
 
+    document.getElementById('leaveGameButton').addEventListener('click', function() {
+      const choice = confirm("Weet je zeker dat je de game wilt verlaten? Dit resulteert in dat de andere speler wint.")
+      if (choice === false) {
+      return;
+      } else {
+      const gameCode = localStorage.getItem('gameCode');
+      const player = localStorage.getItem('player');
+      fetch('/leave-game', {
+        method: 'POST',
+        headers: {
+        'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gameCode: gameCode, player: player })
+      }).then(response => response.json())
+        .then(data => {
+        if (data.error) {
+          alert(data.error);
+        }
+        })
+        .catch(error => console.error('Error leaving game:', error));
+      }
+    });
+
     const boardSize = 10;
     const gameCode = localStorage.getItem('gameCode');
     const player = localStorage.getItem('player');
     const opponent = (player === 'player1') ? 'player2' : 'player1';
 
-    // Create the boards.
     function createBoard(tableId, isEnemy) {
       const table = document.getElementById(tableId);
       for (let y = 0; y < boardSize; y++) {
@@ -337,161 +488,148 @@
 
     let canFire = false;
     let enemyShots = [];
-    let announcedSunkShips = {}; // Track already announced sunk ships
+    let announcedSunkShips = {};
 
     function cellClick(x, y) {
       if (!canFire) return;
       if (enemyShots.some(pos => pos[0] === x && pos[1] === y)) return;
-      
+
       fetch('/fire', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gameCode: gameCode, player: player, x: x, y: y })
       })
-      .then(response => response.json())
-      .then(data => {
-        if (data.error) {
-          alert(data.error);
-        }
-        updateGameState();
-      })
-      .catch(err => console.error('Error firing:', err));
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            alert(data.error);
+          }
+          updateGameState();
+        })
+        .catch(err => console.error('Error firing:', err));
     }
 
-    // Show game over overlay with special effects and start the new game timer.
     function showGameOverScreen(won) {
       const overlay = document.getElementById('gameoverOverlay');
-      const logo = document.getElementById('gameoverLogo');
       const gameoverText = document.getElementById('gameoverText');
-      
-      // Set overlay styling and text based on win or lose.
+      const endTitle = document.getElementById('endTitle');
+
       if (won) {
         overlay.classList.add('win');
         gameoverText.innerText = "Je hebt gewonnen!";
         gameoverText.classList.add('win');
+        endTitle.innerText = "Hier zijn de gezonken schepen van de tegenstander:";
       } else {
         overlay.classList.add('lose');
         gameoverText.innerText = "Je hebt verloren!";
         gameoverText.classList.add('lose');
+        endTitle.innerText = "Hier had de tegenstander zijn schepen verstopt:";
       }
       overlay.classList.add('show');
-      
-      // Start logo fly-in animation.
-      logo.classList.add('logo-fly');
-      logo.addEventListener('animationend', function(e) {
-        if (e.animationName === 'logoFly') {
-          logo.classList.remove('logo-fly');
-          logo.classList.add('logo-pulse');
-        }
-      });
 
-      animateLogoTransition();
-      
-      // Start the New Game timer with progress.
+
+      loadEndBoard();
       startNewGameTimer();
     }
 
-    function animateLogoTransition() {
-      const mainLogo = document.getElementById('mainLogo');
-      const gameoverLogo = document.getElementById('gameoverLogo');
-      
-      // Hide the game over logo initially so only the clone is visible during the animation
-      gameoverLogo.style.visibility = 'hidden';
-      
-      // Get starting position and size
-      const startRect = mainLogo.getBoundingClientRect();
-      
-      // Ensure the overlay is visible so we can get the target position.
-      // (If your overlay is hidden via opacity or pointer-events, you might need to temporarily display it.)
-      const overlay = document.getElementById('gameoverOverlay');
-      // (If necessary, you can adjust the display style; here we assume the overlay is now visible)
-      
-      // Get target position and size for the game over logo
-      const targetRect = gameoverLogo.getBoundingClientRect();
-      
-      // Create a clone of the main logo
-      const logoClone = mainLogo.cloneNode(true);
-      logoClone.classList.add('logo-transition');
-      document.body.appendChild(logoClone);
-      
-      // Position the clone exactly over the original logo
-      logoClone.style.top = startRect.top + 'px';
-      logoClone.style.left = startRect.left + 'px';
-      logoClone.style.width = startRect.width + 'px';
-      logoClone.style.height = startRect.height + 'px';
-      
-      // Force a reflow so the browser registers the starting position
-      logoClone.getBoundingClientRect();
-      
-      // Calculate the difference in position and size
-      const deltaX = targetRect.left - startRect.left;
-      const deltaY = targetRect.top - startRect.top;
-      const scaleX = targetRect.width / startRect.width;
-      const scaleY = targetRect.height / startRect.height;
-      
-      // Apply the transform to animate the movement and zoom
-      logoClone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
-      
-      // When the transition ends, remove the clone and reveal the game over logo
-      logoClone.addEventListener('transitionend', () => {
-        gameoverLogo.style.visibility = 'visible';
-        logoClone.remove();
-      });
+    function loadEndBoard() {
+      fetch(`/game_result?gameCode=${gameCode}&player=${player}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.error) {
+            console.error(data.error);
+            return;
+          }
+          const endBoard = document.getElementById('endBoard');
+          endBoard.innerHTML = "";
+          for (let y = 0; y < boardSize; y++) {
+            const tr = document.createElement('tr');
+            for (let x = 0; x < boardSize; x++) {
+              const td = document.createElement('td');
+              td.id = `endBoard-${x}-${y}`;
+              tr.appendChild(td);
+            }
+            endBoard.appendChild(tr);
+          }
+          if (data.enemyShips) {
+            data.enemyShips.forEach(ship => {
+              ship.positions.forEach(pos => {
+                const [x, y] = pos;
+                const cell = document.getElementById(`endBoard-${x}-${y}`);
+                if (cell) {
+                  if (data.winner === player) {
+                    cell.classList.add('hit');
+                    cell.innerText = "X";
+                  } else {
+                    const wasHit = data.myHits.some(hit => hit[0] === x && hit[1] === y);
+                    if (wasHit) {
+                      cell.classList.add('hit');
+                      cell.innerText = "X";
+                    } else {
+                      cell.classList.add('ship');
+                    }
+                  }
+                }
+              });
+            });
+          }
+          if (data.myMisses) {
+            data.myMisses.forEach(pos => {
+              const [x, y] = pos;
+              const cell = document.getElementById(`endBoard-${x}-${y}`);
+              if (cell) {
+                cell.classList.add('miss');
+                cell.innerText = "O";
+              }
+            });
+          }
+        })
+        .catch(err => console.error("Error loading end board: ", err));
     }
 
-
-    // Start a 10-second countdown that updates the new game button.
     function startNewGameTimer() {
       const button = document.getElementById('newGameButton');
-      let timeLeft = 10; // seconds
-      const totalTime = 10;
-      // Colors for progress (you can change these values)
-      const startColor = { r: 0, g: 123, b: 255 };   // #007BFF
-      const endColor   = { r: 102, g: 179, b: 255 };  // #66B3FF
-      
-      // Update the button text immediately.
-      button.innerText = `Nieuwe game (start automatisch in 10 seconden)`;
-      
+      let timeLeft = 30;
+      button.addEventListener('click', () => window.location.href = '/pws');
       const interval = setInterval(() => {
-        timeLeft -= 0.1; // update every 100ms
+        timeLeft -= 1;
+        button.innerText = `New Game (${timeLeft})`;
         if (timeLeft <= 0) {
           clearInterval(interval);
           window.location.href = '/pws';
-          return;
         }
-        // Update button text with whole seconds remaining.
-        const displayTime = Math.ceil(timeLeft);
-        button.innerText = `New Game (${displayTime})`;
-        // Calculate progress fraction.
-        const progress = (totalTime - timeLeft) / totalTime;
-        // Interpolate between startColor and endColor.
-        const r = Math.round(startColor.r + (endColor.r - startColor.r) * progress);
-        const g = Math.round(startColor.g + (endColor.g - startColor.g) * progress);
-        const b = Math.round(startColor.b + (endColor.b - startColor.b) * progress);
-        button.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-      }, 100);
-      
-      // Remove any existing event listeners to prevent multiple intervals.
-      const newButton = button.cloneNode(true);
-      button.parentNode.replaceChild(newButton, button);
-      // Clicking the button immediately starts a new game.
-      newButton.addEventListener('click', function() {
-        clearInterval(interval);
-        window.location.href = '/pws';
-      });
+      }, 1000);
     }
+
+    // --- Modified Game State Polling ---
+    let pollingInterval = setInterval(updateGameState, 500);
 
     function updateGameState() {
       fetch(`/game_state?gameCode=${gameCode}`)
         .then(res => res.json())
         .then(game => {
+          if (game.error && game.error === "Invalid game code") {
+            clearInterval(pollingInterval);
+            const statusMsg = document.getElementById('statusMessage');
+            statusMsg.innerText = "Foute gamecode. Waarschijnlijk was de server aan het herstarten";
+            const playersInfo = document.getElementById('playersInfo');
+            playersInfo.classList.add('hidden');
+            const newGameButton = document.getElementById('newGameButton');
+            newGameButton.classList.remove('hidden');
+            newGameButton.addEventListener('click', function() {
+              localStorage.removeItem("gameCode");
+              localStorage.removeItem("player");
+              window.location.href = '/pws';
+            });
+            return;
+          }
+
           const myData = game.players[player];
           const enemyData = game.players[opponent];
           const statusMsg = document.getElementById('statusMessage');
           const sunkMsg = document.getElementById('sunkMessage');
           const playersInfo = document.getElementById('playersInfo');
 
-          // Update player info.
           if (enemyData && enemyData.name) {
             playersInfo.innerText = "Tegenstander: " + enemyData.name;
           } else {
@@ -501,6 +639,34 @@
           if (game.status === "gameover") {
             const won = (game.winner === player);
             localStorage.setItem('result', won ? 'win' : 'lose');
+            clearInterval(pollingInterval);
+
+            // --- Compute Game Statistics ---
+            const myHits = myData && myData.hits ? myData.hits.length : 0;
+            const myMisses = myData && myData.misses ? myData.misses.length : 0;
+            const shotsFired = myHits + myMisses;
+            let sunkShips = 0;
+            if (enemyData && enemyData.ships) {
+              enemyData.ships.forEach(ship => {
+                if (ship.sunk) sunkShips++;
+              });
+            }
+            const accuracy = shotsFired > 0 ? (myHits / shotsFired) : 0;
+            const botGame = localStorage.getItem("botGame") === "true";
+
+            const statsPayload = {
+              result: won ? "win" : "lose",
+              bot_game: botGame,
+              shots_fired: shotsFired,
+              hits: myHits,
+              misses: myMisses,
+              sunk_ships: sunkShips,
+              accuracy: accuracy
+            };
+
+            // --- Send Game Stats ---
+            sendGameStats(statsPayload);
+
             showGameOverScreen(won);
             return;
           } else if (game.status === "battle") {
@@ -576,7 +742,7 @@
           for (let y = 0; y < boardSize; y++) {
             for (let x = 0; x < boardSize; x++) {
               const cell = document.getElementById(`enemyBoard-${x}-${y}`);
-              cell.className = "clickable";
+              cell.className = canFire ? "clickable" : "disabled-cell";
               cell.innerText = "";
             }
           }
@@ -644,9 +810,8 @@
         });
     }
 
-    // Poll the server every 500ms.
-    setInterval(updateGameState, 500);
+    // Start polling immediately.
     updateGameState();
-  </script>
+  </script>  
 </body>
 </html>

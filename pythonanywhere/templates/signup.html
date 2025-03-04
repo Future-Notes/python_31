@@ -156,6 +156,13 @@
         }
 
     </style>
+    <script>
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/static/sw_js/sw.js')
+            .then(() => console.log('Service Worker Registered'))
+            .catch(console.error);
+        }
+    </script>
 </head>
 <body>
     <h1 class="page-title">Future Notes</h1>
@@ -171,14 +178,24 @@
             <input type="password" id="password" required>
             <button type="submit">Sign up</button>
         </form>
-        <p>Already have an account? <a href="/login_page">Login</a></p>
+        <p>Already have an account? <a id="login-link" href="/login_page">Login</a></p>
     </div>
 
     <script>
+        // On page load, update the login link to include any query parameters
+        document.addEventListener("DOMContentLoaded", () => {
+            const queryParams = window.location.search;
+            if (queryParams) {
+                const loginLink = document.getElementById("login-link");
+                loginLink.href = "/login_page" + queryParams;
+            }
+        });
+
         document.getElementById("signup-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
+            const queryParams = window.location.search;
 
             const response = await fetch("/signup", {
                 method: "POST",
@@ -189,7 +206,8 @@
 
             if (response.ok) {
                 alert("Signup successful. Please login.");
-                window.location.href = "/login_page";
+                // Redirect to the login page with the current query parameters
+                window.location.href = "/login_page" + queryParams;
             } else {
                 alert(data.error || "Signup failed");
             }

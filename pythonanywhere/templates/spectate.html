@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta name="theme-color" content="#ADD8E6">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zeeslag - Spectate</title>
   <style>
@@ -9,7 +10,7 @@
       font-family: Arial, sans-serif;
       text-align: center;
       margin: 20px;
-      background: url('static/ocean.jpg') no-repeat center center fixed;
+      background: url('static/ocean2.jpg') no-repeat center center fixed;
       background-size: cover;
       color: #000;
     }
@@ -55,13 +56,37 @@
       background-color: orange;
       animation: fadeOut 2s forwards;
     }
+    .back-button {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 5px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: bold;
+      transition: background 0.3s;
+    }
+    .back-button:hover {
+      background: rgba(0, 0, 0, 1);
+    }
     @keyframes fadeOut {
       0% { opacity: 1; }
       100% { opacity: 0; }
     }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+  </script>
 </head>
 <body>
+  <a href="/spectate" class="back-button">← Back</a>
   <h1>Zeeslag - Spectate</h1>
   <div id="statusMessage" style="font-size: 20px; margin-bottom: 10px;"></div>
   
@@ -101,6 +126,7 @@
 
     // Poll the spectate endpoint to update both boards.
     function updateSpectateState() {
+      console.log('Fetching spectate state...');
       fetch(`/spectate_state?gameCode=${gameCode}`)
         .then(res => res.json())
         .then(game => {

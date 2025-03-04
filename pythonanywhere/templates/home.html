@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Future Notes: A modern app for organizing your thoughts, plans, and ideas. Access notes anywhere and stay productive.">
     <meta name="keywords" content="Notes App, Future Notes, Productivity App, Organize Thoughts, Notes on Windows">
-    <meta name="author" content="Nathan Cappellen">
+    <meta name="author" content="Bosbes">
     <meta name="google-site-verification" content="cbcPf7OinAwmP9GdiajNqU6PO60TCp2A44VOHu3N3T8" />
     <title>Future Notes - Homepage</title>
     <link rel="canonical” href="https://bosbes.eu.pythonanywhere.com/">
@@ -29,6 +29,11 @@
       }
     }
     </script>
+    <script type="module">
+        import { quicklink } from 'https://unpkg.com/quicklink@2.3.0?module';
+        quicklink();
+    </script>
+    <script src="https://instant.page/5.1.0" type="module"></script>      
     <style>
         body {
             margin: 0;
@@ -629,7 +634,45 @@
                 font-size: 1rem;
             }
         }
+        .pws-button {
+            position: fixed;
+            top: 25px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: rotate(9deg);
+            transition: transform 0.3s ease-in-out, scale 0.3s ease-in-out;
+            z-index: 1000;
+        }
+
+        .pws-button img {
+            width: 30px;
+            height: 30px;
+        }
+
+        .pws-button:hover {
+            transform: rotate(-10deg) scale(1.1);
+        }
+
+        .pws-button:active {
+            transform: rotate(-10deg) scale(0.9);
+        }
 </style>
+<script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw_js/sw.js')
+        .then(() => console.log('Service Worker Registered'))
+        .catch(console.error);
+    }
+</script>
 
 </head>
 <body>
@@ -767,8 +810,32 @@
 <footer>
     &copy; 2025 Future Notes. All Rights Reserved.
 </footer>
+<a href="/pws" class="pws-button">
+    <img src="static/zeeslag.png" alt="Zeeslag Logo">
+    PWS hier!!!
+  </a>
 
 <script>
+    window.addEventListener('popstate', (event) => {
+        loadPage(event.state.url);
+    });
+
+    function navigate(url) {
+        history.pushState({ url }, '', url);
+        loadPage(url);
+    }
+
+    function loadPage(url) {
+        fetch(url)
+            .then(response => response.text())
+            .then(html => {
+            document.body.innerHTML = html;
+            })
+            .catch(console.error);
+    }
+
+
+
     const loginButtons = document.querySelectorAll('#login-button'); // Fix selector with # for ID
     const blankScreen = document.getElementById('blank-screen');
     const downloadButton = document.getElementById('download-button');
