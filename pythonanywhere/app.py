@@ -153,6 +153,23 @@ appointment_note = db.Table(
     db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
 )
 
+class Trophy(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    level = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    icon = db.Column(db.String(10), nullable=False)
+
+    def __repr__(self):
+        return f'<Trophy level={self.level} name={self.name}>'
+    
+class PlayerXp(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    xp = db.Column(db.Float, default=0)
+
+    def __repr__(self):
+        return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
+
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
