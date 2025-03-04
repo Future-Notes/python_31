@@ -100,16 +100,6 @@ class User(db.Model):
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
     )
 
-class Note(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
-    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)  # New field
-    title = db.Column(db.String(100), nullable=True)
-    note = db.Column(db.Text, nullable=False)
-    tag = db.Column(db.String(100), nullable=True)
-
-    group = db.relationship("Group", backref="notes")
-
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False, unique=True)
@@ -125,13 +115,33 @@ class GroupMember(db.Model):
     user = db.relationship("User", backref="group_memberships")
     group = db.relationship("Group", backref="members")
 
-class PlayerXp(db.Model):
+class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
-    xp = db.Column(db.Float, default=0)
+    title = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    appointment_datetime = db.Column(db.DateTime, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    def __repr__(self):
-        return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
+    user = db.relationship('User', backref=db.backref('appointments', lazy=True))
+    notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "appointment_datetime": self.appointment_datetime.isoformat(),
+            "user_id": self.user_id,
+            "notes": [note.to_dict() for note in self.notes]  # Include attached notes
+        }
+
+
+# Many-to-Many Association Table (Appointments <-> Notes)
+appointment_note = db.Table(
+    'appointment_note',
+    db.Column('appointment_id', db.Integer, db.ForeignKey('appointment.id'), primary_key=True),
+    db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
+)
 
 class Trophy(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -141,6 +151,36 @@ class Trophy(db.Model):
 
     def __repr__(self):
         return f'<Trophy level={self.level} name={self.name}>'
+    
+class PlayerXp(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    xp = db.Column(db.Float, default=0)
+
+    def __repr__(self):
+        return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
+
+
+class Note(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
+    title = db.Column(db.String(100), nullable=True)
+    note = db.Column(db.Text, nullable=False)
+    tag = db.Column(db.String(100), nullable=True)
+
+    group = db.relationship("Group", backref="notes")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "note": self.note,
+            "tag": self.tag,
+            "user_id": self.user_id,
+            "group_id": self.group_id
+        }
+
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -737,6 +777,9 @@ def bot_info():
 def leaderboard():
     return render_template('leaderboard.html')
 
+@app.route('/scheduler-page')
+def scheduler_page():
+    return render_template('scheduler.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -772,7 +815,121 @@ def get_user_info():
         "role": user.role
     }), 200
 
-# Groups
+    
+# Appointments
+
+# 1. Fetch all appointments for the current user
+@app.route('/appointments', methods=['GET'])
+@require_session_key
+def get_appointments():
+    user_id = g.user_id
+    appointments = Appointment.query.filter_by(user_id=user_id).all()
+    appointments_data = [appt.to_dict() for appt in appointments]
+    return jsonify({"appointments": appointments_data}), 200
+
+# 2. Create a new appointment
+@app.route('/appointments', methods=['POST'])
+@require_session_key
+def create_appointment():
+    data = request.get_json() or {}
+    title = data.get('title')
+    description = data.get('description', '')
+    appointment_datetime_str = data.get('appointment_datetime')
+    note_ids = data.get('note_ids', [])  # List of note IDs to attach
+
+    if not title or not appointment_datetime_str:
+        return jsonify({"error": "Missing required fields: title and appointment_datetime"}), 400
+
+    try:
+        appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
+    except ValueError:
+        return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    new_appointment = Appointment(
+        title=title,
+        description=description,
+        appointment_datetime=appointment_datetime,
+        user_id=g.user_id
+    )
+
+    # Attach existing notes if provided
+    if note_ids:
+        notes = Note.query.filter(Note.id.in_(note_ids)).all()
+        new_appointment.notes.extend(notes)
+
+    db.session.add(new_appointment)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Appointment created successfully",
+        "appointment": new_appointment.to_dict()
+    }), 201
+
+# 3. Update an existing appointment
+@app.route('/appointments/<int:appointment_id>', methods=['PUT'])
+@require_session_key
+def update_appointment(appointment_id):
+    data = request.get_json() or {}
+    appointment = Appointment.query.get(appointment_id)
+
+    if not appointment or appointment.user_id != g.user_id:
+        return jsonify({"error": "Appointment not found"}), 404
+
+    title = data.get('title')
+    description = data.get('description')
+    appointment_datetime_str = data.get('appointment_datetime')
+    note_ids = data.get('note_ids')  # Optional update to attached notes
+
+    if title:
+        appointment.title = title
+    if description is not None:
+        appointment.description = description
+    if appointment_datetime_str:
+        try:
+            appointment.appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
+        except ValueError:
+            return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    # Update attached notes if provided
+    if note_ids is not None:
+        notes = Note.query.filter(Note.id.in_(note_ids)).all()
+        appointment.notes = notes
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Appointment updated successfully",
+        "appointment": appointment.to_dict()
+    }), 200
+
+# 4. Delete an appointment
+@app.route('/appointments/<int:appointment_id>', methods=['DELETE'])
+@require_session_key
+def delete_appointment(appointment_id):
+    appointment = Appointment.query.get(appointment_id)
+
+    if not appointment or appointment.user_id != g.user_id:
+        return jsonify({"error": "Appointment not found"}), 404
+
+    db.session.delete(appointment)
+    db.session.commit()
+
+    return jsonify({"message": "Appointment deleted successfully"}), 200
+
+# 5. Get all user notes for attaching
+
+# Fetch all notes for the current user
+@app.route('/notes-all', methods=['GET'])
+@require_session_key
+def get_all_notes():
+    user_id = g.user_id
+    notes = Note.query.filter_by(user_id=user_id).all()
+    notes_data = [note.to_dict() for note in notes]
+    return jsonify({"notes": notes_data}), 200
+
+
+
+# Groups   
 
 @app.route('/check-group')
 @require_session_key
@@ -1338,6 +1495,7 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
+        # Handle auto login with lasting_key if provided
         # Handle auto login with lasting_key if provided
         lasting_key = data.get('lasting_key')
         if lasting_key:
