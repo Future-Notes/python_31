@@ -10,6 +10,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
+    
     <!-- 
 
             This file contains the base styles for the entire application. Below is a documentation of the color schemes and other style attributes used in this application:
@@ -36,571 +37,567 @@
             - Use the defined border radius for a consistent look and feel.
             - Apply the transition effect to interactive elements like buttons and links for better user experience.
             -->
-            <style>
-                /* Globale reset */
-                *, *::before, *::after {
-                  box-sizing: border-box;
-                }
-              
-                /* CSS-variabelen voor makkelijke thema-aanpassingen */
-                :root {
-                  --primary-bg: #2c2c2c;
-                  --secondary-bg: #3a3a3a;
-                  --accent-bg: #4a4a4a;
-                  --hover-bg: #5c5c5c;
-                  --button-bg: #6a6a6a;
-                  --button-hover: #7a7a7a;
-                  --danger-bg: #b33a3a;
-                  --danger-hover: #cc4a4a;
-                  --text-color: #e0e0e0;
-                  --light-text: #f2f2f2;
-                  --shadow: rgba(0, 0, 0, 0.2);
-                  --shadow-strong: rgba(0, 0, 0, 0.3);
-                  --border-radius: 8px;
-                }
-              
-                body {
-                  margin: 0;
-                  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                  background-color: var(--primary-bg);
-                  color: var(--text-color);
-                }
-              
-                header {
-                  background-color: var(--secondary-bg);
-                  padding: 20px;
-                  display: flex;
-                  justify-content: space-between;
-                  align-items: center;
-                  box-shadow: 0 2px 5px var(--shadow);
-                }
-              
-                header h1 {
-                  margin: 0;
-                  font-size: 1.75rem;
-                  font-weight: 600;
-                  color: var(--light-text);
-                }
-              
-                nav {
-                  display: flex;
-                  gap: 20px;
-                }
-              
-                nav a {
-                  text-decoration: none;
-                }
-              
-                .nav-link {
-                  position: relative;
-                  color: white;
-                  font-size: 1.125rem;
-                  padding: 5px 0;
-                  transition: all 0.3s ease;
-                }
-              
-                .nav-link::after {
-                  content: "";
-                  display: block;
-                  height: 2px;
-                  width: 0;
-                  background-color: transparent;
-                  transition: width 0.3s ease, background-color 0.3s ease;
-                }
-              
-                .nav-link:hover::after {
-                  width: 100%;
-                  background-color: lightgray;
-                }
-              
-                .nav-link.active::after {
-                  width: 100%;
-                  background-color: white;
-                }
-              
-                .homepage-link {
-                  text-decoration: none;
-                  background-color: var(--accent-bg);
-                  color: var(--text-color);
-                  padding: 10px 20px;
-                  border-radius: var(--border-radius);
-                  font-size: 1rem;
-                }
-              
-                header a:hover {
-                  background-color: var(--hover-bg);
-                }
-              
-                /* Mobile Sub-Header */
-                .mobile-sub-header {
-                  display: none;
-                  background-color: var(--primary-bg);
-                  padding: 10px 0;
-                  text-align: center;
-                  box-shadow: 0 2px 5px var(--shadow);
-                }
-              
-                .mobile-sub-header a {
-                  display: block;
-                  color: white;
-                  text-decoration: none;
-                  padding: 10px;
-                  font-size: 1.125rem;
-                }
-              
-                .mobile-sub-header a.active::after {
-                  content: "";
-                  display: block;
-                  height: 2px;
-                  width: 100%;
-                  background-color: white;
-                }
-              
-                .mobile-sub-header a:hover::after {
-                  background-color: lightgray;
-                }
-              
-                .desktop-nav {
-                  display: flex;
-                  gap: 20px;
-                }
-              
-                @media (max-width: 600px) {
-                  .desktop-nav {
-                    display: none;
-                  }
-              
-                  .mobile-sub-header {
-                    display: block;
-                  }
-                }
-              
-                main {
-                  padding: 40px 20px;
-                  max-width: 900px;
-                  margin: 0 auto;
-                }
-              
-                form {
-                  display: flex;
-                  margin-bottom: 30px;
-                  gap: 10px;
-                }
-              
-                textarea, input[type="text"] {
-                  flex: 1;
-                  padding: 12px;
-                  font-size: 1.125rem;
-                  background-color: var(--accent-bg);
-                  color: var(--text-color);
-                  border: none;
-                  border-radius: var(--border-radius);
-                  box-shadow: 0 2px 4px var(--shadow);
-                  resize: none;
-                }
-              
-                textarea:focus, input[type="text"]:focus {
-                  background-color: var(--hover-bg);
-                  outline: none;
-                }
-              
-                input#note-tag {
-                  max-width: 150px;
-                }
-              
-                button {
-                  background-color: var(--button-bg);
-                  color: var(--text-color);
-                  border: none;
-                  padding: 12px 20px;
-                  border-radius: var(--border-radius);
-                  cursor: pointer;
-                  transition: background-color 0.3s ease;
-                }
-              
-                button:hover {
-                  background-color: var(--button-hover);
-                }
-              
-                #notes-list {
-                  display: grid;
-                  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-                  gap: 20px;
-                  list-style-type: none;
-                  padding: 0;
-                  margin: 0;
-                  opacity: 0;
-                  animation: fadeIn 0.5s forwards 0.3s;
-                }
-              
-                #notes-list li {
-                  background-color: var(--secondary-bg);
-                  padding: 20px;
-                  border-radius: 15px;
-                  position: relative;
-                  cursor: pointer;
-                  box-shadow: 0 4px 10px var(--shadow-strong);
-                  transition: background-color 0.3s ease, box-shadow 0.3s ease;
-                  display: flex;
-                  flex-direction: column;
-                  justify-content: space-between;
-                  text-align: center;
-                  height: 200px;
-                  overflow: hidden;
-                  opacity: 0;
-                  animation: fadeIn 1s forwards;
-                }
-              
-                #notes-list li h3 {
-                  margin: 0;
-                  font-size: 1.125rem;
-                  font-weight: bold;
-                  color: var(--text-color);
-                  text-align: center;
-                  position: relative;
-                  z-index: 2;
-                }
-              
-                #notes-list li span {
-                  margin: 0 auto;
-                  max-width: 30%;
-                  white-space: nowrap;
-                  text-overflow: ellipsis;
-                  z-index: 1;
-                }
-              
-                /* Samengevoegde .note-tag styling */
-                .note-tag {
-                  position: absolute;
-                  top: 10px;
-                  left: 10px;
-                  width: 100%;
-                  background-color: var(--button-bg);
-                  color: var(--text-color);
-                  padding: 7px 3px;
-                  text-align: center;
-                  font-size: 0.875rem;
-                  border-top-left-radius: 15px;
-                  border-top-right-radius: 15px;
-                  border-bottom-right-radius: 15px;
-                  border-bottom-left-radius: 15px
-                }
-              
-                #notes-list li:hover {
-                  background-color: var(--accent-bg);
-                  box-shadow: 0 6px 15px var(--shadow-strong);
-                }
-              
-                #notes-list li.empty-note {
-                  font-style: italic;
-                  color: #b0b0b0;
-                }
-              
-                #notes-list li button {
-                  position: absolute;
-                  top: 10px;
-                  right: 10px;
-                  background-color: var(--danger-bg);
-                  padding: 8px 15px;
-                  font-size: 0.875rem;
-                  border-radius: 5px;
-                  cursor: pointer;
-                  transition: background-color 0.3s ease;
-                }
-              
-                #notes-list li button:hover {
-                  background-color: var(--danger-hover);
-                }
-              
-                #update-menu {
-                  display: none;
-                  position: fixed;
-                  top: 50%;
-                  left: 50%;
-                  transform: translate(-50%, -50%);
-                  background: var(--accent-bg);
-                  padding: 30px;
-                  border-radius: 15px;
-                  box-shadow: 0 4px 8px var(--shadow);
-                  z-index: 1000;
-                  width: 80%;
-                  max-width: 500px;
-                  opacity: 0;
-                  animation: fadeIn 0.2s forwards 0.2s;
-                }
-              
-                #update-menu input, #update-menu button {
-                  display: block;
-                  margin: 15px 0;
-                  padding: 12px;
-                  font-size: 1rem;
-                  border-radius: var(--border-radius);
-                  width: 100%;
-                }
-              
-                #update-menu button {
-                  background-color: var(--button-bg);
-                  color: var(--text-color);
-                }
-              
-                #update-menu button:hover {
-                  background-color: var(--button-hover);
-                }
-              
-                #overlay {
-                  display: none;
-                  position: fixed;
-                  top: 0;
-                  left: 0;
-                  width: 100%;
-                  height: 100%;
-                  background: rgba(0, 0, 0, 0.5);
-                  z-index: 999;
-                  opacity: 0;
-                  animation: fadeIn 0.2s forwards 0.3s;
-                }
-              
-                @keyframes fadeIn {
-                  from {
-                    opacity: 0;
-                  }
-                  to {
-                    opacity: 1;
-                  }
-                }
-              
-                .profile-pic {
-                  width: 40px;
-                  height: 40px;
-                  border-radius: 50%;
-                  background-color: var(--secondary-bg);
-                  color: var(--text-color);
-                  display: flex;
-                  justify-content: center;
-                  align-items: center;
-                  font-size: 1.125rem;
-                  font-weight: bold;
-                  text-transform: uppercase;
-                  cursor: pointer;
-                  background-size: cover;
-                  background-position: center;
-                }
-              
-                .profile-pic.no-picture {
-                  background-color: #cc4f4f;
-                  color: white;
-                }
-              
-                #view-menu {
-                  display: none;
-                  position: fixed;
-                  top: 50%;
-                  left: 50%;
-                  transform: translate(-50%, -50%);
-                  background: var(--accent-bg);
-                  padding: 30px;
-                  border-radius: 15px;
-                  box-shadow: 0 4px 8px var(--shadow);
-                  z-index: 1000;
-                  width: 80%;
-                  max-width: 500px;
-                  opacity: 0;
-                  animation: fadeIn 0.2s forwards 0.2s;
-                }
-              
-                #view-menu textarea {
-                  width: 95%;
-                  height: 200px;
-                  padding: 12px;
-                  font-size: 1rem;
-                  border-radius: var(--border-radius);
-                  background-color: var(--hover-bg);
-                  color: var(--text-color);
-                  border: none;
-                  resize: none;
-                  outline: none;
-                }
-              
-                #view-menu button {
-                  background-color: var(--button-bg);
-                  color: var(--text-color);
-                  border: none;
-                  padding: 12px 20px;
-                  border-radius: var(--border-radius);
-                  cursor: pointer;
-                  transition: background-color 0.3s ease;
-                  margin-top: 15px;
-                  width: 100%;
-                }
-              
-                #view-menu button:hover {
-                  background-color: var(--button-hover);
-                }
-              
-                #update-note-text, #view-menu textarea {
-                  width: 95%;
-                  height: 200px;
-                  padding: 12px;
-                  font-size: 1rem;
-                  border-radius: var(--border-radius);
-                  background-color: var(--hover-bg);
-                  color: var(--text-color);
-                  border: none;
-                  resize: none;
-                  outline: none;
-                }
-              
-                #update-note-tag {
-                  width: 95% !important;
-                  padding: 12px !important;
-                  font-size: 1rem !important;
-                  border-radius: var(--border-radius) !important;
-                  background-color: var(--hover-bg) !important;
-                  color: var(--text-color) !important;
-                  border: none !important;
-                  outline: none !important;
-                }
-              
-                /* Elementen die standaard verborgen zijn */
-                #floating-add-button,
-                #mobile-add-menu,
-                #mobile-search-input {
-                  display: none;
-                }
-              
-                @media (max-width: 600px) {
-                  #add-note-form {
-                    display: none;
-                  }
-              
-                  #floating-add-button {
-                    display: flex;
-                    position: fixed;
-                    bottom: 20px;
-                    right: 20px;
-                    width: 60px;
-                    height: 60px;
-                    background-color: var(--button-bg);
-                    color: var(--text-color);
-                    border-radius: 50%;
-                    justify-content: center;
-                    align-items: center;
-                    font-size: 1.875rem;
-                    cursor: pointer;
-                    box-shadow: 0 4px 8px var(--shadow);
-                    transition: background-color 0.3s ease;
-                    z-index: 1000;
-                  }
-              
-                  #floating-add-button:hover {
-                    background-color: var(--button-hover);
-                  }
-              
-                  #mobile-add-menu {
-                    display: none;
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: var(--accent-bg);
-                    padding: 30px;
-                    border-radius: 15px;
-                    box-shadow: 0 4px 8px var(--shadow);
-                    z-index: 1000;
-                    width: 80%;
-                    max-width: 500px;
-                    opacity: 0;
-                    animation: fadeIn 0.2s forwards 0.2s;
-                  }
-              
-                  #mobile-add-menu textarea,
-                  #mobile-add-menu input,
-                  #mobile-add-menu button {
-                    display: block;
-                    margin: 15px 0;
-                    padding: 12px;
-                    font-size: 1rem;
-                    border-radius: var(--border-radius);
-                    width: 100%;
-                  }
-              
-                  #mobile-add-menu button {
-                    background-color: var(--button-bg);
-                    color: var(--text-color);
-                  }
-              
-                  #mobile-add-menu button:hover {
-                    background-color: var(--button-hover);
-                  }
-              
-                  header a {
-                    display: none;
-                  }
-              
-                  header input#mobile-search-input {
-                    display: block;
-                    width: 100%;
-                    padding: 10px;
-                    font-size: 1rem;
-                    border-radius: var(--border-radius);
-                    border: none;
-                    background-color: var(--accent-bg);
-                    color: var(--text-color);
-                    margin-top: 10px;
-                  }
-                }
-              
-                /* Modal Styles */
-                #modal-overlay {
-                  display: none;
-                  position: fixed;
-                  top: 0;
-                  left: 0;
-                  width: 100%;
-                  height: 100%;
-                  background-color: rgba(0, 0, 0, 0.6);
-                  z-index: 1000;
-                  justify-content: center;
-                  align-items: center;
-                }
-              
-                #modal {
-                  background-color: #1E1E1E;
-                  padding: 20px 30px;
-                  border-radius: var(--border-radius);
-                  text-align: center;
-                  width: 100%;
-                  max-width: 400px;
-                  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
-                }
-              
-                input, button {
-                  font-size: 1rem;
-                  border-radius: var(--border-radius);
-                  padding: 10px;
-                }
-              
-                #username, #password {
-                  width: calc(100% - 24px);
-                  margin: 10px 0;
-                  background-color: #2E2E2E;
-                  border: 1px solid #424242;
-                  color: var(--text-color);
-                }
-              
-                button #submit-credentials {
-                  background-color: #424242;
-                  color: var(--text-color);
-                  border: none;
-                  cursor: pointer;
-                  transition: background-color 0.3s ease;
-                }
-              
-                button:hover {
-                  background-color: #616161;
-                }
-              </style>
-              
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2c2c2c;
+            color: #e0e0e0;
+        }
+
+        header {
+            background-color: #3a3a3a;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: #f2f2f2;
+        }
+
+        nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        nav a {
+            text-decoration: none;
+        }
+
+        .nav-link {
+            position: relative;
+            color: white;
+            font-size: 18px;
+            padding: 5px 0;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 0;
+            background-color: transparent;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .nav-link:hover::after {
+            width: 100%;
+            background-color: lightgray;
+        }
+
+        .nav-link.active::after {
+            width: 100%;
+            background-color: white;
+        }
+
+
+        .homepage-link {
+            text-decoration: none;
+            background-color: #4a4a4a;
+            color: #e0e0e0;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        header a:hover {
+            background-color: #5c5c5c;
+        }
+
+        /* Mobile Sub-Header - Hidden by default */
+        .mobile-sub-header {
+            display: none;
+            background-color: #2e2e2e;
+            padding: 10px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Mobile Nav Links */
+        .mobile-sub-header a {
+            display: block;
+            color: white;
+            text-decoration: none;
+            padding: 10px;
+            font-size: 18px;
+        }
+
+        /* Git forced update */
+
+        /* Active State */
+        .mobile-sub-header a.active::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 100%;
+            background-color: white;
+        }
+
+        /* Hover effect */
+        .mobile-sub-header a:hover::after {
+            background-color: lightgray;
+        }
+
+        /* Desktop Nav - Visible on large screens */
+        .desktop-nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        /* Responsive Styles */
+        @media (max-width: 600px) {
+            .desktop-nav {
+                display: none; /* Hide desktop nav on small screens */
+            }
+
+            .mobile-sub-header {
+                display: block; /* Show mobile sub-header */
+            }
+        }
+
+        main {
+            padding: 40px 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        form {
+            display: flex;
+            margin-bottom: 30px;
+            gap: 10px;
+        }
+
+        textarea, input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            font-size: 18px;
+            background-color: #4a4a4a;
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            resize: none;
+        }
+
+        textarea:focus, input[type="text"]:focus {
+            background-color: #5a5a5a;
+        }
+
+        input#note-tag {
+            max-width: 150px;
+        }
+
+        button {
+            background-color: #6a6a6a;
+            color: #e0e0e0;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #7a7a7a;
+        }
+
+        #notes-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+            opacity: 0;
+            animation: fadeIn 0.5s forwards 0.3s;
+        }
+
+        #notes-list li {
+            background-color: #3a3a3a;
+            padding: 20px;
+            border-radius: 15px;
+            position: relative;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            text-align: center;
+            height: 200px;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeIn 1s forwards;
+        }
+
+        #notes-list li h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: bold;
+            color: #e0e0e0;
+            text-align: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        #notes-list li span {
+            margin: 0px auto;
+            max-width: 30%;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            z-index: 1;
+        }
+
+        .note-tag {
+            background-color: #6a6a6a;
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
+        }
+
+
+        #notes-list li:hover {
+            background-color: #4a4a4a;
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+        }
+
+        #notes-list li.empty-note {
+            font-style: italic;
+            color: #b0b0b0;
+        }
+
+        #notes-list li button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #b33a3a;
+            padding: 8px 15px;
+            font-size: 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #notes-list li button:hover {
+            background-color: #cc4a4a;
+        }
+
+        #update-menu {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #4a4a4a;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            width: 80%;
+            max-width: 500px;
+            opacity: 0;
+            animation: fadeIn 0.2s forwards 0.2s;
+        }
+
+        #update-menu input, #update-menu button {
+            display: block;
+            margin: 15px 0;
+            padding: 12px;
+            font-size: 16px;
+            border-radius: 8px;
+            width: 100%;
+        }
+
+        #update-menu button {
+            background-color: #6a6a6a;
+            color: #e0e0e0;
+        }
+
+        #update-menu button:hover {
+            background-color: #7a7a7a;
+        }
+
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            animation: fadeIn 0.2s forwards 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        .note-tag {
+            position: absolute;
+            color: #e0e0e0;
+            padding: 10px 5px;
+            text-align: center;
+            font-size: 14px;
+            border-top-left-radius: 15px;
+            border-top-right-radius: 15px;
+        }
+        @media (max-width: 600px) {
+            #add-note-form {
+                display: none;
+            }
+
+            #floating-add-button {
+                display: flex;
+            }
+
+            #mobile-add-menu {
+                display: none;
+            }
+
+            header a {
+                display: none; /* Hide homepage link on mobile */
+            }
+
+            header input#mobile-search-input {
+                display: block;
+                width: 100%;
+                padding: 10px;
+                font-size: 16px;
+                border-radius: 8px;
+                border: none;
+                background-color: #4a4a4a;
+                color: #e0e0e0;
+                margin-top: 10px;
+            }
+        }
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #3a3a3a;
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+        }
+        .profile-pic.no-picture {
+            background-color: #cc4f4f; /* Soft blue background when no picture */
+            color: white; /* White text for the initial */
+            border-radius: 50%;
+        }
+        #view-menu {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #4a4a4a;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            width: 80%;
+            max-width: 500px;
+            opacity: 0;
+            animation: fadeIn 0.2s forwards 0.2s;
+        }
+
+        #view-menu textarea {
+            width: 95%;
+            height: 200px;
+            padding: 12px;
+            font-size: 16px;
+            border-radius: 8px;
+            background-color: #5a5a5a;
+            color: #e0e0e0;
+            border: none;
+            resize: none;
+            outline: none;
+        }
+
+        #view-menu button {
+            background-color: #6a6a6a;
+            color: #e0e0e0;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-top: 15px;
+            width: 100%;
+        }
+
+        #view-menu button:hover {
+            background-color: #7a7a7a;
+        }
+
+        #update-note-text {
+            width: 95%;
+            height: 200px;
+            padding: 12px;
+            font-size: 16px;
+            border-radius: 8px;
+            background-color: #5a5a5a;
+            color: #e0e0e0;
+            border: none;
+            resize: none;
+            outline: none;
+        }
+
+        #update-note-tag {
+            width: 95% !important;
+            padding: 12px !important;
+            font-size: 16px !important;
+            border-radius: 8px !important;
+            background-color: #5a5a5a !important;
+            color: #e0e0e0 !important;
+            border: none !important;
+            outline: none !important;
+        }
+        #floating-add-button {
+            display: none;
+        }
+        #mobile-add-menu {
+            display: none;
+        }
+        #mobile-search-input {
+            display: none;
+        }
+
+        @media (max-width: 600px) {
+            #add-note-form {
+                display: none;
+            }
+
+            #floating-add-button {
+                display: flex;
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                width: 60px;
+                height: 60px;
+                background-color: #6a6a6a;
+                color: #e0e0e0;
+                border-radius: 50%;
+                justify-content: center;
+                align-items: center;
+                font-size: 30px;
+                cursor: pointer;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                transition: background-color 0.3s ease;
+                z-index: 1000;
+            }
+
+            #floating-add-button:hover {
+                background-color: #7a7a7a;
+            }
+
+            #mobile-add-menu {
+                display: none;
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #4a4a4a;
+                padding: 30px;
+                border-radius: 15px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                z-index: 1000;
+                width: 80%;
+                max-width: 500px;
+                opacity: 0;
+                animation: fadeIn 0.2s forwards 0.2s;
+            }
+
+            #mobile-add-menu textarea, #mobile-add-menu input, #mobile-add-menu button {
+                display: block;
+                margin: 15px 0;
+                padding: 12px;
+                font-size: 16px;
+                border-radius: 8px;
+                width: 100%;
+            }
+
+            #mobile-add-menu button {
+                background-color: #6a6a6a;
+                color: #e0e0e0;
+            }
+
+            #mobile-add-menu button:hover {
+                background-color: #7a7a7a;
+            }
+        }
+
+        /* Modal Styles */
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #modal {
+            background-color: #1E1E1E;
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        }
+
+        input, button {
+            font-size: 16px;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        #username, #password {
+            width: calc(100% - 24px);
+            margin: 10px 0;
+            background-color: #2E2E2E;
+            border: 1px solid #424242;
+            color: #E0E0E0;
+        }
+
+        button #submit-credentials {
+            background-color: #424242;
+            color: #E0E0E0;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #616161;
+        }
+    </style>
     <script>
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.register('/static/sw_js/sw.js')
