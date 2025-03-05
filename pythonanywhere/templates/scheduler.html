@@ -505,6 +505,78 @@
       border-radius: 3px;
       cursor: pointer;
     }
+    #notes-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+        list-style-type: none;
+        padding: 0;
+        margin: 0;
+        opacity: 0;
+        animation: fadeIn 0.5s forwards 0.3s;
+    }
+
+    #notes-list li {
+        background-color: #3a3a3a;
+        padding: 20px;
+        border-radius: 15px;
+        position: relative;
+        cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        text-align: center;
+        overflow: hidden;
+        opacity: 0;
+        animation: fadeIn 1s forwards;
+    }
+
+    #notes-list li h3 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: bold;
+        color: #e0e0e0;
+        text-align: center;
+        position: relative;
+        z-index: 2;
+    }
+
+    #notes-list li span {
+        margin: 0px auto;
+        max-width: 30%;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        z-index: 1;
+    }
+
+    .note-tag {
+        background-color: #6a6a6a;
+        border-bottom-left-radius: 15px;
+        border-bottom-right-radius: 15px;
+    }
+
+
+    #notes-list li:hover {
+        background-color: #4a4a4a;
+        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+    }
+
+    #notes-list li.empty-note {
+        font-style: italic;
+        color: #b0b0b0;
+    }
+
+    .note-tag {
+        position: absolute;
+        color: #e0e0e0;
+        padding: 10px 5px;
+        text-align: center;
+        font-size: 14px;
+        border-top-left-radius: 15px;
+        border-top-right-radius: 15px;
+    }
     /* Mobile Styles for Calendar Sidebar and Main Grid */
     @media (max-width: 600px) {
       header {
@@ -826,18 +898,38 @@
       const notesList = document.getElementById("notes-list");
       notesList.innerHTML = "";
       notesData.forEach(note => {
-        const noteItem = document.createElement("div");
-        noteItem.className = "draggable-note";
-        noteItem.textContent = note.title;
+        // Create a <li> element similar to the main notes page
+        const noteItem = document.createElement("li");
+        // Apply the 'empty-note' class if there's no note content
+        noteItem.className = note.note ? "draggable-note" : "draggable-note empty-note";
+
+        // Set the click event to open the view menu
+        noteItem.onclick = function() {
+          showViewMenu(
+            note.id,
+            note.note ? note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n") : "",
+            note.tag || "",
+            note.title || "Untitled"
+          );
+        };
+
+        // Build the inner HTML (without the share button)
+        const titleHTML = `<h3>${note.title || "Untitled"}</h3>`;
+        const noteText = note.note
+          ? note.note.replace(/\n/g, "<br>").substring(0, 100) +
+            (note.note.length > 100 ? "..." : "")
+          : "Empty note";
+        const noteContentHTML = `<span>${noteText}</span>`;
+        const tagHTML = note.tag ? `<span class="note-tag">${note.tag}</span>` : "";
+        
+        noteItem.innerHTML = titleHTML + noteContentHTML + tagHTML;
+
+        // Set up for dragging
         noteItem.dataset.noteId = note.id;
         noteItem.draggable = true;
-
-        // Desktop drag events
         noteItem.addEventListener("dragstart", (e) => {
           e.dataTransfer.setData("text/plain", note.id);
         });
-
-        // Basic mobile touch support: add a class so we know which note is “active”
         noteItem.addEventListener("touchstart", () => {
           noteItem.classList.add("touch-dragging");
         });
@@ -848,6 +940,7 @@
         notesList.appendChild(noteItem);
       });
     }
+
 
     function attachNote(noteId) {
       if (!attachedNoteIds.includes(noteId)) {
