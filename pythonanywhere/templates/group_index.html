@@ -936,9 +936,7 @@
         });
 
         function showModal() {
-            const modalOverlay = document.getElementById("modal-overlay");
-            modalOverlay.style.display = "flex";
-            document.getElementById("floating-add-button").style.display = "none";
+            window.location.href = '/login_page?warning=true&redirect=/login_page';
         }
 
         function hideModal() {

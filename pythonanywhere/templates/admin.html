@@ -311,8 +311,7 @@
         }
 
         function showModal() {
-            const modalOverlay = document.getElementById("modal-overlay");
-            modalOverlay.style.display = "flex";
+            window.location.href = '/login_page?redirect=/admin_page&warning=true';
         }
 
         function hideModal() {
