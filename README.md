@@ -1,4 +1,4 @@
-# Future Notes App
+# Future Notes
 
 Welcome to the Future Notes App, a modern application designed to help you organize your thoughts, plans, and ideas efficiently. Access your notes from anywhere and stay productive.
 
@@ -24,4 +24,4 @@ The Future Notes App is developed using Flask and styled with CSS. It is designe
 
 ## License
 
-© 2024 Future Notes App. All rights reserved. 
+© 2025 Future Notes App. All rights reserved. 
