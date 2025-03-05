@@ -725,6 +725,16 @@
             display: none;
         }
 
+        #invite-btn {
+            background-color: gray;
+            color: #e0e0e0;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -1072,6 +1082,9 @@
                     fetchGroupInfo(responseData.group_id) // Fetch group name and members
                 } else if (response.status === 404) {
                     console.log("User not part of any group. Showing group creation/join options...");
+                    console.log("Calling fetch invites functions");
+                    // Call the separate function to fetch and display invites
+                    fetchInvites();
                     document.getElementById("floating-add-button").style.display = 'none';
                     document.getElementById("group-members-sidebar").style.display = 'none';
                     const mainContent = document.querySelector("main");
@@ -1084,6 +1097,8 @@
                                 <input type="text" id="group-uuid" placeholder="Enter Group UUID" style="padding: 10px; font-size: 16px; border-radius: 8px; width: 80%; max-width: 300px; margin-bottom: 10px;">
                                 <button id="join-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #6a6a6a; color: #e0e0e0; border: none; cursor: pointer;">Join Group</button>
                             </div>
+                            <h3>Invites</h3>
+                            <div id="invites-container" style="margin-top: 20px;"></div>
                         </div>
                     `;
 
@@ -1232,6 +1247,9 @@
             let deleteGroupButton = document.getElementById('delete-group-button');
             if (currentUserIsAdmin) {
                 if (!deleteGroupButton) {
+                    inviteButton = document.createElement('button');
+                    inviteButton.id = 'invite-btn';
+                    inviteButton.textContent = 'Invite people to this group';
                     deleteGroupButton = document.createElement('button');
                     deleteGroupButton.id = 'delete-group-button';
                     deleteGroupButton.textContent = 'Delete Group';
@@ -1243,7 +1261,9 @@
                     deleteGroupButton.style.borderRadius = '8px';
                     deleteGroupButton.style.cursor = 'pointer';
                     deleteGroupButton.style.marginTop = '10px';
+                    inviteButton.addEventListener('click', invitePeopleToGroup)
                     deleteGroupButton.addEventListener('click', deleteGroup);
+                    sidebar.appendChild(inviteButton);
                     sidebar.appendChild(deleteGroupButton);
                 }
             } else {
@@ -1254,8 +1274,81 @@
             }
         }
 
+        function invitePeopleToGroup() {
+            const modalOverlay = document.createElement("div");
+            modalOverlay.id = "invite-modal-overlay";
+            modalOverlay.style.display = "flex";
+            modalOverlay.style.position = "fixed";
+            modalOverlay.style.top = "0";
+            modalOverlay.style.left = "0";
+            modalOverlay.style.width = "100%";
+            modalOverlay.style.height = "100%";
+            modalOverlay.style.backgroundColor = "rgba(0, 0, 0, 0.6)";
+            modalOverlay.style.justifyContent = "center";
+            modalOverlay.style.alignItems = "center";
+            modalOverlay.style.zIndex = "1000";
 
-        function showCreateGroupModal() {
+            const modal = document.createElement("div");
+            modal.style.backgroundColor = "#1E1E1E";
+            modal.style.padding = "20px 30px";
+            modal.style.borderRadius = "12px";
+            modal.style.textAlign = "center";
+            modal.style.width = "100%";
+            modal.style.maxWidth = "400px";
+            modal.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.6)";
+
+            modalOverlay.appendChild(modal);
+            document.body.appendChild(modalOverlay);
+
+            modal.innerHTML = `
+                <h2>Invite User to Group</h2>
+                <input id="invite-username" type="text" placeholder="Username" style="width: calc(100% - 24px); margin: 10px 0; background-color: #2E2E2E; border: 1px solid #424242; color: #E0E0E0; padding: 10px; border-radius: 8px;">
+                <button id="confirm-invite-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px;">Send Invite</button>
+                <button id="cancel-invite-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px; margin-left: 10px;">Cancel</button>
+            `;
+
+            document.getElementById("cancel-invite-button").addEventListener("click", () => {
+                document.body.removeChild(modalOverlay); // Remove modal
+            });
+
+            document.getElementById("confirm-invite-button").addEventListener("click", async () => {
+                const username = document.getElementById("invite-username").value.trim();
+                if (!username) {
+                    alert("Please enter a valid username.");
+                    return;
+                }
+
+                const sessionKey = sessionStorage.getItem("session_key");
+                const groupId = sessionStorage.getItem("group_id");
+
+                try {
+                    const response = await fetch("/group-invite", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                        body: JSON.stringify({ username, group_id: groupId }),
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        alert("Invite sent successfully.");
+                        document.body.removeChild(modalOverlay); // Remove modal
+                    } else {
+                        alert(data.error || "Failed to send invite. Username may not exist.");
+                    }
+                } catch (error) {
+                    console.error("Error sending invite:", error);
+                    alert("There was an error sending the invite. Please try again.");
+                }
+            });
+        }
+
+
+        async function showCreateGroupModal() {
+            // Create modal overlay
             const modalOverlay = document.createElement("div");
             modalOverlay.id = "group-modal-overlay";
             modalOverlay.style.display = "flex";
@@ -1288,10 +1381,12 @@
                 <button id="cancel-create-group-button" style="background-color: #424242; color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px; margin-left: 10px;">Cancel</button>
             `;
 
+            // Set up cancel button functionality
             document.getElementById("cancel-create-group-button").addEventListener("click", () => {
                 document.body.removeChild(modalOverlay); // Remove modal
             });
 
+            // Set up create group button functionality
             document.getElementById("confirm-create-group-button").addEventListener("click", async () => {
                 const groupName = document.getElementById("group-name").value.trim();
                 if (!groupName) {
@@ -1326,6 +1421,90 @@
             });
         }
 
+        async function fetchInvites() {
+            try {
+                console.log("About to fetch invites...");
+                const sessionKey = sessionStorage.getItem("session_key");
+                console.log("Session key:", sessionKey);
+                const response = await fetch("/check-invite", {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                });
+                console.log("Fetch invites response:", response);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log("Invites data:", data);
+
+                    const invitesContainer = document.getElementById("invites-container");
+
+                    if (data.invites && data.invites.length > 0) {
+                        data.invites.forEach(invite => {
+                            const inviteElement = document.createElement("div");
+                            inviteElement.style.marginBottom = "10px";
+                            inviteElement.innerHTML = `
+                                <div style="background-color: #2E2E2E; padding: 10px; border-radius: 8px;">
+                                    <p style="margin: 0; font-size: 16px;">${invite.group_name}</p>
+                                    <p style="margin: 0; font-size: 12px; color: #B0B0B0;">Invited by: ${invite.invited_by}</p>
+                                    <button class="accept-invite-button" data-group-id="${invite.group_id}" style="background-color: #4CAF50; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin-top: 5px;">Accept</button>
+                                    <button class="decline-invite-button" data-group-id="${invite.group_id}" style="background-color: #F44336; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin-top: 5px; margin-left: 5px;">Decline</button>
+                                </div>
+                            `;
+                            invitesContainer.appendChild(inviteElement);
+                        });
+
+                        document.querySelectorAll(".accept-invite-button").forEach(button => {
+                            button.addEventListener("click", async (event) => {
+                                const groupId = event.target.getAttribute("data-group-id");
+                                document.getElementById("group-uuid").value = groupId;
+                                await joinGroup();
+                                await sendInviteResult(groupId, "accepted");
+                            });
+                        });
+
+                        document.querySelectorAll(".decline-invite-button").forEach(button => {
+                            button.addEventListener("click", async (event) => {
+                                const groupId = event.target.getAttribute("data-group-id");
+                                await sendInviteResult(groupId, "declined");
+                                event.target.parentElement.remove();
+                            });
+                        });
+                    } else {
+                        invitesContainer.innerHTML = "<p>You have no invites!</p>";
+                    }
+                } else {
+                    console.error("Failed to fetch invites. Status:", response.status);
+                }
+            } catch (error) {
+                console.error("Error fetching invites:", error);
+            }
+        }
+
+
+
+        async function sendInviteResult(groupId, result) {
+            const sessionKey = sessionStorage.getItem("session_key");
+
+            try {
+            const response = await fetch("/group-invite-result", {
+                method: "POST",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ group_id: groupId, result: result }),
+            });
+
+            if (!response.ok) {
+                console.error("Failed to send invite result.");
+            }
+            } catch (error) {
+            console.error("Error sending invite result:", error);
+            }
+        }
+
         async function joinGroup() {
             const groupId = document.getElementById("group-uuid").value.trim();
             if (!groupId) {
@@ -1349,7 +1528,6 @@
 
                 if (joinResponse.ok) {
                     console.log(responseData.message);
-                    alert(responseData.message);
                     sessionStorage.setItem("group_id", groupId); // Save group ID
                     location.reload();
                 } else {

@@ -187,6 +187,15 @@ class Messages(db.Model):
     email = db.Column(db.String(100), nullable=False)
     message = db.Column(db.Text, nullable=False)
 
+# Updated Invite model if storing the inviter's id
+class Invite(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=False)
+    group_name = db.Column(db.String(100), nullable=False)
+    invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
@@ -698,7 +707,7 @@ def handle_operational_error(e):
 
 @app.errorhandler(404)
 def page_note_found(error):
-    return render_template('404.html'), 200
+    return render_template('404.html'), 404
 
 # Function to generate unique error codes (or use predefined ones)
 def generate_error_code():
@@ -711,11 +720,8 @@ def global_error_handler(e):
     if isinstance(e, HTTPException):
         return e
 
-    # Generate a unique error code
-    error_code = generate_error_code()
-
-    # Display user-friendly error page
-    return render_template_string(error_template, message=ERROR_MESSAGES["ERR-1001"], code=error_code), 500
+    # Return a simple JSON error response
+    return jsonify({"error": str(e)}), 500
 
 #---------------------------------Template routes--------------------------------
 
@@ -927,9 +933,81 @@ def get_all_notes():
     notes_data = [note.to_dict() for note in notes]
     return jsonify({"notes": notes_data}), 200
 
-
-
 # Groups   
+
+@app.route('/group-invite', methods=['POST'])
+@require_session_key
+def group_invite():
+    data = request.json
+    username = data.get('username')
+    group_id = data.get('group_id')
+    
+    # Corrected query using 'id' instead of 'user_id'
+    invited_by_user = User.query.filter_by(id=g.user_id).first()
+    if not invited_by_user:
+        return jsonify({"error": "Inviting user not found"}), 404
+    
+    if not username or not group_id:
+        return jsonify({"error": "Username and group ID are required"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    group = Group.query.get(group_id)
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+
+    new_invite = Invite(
+        user_id=user.id,
+        group_id=group.id,
+        group_name=group.name,
+        invited_by=invited_by_user.id  # using id for foreign key
+    )
+    db.session.add(new_invite)
+    db.session.commit()
+
+    return jsonify({"message": "Invite sent successfully"}), 201
+
+@app.route('/check-invite', methods=['GET'])
+@require_session_key
+def check_invites():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    invites = Invite.query.filter_by(user_id=user.id).all()
+    invites_data = []
+    for invite in invites:
+        inviter = User.query.get(invite.invited_by)
+        invites_data.append({
+            "group_id": invite.group_id,
+            "group_name": invite.group_name,
+            "invited_by": inviter.username if inviter else "Unknown"
+        })
+
+    return jsonify({"invites": invites_data}), 200
+
+@app.route('/group-invite-result', methods=['POST'])
+@require_session_key
+def group_invite_result():
+    data = request.json
+    group_id = data.get('group_id')
+    result = data.get('result')
+
+    if not group_id or result not in ['accepted', 'declined']:
+        return jsonify({"error": "Invalid request data"}), 400
+
+    invite = Invite.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    if not invite:
+        return jsonify({"error": "Invite not found"}), 404
+
+    # Delete the invite
+    db.session.delete(invite)
+    db.session.commit()
+
+    return jsonify({"message": "Invite processed successfully"}), 200
+
 
 @app.route('/check-group')
 @require_session_key
@@ -1481,12 +1559,25 @@ def signup():
     data = request.json
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     try:
+        # Create the user and automatically generate a lasting key for "remember me"
         user = User(username=data['username'], password=hashed_password)
+        user.lasting_key = secrets.token_hex(32)  # Always set a lasting key
         db.session.add(user)
         db.session.commit()
-        return jsonify({"message": "User created successfully!"}), 201
-    except:
+
+        # Generate a session key for immediate login
+        key = generate_session_key(user.id)
+        
+        return jsonify({
+            "message": "User created and logged in successfully!",
+            "session_key": key,
+            "user_id": user.id,
+            "lasting_key": user.lasting_key
+        }), 201
+
+    except Exception as e:
         return jsonify({"error": "Username already exists"}), 400
+
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -1495,7 +1586,6 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
-        # Handle auto login with lasting_key if provided
         # Handle auto login with lasting_key if provided
         lasting_key = data.get('lasting_key')
         if lasting_key:
