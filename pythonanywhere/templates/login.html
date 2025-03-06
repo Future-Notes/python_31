@@ -124,6 +124,22 @@
             background: #7a7a7a;
         }
 
+        /* Add new warning message styles */
+        .warning-message {
+            color: #ff6666;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: center;
+            display: none;
+            border: 1px solid #ff4444;
+            border-radius: 5px;
+            background-color: rgba(255, 68, 68, 0.1);
+        }
+
+        .warning-message.visible {
+            display: block;
+        }
+
         button {
             width: 100%;
             padding: 12px;
@@ -216,6 +232,9 @@
 
     <div class="form-container">
         <h1>Login</h1>
+        <div id="warning-message" class="warning-message">
+            You need to log in to access that page.
+        </div>
         <form id="login-form">
             <label for="username">Username:</label>
             <input type="text" id="username" required>
@@ -245,6 +264,12 @@
             const lastingKey = localStorage.getItem("lasting_key");
             const urlParams = new URLSearchParams(window.location.search);
             const redirectUrl = urlParams.get("redirect") || "/index";
+            const showWarning = urlParams.get("warning") === "true";
+
+            // Show warning message if parameter is set
+            if (showWarning) {
+                document.getElementById("warning-message").classList.add("visible");
+            }
 
             if (lastingKey) {
                 const response = await fetch("/login", {
