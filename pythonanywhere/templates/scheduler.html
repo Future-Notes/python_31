@@ -10,6 +10,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png" />
   <link rel="favicon" type="image/x-icon" href="static/favicon.ico" />
   <link rel="manifest" href="static/site.webmanifest">
+  <!DOCTYPE html>
   <style>
     /* ========= Existing Styles ========= */
     body {
@@ -293,20 +294,19 @@
     }
     /* --- Hide Scrollbars for Sidebar --- */
     #calendar-sidebar {
-        scrollbar-width: none;          /* Firefox */
-        -ms-overflow-style: none;       /* Internet Explorer 10+ */
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
     #calendar-sidebar::-webkit-scrollbar {
-        display: none;                  /* Chrome, Safari, Opera */
+      display: none;
     }
-
     /* --- Hide Scrollbars for Calendar Container --- */
     #calendar-container {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
     #calendar-container::-webkit-scrollbar {
-        display: none;
+      display: none;
     }
     body::-webkit-scrollbar {
       display: none;
@@ -318,7 +318,7 @@
       min-width: 1200px;
     }
     #calendar-container {
-      min-width: 800px; /* Allow grid slots to be bigger */
+      min-width: 800px;
       overflow: auto;
       max-height: 80vh;
       border: 1px solid #424242;
@@ -329,20 +329,21 @@
     #calendar-table {
       width: 100%;
       border-collapse: collapse;
-      table-layout: fixed;
     }
     #calendar-table th,
     #calendar-table td {
       border: 1px solid #424242;
       text-align: center;
       position: relative;
-      padding: 20px; /* Bigger grid slots */
       min-width: 150px;
       height: 80px;
     }
+    #calendar-table td:hover {
+      background-color: #4a4a4a;
+      cursor: pointer;
+    }
     #calendar-table td {
-        position: relative;
-        overflow: auto; /* Allow multiple appointments to be visible */
+      overflow: auto;
     }
     #calendar-table th {
       background-color: #3a3a3a;
@@ -353,27 +354,27 @@
       background-color: #2e2e2e;
       width: 80px;
     }
+    /* Animated Thead (for 7-day view) */
     #calendar-table thead {
-        position: sticky;
-        top: 0;
-        z-index: 2;
-        transition: transform 0.3s ease;
-        transform: translateY(-100%); /* hidden by default */
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      transition: transform 0.3s ease;
+      transform: translateY(-100%);
     }
-    /* When visible, slide the thead into view */
     #calendar-table thead.visible {
-        transform: translateY(0);
+      transform: translateY(0);
     }
     /* Appointment styling */
     .appointment {
-        position: relative;  /* Was absolute before */
-        margin: 2px 0;
-        background-color: #616161;
-        color: #e0e0e0;
-        padding: 4px 6px;
-        border-radius: 4px;
-        font-size: 14px;
-        cursor: pointer;
+      position: relative;
+      margin: 2px 0;
+      background-color: #616161;
+      color: #e0e0e0;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
     }
     /* Floating Add Button */
     #floating-add-button {
@@ -420,12 +421,12 @@
     }
     @keyframes slideDown {
       from {
-      transform: translateY(-20px);
-      opacity: 0;
+        transform: translateY(-20px);
+        opacity: 0;
       }
       to {
-      transform: translateY(0);
-      opacity: 1;
+        transform: translateY(0);
+        opacity: 1;
       }
     }
     #add-modal input,
@@ -474,7 +475,6 @@
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
       animation: slideDown 0.3s ease-out;
     }
-
     .draggable-note {
       background: #2c2c2c;
       margin: 5px 0;
@@ -482,7 +482,6 @@
       cursor: grab;
       border-radius: 12px;
     }
-
     .dropzone {
       display: none;
       border: 2px dashed #aaa;
@@ -491,12 +490,10 @@
       text-align: center;
       margin-bottom: 5px;
     }
-
     .dropzone.dragover {
       border-color: #333;
       background: #f9f9f9;
     }
-
     .attached-note-tag {
       display: inline-block;
       background: #2c2c2c;
@@ -506,77 +503,112 @@
       cursor: pointer;
     }
     #notes-list {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 20px;
-        list-style-type: none;
-        padding: 0;
-        margin: 0;
-        opacity: 0;
-        animation: fadeIn 0.5s forwards 0.3s;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+      opacity: 0;
+      animation: fadeIn 0.5s forwards 0.3s;
     }
-
     #notes-list li {
-        background-color: #3a3a3a;
-        padding: 20px;
-        border-radius: 15px;
-        position: relative;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-        transition: background-color 0.3s ease, box-shadow 0.3s ease;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        text-align: center;
-        overflow: hidden;
-        opacity: 0;
-        animation: fadeIn 1s forwards;
+      background-color: #3a3a3a;
+      padding: 20px;
+      border-radius: 15px;
+      position: relative;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      text-align: center;
+      overflow: hidden;
+      opacity: 0;
+      animation: fadeIn 1s forwards;
     }
-
     #notes-list li h3 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: bold;
-        color: #e0e0e0;
-        text-align: center;
-        position: relative;
-        z-index: 2;
+      margin: 0;
+      font-size: 18px;
+      font-weight: bold;
+      color: #e0e0e0;
+      text-align: center;
+      position: relative;
+      z-index: 2;
     }
-
     #notes-list li span {
-        margin: 0px auto;
-        max-width: 30%;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-        z-index: 1;
+      margin: 0px auto;
+      max-width: 30%;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      z-index: 1;
     }
-
     .note-tag {
-        background-color: #6a6a6a;
-        border-bottom-left-radius: 15px;
-        border-bottom-right-radius: 15px;
+      background-color: #6a6a6a;
+      border-bottom-left-radius: 15px;
+      border-bottom-right-radius: 15px;
     }
-
-
     #notes-list li:hover {
-        background-color: #4a4a4a;
-        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
+      background-color: #4a4a4a;
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
     }
-
     #notes-list li.empty-note {
-        font-style: italic;
-        color: #b0b0b0;
+      font-style: italic;
+      color: #b0b0b0;
+    }
+    .note-tag {
+      position: absolute;
+      color: #e0e0e0;
+      padding: 10px 5px;
+      text-align: center;
+      font-size: 14px;
+      border-top-left-radius: 15px;
+      border-top-right-radius: 15px;
     }
 
-    .note-tag {
-        position: absolute;
-        color: #e0e0e0;
-        padding: 10px 5px;
-        text-align: center;
-        font-size: 14px;
-        border-top-left-radius: 15px;
-        border-top-right-radius: 15px;
+    .today-day {
+      border: 2px solid #FF9800 !important; /* Accent color for today */
+      border-radius: 4px;        /* Optional: slightly round the corners */
+      box-sizing: border-box;    /* Ensure the border doesn't affect cell dimensions */
     }
+
+    @media (max-width: 1500px) {
+      #calendar-sidebar {
+        display: none;
+      }
+    }
+
+    /* Button row container above the calendar */
+    #button-row-div {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      padding: 10px;
+      background-color: #3a3a3a;
+      border-bottom: 1px solid #424242;
+      position: sticky; /* Ensures the buttons stay on top on scroll */
+      top: 0;
+      z-index: 10; /* Higher than the calendar grid header */
+    }
+
+    /* Style for the buttons */
+    #button-row-div button {
+      background-color: #424242;
+      color: #fff;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    /* Hover state for the buttons */
+    #button-row-div button:hover {
+      background-color: #5a5a5a;
+    }
+
   </style>
 </head>
 <body>
@@ -595,7 +627,6 @@
     <a href="/group-notes" class="nav-link">Group notes</a>
     <a href="/group-notes" class="nav-link active">Calendar</a>
   </nav>
-  
 
   <div id="overlay"></div>
 
@@ -626,13 +657,16 @@
         <!-- Days of the month will be populated here -->
       </ul>
     </aside>
-    
-
     <div id="calendar-main">
+      <div id="button-row-div">
+        <button id="prev-week">&larr;</button>
+        <button id="today-button">Today</button>
+        <button id="next-week">&rarr;</button>
+      </div>
+      <!-- Desktop 7-Day Calendar (unchanged) -->
       <div id="calendar-container">
         <!-- Calendar grid will be generated here -->
       </div>
-    </div>
   </main>
 
   <!-- Floating Add Button -->
@@ -662,6 +696,8 @@
       <button id="cancel-add-note">Cancel</button>
     </div>
   </div>
+</body>
+</html>
 
   <script>
     // ======== Authentication & Existing Logic =========
@@ -821,12 +857,7 @@
 
         // Set the click event to open the view menu
         noteItem.onclick = function() {
-          showViewMenu(
-            note.id,
-            note.note ? note.note.replace(/'/g, "\\'").replace(/\n/g, "\\n") : "",
-            note.tag || "",
-            note.title || "Untitled"
-          );
+          showViewMenu();
         };
 
         // Build the inner HTML (without the share button)
@@ -855,6 +886,10 @@
 
         notesList.appendChild(noteItem);
       });
+    }
+
+    function showViewMenu() {
+        window.location.href = '/index';
     }
 
 
@@ -937,50 +972,57 @@
 
     // Generate calendar grid as a table (days as columns, hours as rows)
     function generateCalendarGrid(weekStart) {
-        let table = '<table id="calendar-table">';
-        table += "<thead><tr><th class='hour-label'></th>";
-        for (let i = 0; i < 7; i++) {
+      let table = '<table id="calendar-table">';
+      table += "<thead><tr><th class='hour-label'></th>";
+      const today = new Date();
+      for (let i = 0; i < 7; i++) {
         const d = new Date(weekStart);
         d.setDate(d.getDate() + i);
         const options = { weekday: 'short', month: 'short', day: 'numeric' };
-        table += `<th>${d.toLocaleDateString(undefined, options)}</th>`;
-        }
-        table += "</tr></thead><tbody>";
-        for (let hour = 0; hour < 24; hour++) {
+        const isToday = d.toDateString() === today.toDateString();
+        table += `<th${isToday ? ' class="today-day"' : ''}>${d.toLocaleDateString(undefined, options)}</th>`;
+      }
+      table += "</tr></thead><tbody>";
+      for (let hour = 0; hour < 24; hour++) {
         table += `<tr><th class='hour-label'>${hour}:00</th>`;
         for (let i = 0; i < 7; i++) {
-            table += `<td data-day="${i}" data-hour="${hour}"></td>`;
+          const d = new Date(weekStart);
+          d.setDate(d.getDate() + i);
+          const isToday = d.toDateString() === today.toDateString();
+          table += `<td data-day="${i}" data-hour="${hour}"${isToday ? ' class="today-day"' : ''}></td>`;
         }
         table += "</tr>";
-        }
-        table += "</tbody></table>";
-        document.getElementById("calendar-container").innerHTML = table;
-        // Default scroll position: center around working hours
-        const container = document.getElementById("calendar-container");
-        container.scrollTop = container.scrollHeight / 2 - container.clientHeight / 2;
-        
-        // Make each td cell clickable to open the add modal with autofilled date and time
-        document.querySelectorAll("#calendar-table td").forEach(cell => {
+      }
+      table += "</tbody></table>";
+      document.getElementById("calendar-container").innerHTML = table;
+      // Scroll to the current hour of the day
+      const currentHour = new Date().getHours();
+      const container = document.getElementById("calendar-container");
+      const hourCellHeight = container.scrollHeight / 24;
+      container.scrollTop = hourCellHeight * currentHour - container.clientHeight / 2;
+      
+      // Make each td cell clickable to open the add modal with autofilled date and time
+      document.querySelectorAll("#calendar-table td").forEach(cell => {
         cell.addEventListener("click", (e) => {
-            // Prevent triggering if an appointment div was clicked
-            if (e.target.classList.contains("appointment")) return;
-            const dayIndex = parseInt(cell.getAttribute("data-day"));
-            const hour = parseInt(cell.getAttribute("data-hour"));
-            // Calculate the corresponding date/time based on currentWeekStart
-            const cellDate = new Date(currentWeekStart);
-            cellDate.setDate(cellDate.getDate() + dayIndex);
-            cellDate.setHours(hour, 0, 0, 0);
-            // Autofill the datetime input with the computed value
-            appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
-            // Clear other fields and open the add modal
-            appointmentTitleInput.value = "";
-            appointmentDescriptionInput.value = "";
-            currentEditingAppointment = null;
-            modalTitle.textContent = "Add Appointment";
-            deleteAppointmentButton.style.display = "none";
-            addModalOverlay.style.display = "flex";
+          // Prevent triggering if an appointment div was clicked
+          if (e.target.classList.contains("appointment")) return;
+          const dayIndex = parseInt(cell.getAttribute("data-day"));
+          const hour = parseInt(cell.getAttribute("data-hour"));
+          // Calculate the corresponding date/time based on currentWeekStart
+          const cellDate = new Date(currentWeekStart);
+          cellDate.setDate(cellDate.getDate() + dayIndex);
+          cellDate.setHours(hour, 0, 0, 0);
+          // Autofill the datetime input with the computed value
+          appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
+          // Clear other fields and open the add modal
+          appointmentTitleInput.value = "";
+          appointmentDescriptionInput.value = "";
+          currentEditingAppointment = null;
+          modalTitle.textContent = "Add Appointment";
+          deleteAppointmentButton.style.display = "none";
+          addModalOverlay.style.display = "flex";
         });
-        });
+      });
     }
 
     // Render appointments into the grid
@@ -1007,6 +1049,35 @@
         }
       });
     }
+
+    // Previous week button
+    document.getElementById("prev-week").addEventListener("click", () => {
+      // Subtract 7 days from currentWeekStart
+      currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+      generateCalendarGrid(currentWeekStart);
+      renderAppointments();
+      const thead = document.querySelector("#calendar-table thead");
+      thead.classList.add("visible");
+    });
+
+    // Next week button
+    document.getElementById("next-week").addEventListener("click", () => {
+      // Add 7 days to currentWeekStart
+      currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+      generateCalendarGrid(currentWeekStart);
+      renderAppointments();
+      const thead = document.querySelector("#calendar-table thead");
+      thead.classList.add("visible");
+    });
+
+    // Today button: reset currentWeekStart to this week's Monday
+    document.getElementById("today-button").addEventListener("click", () => {
+      currentWeekStart = getMonday(new Date());
+      generateCalendarGrid(currentWeekStart);
+      renderAppointments();
+      const thead = document.querySelector("#calendar-table thead");
+      thead.classList.add("visible");
+    });
 
     // Fetch appointments from backend
     async function fetchSchedule() {
