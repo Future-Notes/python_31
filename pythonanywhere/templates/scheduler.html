@@ -10,7 +10,6 @@
   <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png" />
   <link rel="favicon" type="image/x-icon" href="static/favicon.ico" />
   <link rel="manifest" href="static/site.webmanifest">
-  <!DOCTYPE html>
   <style>
     /* ========= Existing Styles ========= */
     body {
@@ -609,6 +608,12 @@
       background-color: #5a5a5a;
     }
 
+    .current-hour {
+      outline: 2px solid #2196F3; /* Blue outline for current hour */
+      outline-offset: -2px;       /* Pull outline inward */
+      box-sizing: border-box;     /* Consistent sizing */
+    }
+
   </style>
 </head>
 <body>
@@ -970,50 +975,71 @@
         return `${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`;
     }
 
-    // Generate calendar grid as a table (days as columns, hours as rows)
     function generateCalendarGrid(weekStart) {
       let table = '<table id="calendar-table">';
       table += "<thead><tr><th class='hour-label'></th>";
-      const today = new Date();
+    
+      const today = new Date(); // Get today's date
+      const currentHour = today.getHours(); // Get the current hour
+    
+      // Generate the table header (days of the week)
       for (let i = 0; i < 7; i++) {
         const d = new Date(weekStart);
-        d.setDate(d.getDate() + i);
+        d.setDate(d.getDate() + i); // Increment the date for each column
         const options = { weekday: 'short', month: 'short', day: 'numeric' };
-        const isToday = d.toDateString() === today.toDateString();
+        const isToday = d.toDateString() === today.toDateString(); // Check if this day is today
         table += `<th${isToday ? ' class="today-day"' : ''}>${d.toLocaleDateString(undefined, options)}</th>`;
       }
       table += "</tr></thead><tbody>";
+    
+      // Generate the table body (hours of the day)
       for (let hour = 0; hour < 24; hour++) {
-        table += `<tr><th class='hour-label'>${hour}:00</th>`;
+        const isCurrentHour = hour === currentHour; // Check if this hour is the current hour
+        table += `<tr><th class='hour-label${isCurrentHour ? ' current-hour' : ''}'>${hour}:00</th>`;
+    
+        // Generate cells for each day in the current hour's row
         for (let i = 0; i < 7; i++) {
           const d = new Date(weekStart);
-          d.setDate(d.getDate() + i);
-          const isToday = d.toDateString() === today.toDateString();
-          table += `<td data-day="${i}" data-hour="${hour}"${isToday ? ' class="today-day"' : ''}></td>`;
+          d.setDate(d.getDate() + i); // Increment the date for each cell
+          const isToday = d.toDateString() === today.toDateString(); // Check if this cell is today
+    
+          // Combine classes if both today and current hour
+          const classes = [];
+          if (isToday) classes.push('today-day');
+          if (isCurrentHour) classes.push('current-hour');
+          const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+    
+          table += `<td data-day="${i}" data-hour="${hour}"${classAttr}></td>`;
         }
         table += "</tr>";
       }
       table += "</tbody></table>";
+    
+      // Insert the generated table into the container
       document.getElementById("calendar-container").innerHTML = table;
+    
       // Scroll to the current hour of the day
-      const currentHour = new Date().getHours();
       const container = document.getElementById("calendar-container");
       const hourCellHeight = container.scrollHeight / 24;
       container.scrollTop = hourCellHeight * currentHour - container.clientHeight / 2;
-      
+    
       // Make each td cell clickable to open the add modal with autofilled date and time
       document.querySelectorAll("#calendar-table td").forEach(cell => {
         cell.addEventListener("click", (e) => {
           // Prevent triggering if an appointment div was clicked
           if (e.target.classList.contains("appointment")) return;
+    
           const dayIndex = parseInt(cell.getAttribute("data-day"));
           const hour = parseInt(cell.getAttribute("data-hour"));
+    
           // Calculate the corresponding date/time based on currentWeekStart
-          const cellDate = new Date(currentWeekStart);
+          const cellDate = new Date(weekStart);
           cellDate.setDate(cellDate.getDate() + dayIndex);
           cellDate.setHours(hour, 0, 0, 0);
+    
           // Autofill the datetime input with the computed value
           appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
+    
           // Clear other fields and open the add modal
           appointmentTitleInput.value = "";
           appointmentDescriptionInput.value = "";
@@ -1024,7 +1050,6 @@
         });
       });
     }
-
     // Render appointments into the grid
     function renderAppointments() {
       document.querySelectorAll(".appointment").forEach(el => el.remove());
