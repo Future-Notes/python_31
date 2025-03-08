@@ -960,28 +960,35 @@
       const date = new Date(d);
       const day = date.getDay();
       const diff = date.getDate() - (day === 0 ? 6 : day - 1);
-      return new Date(date.setDate(diff));
+      const monday = new Date(date.setDate(diff));
+      monday.setHours(0, 0, 0, 0); // Normalize to midnight
+      return monday;
     }
+
 
     // Helper to format a Date object as a datetime-local string
     function toDatetimeLocal(date) {
-        const pad = (n) => n.toString().padStart(2, "0");
-        const YYYY = date.getFullYear();
-        const MM = pad(date.getMonth() + 1);
-        const DD = pad(date.getDate());
-        const hh = pad(date.getHours());
-        const mm = pad(date.getMinutes());
-        const ss = pad(date.getSeconds());
-        return `${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`;
+      console.log("toDatetimeLocal called with:", date);
+      const pad = (n) => n.toString().padStart(2, "0");
+      const YYYY = date.getFullYear();
+      const MM = pad(date.getMonth() + 1);
+      const DD = pad(date.getDate());
+      const hh = pad(date.getHours());
+      const mm = pad(date.getMinutes());
+      const ss = pad(date.getSeconds());
+      const datetimeStr = `${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`;
+      console.log("toDatetimeLocal returning:", datetimeStr);
+      return datetimeStr;
     }
 
     function generateCalendarGrid(weekStart) {
+      console.log("generateCalendarGrid called with weekStart:", weekStart);
       let table = '<table id="calendar-table">';
       table += "<thead><tr><th class='hour-label'></th>";
-    
+      
       const today = new Date(); // Get today's date
       const currentHour = today.getHours(); // Get the current hour
-    
+      
       // Generate the table header (days of the week)
       for (let i = 0; i < 7; i++) {
         const d = new Date(weekStart);
@@ -991,55 +998,59 @@
         table += `<th${isToday ? ' class="today-day"' : ''}>${d.toLocaleDateString(undefined, options)}</th>`;
       }
       table += "</tr></thead><tbody>";
-    
+
+      const isCurrentWeek = weekStart.toDateString() === getMonday(today).toDateString();
+      console.log("isCurrentWeek:", isCurrentWeek);
+      
       // Generate the table body (hours of the day)
       for (let hour = 0; hour < 24; hour++) {
-        const isCurrentHour = hour === currentHour; // Check if this hour is the current hour
+        const isCurrentHour = isCurrentWeek && hour === currentHour; // Check if this hour is the current hour
         table += `<tr><th class='hour-label${isCurrentHour ? ' current-hour' : ''}'>${hour}:00</th>`;
-    
+        
         // Generate cells for each day in the current hour's row
         for (let i = 0; i < 7; i++) {
           const d = new Date(weekStart);
           d.setDate(d.getDate() + i); // Increment the date for each cell
           const isToday = d.toDateString() === today.toDateString(); // Check if this cell is today
-    
+          
           // Combine classes if both today and current hour
           const classes = [];
           if (isToday) classes.push('today-day');
           if (isCurrentHour) classes.push('current-hour');
           const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
-    
+          
           table += `<td data-day="${i}" data-hour="${hour}"${classAttr}></td>`;
         }
         table += "</tr>";
       }
       table += "</tbody></table>";
-    
+      
       // Insert the generated table into the container
       document.getElementById("calendar-container").innerHTML = table;
-    
+      
       // Scroll to the current hour of the day
       const container = document.getElementById("calendar-container");
       const hourCellHeight = container.scrollHeight / 24;
       container.scrollTop = hourCellHeight * currentHour - container.clientHeight / 2;
-    
+      
       // Make each td cell clickable to open the add modal with autofilled date and time
       document.querySelectorAll("#calendar-table td").forEach(cell => {
         cell.addEventListener("click", (e) => {
           // Prevent triggering if an appointment div was clicked
           if (e.target.classList.contains("appointment")) return;
-    
+          
           const dayIndex = parseInt(cell.getAttribute("data-day"));
           const hour = parseInt(cell.getAttribute("data-hour"));
-    
+          
           // Calculate the corresponding date/time based on currentWeekStart
-          const cellDate = new Date(weekStart);
-          cellDate.setDate(cellDate.getDate() + dayIndex);
-          cellDate.setHours(hour, 0, 0, 0);
-    
+          const base = new Date(weekStart);
+          const cellDate = new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayIndex, hour, 0, 0, 0);
+          console.log("Cell clicked - dayIndex:", dayIndex, "hour:", hour, "computed cellDate:", cellDate);
+          
           // Autofill the datetime input with the computed value
           appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
-    
+          console.log("Autofilled datetime input value:", appointmentDatetimeInput.value);
+          
           // Clear other fields and open the add modal
           appointmentTitleInput.value = "";
           appointmentDescriptionInput.value = "";
@@ -1049,18 +1060,44 @@
           addModalOverlay.style.display = "flex";
         });
       });
+
+      displayDateInButtonRowDiv(); // Display the current week start date in the button row
+      
+      console.log("Calendar grid generated.");
     }
+
+    function displayDateInButtonRowDiv() {
+      const buttonRowDiv = document.getElementById("button-row-div");
+      // Clear any existing date spans
+      const existingDateSpan = buttonRowDiv.querySelector("span");
+      if (existingDateSpan) {
+      buttonRowDiv.removeChild(existingDateSpan);
+      }
+      const dateSpan = document.createElement("span");
+      const options = { year: 'numeric', month: 'long', day: 'numeric' };
+      dateSpan.textContent = `Week of ${currentWeekStart.toLocaleDateString(undefined, options)}`;
+      buttonRowDiv.appendChild(dateSpan);
+    }
+
     // Render appointments into the grid
     function renderAppointments() {
+      console.log("renderAppointments called. Appointments count:", appointmentsData.length);
       document.querySelectorAll(".appointment").forEach(el => el.remove());
+      
       appointmentsData.forEach(appt => {
+        console.log("Processing appointment:", appt);
         const apptDate = new Date(appt.appointment_datetime);
+        console.log("Parsed appointment date:", apptDate);
         const diffTime = apptDate - currentWeekStart;
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        console.log("Appointment diffDays:", diffDays, "for appointment datetime:", apptDate, "and currentWeekStart:", currentWeekStart);
+        
         if (diffDays >= 0 && diffDays < 7) {
           const hour = apptDate.getHours();
+          console.log("Appointment hour:", hour);
           const cell = document.querySelector(`#calendar-table td[data-day="${diffDays}"][data-hour="${hour}"]`);
           if (cell) {
+            console.log("Found cell for appointment", appt.id, "at day:", diffDays, "hour:", hour);
             const apptDiv = document.createElement("div");
             apptDiv.className = "appointment";
             apptDiv.textContent = appt.title;
@@ -1070,15 +1107,21 @@
               openEditModal(appt);
             });
             cell.appendChild(apptDiv);
+          } else {
+            console.log("No cell found for appointment", appt.id, "at day:", diffDays, "hour:", hour);
           }
+        } else {
+          console.log("Appointment", appt.id, "is outside the current week (diffDays:", diffDays, ")");
         }
       });
     }
 
     // Previous week button
     document.getElementById("prev-week").addEventListener("click", () => {
+      console.log("Prev week clicked. Current week start before:", currentWeekStart);
       // Subtract 7 days from currentWeekStart
       currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+      console.log("New week start:", currentWeekStart);
       generateCalendarGrid(currentWeekStart);
       renderAppointments();
       const thead = document.querySelector("#calendar-table thead");
@@ -1087,8 +1130,10 @@
 
     // Next week button
     document.getElementById("next-week").addEventListener("click", () => {
+      console.log("Next week clicked. Current week start before:", currentWeekStart);
       // Add 7 days to currentWeekStart
       currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+      console.log("New week start:", currentWeekStart);
       generateCalendarGrid(currentWeekStart);
       renderAppointments();
       const thead = document.querySelector("#calendar-table thead");
@@ -1097,7 +1142,9 @@
 
     // Today button: reset currentWeekStart to this week's Monday
     document.getElementById("today-button").addEventListener("click", () => {
+      console.log("Today button clicked.");
       currentWeekStart = getMonday(new Date());
+      console.log("Reset currentWeekStart to:", currentWeekStart);
       generateCalendarGrid(currentWeekStart);
       renderAppointments();
       const thead = document.querySelector("#calendar-table thead");
@@ -1106,23 +1153,27 @@
 
     // Fetch appointments from backend
     async function fetchSchedule() {
+      console.log("fetchSchedule called.");
       const sessionKey = sessionStorage.getItem("session_key");
       try {
         const response = await fetch("/appointments", {
           method: "GET",
           headers: { Authorization: `Bearer ${sessionKey}` },
         });
+        console.log("Fetch response status:", response.status);
         if (response.status === 401) {
           showModal();
           return;
         }
         const data = await response.json();
         appointmentsData = data.appointments || [];
+        console.log("Appointments fetched:", appointmentsData);
         renderAppointments();
       } catch (error) {
         console.error("Error fetching appointments:", error);
       }
     }
+
 
     // Update calendar view based on selected date
     function updateCalendar(selectedDate) {
