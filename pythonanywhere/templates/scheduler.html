@@ -621,23 +621,23 @@
 
     @media (max-width: 600px) {
       #calendar-main {
-        min-width: 0; /* Allow it to shrink on smaller screens */
-        max-width: 600px;
+      min-width: 0; /* Allow it to shrink on smaller screens */
+      max-width: 600px;
       }
       .hour-label {
-        max-width: 40px; /* Adjust for smaller screens */
+      max-width: 40px; /* Adjust for smaller screens */
       }
       #calendar-table th.hour-label {
-        min-width: 0; /* Adjust for smaller screens */
+      min-width: 0; /* Adjust for smaller screens */
       }
       .today-day {
-        border: 1px solid #424242 !important; /* Default border for smaller screens */
-        border-radius: 4px;        /* Optional: slightly round the corners */
-        box-sizing: border-box;    /* Ensure the border doesn't affect cell dimensions */
+      border: 1px solid #424242 !important; /* Default border for smaller screens */
+      border-radius: 4px;        /* Optional: slightly round the corners */
+      box-sizing: border-box;    /* Ensure the border doesn't affect cell dimensions */
       }
       #calendar-container {
-        min-width: 0 !important; /* Allow it to shrink on smaller screens */
-        max-width: 600px;
+      min-width: 0 !important; /* Allow it to shrink on smaller screens */
+      max-width: 600px;
       }
     }
 
@@ -1032,6 +1032,7 @@
     let currentEditingAppointment = null;
     let currentWeekStart = null;
     let currentMonthDate = null; // First day of currently viewed month
+    let currentView = 'week'; // or 'day'
 
     // Compute Monday for the given date
     function getMonday(d) {
@@ -1212,18 +1213,37 @@
     }
 
     function renderCalendar() {
-      const screenWidth = window.innerWidth;
       const today = new Date();
 
-      if (screenWidth < 768) {
-        // Mobile view: render one day view using today's date
-        generateCalendarDayView(today);
+      if (currentView === 'day') {
+        // Only initialize currentWeekStart if it’s not already set
+        if (!currentWeekStart) {
+          currentWeekStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        }
+        generateCalendarDayView(currentWeekStart);
+        fetchSchedule(); // Fetch appointments for the current day
       } else {
-        // Desktop view: render a week view starting from the Monday of the current week
-        // (Assuming you have a getMonday() function that returns the Monday for a given date)
-        generateCalendarGrid(getMonday(today));
+        if (!currentWeekStart) {
+          currentWeekStart = getMonday(today);
+        }
+        generateCalendarGrid(currentWeekStart);
       }
     }
+
+
+    // Debounce function: returns a debounced version of the provided function
+    function debounce(func, wait) {
+      let timeout;
+      return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+      };
+    }
+
+    // Use the debounce function to wrap renderCalendar
+    window.addEventListener("resize", debounce(renderCalendar, 300));
+
 
 
     function displayDateInButtonRowDiv() {
@@ -1278,43 +1298,39 @@
 
     // Previous week/day button
     document.getElementById("prev-week").addEventListener("click", () => {
-      console.log("Prev week/day clicked. Current start before:", currentWeekStart);
-      const screenWidth = window.innerWidth;
-      if (screenWidth < 768) {
-      // Mobile view: subtract 1 day
-      currentWeekStart.setDate(currentWeekStart.getDate() - 1);
+      console.log("Prev clicked. Current start before:", currentWeekStart);
+      if (currentView === 'day') {
+        // Day view: subtract 1 day
+        currentWeekStart.setDate(currentWeekStart.getDate() - 1);
       } else {
-      // Desktop view: subtract 7 days
-      currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+        // Week view: subtract 7 days
+        currentWeekStart.setDate(currentWeekStart.getDate() - 7);
       }
       currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
       console.log("New start:", currentWeekStart);
       renderCalendar();
       renderAppointments();
       updateSidebarMonth(currentMonthDate);
-      const thead = document.querySelector("#calendar-table thead");
-      thead.classList.add("visible");
+      document.querySelector("#calendar-table thead").classList.add("visible");
     });
 
-    // Next week/day button
     document.getElementById("next-week").addEventListener("click", () => {
-      console.log("Next week/day clicked. Current start before:", currentWeekStart);
-      const screenWidth = window.innerWidth;
-      if (screenWidth < 768) {
-      // Mobile view: add 1 day
-      currentWeekStart.setDate(currentWeekStart.getDate() + 1);
+      console.log("Next clicked. Current start before:", currentWeekStart);
+      if (currentView === 'day') {
+        // Day view: add 1 day
+        currentWeekStart.setDate(currentWeekStart.getDate() + 1);
       } else {
-      // Desktop view: add 7 days
-      currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        // Week view: add 7 days
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
       }
       currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
       console.log("New start:", currentWeekStart);
       renderCalendar();
       renderAppointments();
       updateSidebarMonth(currentMonthDate);
-      const thead = document.querySelector("#calendar-table thead");
-      thead.classList.add("visible");
+      document.querySelector("#calendar-table thead").classList.add("visible");
     });
+
 
     // Today button: reset currentWeekStart to this week's Monday
     document.getElementById("today-button").addEventListener("click", () => {
