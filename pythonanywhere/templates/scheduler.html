@@ -249,48 +249,89 @@
       background-color: #616161;
     }
     /* ========= Updated Calendar Styles ========= */
-    /* Sidebar for Month Navigation */
+    /* Container for the entire sidebar */
     #calendar-sidebar {
       width: 300px;
       background-color: #3a3a3a;
-      padding: 20px;
-      border-radius: 8px;
-      overflow-y: auto;
-      max-height: 80vh;
+      padding: 10px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    #month-nav {
+
+    /* Mini-calendar takes up roughly 1/3 of the sidebar height */
+    #mini-calendar {
+      height: 120px; /* Adjust as needed */
+      margin-bottom: 10px;
+    }
+
+    /* Header with navigation buttons and month label */
+    #mini-calendar-header {
       display: flex;
+      flex-direction: row;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
-    }
-    #month-nav button {
-      background-color: #424242;
-      border: none;
-      color: #e0e0e0;
-      padding: 5px 10px;
+      background-color: #3a3a3a; /* Microsoft blue */
+      color: white;
+      padding: 4px 8px;
       border-radius: 4px;
-    }
-    #current-month {
-      font-size: 18px;
       font-weight: bold;
+      font-size: 14px;
     }
-    #month-days {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    #month-days li {
-      padding: 8px;
-      margin-bottom: 4px;
-      background-color: #4a4a4a;
-      border-radius: 4px;
+
+    /* Navigation buttons */
+    .nav-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 16px;
       cursor: pointer;
+      width: 30px;
       text-align: center;
     }
-    #month-days li:hover {
-      background-color: #616161;
+
+    /* Grid for the calendar */
+    #mini-calendar-grid {
+      margin-top: 4px;
     }
+
+    /* Weekdays row */
+    .weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      font-size: 10px;
+      color: #8a8a8a;
+      margin-bottom: 2px;
+    }
+
+    /* Days grid */
+    .days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      font-size: 12px;
+      gap: 2px;
+    }
+
+    /* Each day cell */
+    .days div {
+      padding: 4px;
+      background-color: #4b4b4b;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    /* Hover state for day cells */
+    .days div:hover {
+      background-color: #5b5b5b;
+    }
+
+    /* Highlight today */
+    .days div.today {
+      background-color: #0078D4;
+      color: white;
+    }
+
+
     /* --- Hide Scrollbars for Sidebar --- */
     #calendar-sidebar {
       scrollbar-width: none;
@@ -572,9 +613,31 @@
       box-sizing: border-box;    /* Ensure the border doesn't affect cell dimensions */
     }
 
-    @media (max-width: 1500px) {
+    @media (max-width: 1590px) {
       #calendar-sidebar {
         display: none;
+      }
+    }
+
+    @media (max-width: 600px) {
+      #calendar-main {
+        min-width: 0; /* Allow it to shrink on smaller screens */
+        max-width: 600px;
+      }
+      .hour-label {
+        max-width: 40px; /* Adjust for smaller screens */
+      }
+      #calendar-table th.hour-label {
+        min-width: 0; /* Adjust for smaller screens */
+      }
+      .today-day {
+        border: 1px solid #424242 !important; /* Default border for smaller screens */
+        border-radius: 4px;        /* Optional: slightly round the corners */
+        box-sizing: border-box;    /* Ensure the border doesn't affect cell dimensions */
+      }
+      #calendar-container {
+        min-width: 0 !important; /* Allow it to shrink on smaller screens */
+        max-width: 600px;
       }
     }
 
@@ -653,14 +716,29 @@
   <!-- Calendar UI with Sidebar -->
   <main>
     <aside id="calendar-sidebar">
-      <div id="month-nav">
-        <button id="prev-month">&larr;</button>
-        <span id="current-month"></span>
-        <button id="next-month">&rarr;</button>
+      <div id="mini-calendar">
+        <div id="mini-calendar-header">
+          <button id="prev-month" class="nav-btn">&larr;</button>
+          <span id="current-month"></span>
+          <button id="next-month" class="nav-btn">&rarr;</button>
+        </div>
+        <div id="mini-calendar-grid">
+          <div class="weekdays">
+            <div>Su</div>
+            <div>Mo</div>
+            <div>Tu</div>
+            <div>We</div>
+            <div>Th</div>
+            <div>Fr</div>
+            <div>Sa</div>
+          </div>
+          <div class="days"></div>
+        </div>
       </div>
-      <ul id="month-days">
-        <!-- Days of the month will be populated here -->
-      </ul>
+      <!-- Placeholder for additional elements below -->
+      <div id="extra-content">
+        <!-- Future content goes here -->
+      </div>
     </aside>
     <div id="calendar-main">
       <div id="button-row-div">
@@ -1066,6 +1144,88 @@
       console.log("Calendar grid generated.");
     }
 
+    function generateCalendarDayView(dayDate) {
+      console.log("generateCalendarDayView called with dayDate:", dayDate);
+      let table = '<table id="calendar-table">';
+      table += "<thead><tr><th class='hour-label'></th>";
+
+      const today = new Date();
+      const currentHour = today.getHours();
+
+      // Create the header for the single day
+      const options = { weekday: 'short', month: 'short', day: 'numeric' };
+      const isToday = (new Date(dayDate)).toDateString() === today.toDateString();
+      table += `<th${isToday ? ' class="today-day"' : ''}>${new Date(dayDate).toLocaleDateString(undefined, options)}</th>`;
+      table += "</tr></thead><tbody>";
+
+      // Generate 24 rows for each hour of the day
+      for (let hour = 0; hour < 24; hour++) {
+        const isCurrentHour = isToday && hour === currentHour;
+        table += `<tr><th class='hour-label${isCurrentHour ? ' current-hour' : ''}'>${hour}:00</th>`;
+
+        // Only one cell per hour for the single day view
+        const classes = [];
+        if (isToday) classes.push('today-day');
+        if (isCurrentHour) classes.push('current-hour');
+        const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+        
+        table += `<td data-day="0" data-hour="${hour}"${classAttr}></td>`;
+        table += "</tr>";
+      }
+      table += "</tbody></table>";
+
+      // Insert the generated table into the container
+      document.getElementById("calendar-container").innerHTML = table;
+
+      // Scroll to the current hour
+      const container = document.getElementById("calendar-container");
+      const hourCellHeight = container.scrollHeight / 24;
+      container.scrollTop = hourCellHeight * currentHour - container.clientHeight / 2;
+
+      // Attach click event handlers to each cell to open the appointment modal
+      document.querySelectorAll("#calendar-table td").forEach(cell => {
+        cell.addEventListener("click", (e) => {
+          // Prevent triggering if an appointment div was clicked
+          if (e.target.classList.contains("appointment")) return;
+
+          const hour = parseInt(cell.getAttribute("data-hour"));
+          
+          // Create the cell's date/time using the provided dayDate
+          const base = new Date(dayDate);
+          const cellDate = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, 0, 0, 0);
+          console.log("Cell clicked - hour:", hour, "computed cellDate:", cellDate);
+
+          // Autofill the datetime input with the computed value
+          appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
+          console.log("Autofilled datetime input value:", appointmentDatetimeInput.value);
+
+          // Clear other fields and open the add modal
+          appointmentTitleInput.value = "";
+          appointmentDescriptionInput.value = "";
+          currentEditingAppointment = null;
+          modalTitle.textContent = "Add Appointment";
+          deleteAppointmentButton.style.display = "none";
+          addModalOverlay.style.display = "flex";
+        });
+      });
+      console.log("Calendar day view generated.");
+    }
+
+    function renderCalendar() {
+      const screenWidth = window.innerWidth;
+      const today = new Date();
+
+      if (screenWidth < 768) {
+        // Mobile view: render one day view using today's date
+        generateCalendarDayView(today);
+      } else {
+        // Desktop view: render a week view starting from the Monday of the current week
+        // (Assuming you have a getMonday() function that returns the Monday for a given date)
+        generateCalendarGrid(getMonday(today));
+      }
+    }
+
+
     function displayDateInButtonRowDiv() {
       const buttonRowDiv = document.getElementById("button-row-div");
       // Clear any existing date spans
@@ -1116,26 +1276,42 @@
       });
     }
 
-    // Previous week button
+    // Previous week/day button
     document.getElementById("prev-week").addEventListener("click", () => {
-      console.log("Prev week clicked. Current week start before:", currentWeekStart);
-      // Subtract 7 days from currentWeekStart
+      console.log("Prev week/day clicked. Current start before:", currentWeekStart);
+      const screenWidth = window.innerWidth;
+      if (screenWidth < 768) {
+      // Mobile view: subtract 1 day
+      currentWeekStart.setDate(currentWeekStart.getDate() - 1);
+      } else {
+      // Desktop view: subtract 7 days
       currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-      console.log("New week start:", currentWeekStart);
-      generateCalendarGrid(currentWeekStart);
+      }
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
+      console.log("New start:", currentWeekStart);
+      renderCalendar();
       renderAppointments();
+      updateSidebarMonth(currentMonthDate);
       const thead = document.querySelector("#calendar-table thead");
       thead.classList.add("visible");
     });
 
-    // Next week button
+    // Next week/day button
     document.getElementById("next-week").addEventListener("click", () => {
-      console.log("Next week clicked. Current week start before:", currentWeekStart);
-      // Add 7 days to currentWeekStart
+      console.log("Next week/day clicked. Current start before:", currentWeekStart);
+      const screenWidth = window.innerWidth;
+      if (screenWidth < 768) {
+      // Mobile view: add 1 day
+      currentWeekStart.setDate(currentWeekStart.getDate() + 1);
+      } else {
+      // Desktop view: add 7 days
       currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-      console.log("New week start:", currentWeekStart);
-      generateCalendarGrid(currentWeekStart);
+      }
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
+      console.log("New start:", currentWeekStart);
+      renderCalendar();
       renderAppointments();
+      updateSidebarMonth(currentMonthDate);
       const thead = document.querySelector("#calendar-table thead");
       thead.classList.add("visible");
     });
@@ -1144,9 +1320,11 @@
     document.getElementById("today-button").addEventListener("click", () => {
       console.log("Today button clicked.");
       currentWeekStart = getMonday(new Date());
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
       console.log("Reset currentWeekStart to:", currentWeekStart);
-      generateCalendarGrid(currentWeekStart);
+      renderCalendar();
       renderAppointments();
+      updateSidebarMonth(currentMonthDate);
       const thead = document.querySelector("#calendar-table thead");
       thead.classList.add("visible");
     });
@@ -1180,38 +1358,69 @@
       if (!selectedDate) return;
       const dateObj = new Date(selectedDate);
       currentWeekStart = getMonday(dateObj);
-      generateCalendarGrid(currentWeekStart);
+      renderCalendar();
       renderAppointments();
     }
 
     // ======== Sidebar Navigation for Month =========
+
+    // Update the mini-calendar view
     function updateSidebarMonth(monthDate) {
-      const monthDaysUl = document.getElementById("month-days");
-      monthDaysUl.innerHTML = "";
       const currentMonthSpan = document.getElementById("current-month");
-      const year = monthDate.getFullYear();
-      const month = monthDate.getMonth();
       const options = { month: 'long', year: 'numeric' };
       currentMonthSpan.textContent = monthDate.toLocaleDateString(undefined, options);
+      
+      const daysContainer = document.querySelector(".days");
+      daysContainer.innerHTML = ""; // Clear previous cells
+
+      const year = monthDate.getFullYear();
+      const month = monthDate.getMonth();
+      const firstDayIndex = new Date(year, month, 1).getDay();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      // Add blank cells until the first day of the month
+      for (let i = 0; i < firstDayIndex; i++) {
+        const emptyCell = document.createElement("div");
+        emptyCell.classList.add("empty");
+        daysContainer.appendChild(emptyCell);
+      }
+      
+      // Add the day cells
       for (let day = 1; day <= daysInMonth; day++) {
-        const li = document.createElement("li");
-        li.textContent = day;
-        li.dataset.date = new Date(year, month, day).toISOString();
-        li.addEventListener("click", () => {
+        const dayCell = document.createElement("div");
+        dayCell.textContent = day;
+        dayCell.dataset.date = new Date(year, month, day).toISOString();
+        dayCell.addEventListener("click", () => {
+          // Your existing calendar update function
           updateCalendar(new Date(year, month, day));
         });
-        monthDaysUl.appendChild(li);
+        
+        // Mark today
+        const today = new Date();
+        if (
+          today.getFullYear() === year &&
+          today.getMonth() === month &&
+          today.getDate() === day
+        ) {
+          dayCell.classList.add("today");
+        }
+        
+        daysContainer.appendChild(dayCell);
       }
     }
+
+    // Navigation event listeners
     document.getElementById("prev-month").addEventListener("click", () => {
       currentMonthDate.setMonth(currentMonthDate.getMonth() - 1);
       updateSidebarMonth(currentMonthDate);
     });
+
     document.getElementById("next-month").addEventListener("click", () => {
       currentMonthDate.setMonth(currentMonthDate.getMonth() + 1);
       updateSidebarMonth(currentMonthDate);
     });
+
+
 
     // ======== Modal for Add / Edit Appointment =========
     const addModalOverlay = document.getElementById("add-modal-overlay");
