@@ -118,7 +118,9 @@ class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    appointment_datetime = db.Column(db.DateTime, nullable=False)
+    # Changed: using start_datetime and adding end_datetime for a time range
+    start_datetime = db.Column(db.DateTime, nullable=False)
+    end_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
@@ -129,11 +131,11 @@ class Appointment(db.Model):
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "appointment_datetime": self.appointment_datetime.isoformat(),
+            "start_datetime": self.start_datetime.isoformat(),
+            "end_datetime": self.end_datetime.isoformat(),
             "user_id": self.user_id,
-            "notes": [note.to_dict() for note in self.notes]  # Include attached notes
+            "notes": [note.to_dict() for note in self.notes]
         }
-
 
 # Many-to-Many Association Table (Appointments <-> Notes)
 appointment_note = db.Table(
@@ -141,6 +143,7 @@ appointment_note = db.Table(
     db.Column('appointment_id', db.Integer, db.ForeignKey('appointment.id'), primary_key=True),
     db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
 )
+
 
 class Trophy(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -832,28 +835,38 @@ def get_appointments():
     appointments_data = [appt.to_dict() for appt in appointments]
     return jsonify({"appointments": appointments_data}), 200
 
-# 2. Create a new appointment
+# 2. Create a new appointment with start and end times
 @app.route('/appointments', methods=['POST'])
 @require_session_key
 def create_appointment():
     data = request.get_json() or {}
     title = data.get('title')
     description = data.get('description', '')
-    appointment_datetime_str = data.get('appointment_datetime')
+    start_datetime_str = data.get('start_datetime')
+    end_datetime_str = data.get('end_datetime')
     note_ids = data.get('note_ids', [])  # List of note IDs to attach
 
-    if not title or not appointment_datetime_str:
-        return jsonify({"error": "Missing required fields: title and appointment_datetime"}), 400
+    if not title or not start_datetime_str or not end_datetime_str:
+        return jsonify({"error": "Missing required fields: title, start_datetime and end_datetime"}), 400
 
     try:
-        appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
+        start_datetime = datetime.fromisoformat(start_datetime_str)
+        end_datetime = datetime.fromisoformat(end_datetime_str)
     except ValueError:
         return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    if end_datetime <= start_datetime:
+        return jsonify({"error": "end_datetime must be after start_datetime."}), 400
+    
+    if end_datetime.date() != start_datetime.date():
+        return jsonify({"error": "Appointments cannot span multiple days."}), 400
+
 
     new_appointment = Appointment(
         title=title,
         description=description,
-        appointment_datetime=appointment_datetime,
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
         user_id=g.user_id
     )
 
@@ -882,18 +895,36 @@ def update_appointment(appointment_id):
 
     title = data.get('title')
     description = data.get('description')
-    appointment_datetime_str = data.get('appointment_datetime')
+    start_datetime_str = data.get('start_datetime')
+    end_datetime_str = data.get('end_datetime')
     note_ids = data.get('note_ids')  # Optional update to attached notes
 
     if title:
         appointment.title = title
     if description is not None:
         appointment.description = description
-    if appointment_datetime_str:
+
+    if start_datetime_str:
         try:
-            appointment.appointment_datetime = datetime.fromisoformat(appointment_datetime_str)
+            new_start = datetime.fromisoformat(start_datetime_str)
+            appointment.start_datetime = new_start
         except ValueError:
-            return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+            return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
+
+    if end_datetime_str:
+        try:
+            new_end = datetime.fromisoformat(end_datetime_str)
+            appointment.end_datetime = new_end
+        except ValueError:
+            return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
+
+    # Ensure the updated times are valid
+    if appointment.end_datetime <= appointment.start_datetime:
+        return jsonify({"error": "end_datetime must be after start_datetime."}), 400
+    
+    if appointment.end_datetime.date() != appointment.start_datetime.date():
+        return jsonify({"error": "Appointments cannot span multiple days."}), 400
+
 
     # Update attached notes if provided
     if note_ids is not None:

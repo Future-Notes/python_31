@@ -405,17 +405,31 @@
     #calendar-table thead.visible {
       transform: translateY(0);
     }
-    /* Appointment styling */
-    .appointment {
-      position: relative;
-      margin: 2px 0;
-      background-color: #616161;
-      color: #e0e0e0;
-      padding: 4px 6px;
-      border-radius: 4px;
+
+    /* Appointment block rendered over the calendar */
+    .appointment-abs {
       font-size: 14px;
       cursor: pointer;
+      /* Remove any rounded borders to mimic Outlook style */
+      border-radius: 0;
+      overflow: hidden;
     }
+
+    /* The stripe styling can remain the same */
+    .appointment-stripe {
+      width: 5px;
+      height: 100%;
+      background-color: #424242;
+      float: left;
+      margin-right: 4px;
+    }
+
+    .appointment-title {
+      position: relative;
+      top: 0;
+    }
+
+
     /* Floating Add Button */
     #floating-add-button {
       position: fixed;
@@ -761,7 +775,10 @@
       <h2 id="modal-title">Add Appointment</h2>
       <input id="appointment-title" type="text" placeholder="Title" />
       <textarea id="appointment-description" placeholder="Description"></textarea>
-      <input id="appointment-datetime" type="datetime-local" step="1" />
+      <!-- Start time input -->
+      <input id="appointment-datetime" type="datetime-local" step="1" placeholder="Start Time" />
+      <!-- End time input -->
+      <input id="appointment-end-datetime" type="datetime-local" step="1" placeholder="End Time" />
       <!-- Attached Notes Dropzone -->
       <div id="attached-notes-dropzone" class="dropzone">
         <p>Drag and drop notes here to attach</p>
@@ -779,6 +796,7 @@
       <button id="cancel-add-note">Cancel</button>
     </div>
   </div>
+
 </body>
 </html>
 
@@ -1117,19 +1135,24 @@
         cell.addEventListener("click", (e) => {
           // Prevent triggering if an appointment div was clicked
           if (e.target.classList.contains("appointment")) return;
-          
+
           const dayIndex = parseInt(cell.getAttribute("data-day"));
           const hour = parseInt(cell.getAttribute("data-hour"));
-          
+
           // Calculate the corresponding date/time based on currentWeekStart
           const base = new Date(weekStart);
           const cellDate = new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayIndex, hour, 0, 0, 0);
           console.log("Cell clicked - dayIndex:", dayIndex, "hour:", hour, "computed cellDate:", cellDate);
-          
-          // Autofill the datetime input with the computed value
+
+          // Autofill the start datetime input with the computed value
           appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
-          console.log("Autofilled datetime input value:", appointmentDatetimeInput.value);
-          
+          console.log("Autofilled start datetime input:", appointmentDatetimeInput.value);
+
+          // Autofill the end datetime input as 1 hour later
+          const endDate = new Date(cellDate.getTime() + 60 * 60 * 1000);
+          appointmentEndDatetimeInput.value = toDatetimeLocal(endDate);
+          console.log("Autofilled end datetime input:", appointmentEndDatetimeInput.value);
+
           // Clear other fields and open the add modal
           appointmentTitleInput.value = "";
           appointmentDescriptionInput.value = "";
@@ -1230,22 +1253,6 @@
       }
     }
 
-
-    // Debounce function: returns a debounced version of the provided function
-    function debounce(func, wait) {
-      let timeout;
-      return function(...args) {
-        const context = this;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(context, args), wait);
-      };
-    }
-
-    // Use the debounce function to wrap renderCalendar
-    window.addEventListener("resize", debounce(renderCalendar, 300));
-
-
-
     function displayDateInButtonRowDiv() {
       const buttonRowDiv = document.getElementById("button-row-div");
       // Clear any existing date spans
@@ -1262,39 +1269,172 @@
     // Render appointments into the grid
     function renderAppointments() {
       console.log("renderAppointments called. Appointments count:", appointmentsData.length);
-      document.querySelectorAll(".appointment").forEach(el => el.remove());
-      
+      // Remove previously rendered appointment blocks
+      document.querySelectorAll(".appointment-abs").forEach(el => el.remove());
+
+      const container = document.getElementById("calendar-container");
+
+      // Get header height from the table header (thead)
+      const header = document.querySelector("#calendar-table thead");
+      const headerHeight = header ? header.offsetHeight : 0;
+
+      // Determine the height of one hour row (using the first tbody row)
+      const firstRow = document.querySelector("#calendar-table tbody tr");
+      const hourCellHeight = firstRow ? firstRow.offsetHeight : 80;
+
+      // Group appointments by day index (0–6) relative to currentWeekStart.
+      const appointmentsByDay = {};
       appointmentsData.forEach(appt => {
-        console.log("Processing appointment:", appt);
-        const apptDate = new Date(appt.appointment_datetime);
-        console.log("Parsed appointment date:", apptDate);
-        const diffTime = apptDate - currentWeekStart;
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        console.log("Appointment diffDays:", diffDays, "for appointment datetime:", apptDate, "and currentWeekStart:", currentWeekStart);
-        
-        if (diffDays >= 0 && diffDays < 7) {
-          const hour = apptDate.getHours();
-          console.log("Appointment hour:", hour);
-          const cell = document.querySelector(`#calendar-table td[data-day="${diffDays}"][data-hour="${hour}"]`);
-          if (cell) {
-            console.log("Found cell for appointment", appt.id, "at day:", diffDays, "hour:", hour);
-            const apptDiv = document.createElement("div");
-            apptDiv.className = "appointment";
-            apptDiv.textContent = appt.title;
-            apptDiv.dataset.id = appt.id;
-            apptDiv.addEventListener("click", (e) => {
-              e.stopPropagation();
-              openEditModal(appt);
-            });
-            cell.appendChild(apptDiv);
-          } else {
-            console.log("No cell found for appointment", appt.id, "at day:", diffDays, "hour:", hour);
+        const startDate = new Date(appt.start_datetime);
+        const endDate = new Date(appt.end_datetime);
+        const diffTime = startDate - currentWeekStart;
+        const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        if (dayIndex >= 0 && dayIndex < 7) {
+          if (!appointmentsByDay[dayIndex]) {
+            appointmentsByDay[dayIndex] = [];
           }
-        } else {
-          console.log("Appointment", appt.id, "is outside the current week (diffDays:", diffDays, ")");
+          // Save parsed dates for further calculations.
+          appt._startDate = startDate;
+          appt._endDate = endDate;
+          appointmentsByDay[dayIndex].push(appt);
         }
       });
+
+      // Process each day.
+      Object.keys(appointmentsByDay).forEach(dayIndex => {
+        const dayAppointments = appointmentsByDay[dayIndex];
+        // Sort by start time.
+        dayAppointments.sort((a, b) => a._startDate - b._startDate);
+
+        // Cluster appointments that overlap in time.
+        let clusters = [];
+        let currentCluster = [];
+        let clusterEnd = null;
+        dayAppointments.forEach(appt => {
+          if (currentCluster.length === 0) {
+            currentCluster.push(appt);
+            clusterEnd = appt._endDate;
+          } else {
+            if (appt._startDate < clusterEnd) {
+              currentCluster.push(appt);
+              if (appt._endDate > clusterEnd) {
+                clusterEnd = appt._endDate;
+              }
+            } else {
+              clusters.push(currentCluster);
+              currentCluster = [appt];
+              clusterEnd = appt._endDate;
+            }
+          }
+        });
+        if (currentCluster.length > 0) {
+          clusters.push(currentCluster);
+        }
+
+        // For each cluster, assign column indices and then update each appointment with the max column count.
+        clusters.forEach(cluster => {
+          let columns = []; // Array to track the end time of the last appointment in each column.
+          // First pass: assign a column index greedily.
+          cluster.forEach(appt => {
+            let placed = false;
+            for (let i = 0; i < columns.length; i++) {
+              if (appt._startDate >= columns[i]) {
+                appt._colIndex = i;
+                columns[i] = appt._endDate;
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              appt._colIndex = columns.length;
+              columns.push(appt._endDate);
+            }
+          });
+          // Second pass: update every appointment in this cluster with the same total column count.
+          cluster.forEach(appt => {
+            appt._totalCols = columns.length;
+          });
+        });
+
+        // Determine the horizontal boundaries for this day column from the reference cell.
+        const dayCell = document.querySelector(`#calendar-table td[data-day="${dayIndex}"][data-hour="0"]`);
+        if (!dayCell) return;
+        const cellLeft = dayCell.offsetLeft;
+        const cellWidth = dayCell.offsetWidth;
+
+        // Render each appointment in this day.
+        dayAppointments.forEach(appt => {
+          // Compute vertical positioning.
+          const startHourFraction = appt._startDate.getHours() + (appt._startDate.getMinutes() / 60);
+          const durationHours = (appt._endDate - appt._startDate) / (1000 * 60 * 60);
+          const top = headerHeight + startHourFraction * hourCellHeight;
+          const height = durationHours * hourCellHeight;
+
+          // Compute responsive width and horizontal offset based on overlapping columns.
+          const totalCols = appt._totalCols || 1;
+          const colWidth = cellWidth / totalCols;
+          const left = cellLeft + appt._colIndex * colWidth;
+
+          // Create the appointment block.
+          const apptDiv = document.createElement("div");
+          apptDiv.className = "appointment-abs";
+          apptDiv.style.position = "absolute";
+          apptDiv.style.top = top + "px";
+          apptDiv.style.left = left + "px";
+          apptDiv.style.width = colWidth + "px";
+          apptDiv.style.height = height + "px";
+          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.color = "#e0e0e0";
+          apptDiv.style.padding = "2px 4px";
+          apptDiv.style.boxSizing = "border-box";
+          apptDiv.style.borderRadius = "0";
+          apptDiv.style.overflow = "hidden";
+          apptDiv.style.zIndex = "10";
+
+          // Create a slim colored stripe on the left.
+          const stripe = document.createElement("div");
+          stripe.className = "appointment-stripe";
+          stripe.style.width = "5px";
+          stripe.style.height = "100%";
+          stripe.style.backgroundColor = "#424242";
+          stripe.style.float = "left";
+          stripe.style.marginRight = "4px";
+
+          // Create the title element.
+          const title = document.createElement("div");
+          title.className = "appointment-title";
+          title.style.position = "relative";
+          title.style.top = "0";
+          title.textContent = appt.title;
+
+          apptDiv.appendChild(stripe);
+          apptDiv.appendChild(title);
+
+          // Attach click handler to open the edit modal.
+          apptDiv.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openEditModal(appt);
+          });
+
+          container.appendChild(apptDiv);
+        });
+      });
     }
+
+    // Debounce function to optimize performance
+    function debounce(func, delay) {
+      let timer;
+      return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => func.apply(this, args), delay);
+      };
+    }
+
+    
+
+    // Attach resize event listener with debounce
+    window.addEventListener("resize", debounce(renderAppointments, 200));
+
 
     // Previous week/day button
     document.getElementById("prev-week").addEventListener("click", () => {
@@ -1444,6 +1584,7 @@
     const appointmentTitleInput = document.getElementById("appointment-title");
     const appointmentDescriptionInput = document.getElementById("appointment-description");
     const appointmentDatetimeInput = document.getElementById("appointment-datetime");
+    const appointmentEndDatetimeInput = document.getElementById("appointment-end-datetime");
     const submitAppointmentButton = document.getElementById("submit-appointment");
     const cancelAppointmentButton = document.getElementById("cancel-appointment");
     const deleteAppointmentButton = document.getElementById("delete-appointment");
@@ -1453,19 +1594,27 @@
       modalTitle.textContent = "Add Appointment";
       appointmentTitleInput.value = "";
       appointmentDescriptionInput.value = "";
-      appointmentDatetimeInput.value = "";
+      // Default start time is now; default end time is 1 hour later.
+      const now = new Date();
+      appointmentDatetimeInput.value = toDatetimeLocal(now);
+      const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+      appointmentEndDatetimeInput.value = toDatetimeLocal(oneHourLater);
       attachedNoteIds = [];  // Clear any previous attachments
       updateAttachedNotesDisplay();
       deleteAppointmentButton.style.display = "none";
       addModalOverlay.style.display = "flex";
     }
 
+
+
     function openEditModal(appt) {
       currentEditingAppointment = appt;
       modalTitle.textContent = "Edit Appointment";
       appointmentTitleInput.value = appt.title;
       appointmentDescriptionInput.value = appt.description;
-      appointmentDatetimeInput.value = appt.appointment_datetime.slice(0, 19);
+      // Pre-fill start and end datetime (trimming seconds if needed)
+      appointmentDatetimeInput.value = appt.start_datetime.slice(0, 19);
+      appointmentEndDatetimeInput.value = appt.end_datetime.slice(0, 19);
       deleteAppointmentButton.style.display = "block";
       
       // Pre-load attached notes (if any)
@@ -1481,6 +1630,7 @@
     }
 
 
+
     function hideAddModal() {
       addModalOverlay.style.display = "none";
     }
@@ -1489,10 +1639,11 @@
       const sessionKey = sessionStorage.getItem("session_key");
       const title = appointmentTitleInput.value.trim();
       const description = appointmentDescriptionInput.value.trim();
-      const appointment_datetime = appointmentDatetimeInput.value;
+      const start_datetime = appointmentDatetimeInput.value;
+      const end_datetime = appointmentEndDatetimeInput.value;
       
-      if (!title || !appointment_datetime) {
-        alert("Title and datetime are required.");
+      if (!title || !start_datetime || !end_datetime) {
+        alert("Title, start time, and end time are required.");
         return;
       }
       try {
@@ -1503,7 +1654,7 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({ title, description, appointment_datetime, note_ids: attachedNoteIds })
+            body: JSON.stringify({ title, description, start_datetime, end_datetime, note_ids: attachedNoteIds })
           });
           if (response.status === 401) {
             showModal();
@@ -1520,7 +1671,7 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({ title, description, appointment_datetime, note_ids: attachedNoteIds })
+            body: JSON.stringify({ title, description, start_datetime, end_datetime, note_ids: attachedNoteIds })
           });
           if (response.status === 401) {
             showModal();
@@ -1537,6 +1688,7 @@
         console.error("Error submitting appointment:", error);
       }
     }
+
 
 
     async function deleteAppointment() {

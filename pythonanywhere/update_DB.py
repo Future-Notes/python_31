@@ -7,7 +7,7 @@ def update_tables():
     # Delay the import until the function is called
     from app import app
 
-    db = SQLAlchemy(app)
+    from app import db  # Import db from your app module
 
     with app.app_context():
         inspector = inspect(db.engine)
