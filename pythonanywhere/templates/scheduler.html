@@ -18,6 +18,10 @@
       background-color: #2c2c2c;
       color: #e0e0e0;
     }
+    /* Hide scrollbar for WebKit browsers */
+    #add-modal::-webkit-scrollbar {
+      display: none;
+    }
     header {
       background-color: #3a3a3a;
       padding: 20px;
@@ -448,6 +452,10 @@
       cursor: pointer;
       z-index: 100;
     }
+    /* =========================
+   Existing Modal Styles
+   ========================= */
+
     /* Modal for Add/Edit Appointment */
     #add-modal-overlay {
       display: none;
@@ -461,18 +469,22 @@
       justify-content: center;
       align-items: center;
     }
+
     #add-modal {
       background-color: #1E1E1E;
       padding: 20px 30px;
       border-radius: 12px;
-      max-height: 600px;
-      height: 100%;
+      height: auto;
+      max-height: 80vh; /* Use viewport height for responsiveness */
       text-align: center;
-      width: 100%;
+      overflow-y: scroll; /* Allow scrolling */
+      scrollbar-width: none; /* For Firefox */
+      -ms-overflow-style: none; /* For Internet Explorer and Edge */
       max-width: 400px;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
       animation: slideDown 0.3s ease-out;
     }
+
     @keyframes slideDown {
       from {
         transform: translateY(-20px);
@@ -483,9 +495,56 @@
         opacity: 1;
       }
     }
+
     #add-modal input,
     #add-modal textarea,
+    #add-modal button,
+    #add-modal select {
+      width: 90%;
+      margin-bottom: 10px;
+      padding: 12px;
+      background-color: #2E2E2E;
+      border: 1px solid #424242;
+      color: #E0E0E0;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    #add-modal textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
     #add-modal button {
+      background-color: #424242;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    #add-modal button:hover {
+      background-color: #616161;
+    }
+
+    #delete-appointment {
+      background-color: #cc4f4f;
+    }
+
+    /* =========================
+      Recurrence Options Styles
+      ========================= */
+
+    /* Container for recurrence options inside the main modal */
+    #recurrence-options {
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #424242;
+      border-radius: 8px;
+      background-color: #2E2E2E;
+    }
+
+    /* Style for the recurrence preset dropdown */
+    #appointment-recurrence-preset {
       width: 100%;
       margin-bottom: 10px;
       padding: 12px;
@@ -495,25 +554,113 @@
       border-radius: 8px;
       font-size: 16px;
     }
-    #add-modal textarea {
-      resize: vertical;
-      min-height: 100px;
-    }
-    #add-modal button {
+
+    /* Advanced Options button */
+    #advanced-recurrence-button {
       background-color: #424242;
       border: none;
       cursor: pointer;
       transition: background-color 0.3s ease;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 16px;
+      margin-bottom: 10px;
     }
-    #add-modal button:hover {
+
+    #advanced-recurrence-button:hover {
       background-color: #616161;
     }
-    #delete-appointment {
-      background-color: #cc4f4f;
+
+    /* Recurrence checkbox styling */
+    #appointment-recurrence-checkbox {
+      margin-right: 5px;
     }
-    #delete-appointment {
-      background-color: #cc4f4f;
+
+    /* Ensuring labels (including the one wrapping the recurrence checkbox) are styled */
+    #add-modal label {
+      color: #E0E0E0;
+      font-size: 16px;
+      margin-bottom: 10px;
+      display: block;
     }
+
+    /* =========================
+      Advanced Recurrence Modal Styles
+      ========================= */
+
+    #advanced-recurrence-modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1100; /* Higher than the main modal */
+      justify-content: center;
+      align-items: center;
+    }
+
+    #advanced-recurrence-modal {
+      background-color: #1E1E1E;
+      padding: 20px 30px;
+      border-radius: 12px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+      animation: slideDown 0.3s ease-out;
+      text-align: center;
+    }
+
+    /* Select and number input styling within advanced recurrence modal */
+    #advanced-recurrence-modal select,
+    #advanced-recurrence-modal input[type="number"] {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 12px;
+      background-color: #2E2E2E;
+      border: 1px solid #424242;
+      color: #E0E0E0;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    /* Weekday checkboxes styling in advanced recurrence modal */
+    #recurrence-weekdays {
+      margin-bottom: 10px;
+    }
+
+    #recurrence-weekdays p {
+      margin-bottom: 5px;
+      color: #E0E0E0;
+      font-size: 14px;
+    }
+
+    #recurrence-weekdays label {
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 14px;
+      color: #E0E0E0;
+    }
+
+    /* Buttons inside advanced recurrence modal */
+    #advanced-recurrence-modal button {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 12px;
+      background-color: #424242;
+      border: none;
+      color: #E0E0E0;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    #advanced-recurrence-modal button:hover {
+      background-color: #616161;
+    }
+
 
     #notes-panel {
       display: none;
@@ -779,6 +926,31 @@
       <input id="appointment-datetime" type="datetime-local" step="1" placeholder="Start Time" />
       <!-- End time input -->
       <input id="appointment-end-datetime" type="datetime-local" step="1" placeholder="End Time" />
+
+      <!-- Recurrence checkbox -->
+      <label>
+        <input type="checkbox" id="appointment-recurrence-checkbox">
+        Recurring Appointment
+      </label>
+      
+      <!-- Recurrence options container (hidden by default) -->
+      <div id="recurrence-options" style="display: none; margin-top: 10px;">
+        <!-- Preset dropdown -->
+        <select id="appointment-recurrence-preset">
+          <option value="">-- Select Recurrence --</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="yearly">Yearly</option>
+          <option value="custom">Custom...</option>
+        </select>
+        <!-- Advanced options button (shown only for "custom") -->
+        <button id="advanced-recurrence-button" style="display: none;">Advanced Options</button>
+        <label for="appointment-recurrence-end-datetime" id="appointment-recurrence-end-datetime-label">Recurrence End Date (optional):</label>
+        <!-- Recurrence end date -->
+        <input id="appointment-recurrence-end-datetime" type="datetime-local" step="1" placeholder="Recurrence End Date (optional)" />
+      </div>
+
       <!-- Attached Notes Dropzone -->
       <div id="attached-notes-dropzone" class="dropzone">
         <p>Drag and drop notes here to attach</p>
@@ -796,6 +968,37 @@
       <button id="cancel-add-note">Cancel</button>
     </div>
   </div>
+
+  <!-- Advanced Recurrence Modal -->
+  <div id="advanced-recurrence-modal-overlay" style="display: none;">
+    <div id="advanced-recurrence-modal">
+      <h3>Advanced Recurrence Options</h3>
+      <!-- Interval and frequency -->
+      <label for="recurrence-interval">Repeat every:</label>
+      <input id="recurrence-interval" type="number" min="1" value="1" />
+      <select id="recurrence-frequency">
+        <option value="DAILY">Day(s)</option>
+        <option value="WEEKLY">Week(s)</option>
+        <option value="MONTHLY">Month(s)</option>
+        <option value="YEARLY">Year(s)</option>
+      </select>
+      <!-- Weekday checkboxes for weekly recurrence -->
+      <div id="recurrence-weekdays" style="display: none; margin-top: 10px;">
+        <p>Select days:</p>
+        <label><input type="checkbox" value="MO" /> Mon</label>
+        <label><input type="checkbox" value="TU" /> Tue</label>
+        <label><input type="checkbox" value="WE" /> Wed</label>
+        <label><input type="checkbox" value="TH" /> Thu</label>
+        <label><input type="checkbox" value="FR" /> Fri</label>
+        <label><input type="checkbox" value="SA" /> Sat</label>
+        <label><input type="checkbox" value="SU" /> Sun</label>
+      </div>
+      <button id="save-advanced-recurrence">Save</button>
+      <button id="cancel-advanced-recurrence">Cancel</button>
+    </div>
+  </div>
+
+
 
 </body>
 </html>
@@ -1282,20 +1485,123 @@
       const firstRow = document.querySelector("#calendar-table tbody tr");
       const hourCellHeight = firstRow ? firstRow.offsetHeight : 80;
 
+      // Define the visible range.
+      // For week view, we show 7 days; for day view, 1 day.
+      const visibleDays = currentView === 'day' ? 1 : 7;
+      const currentWeekEnd = new Date(currentWeekStart.getTime() + visibleDays * 24 * 60 * 60 * 1000);
+
+      // Build a new array that expands recurring appointments only within the visible range.
+      let renderedAppointments = [];
+
+      appointmentsData.forEach(appt => {
+        // If the appointment has a recurrence rule, expand it.
+        if (appt.recurrence_rule) {
+          // For recurring appointments, use the appointment's original start and end.
+          let originalStart = new Date(appt.start_datetime);
+          let originalEnd = new Date(appt.end_datetime);
+
+          // Determine the recurrence cap: if no recurrence_end_date provided,
+          // only render occurrences in the current view.
+          let recurrenceCap = appt.recurrence_end_date ? new Date(appt.recurrence_end_date) : currentWeekEnd;
+
+          // Parse a simple subset of iCal rules.
+          let freq = null, interval = 1, byday = null;
+          appt.recurrence_rule.split(";").forEach(part => {
+            let [key, value] = part.split("=");
+            if (key === "FREQ") {
+              freq = value;
+            } else if (key === "INTERVAL") {
+              interval = parseInt(value);
+            } else if (key === "BYDAY") {
+              byday = value.split(",");
+            }
+          });
+
+          // For our purposes, generate occurrences only within [currentWeekStart, currentWeekEnd).
+          if (freq === "DAILY") {
+            // Start at the original occurrence.
+            let occStart = new Date(originalStart);
+            let occEnd = new Date(originalEnd);
+            // Continue until occStart is outside the visible range or past the recurrence cap.
+            while (occStart < currentWeekEnd && occStart < recurrenceCap) {
+              if (occStart >= currentWeekStart) {
+                let occ = Object.assign({}, appt);
+                occ.start_datetime = occStart.toISOString();
+                occ.end_datetime = occEnd.toISOString();
+                renderedAppointments.push(occ);
+              }
+              // Increment by interval days.
+              occStart = new Date(occStart.getTime() + interval * 24 * 60 * 60 * 1000);
+              occEnd = new Date(occEnd.getTime() + interval * 24 * 60 * 60 * 1000);
+            }
+          } else if (freq === "WEEKLY") {
+            // For weekly recurrence we support an optional BYDAY and INTERVAL.
+            let dayIterator = new Date(currentWeekStart);
+            while (dayIterator < currentWeekEnd) {
+              let dayName = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][dayIterator.getDay()];
+              let dayMatches = false;
+              if (byday) {
+                if (byday.includes(dayName)) {
+                  dayMatches = true;
+                }
+              } else {
+                if (dayIterator.getDay() === originalStart.getDay()) {
+                  dayMatches = true;
+                }
+              }
+              if (dayMatches) {
+                // Calculate the week offset based on the Monday of each week.
+                let candidateWeekStart = getMonday(dayIterator);
+                let originalWeekStart = getMonday(originalStart);
+                let diffWeeks = Math.round((candidateWeekStart - originalWeekStart) / (7 * 24 * 60 * 60 * 1000));
+                if (diffWeeks >= 0 && diffWeeks % interval === 0) {
+                  let occStart = new Date(dayIterator);
+                  occStart.setHours(originalStart.getHours(), originalStart.getMinutes(), originalStart.getSeconds());
+                  let occEnd = new Date(dayIterator);
+                  occEnd.setHours(originalEnd.getHours(), originalEnd.getMinutes(), originalEnd.getSeconds());
+                  if (occStart < recurrenceCap) {
+                    renderedAppointments.push(Object.assign({}, appt, {
+                      start_datetime: occStart.toISOString(),
+                      end_datetime: occEnd.toISOString()
+                    }));
+                  }
+                }
+              }
+              // Move to the next day.
+              dayIterator = new Date(dayIterator.getTime() + 24 * 60 * 60 * 1000);
+            } 
+
+
+          } else {
+            // For other frequencies (monthly, yearly) we simply render the original appointment
+            // if it falls within the visible range.
+            if (originalStart >= currentWeekStart && originalStart < currentWeekEnd) {
+              renderedAppointments.push(appt);
+            }
+          }
+        } else {
+          // Non-recurring appointment: render only if it falls within the visible range.
+          let startDate = new Date(appt.start_datetime);
+          if (startDate >= currentWeekStart && startDate < currentWeekEnd) {
+            renderedAppointments.push(appt);
+          }
+        }
+      });
+
       // Group appointments by day index (0–6) relative to currentWeekStart.
       const appointmentsByDay = {};
-      appointmentsData.forEach(appt => {
+      renderedAppointments.forEach(appt => {
         const startDate = new Date(appt.start_datetime);
         const endDate = new Date(appt.end_datetime);
+        // Save parsed dates for further calculations.
+        appt._startDate = startDate;
+        appt._endDate = endDate;
         const diffTime = startDate - currentWeekStart;
         const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        if (dayIndex >= 0 && dayIndex < 7) {
+        if (dayIndex >= 0 && dayIndex < visibleDays) {
           if (!appointmentsByDay[dayIndex]) {
             appointmentsByDay[dayIndex] = [];
           }
-          // Save parsed dates for further calculations.
-          appt._startDate = startDate;
-          appt._endDate = endDate;
           appointmentsByDay[dayIndex].push(appt);
         }
       });
@@ -1420,6 +1726,7 @@
         });
       });
     }
+
 
     // Debounce function to optimize performance
     function debounce(func, delay) {
@@ -1579,45 +1886,201 @@
 
 
     // ======== Modal for Add / Edit Appointment =========
+
     const addModalOverlay = document.getElementById("add-modal-overlay");
+    const addModal = document.getElementById("add-modal");
     const modalTitle = document.getElementById("modal-title");
     const appointmentTitleInput = document.getElementById("appointment-title");
     const appointmentDescriptionInput = document.getElementById("appointment-description");
     const appointmentDatetimeInput = document.getElementById("appointment-datetime");
     const appointmentEndDatetimeInput = document.getElementById("appointment-end-datetime");
+    const appointmentRecurrenceRuleInput = document.getElementById("appointment-recurrence-rule");
+    const appointmentRecurrenceEndDatetimeInput = document.getElementById("appointment-recurrence-end-datetime");
+    const appointmentRecurrenceEndDatetimeInputLabel = document.getElementById("appointment-recurrence-end-datetime-label");
     const submitAppointmentButton = document.getElementById("submit-appointment");
     const cancelAppointmentButton = document.getElementById("cancel-appointment");
     const deleteAppointmentButton = document.getElementById("delete-appointment");
+    // Grab elements from the main modal
+    const recurrenceCheckbox = document.getElementById("appointment-recurrence-checkbox");
+    const recurrenceOptionsContainer = document.getElementById("recurrence-options");
+    const recurrencePreset = document.getElementById("appointment-recurrence-preset");
+    const advancedRecurrenceButton = document.getElementById("advanced-recurrence-button");
+    const recurrenceEndDatetimeInput = document.getElementById("appointment-recurrence-end-datetime");
 
+    // Advanced recurrence modal elements
+    const advancedRecurrenceModalOverlay = document.getElementById("advanced-recurrence-modal-overlay");
+    const recurrenceIntervalInput = document.getElementById("recurrence-interval");
+    const recurrenceFrequencySelect = document.getElementById("recurrence-frequency");
+    const recurrenceWeekdaysDiv = document.getElementById("recurrence-weekdays");
+    const saveAdvancedRecurrenceButton = document.getElementById("save-advanced-recurrence");
+    const cancelAdvancedRecurrenceButton = document.getElementById("cancel-advanced-recurrence");
+
+    // This variable will hold the final iCal recurrence rule string.
+    let finalRecurrenceRule = null;
+
+    // Show or hide recurrence options when the checkbox changes.
+    recurrenceCheckbox.addEventListener("change", function() {
+      if (recurrenceCheckbox.checked) {
+        recurrenceOptionsContainer.style.display = "block";
+        addModal.style.maxHeight = "80vh"; // Allow scrolling if needed 
+      } else {
+        recurrenceOptionsContainer.style.display = "none";
+        recurrencePreset.value = "";
+        addModal.style.maxHeight = "600px"; // Reset to default
+        advancedRecurrenceButton.style.display = "none";
+        finalRecurrenceRule = null;
+      }
+    });
+
+    // When the user selects a preset, adjust the UI accordingly.
+    recurrencePreset.addEventListener("change", function() {
+      if (recurrencePreset.value === "custom") {
+        advancedRecurrenceButton.style.display = "inline-block";
+        finalRecurrenceRule = null; // will be set after advanced options
+        appointmentRecurrenceEndDatetimeInput.style.display = "none";
+        appointmentRecurrenceEndDatetimeInputLabel.style.display = "none";
+      } else {
+        advancedRecurrenceButton.style.display = "none";
+        appointmentRecurrenceEndDatetimeInput.style.display = "block";
+        appointmentRecurrenceEndDatetimeInputLabel.style.display = "block";
+        // For standard presets, set the recurrence rule directly.
+        switch (recurrencePreset.value) {
+          case "daily":
+            finalRecurrenceRule = "FREQ=DAILY";
+            break;
+          case "weekly":
+            finalRecurrenceRule = "FREQ=WEEKLY";
+            break;
+          case "monthly":
+            finalRecurrenceRule = "FREQ=MONTHLY";
+            break;
+          case "yearly":
+            finalRecurrenceRule = "FREQ=YEARLY";
+            break;
+          default:
+            finalRecurrenceRule = null;
+        }
+      }
+    });
+
+    // In the advanced modal, show weekdays if frequency is weekly.
+    recurrenceFrequencySelect.addEventListener("change", function() {
+      if (recurrenceFrequencySelect.value === "WEEKLY") {
+        recurrenceWeekdaysDiv.style.display = "block";
+      } else {
+        recurrenceWeekdaysDiv.style.display = "none";
+      }
+    });
+
+    // Open the advanced recurrence modal when the button is clicked.
+    advancedRecurrenceButton.addEventListener("click", function() {
+      recurrenceIntervalInput.value = 1;
+      recurrenceFrequencySelect.value = "DAILY";
+      recurrenceWeekdaysDiv.style.display = "none";
+      // Uncheck all weekday checkboxes.
+      const weekdayCheckboxes = recurrenceWeekdaysDiv.querySelectorAll("input[type='checkbox']");
+      weekdayCheckboxes.forEach(cb => cb.checked = false);
+      advancedRecurrenceModalOverlay.style.display = "flex";
+    });
+
+    // Save advanced recurrence options and generate an iCal rule.
+    saveAdvancedRecurrenceButton.addEventListener("click", function() {
+      const interval = recurrenceIntervalInput.value;
+      const freq = recurrenceFrequencySelect.value; // DAILY, WEEKLY, etc.
+      let rule = `FREQ=${freq};INTERVAL=${interval}`;
+      
+      // For weekly recurrences, check if specific weekdays were selected.
+      if (freq === "WEEKLY") {
+        const selectedDays = [];
+        const weekdayCheckboxes = recurrenceWeekdaysDiv.querySelectorAll("input[type='checkbox']");
+        weekdayCheckboxes.forEach(cb => {
+          if (cb.checked) selectedDays.push(cb.value);
+        });
+        if (selectedDays.length) {
+          rule += `;BYDAY=${selectedDays.join(",")}`;
+        }
+      }
+      
+      finalRecurrenceRule = rule;
+      advancedRecurrenceModalOverlay.style.display = "none";
+    });
+
+    // Cancel the advanced recurrence modal.
+    cancelAdvancedRecurrenceButton.addEventListener("click", function() {
+      advancedRecurrenceModalOverlay.style.display = "none";
+    });
+
+    // When opening the add modal, reset all recurrence-related fields.
     function openAddModal() {
       currentEditingAppointment = null;
       modalTitle.textContent = "Add Appointment";
       appointmentTitleInput.value = "";
       appointmentDescriptionInput.value = "";
-      // Default start time is now; default end time is 1 hour later.
+      
       const now = new Date();
       appointmentDatetimeInput.value = toDatetimeLocal(now);
       const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
       appointmentEndDatetimeInput.value = toDatetimeLocal(oneHourLater);
-      attachedNoteIds = [];  // Clear any previous attachments
+      
+      // Reset recurrence UI.
+      recurrenceCheckbox.checked = false;
+      recurrenceOptionsContainer.style.display = "none";
+      recurrencePreset.value = "";
+      advancedRecurrenceButton.style.display = "none";
+      recurrenceEndDatetimeInput.value = "";
+      finalRecurrenceRule = null;
+      
+      attachedNoteIds = [];  // Clear attached notes
       updateAttachedNotesDisplay();
       deleteAppointmentButton.style.display = "none";
       addModalOverlay.style.display = "flex";
     }
 
-
-
+    // For edit modal, prefill recurrence fields if they exist.
     function openEditModal(appt) {
       currentEditingAppointment = appt;
       modalTitle.textContent = "Edit Appointment";
       appointmentTitleInput.value = appt.title;
       appointmentDescriptionInput.value = appt.description;
-      // Pre-fill start and end datetime (trimming seconds if needed)
-      appointmentDatetimeInput.value = appt.start_datetime.slice(0, 19);
-      appointmentEndDatetimeInput.value = appt.end_datetime.slice(0, 19);
-      deleteAppointmentButton.style.display = "block";
+      // Convert to local datetime string using toDatetimeLocal()
+      appointmentDatetimeInput.value = toDatetimeLocal(new Date(appt.start_datetime));
+      appointmentEndDatetimeInput.value = toDatetimeLocal(new Date(appt.end_datetime));
       
-      // Pre-load attached notes (if any)
+      // Recurrence fields (if applicable)
+      if (appt.recurrence_rule) {
+        recurrenceCheckbox.checked = true;
+        recurrenceOptionsContainer.style.display = "block";
+        // Map simple recurrence rules to the preset if possible
+        if (appt.recurrence_rule === "FREQ=DAILY") {
+          recurrencePreset.value = "daily";
+          advancedRecurrenceButton.style.display = "none";
+        } else if (appt.recurrence_rule === "FREQ=WEEKLY") {
+          recurrencePreset.value = "weekly";
+          advancedRecurrenceButton.style.display = "none";
+        } else if (appt.recurrence_rule === "FREQ=MONTHLY") {
+          recurrencePreset.value = "monthly";
+          advancedRecurrenceButton.style.display = "none";
+        } else if (appt.recurrence_rule === "FREQ=YEARLY") {
+          recurrencePreset.value = "yearly";
+          advancedRecurrenceButton.style.display = "none";
+        } else {
+          recurrencePreset.value = "custom";
+          advancedRecurrenceButton.style.display = "inline-block";
+        }
+        finalRecurrenceRule = appt.recurrence_rule;
+        recurrenceEndDatetimeInput.value = appt.recurrence_end_date 
+          ? toDatetimeLocal(new Date(appt.recurrence_end_date)) 
+          : "";
+      } else {
+        recurrenceCheckbox.checked = false;
+        recurrenceOptionsContainer.style.display = "none";
+        recurrencePreset.value = "";
+        advancedRecurrenceButton.style.display = "none";
+        recurrenceEndDatetimeInput.value = "";
+        finalRecurrenceRule = null;
+      }
+      
+      // Pre-load attached notes.
       attachedNoteIds = [];
       if (appt.notes) {
         appt.notes.forEach(note => {
@@ -1626,21 +2089,24 @@
       }
       updateAttachedNotesDisplay();
       
+      deleteAppointmentButton.style.display = "block";
       addModalOverlay.style.display = "flex";
     }
-
 
 
     function hideAddModal() {
       addModalOverlay.style.display = "none";
     }
 
+    // When submitting, include recurrence info only if enabled.
     async function submitAppointment() {
       const sessionKey = sessionStorage.getItem("session_key");
       const title = appointmentTitleInput.value.trim();
       const description = appointmentDescriptionInput.value.trim();
       const start_datetime = appointmentDatetimeInput.value;
       const end_datetime = appointmentEndDatetimeInput.value;
+      const recurrence_rule = recurrenceCheckbox.checked ? finalRecurrenceRule : null;
+      const recurrence_end_date = recurrenceCheckbox.checked && recurrenceEndDatetimeInput.value ? recurrenceEndDatetimeInput.value : null;
       
       if (!title || !start_datetime || !end_datetime) {
         alert("Title, start time, and end time are required.");
@@ -1654,7 +2120,15 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({ title, description, start_datetime, end_datetime, note_ids: attachedNoteIds })
+            body: JSON.stringify({
+              title,
+              description,
+              start_datetime,
+              end_datetime,
+              note_ids: attachedNoteIds,
+              recurrence_rule: recurrence_rule,
+              recurrence_end_date: recurrence_end_date
+            })
           });
           if (response.status === 401) {
             showModal();
@@ -1671,7 +2145,15 @@
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({ title, description, start_datetime, end_datetime, note_ids: attachedNoteIds })
+            body: JSON.stringify({
+              title,
+              description,
+              start_datetime,
+              end_datetime,
+              note_ids: attachedNoteIds,
+              recurrence_rule: recurrence_rule,
+              recurrence_end_date: recurrence_end_date
+            })
           });
           if (response.status === 401) {
             showModal();
@@ -1688,7 +2170,6 @@
         console.error("Error submitting appointment:", error);
       }
     }
-
 
 
     async function deleteAppointment() {
@@ -1713,6 +2194,7 @@
         console.error("Error deleting appointment:", error);
       }
     }
+
     document.getElementById("floating-add-button").addEventListener("click", openAddModal);
     document.getElementById("submit-appointment").addEventListener("click", submitAppointment);
     document.getElementById("cancel-appointment").addEventListener("click", hideAddModal);
@@ -1720,8 +2202,8 @@
     addModalOverlay.addEventListener("click", (e) => {
       if (e.target === addModalOverlay) hideAddModal();
     });
-  </script>
-  <script>
+
+  
     document.getElementById("submit-credentials").addEventListener("click", async () => {
       const username = document.getElementById("username").value.trim();
       const password = document.getElementById("password").value.trim();
