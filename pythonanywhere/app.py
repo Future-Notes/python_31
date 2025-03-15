@@ -118,10 +118,13 @@ class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    # Changed: using start_datetime and adding end_datetime for a time range
     start_datetime = db.Column(db.DateTime, nullable=False)
     end_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    # New columns for recurrence:
+    recurrence_rule = db.Column(db.String(255), nullable=True)  # e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+    recurrence_end_date = db.Column(db.DateTime, nullable=True)  # Optional: limits the recurrence
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
     notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
@@ -134,8 +137,11 @@ class Appointment(db.Model):
             "start_datetime": self.start_datetime.isoformat(),
             "end_datetime": self.end_datetime.isoformat(),
             "user_id": self.user_id,
+            "recurrence_rule": self.recurrence_rule,
+            "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
             "notes": [note.to_dict() for note in self.notes]
         }
+
 
 # Many-to-Many Association Table (Appointments <-> Notes)
 appointment_note = db.Table(
@@ -844,6 +850,8 @@ def create_appointment():
     description = data.get('description', '')
     start_datetime_str = data.get('start_datetime')
     end_datetime_str = data.get('end_datetime')
+    recurrence_rule = data.get('recurrence_rule')  # New: optional recurrence rule (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR")
+    recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional recurrence end date
     note_ids = data.get('note_ids', [])  # List of note IDs to attach
 
     if not title or not start_datetime_str or not end_datetime_str:
@@ -857,17 +865,26 @@ def create_appointment():
 
     if end_datetime <= start_datetime:
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
-    
+
     if end_datetime.date() != start_datetime.date():
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
+    # Parse the optional recurrence_end_date if provided
+    recurrence_end_date = None
+    if recurrence_end_date_str:
+        try:
+            recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
+        except ValueError:
+            return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
 
     new_appointment = Appointment(
         title=title,
         description=description,
         start_datetime=start_datetime,
         end_datetime=end_datetime,
-        user_id=g.user_id
+        user_id=g.user_id,
+        recurrence_rule=recurrence_rule,          # Set recurrence rule if provided
+        recurrence_end_date=recurrence_end_date     # Set recurrence end date if provided
     )
 
     # Attach existing notes if provided
@@ -897,6 +914,8 @@ def update_appointment(appointment_id):
     description = data.get('description')
     start_datetime_str = data.get('start_datetime')
     end_datetime_str = data.get('end_datetime')
+    recurrence_rule = data.get('recurrence_rule')  # New: optional update for recurrence rule
+    recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional update for recurrence end date
     note_ids = data.get('note_ids')  # Optional update to attached notes
 
     if title:
@@ -921,10 +940,22 @@ def update_appointment(appointment_id):
     # Ensure the updated times are valid
     if appointment.end_datetime <= appointment.start_datetime:
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
-    
+
     if appointment.end_datetime.date() != appointment.start_datetime.date():
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
+    # Update recurrence rule if provided (can be set to None to remove recurrence)
+    if 'recurrence_rule' in data:
+        appointment.recurrence_rule = recurrence_rule
+
+    if 'recurrence_end_date' in data:
+        if recurrence_end_date_str:
+            try:
+                appointment.recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
+            except ValueError:
+                return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
+        else:
+            appointment.recurrence_end_date = None
 
     # Update attached notes if provided
     if note_ids is not None:
