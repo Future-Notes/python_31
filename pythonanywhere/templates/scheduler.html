@@ -537,6 +537,7 @@
     /* Container for recurrence options inside the main modal */
     #recurrence-options {
       margin-top: 10px;
+      margin-bottom: 15px;
       padding: 10px;
       border: 1px solid #424242;
       border-radius: 8px;
@@ -571,10 +572,48 @@
       background-color: #616161;
     }
 
-    /* Recurrence checkbox styling */
-    #appointment-recurrence-checkbox {
-      margin-right: 5px;
+    /* Container to arrange checkboxes side by side */
+    #add-modal .checkbox-container {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      margin-bottom: 10px;
     }
+
+    /* Custom styling for checkboxes inside #add-modal */
+    #add-modal input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      background-color: #2E2E2E; /* Same gray as inputs */
+      border: 1px solid #424242;
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 8px;
+      vertical-align: middle;
+      position: relative;
+    }
+
+    /* Change background and border when checked */
+    #add-modal input[type="checkbox"]:checked {
+      background-color: #616161;
+      border-color: #616161;
+    }
+
+    /* Add a custom checkmark when checked */
+    #add-modal input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 6px;
+      width: 5px;
+      height: 10px;
+      border: solid #E0E0E0;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
 
     /* Ensuring labels (including the one wrapping the recurrence checkbox) are styled */
     #add-modal label {
@@ -838,6 +877,43 @@
       box-sizing: border-box;     /* Consistent sizing */
     }
 
+    /* Container for the All-Day Appointment Row */
+    #all-day-appointments {
+      position: relative;
+      width: 100%;
+      margin-bottom: 10px;
+      display: none; /* Hidden by default – JS will toggle it */
+      background-color: #3a3a3a; /* Add a background color to make it visible */
+      color: #e0e0e0; /* Text color */
+      border-radius: 4px; /* Slightly round the corners */
+      font-size: 14px; /* Adjust font size */
+      text-align: center; /* Center-align text */
+    }
+
+    /* Style for each All-Day Appointment Block */
+    .all-day-appointment {
+      position: absolute;
+      background-color: #616161;  /* Matches your theme */
+      color: #fff;
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin: 5px 0;
+      box-sizing: border-box;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .delete-btn {
+      background-color: #cc4f4f !important;
+    }
+
+    .delete-btn:hover {
+      background-color: #d9534f !important;
+    }
+
+
   </style>
 </head>
 <body>
@@ -907,6 +983,10 @@
         <button id="today-button">Today</button>
         <button id="next-week">&rarr;</button>
       </div>
+      <!-- All Day Appointments Row (dynamically shown/hidden) -->
+      <div id="all-day-appointments">
+        <!-- All-day appointments will be rendered here -->
+      </div>
       <!-- Desktop 7-Day Calendar (unchanged) -->
       <div id="calendar-container">
         <!-- Calendar grid will be generated here -->
@@ -927,11 +1007,17 @@
       <!-- End time input -->
       <input id="appointment-end-datetime" type="datetime-local" step="1" placeholder="End Time" />
 
-      <!-- Recurrence checkbox -->
-      <label>
-        <input type="checkbox" id="appointment-recurrence-checkbox">
-        Recurring Appointment
-      </label>
+      <div class="checkbox-container">
+        <label>
+          <input type="checkbox" id="appointment-all-day">
+          All Day Appointment
+        </label>
+        <label>
+          <input type="checkbox" id="appointment-recurrence-checkbox">
+          Recurring Appointment
+        </label>
+      </div>
+      
       
       <!-- Recurrence options container (hidden by default) -->
       <div id="recurrence-options" style="display: none; margin-top: 10px;">
@@ -959,7 +1045,7 @@
       <button id="attach-note-button">Attach note(s)</button>
       <button id="submit-appointment">Submit</button>
       <button id="cancel-appointment">Cancel</button>
-      <button id="delete-appointment" style="display:none;">Delete</button>
+      <button id="delete-appointment" style="display:none;" class="delete-btn">Delete</button>
     </div>
     <!-- Draggable Notes Panel -->
     <div id="notes-panel">
@@ -1100,7 +1186,7 @@
     cancelAttachNoteButton.addEventListener("click", () => {
       const notesPanel = document.getElementById("notes-panel");
       const dropzone = document.getElementById("attached-notes-dropzone");
-      attachNoteButton.style.display = "block";
+      attachNoteButton.style.display = "inline-block";
       notesPanel.style.display = "none";
       dropzone.style.display = "none";
     });
@@ -1153,42 +1239,56 @@
     function populateNotesPanel() {
       const notesList = document.getElementById("notes-list");
       notesList.innerHTML = "";
+
+      if (notesData.length === 0) {
+      // Create a <li> element indicating no notes
+      const noNotesItem = document.createElement("li");
+      noNotesItem.className = "draggable-note empty-note";
+      noNotesItem.innerHTML = `
+        <h3>No Notes Available</h3>
+        <span>You currently have no notes.</span>
+        <button onclick="window.location.href='/index'" style="margin-top: 10px; padding: 8px 12px; background-color: #424242; color: #e0e0e0; border: none; border-radius: 4px; cursor: pointer;">Create a note</button>
+      `;
+      notesList.appendChild(noNotesItem);
+      return;
+      }
+
       notesData.forEach(note => {
-        // Create a <li> element similar to the main notes page
-        const noteItem = document.createElement("li");
-        // Apply the 'empty-note' class if there's no note content
-        noteItem.className = note.note ? "draggable-note" : "draggable-note empty-note";
+      // Create a <li> element similar to the main notes page
+      const noteItem = document.createElement("li");
+      // Apply the 'empty-note' class if there's no note content
+      noteItem.className = note.note ? "draggable-note" : "draggable-note empty-note";
 
-        // Set the click event to open the view menu
-        noteItem.onclick = function() {
-          showViewMenu();
-        };
+      // Set the click event to open the view menu
+      noteItem.onclick = function() {
+        showViewMenu();
+      };
 
-        // Build the inner HTML (without the share button)
-        const titleHTML = `<h3>${note.title || "Untitled"}</h3>`;
-        const noteText = note.note
-          ? note.note.replace(/\n/g, "<br>").substring(0, 100) +
-            (note.note.length > 100 ? "..." : "")
-          : "Empty note";
-        const noteContentHTML = `<span>${noteText}</span>`;
-        const tagHTML = note.tag ? `<span class="note-tag">${note.tag}</span>` : "";
-        
-        noteItem.innerHTML = titleHTML + noteContentHTML + tagHTML;
+      // Build the inner HTML (without the share button)
+      const titleHTML = `<h3>${note.title || "Untitled"}</h3>`;
+      const noteText = note.note
+        ? note.note.replace(/\n/g, "<br>").substring(0, 100) +
+        (note.note.length > 100 ? "..." : "")
+        : "Empty note";
+      const noteContentHTML = `<span>${noteText}</span>`;
+      const tagHTML = note.tag ? `<span class="note-tag">${note.tag}</span>` : "";
+      
+      noteItem.innerHTML = titleHTML + noteContentHTML + tagHTML;
 
-        // Set up for dragging
-        noteItem.dataset.noteId = note.id;
-        noteItem.draggable = true;
-        noteItem.addEventListener("dragstart", (e) => {
-          e.dataTransfer.setData("text/plain", note.id);
-        });
-        noteItem.addEventListener("touchstart", () => {
-          noteItem.classList.add("touch-dragging");
-        });
-        noteItem.addEventListener("touchend", () => {
-          noteItem.classList.remove("touch-dragging");
-        });
+      // Set up for dragging
+      noteItem.dataset.noteId = note.id;
+      noteItem.draggable = true;
+      noteItem.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", note.id);
+      });
+      noteItem.addEventListener("touchstart", () => {
+        noteItem.classList.add("touch-dragging");
+      });
+      noteItem.addEventListener("touchend", () => {
+        noteItem.classList.remove("touch-dragging");
+      });
 
-        notesList.appendChild(noteItem);
+      notesList.appendChild(noteItem);
       });
     }
 
@@ -1472,36 +1572,37 @@
     // Render appointments into the grid
     function renderAppointments() {
       console.log("renderAppointments called. Appointments count:", appointmentsData.length);
-      // Remove previously rendered appointment blocks
+      // Remove previously rendered appointment blocks from both the main calendar and the all-day container.
       document.querySelectorAll(".appointment-abs").forEach(el => el.remove());
+      document.querySelectorAll(".all-day-appointment").forEach(el => el.remove());
 
       const container = document.getElementById("calendar-container");
+      const allDayContainer = document.getElementById("all-day-appointments");
+      // Clear any existing all-day appointments.
+      allDayContainer.innerHTML = "";
 
-      // Get header height from the table header (thead)
+      // Get header height from the calendar table header, and hour row height.
       const header = document.querySelector("#calendar-table thead");
       const headerHeight = header ? header.offsetHeight : 0;
-
-      // Determine the height of one hour row (using the first tbody row)
       const firstRow = document.querySelector("#calendar-table tbody tr");
       const hourCellHeight = firstRow ? firstRow.offsetHeight : 80;
 
-      // Define the visible range.
+      // Determine the visible range.
       // For week view, we show 7 days; for day view, 1 day.
       const visibleDays = currentView === 'day' ? 1 : 7;
       const currentWeekEnd = new Date(currentWeekStart.getTime() + visibleDays * 24 * 60 * 60 * 1000);
 
-      // Build a new array that expands recurring appointments only within the visible range.
-      let renderedAppointments = [];
+      // Separate appointments into two groups.
+      let normalAppointments = [];
+      let allDayAppointments = [];
 
       appointmentsData.forEach(appt => {
         // If the appointment has a recurrence rule, expand it.
         if (appt.recurrence_rule) {
-          // For recurring appointments, use the appointment's original start and end.
+          // Use the appointment's original start and end.
           let originalStart = new Date(appt.start_datetime);
           let originalEnd = new Date(appt.end_datetime);
-
-          // Determine the recurrence cap: if no recurrence_end_date provided,
-          // only render occurrences in the current view.
+          // If no recurrence_end_date, limit expansion to the visible range.
           let recurrenceCap = appt.recurrence_end_date ? new Date(appt.recurrence_end_date) : currentWeekEnd;
 
           // Parse a simple subset of iCal rules.
@@ -1517,25 +1618,24 @@
             }
           });
 
-          // For our purposes, generate occurrences only within [currentWeekStart, currentWeekEnd).
           if (freq === "DAILY") {
-            // Start at the original occurrence.
             let occStart = new Date(originalStart);
             let occEnd = new Date(originalEnd);
-            // Continue until occStart is outside the visible range or past the recurrence cap.
             while (occStart < currentWeekEnd && occStart < recurrenceCap) {
               if (occStart >= currentWeekStart) {
                 let occ = Object.assign({}, appt);
                 occ.start_datetime = occStart.toISOString();
                 occ.end_datetime = occEnd.toISOString();
-                renderedAppointments.push(occ);
+                if (appt.is_all_day) {
+                  allDayAppointments.push(occ);
+                } else {
+                  normalAppointments.push(occ);
+                }
               }
-              // Increment by interval days.
               occStart = new Date(occStart.getTime() + interval * 24 * 60 * 60 * 1000);
               occEnd = new Date(occEnd.getTime() + interval * 24 * 60 * 60 * 1000);
             }
           } else if (freq === "WEEKLY") {
-            // For weekly recurrence we support an optional BYDAY and INTERVAL.
             let dayIterator = new Date(currentWeekStart);
             while (dayIterator < currentWeekEnd) {
               let dayName = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][dayIterator.getDay()];
@@ -1550,7 +1650,7 @@
                 }
               }
               if (dayMatches) {
-                // Calculate the week offset based on the Monday of each week.
+                // Calculate the week offset.
                 let candidateWeekStart = getMonday(dayIterator);
                 let originalWeekStart = getMonday(originalStart);
                 let diffWeeks = Math.round((candidateWeekStart - originalWeekStart) / (7 * 24 * 60 * 60 * 1000));
@@ -1560,42 +1660,118 @@
                   let occEnd = new Date(dayIterator);
                   occEnd.setHours(originalEnd.getHours(), originalEnd.getMinutes(), originalEnd.getSeconds());
                   if (occStart < recurrenceCap) {
-                    renderedAppointments.push(Object.assign({}, appt, {
+                    let occ = Object.assign({}, appt, {
                       start_datetime: occStart.toISOString(),
                       end_datetime: occEnd.toISOString()
-                    }));
+                    });
+                    if (appt.is_all_day) {
+                      allDayAppointments.push(occ);
+                    } else {
+                      normalAppointments.push(occ);
+                    }
                   }
                 }
               }
               // Move to the next day.
               dayIterator = new Date(dayIterator.getTime() + 24 * 60 * 60 * 1000);
-            } 
-
-
+            }
           } else {
-            // For other frequencies (monthly, yearly) we simply render the original appointment
-            // if it falls within the visible range.
+            // For other frequencies (monthly, yearly) render the original appointment if in range.
             if (originalStart >= currentWeekStart && originalStart < currentWeekEnd) {
-              renderedAppointments.push(appt);
+              if (appt.is_all_day) {
+                allDayAppointments.push(appt);
+              } else {
+                normalAppointments.push(appt);
+              }
             }
           }
         } else {
-          // Non-recurring appointment: render only if it falls within the visible range.
+          // Non-recurring appointment.
           let startDate = new Date(appt.start_datetime);
           if (startDate >= currentWeekStart && startDate < currentWeekEnd) {
-            renderedAppointments.push(appt);
+            if (appt.is_all_day) {
+              allDayAppointments.push(appt);
+            } else {
+              normalAppointments.push(appt);
+            }
           }
         }
       });
 
-      // Group appointments by day index (0–6) relative to currentWeekStart.
-      const appointmentsByDay = {};
-      renderedAppointments.forEach(appt => {
+      // --- Render All-Day Appointments ---
+      // Group all-day appointments by day index (0–6) relative to currentWeekStart.
+      const allDayAppointmentsByDay = {};
+      allDayAppointments.forEach(appt => {
         const startDate = new Date(appt.start_datetime);
-        const endDate = new Date(appt.end_datetime);
-        // Save parsed dates for further calculations.
-        appt._startDate = startDate;
-        appt._endDate = endDate;
+        const diffTime = startDate - currentWeekStart;
+        const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        if (dayIndex >= 0 && dayIndex < visibleDays) {
+          if (!allDayAppointmentsByDay[dayIndex]) {
+            allDayAppointmentsByDay[dayIndex] = [];
+          }
+          allDayAppointmentsByDay[dayIndex].push(appt);
+        }
+      });
+
+      // Show or hide the all-day container.
+      if (allDayAppointments.length > 0) {
+        allDayContainer.style.display = "block";
+        allDayContainer.style.marginBottom = `${30 * allDayAppointments.length}px`;
+      } else {
+        allDayContainer.style.display = "none";
+        allDayContainer.style.marginBottom = "0";
+      }
+
+      // For each day, render the all-day appointment blocks.
+      Object.keys(allDayAppointmentsByDay).forEach(dayIndex => {
+        const dayAppts = allDayAppointmentsByDay[dayIndex];
+        // Sort appointments by start time.
+        dayAppts.sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+        // Determine the day cell's position in the calendar grid.
+        const dayCell = document.querySelector(`#calendar-table td[data-day="${dayIndex}"][data-hour="0"]`);
+        if (!dayCell) return;
+        const cellLeft = dayCell.offsetLeft;
+        const cellWidth = dayCell.offsetWidth;
+        
+        // Render each appointment for that day; stack them vertically.
+        dayAppts.forEach((appt, index) => {
+          const apptDiv = document.createElement("div");
+          apptDiv.className = "all-day-appointment";
+          apptDiv.style.position = "absolute";
+          // Use a fixed height (e.g., 22px) plus a margin for each all-day appointment.
+          const apptHeight = 22;
+          const margin = 2;
+          apptDiv.style.top = (index * (apptHeight + margin)) + "px";
+          apptDiv.style.left = cellLeft + "px";
+          apptDiv.style.width = cellWidth + "px";
+          apptDiv.style.height = apptHeight + "px";
+          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.color = "#fff";
+          apptDiv.style.borderRadius = "4px";
+          apptDiv.style.boxSizing = "border-box";
+          apptDiv.style.padding = "2px 4px";
+          apptDiv.style.overflow = "hidden";
+          apptDiv.style.zIndex = "15";  // render above main calendar appointments
+          apptDiv.style.cursor = "pointer";
+          
+          // Only show the title.
+          apptDiv.textContent = appt.title;
+          
+          // Click handler to open the edit modal.
+          apptDiv.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openEditModal(appt);
+          });
+          
+          allDayContainer.appendChild(apptDiv);
+        });
+      });
+
+      // --- Render Normal Appointments (Non-All-Day) ---
+      // Group normal appointments by day index.
+      const appointmentsByDay = {};
+      normalAppointments.forEach(appt => {
+        const startDate = new Date(appt.start_datetime);
         const diffTime = startDate - currentWeekStart;
         const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         if (dayIndex >= 0 && dayIndex < visibleDays) {
@@ -1604,15 +1780,17 @@
           }
           appointmentsByDay[dayIndex].push(appt);
         }
+        // Save parsed dates for further calculations.
+        appt._startDate = new Date(appt.start_datetime);
+        appt._endDate = new Date(appt.end_datetime);
       });
 
-      // Process each day.
       Object.keys(appointmentsByDay).forEach(dayIndex => {
         const dayAppointments = appointmentsByDay[dayIndex];
         // Sort by start time.
         dayAppointments.sort((a, b) => a._startDate - b._startDate);
 
-        // Cluster appointments that overlap in time.
+        // Cluster overlapping appointments.
         let clusters = [];
         let currentCluster = [];
         let clusterEnd = null;
@@ -1637,10 +1815,9 @@
           clusters.push(currentCluster);
         }
 
-        // For each cluster, assign column indices and then update each appointment with the max column count.
+        // For each cluster, assign column indices and update with total column count.
         clusters.forEach(cluster => {
-          let columns = []; // Array to track the end time of the last appointment in each column.
-          // First pass: assign a column index greedily.
+          let columns = [];
           cluster.forEach(appt => {
             let placed = false;
             for (let i = 0; i < columns.length; i++) {
@@ -1656,19 +1833,18 @@
               columns.push(appt._endDate);
             }
           });
-          // Second pass: update every appointment in this cluster with the same total column count.
           cluster.forEach(appt => {
             appt._totalCols = columns.length;
           });
         });
 
-        // Determine the horizontal boundaries for this day column from the reference cell.
+        // Determine the horizontal boundaries for this day column.
         const dayCell = document.querySelector(`#calendar-table td[data-day="${dayIndex}"][data-hour="0"]`);
         if (!dayCell) return;
         const cellLeft = dayCell.offsetLeft;
         const cellWidth = dayCell.offsetWidth;
 
-        // Render each appointment in this day.
+        // Render each normal appointment.
         dayAppointments.forEach(appt => {
           // Compute vertical positioning.
           const startHourFraction = appt._startDate.getHours() + (appt._startDate.getMinutes() / 60);
@@ -1676,7 +1852,7 @@
           const top = headerHeight + startHourFraction * hourCellHeight;
           const height = durationHours * hourCellHeight;
 
-          // Compute responsive width and horizontal offset based on overlapping columns.
+          // Compute width and horizontal offset based on overlapping columns.
           const totalCols = appt._totalCols || 1;
           const colWidth = cellWidth / totalCols;
           const left = cellLeft + appt._colIndex * colWidth;
@@ -1726,6 +1902,7 @@
         });
       });
     }
+
 
 
     // Debounce function to optimize performance
@@ -1902,6 +2079,7 @@
     const deleteAppointmentButton = document.getElementById("delete-appointment");
     // Grab elements from the main modal
     const recurrenceCheckbox = document.getElementById("appointment-recurrence-checkbox");
+    const appointmentAllDayCheckbox = document.getElementById("appointment-all-day");
     const recurrenceOptionsContainer = document.getElementById("recurrence-options");
     const recurrencePreset = document.getElementById("appointment-recurrence-preset");
     const advancedRecurrenceButton = document.getElementById("advanced-recurrence-button");
@@ -1917,6 +2095,41 @@
 
     // This variable will hold the final iCal recurrence rule string.
     let finalRecurrenceRule = null;
+
+    let originalStartDatetime = "";
+    let originalEndDatetime = "";
+
+
+    function updateDatetimeInputsForAllDay() {
+      if (appointmentAllDayCheckbox.checked) {
+        // Save the current datetime values if not already stored.
+        if (!originalStartDatetime) {
+          originalStartDatetime = appointmentDatetimeInput.value;
+        }
+        if (!originalEndDatetime) {
+          originalEndDatetime = appointmentEndDatetimeInput.value;
+        }
+        // Convert to date-only values.
+        const dateStart = originalStartDatetime.split("T")[0];
+        const dateEnd = originalEndDatetime.split("T")[0];
+        
+        // Change input types and set date-only values.
+        appointmentDatetimeInput.type = "date";
+        appointmentDatetimeInput.value = dateStart;
+        appointmentEndDatetimeInput.type = "date";
+        appointmentEndDatetimeInput.value = dateEnd;
+      } else {
+        // Revert to the original datetime values.
+        appointmentDatetimeInput.type = "datetime-local";
+        appointmentDatetimeInput.value = originalStartDatetime;
+        appointmentEndDatetimeInput.type = "datetime-local";
+        appointmentEndDatetimeInput.value = originalEndDatetime;
+      }
+    }
+
+    appointmentAllDayCheckbox.addEventListener("change", updateDatetimeInputsForAllDay);
+
+
 
     // Show or hide recurrence options when the checkbox changes.
     recurrenceCheckbox.addEventListener("change", function() {
@@ -2018,11 +2231,23 @@
       appointmentDescriptionInput.value = "";
       
       const now = new Date();
-      appointmentDatetimeInput.value = toDatetimeLocal(now);
-      const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
-      appointmentEndDatetimeInput.value = toDatetimeLocal(oneHourLater);
+      const defaultStart = toDatetimeLocal(now);
+      const defaultEnd = toDatetimeLocal(new Date(now.getTime() + 60 * 60 * 1000));
       
-      // Reset recurrence UI.
+      // Set the datetime inputs with complete datetime-local values
+      appointmentDatetimeInput.value = defaultStart;
+      appointmentEndDatetimeInput.value = defaultEnd;
+      
+      // Save these original values for restoration if needed.
+      originalStartDatetime = defaultStart;
+      originalEndDatetime = defaultEnd;
+      
+      // Reset the all-day checkbox and input types.
+      appointmentAllDayCheckbox.checked = false;
+      appointmentDatetimeInput.type = "datetime-local";
+      appointmentEndDatetimeInput.type = "datetime-local";
+      
+      // Reset recurrence and note UI as before...
       recurrenceCheckbox.checked = false;
       recurrenceOptionsContainer.style.display = "none";
       recurrencePreset.value = "";
@@ -2036,21 +2261,42 @@
       addModalOverlay.style.display = "flex";
     }
 
+
     // For edit modal, prefill recurrence fields if they exist.
     function openEditModal(appt) {
       currentEditingAppointment = appt;
       modalTitle.textContent = "Edit Appointment";
       appointmentTitleInput.value = appt.title;
       appointmentDescriptionInput.value = appt.description;
-      // Convert to local datetime string using toDatetimeLocal()
-      appointmentDatetimeInput.value = toDatetimeLocal(new Date(appt.start_datetime));
-      appointmentEndDatetimeInput.value = toDatetimeLocal(new Date(appt.end_datetime));
       
-      // Recurrence fields (if applicable)
+      // Convert to local datetime string using toDatetimeLocal()
+      const apptStart = toDatetimeLocal(new Date(appt.start_datetime));
+      const apptEnd = toDatetimeLocal(new Date(appt.end_datetime));
+      appointmentDatetimeInput.value = apptStart;
+      appointmentEndDatetimeInput.value = apptEnd;
+      
+      // Save these original values
+      originalStartDatetime = apptStart;
+      originalEndDatetime = apptEnd;
+      
+      // Reset all-day checkbox if appointment is not marked as all-day.
+      // (You can adjust this if you want to show a checked box for all-day appointments.)
+      appointmentAllDayCheckbox.checked = appt.is_all_day ? true : false;
+      if (appt.is_all_day) {
+        // Convert to date-only view.
+        appointmentDatetimeInput.type = "date";
+        appointmentEndDatetimeInput.type = "date";
+        appointmentDatetimeInput.value = apptStart.split("T")[0];
+        appointmentEndDatetimeInput.value = apptEnd.split("T")[0];
+      } else {
+        appointmentDatetimeInput.type = "datetime-local";
+        appointmentEndDatetimeInput.type = "datetime-local";
+      }
+      
+      // Set recurrence-related fields as before…
       if (appt.recurrence_rule) {
         recurrenceCheckbox.checked = true;
         recurrenceOptionsContainer.style.display = "block";
-        // Map simple recurrence rules to the preset if possible
         if (appt.recurrence_rule === "FREQ=DAILY") {
           recurrencePreset.value = "daily";
           advancedRecurrenceButton.style.display = "none";
@@ -2069,7 +2315,7 @@
         }
         finalRecurrenceRule = appt.recurrence_rule;
         recurrenceEndDatetimeInput.value = appt.recurrence_end_date 
-          ? toDatetimeLocal(new Date(appt.recurrence_end_date)) 
+          ? toDatetimeLocal(new Date(appt.recurrence_end_date))
           : "";
       } else {
         recurrenceCheckbox.checked = false;
@@ -2089,9 +2335,10 @@
       }
       updateAttachedNotesDisplay();
       
-      deleteAppointmentButton.style.display = "block";
+      deleteAppointmentButton.style.display = "inline-block";
       addModalOverlay.style.display = "flex";
     }
+
 
 
     function hideAddModal() {
@@ -2103,32 +2350,52 @@
       const sessionKey = sessionStorage.getItem("session_key");
       const title = appointmentTitleInput.value.trim();
       const description = appointmentDescriptionInput.value.trim();
-      const start_datetime = appointmentDatetimeInput.value;
-      const end_datetime = appointmentEndDatetimeInput.value;
+
+      let start_datetime = appointmentDatetimeInput.value;
+      let end_datetime = appointmentEndDatetimeInput.value;
+      const is_all_day = appointmentAllDayCheckbox.checked;
+      
+      // If it's all-day, and the current value is a date, format it as a datetime.
+      if (is_all_day) {
+        if (!start_datetime.includes("T")) {
+          start_datetime = start_datetime + "T00:00:00";
+        }
+        if (!end_datetime.includes("T")) {
+          end_datetime = end_datetime + "T23:59:59";
+        }
+      }
+      
       const recurrence_rule = recurrenceCheckbox.checked ? finalRecurrenceRule : null;
-      const recurrence_end_date = recurrenceCheckbox.checked && recurrenceEndDatetimeInput.value ? recurrenceEndDatetimeInput.value : null;
+      const recurrence_end_date = recurrenceCheckbox.checked && recurrenceEndDatetimeInput.value
+        ? recurrenceEndDatetimeInput.value
+        : null;
       
       if (!title || !start_datetime || !end_datetime) {
         alert("Title, start time, and end time are required.");
         return;
       }
+      
+      const payload = {
+        title,
+        description,
+        start_datetime,
+        end_datetime,
+        note_ids: attachedNoteIds,
+        recurrence_rule,
+        recurrence_end_date,
+        is_all_day
+      };
+
       try {
+        let response;
         if (currentEditingAppointment) {
-          const response = await fetch(`/appointments/${currentEditingAppointment.id}`, {
+          response = await fetch(`/appointments/${currentEditingAppointment.id}`, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({
-              title,
-              description,
-              start_datetime,
-              end_datetime,
-              note_ids: attachedNoteIds,
-              recurrence_rule: recurrence_rule,
-              recurrence_end_date: recurrence_end_date
-            })
+            body: JSON.stringify(payload)
           });
           if (response.status === 401) {
             showModal();
@@ -2139,21 +2406,13 @@
             return;
           }
         } else {
-          const response = await fetch("/appointments", {
+          response = await fetch("/appointments", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${sessionKey}`
             },
-            body: JSON.stringify({
-              title,
-              description,
-              start_datetime,
-              end_datetime,
-              note_ids: attachedNoteIds,
-              recurrence_rule: recurrence_rule,
-              recurrence_end_date: recurrence_end_date
-            })
+            body: JSON.stringify(payload)
           });
           if (response.status === 401) {
             showModal();
@@ -2170,6 +2429,8 @@
         console.error("Error submitting appointment:", error);
       }
     }
+
+
 
 
     async function deleteAppointment() {
