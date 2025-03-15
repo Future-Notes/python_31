@@ -122,9 +122,11 @@ class Appointment(db.Model):
     end_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    # New columns for recurrence:
-    recurrence_rule = db.Column(db.String(255), nullable=True)  # e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR"
-    recurrence_end_date = db.Column(db.DateTime, nullable=True)  # Optional: limits the recurrence
+    # New columns
+    recurrence_rule = db.Column(db.String(255), nullable=True)
+    recurrence_end_date = db.Column(db.DateTime, nullable=True)
+
+    is_all_day = db.Column(db.Boolean, nullable=False, default=False)  # New all-day field
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
     notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
@@ -139,6 +141,7 @@ class Appointment(db.Model):
             "user_id": self.user_id,
             "recurrence_rule": self.recurrence_rule,
             "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
+            "is_all_day": self.is_all_day,  # Include all-day flag in response
             "notes": [note.to_dict() for note in self.notes]
         }
 
@@ -850,50 +853,78 @@ def create_appointment():
     description = data.get('description', '')
     start_datetime_str = data.get('start_datetime')
     end_datetime_str = data.get('end_datetime')
-    recurrence_rule = data.get('recurrence_rule')  # New: optional recurrence rule (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR")
-    recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional recurrence end date
+    recurrence_rule = data.get('recurrence_rule')  # Optional recurrence rule (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR")
+    recurrence_end_date_str = data.get('recurrence_end_date')  # Optional recurrence end date
     note_ids = data.get('note_ids', [])  # List of note IDs to attach
+    is_all_day = data.get('is_all_day', False)  # Optional all-day flag
 
+    # Validate required fields
     if not title or not start_datetime_str or not end_datetime_str:
-        return jsonify({"error": "Missing required fields: title, start_datetime and end_datetime"}), 400
+        return jsonify({"error": "Missing required fields: title, start_datetime, and end_datetime"}), 400
 
+    # Validate datetime formats
     try:
         start_datetime = datetime.fromisoformat(start_datetime_str)
         end_datetime = datetime.fromisoformat(end_datetime_str)
     except ValueError:
         return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
 
+    # Validate datetime logic
     if end_datetime <= start_datetime:
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
 
     if end_datetime.date() != start_datetime.date():
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
-    # Parse the optional recurrence_end_date if provided
+    # Validate optional recurrence_end_date
     recurrence_end_date = None
     if recurrence_end_date_str:
         try:
             recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
+            if recurrence_end_date <= end_datetime:
+                return jsonify({"error": "recurrence_end_date must be after end_datetime."}), 400
         except ValueError:
             return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
 
+    # Validate note IDs
+    if note_ids:
+        if not isinstance(note_ids, list) or not all(isinstance(note_id, int) for note_id in note_ids):
+            return jsonify({"error": "note_ids must be a list of integers."}), 400
+
+        notes = Note.query.filter(Note.id.in_(note_ids), Note.user_id == g.user_id).all()
+        if len(notes) != len(note_ids):
+            return jsonify({"error": "One or more note IDs are invalid or do not belong to the user."}), 400
+
+    # Ensure title length is reasonable
+    if len(title) > 120:
+        return jsonify({"error": "Title exceeds the maximum allowed length of 120 characters."}), 400
+
+    # Ensure description length is reasonable
+    if len(description) > 1000:
+        return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
+
+    # Create the appointment
     new_appointment = Appointment(
-        title=title,
-        description=description,
+        title=title.strip(),
+        description=description.strip(),
         start_datetime=start_datetime,
         end_datetime=end_datetime,
         user_id=g.user_id,
-        recurrence_rule=recurrence_rule,          # Set recurrence rule if provided
-        recurrence_end_date=recurrence_end_date     # Set recurrence end date if provided
+        recurrence_rule=recurrence_rule.strip() if recurrence_rule else None,
+        recurrence_end_date=recurrence_end_date,
+        is_all_day=bool(is_all_day)  # Ensure it's a boolean
     )
 
-    # Attach existing notes if provided
+    # Attach notes if provided
     if note_ids:
-        notes = Note.query.filter(Note.id.in_(note_ids)).all()
         new_appointment.notes.extend(notes)
 
-    db.session.add(new_appointment)
-    db.session.commit()
+    try:
+        db.session.add(new_appointment)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred while creating the appointment: {str(e)}"}), 500
 
     return jsonify({
         "message": "Appointment created successfully",
@@ -922,6 +953,10 @@ def update_appointment(appointment_id):
         appointment.title = title
     if description is not None:
         appointment.description = description
+
+    if 'is_all_day' in data:
+        appointment.is_all_day = bool(data['is_all_day'])
+
 
     if start_datetime_str:
         try:
