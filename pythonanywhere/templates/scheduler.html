@@ -830,14 +830,22 @@
       #calendar-table th.hour-label {
       min-width: 0; /* Adjust for smaller screens */
       }
-      .today-day {
-      border: 1px solid #424242 !important; /* Default border for smaller screens */
-      border-radius: 4px;        /* Optional: slightly round the corners */
-      box-sizing: border-box;    /* Ensure the border doesn't affect cell dimensions */
+      #calendar-table th, #calendar-table td {
+      min-width: 15px; /* Adjust for smaller screens */
+      width: 20px; /* Adjust for smaller screens */
+      height: 60px; /* Adjust for smaller screens */
       }
-      #calendar-container {
-      min-width: 0 !important; /* Allow it to shrink on smaller screens */
-      max-width: 600px;
+      .hour-label {
+        width:20px; /* Adjust font size for smaller screens */
+      }
+      main {
+        padding: 0; /* Remove padding on smaller screens */
+      }
+      #calendar-table {
+        width:60%;
+      }
+      .appointment-abs {
+        font-size: 8px; /* Adjust font size for smaller screens */
       }
     }
 
@@ -1469,73 +1477,6 @@
       displayDateInButtonRowDiv(); // Display the current week start date in the button row
       
       console.log("Calendar grid generated.");
-    }
-
-    function generateCalendarDayView(dayDate) {
-      console.log("generateCalendarDayView called with dayDate:", dayDate);
-      let table = '<table id="calendar-table">';
-      table += "<thead><tr><th class='hour-label'></th>";
-
-      const today = new Date();
-      const currentHour = today.getHours();
-
-      // Create the header for the single day
-      const options = { weekday: 'short', month: 'short', day: 'numeric' };
-      const isToday = (new Date(dayDate)).toDateString() === today.toDateString();
-      table += `<th${isToday ? ' class="today-day"' : ''}>${new Date(dayDate).toLocaleDateString(undefined, options)}</th>`;
-      table += "</tr></thead><tbody>";
-
-      // Generate 24 rows for each hour of the day
-      for (let hour = 0; hour < 24; hour++) {
-        const isCurrentHour = isToday && hour === currentHour;
-        table += `<tr><th class='hour-label${isCurrentHour ? ' current-hour' : ''}'>${hour}:00</th>`;
-
-        // Only one cell per hour for the single day view
-        const classes = [];
-        if (isToday) classes.push('today-day');
-        if (isCurrentHour) classes.push('current-hour');
-        const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
-        
-        table += `<td data-day="0" data-hour="${hour}"${classAttr}></td>`;
-        table += "</tr>";
-      }
-      table += "</tbody></table>";
-
-      // Insert the generated table into the container
-      document.getElementById("calendar-container").innerHTML = table;
-
-      // Scroll to the current hour
-      const container = document.getElementById("calendar-container");
-      const hourCellHeight = container.scrollHeight / 24;
-      container.scrollTop = hourCellHeight * currentHour - container.clientHeight / 2;
-
-      // Attach click event handlers to each cell to open the appointment modal
-      document.querySelectorAll("#calendar-table td").forEach(cell => {
-        cell.addEventListener("click", (e) => {
-          // Prevent triggering if an appointment div was clicked
-          if (e.target.classList.contains("appointment")) return;
-
-          const hour = parseInt(cell.getAttribute("data-hour"));
-          
-          // Create the cell's date/time using the provided dayDate
-          const base = new Date(dayDate);
-          const cellDate = new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, 0, 0, 0);
-          console.log("Cell clicked - hour:", hour, "computed cellDate:", cellDate);
-
-          // Autofill the datetime input with the computed value
-          appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
-          console.log("Autofilled datetime input value:", appointmentDatetimeInput.value);
-
-          // Clear other fields and open the add modal
-          appointmentTitleInput.value = "";
-          appointmentDescriptionInput.value = "";
-          currentEditingAppointment = null;
-          modalTitle.textContent = "Add Appointment";
-          deleteAppointmentButton.style.display = "none";
-          addModalOverlay.style.display = "flex";
-        });
-      });
-      console.log("Calendar day view generated.");
     }
 
     function renderCalendar() {
