@@ -787,8 +787,8 @@
         <!-- Desktop Header Content -->
         <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
         <nav class="desktop-nav">
-          <a href="/index" class="nav-link active">Personal notes</a>
-          <a href="/group-notes" class="nav-link">Group notes</a>
+          <a href="/index" class="nav-link">Personal notes</a>
+          <a href="/group-notes" class="nav-link active">Group notes</a>
           <a href="/scheduler-page" class="nav-link">Calendar</a>
         </nav>
         <div id="profile-pic" class="profile-pic no-picture"></div>
@@ -796,8 +796,8 @@
       
       <!-- Mobile Sub-Header (Only visible on mobile when toggled) -->
       <nav id="mobileSubHeader" class="mobile-sub-header">
-        <a href="/index" class="nav-link active">Personal notes</a>
-        <a href="/group-notes" class="nav-link">Group notes</a>
+        <a href="/index" class="nav-link">Personal notes</a>
+        <a href="/group-notes" class="nav-link active">Group notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
       </nav>        
 
@@ -1123,15 +1123,18 @@
                 });
 
                 const responseData = await response.json();
+                const mobileSearchBar = document.getElementById("mobile-search-input");
 
                 if (response.status === 200) {
                     console.log("User is in a group:", responseData.group_id);
                     sessionStorage.setItem("group_id", responseData.group_id); // Save for future use
                     fetchNotes(responseData.group_id); // Fetch notes for the group
                     fetchGroupInfo(responseData.group_id) // Fetch group name and members
+                    mobileSearchBar.style.display = "block"; // Show mobile search bar
                 } else if (response.status === 404) {
                     console.log("User not part of any group. Showing group creation/join options...");
                     console.log("Calling fetch invites functions");
+                    mobileSearchBar.style.display = "none"; // Hide mobile search bar
                     // Call the separate function to fetch and display invites
                     fetchInvites();
                     document.getElementById("floating-add-button").style.display = 'none';
