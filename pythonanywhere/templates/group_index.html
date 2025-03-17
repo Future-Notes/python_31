@@ -44,121 +44,152 @@
             color: #e0e0e0;
         }
 
+        /* Base Header Styles */
         header {
-            background-color: #3a3a3a;
-            padding: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        background-color: #3a3a3a;
+        padding: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
         header h1 {
-            margin: 0;
-            font-size: 28px;
-            font-weight: 600;
-            color: #f2f2f2;
+        margin: 0;
+        font-size: 28px;
+        font-weight: 600;
+        color: #f2f2f2;
         }
 
         nav {
-            display: flex;
-            gap: 20px;
+        display: flex;
+        gap: 20px;
         }
 
-        /* Git forced update*/
-
         nav a {
-            text-decoration: none;
+        text-decoration: none;
         }
 
         .nav-link {
-            position: relative;
-            color: white;
-            font-size: 18px;
-            padding: 5px 0;
-            transition: all 0.3s ease;
+        position: relative;
+        color: white;
+        font-size: 18px;
+        padding: 5px 0;
+        transition: all 0.3s ease;
         }
 
         .nav-link::after {
-            content: "";
-            display: block;
-            height: 2px;
-            width: 0;
-            background-color: transparent;
-            transition: width 0.3s ease, background-color 0.3s ease;
+        content: "";
+        display: block;
+        height: 2px;
+        width: 0;
+        background-color: transparent;
+        transition: width 0.3s ease, background-color 0.3s ease;
         }
 
         .nav-link:hover::after {
-            width: 100%;
-            background-color: lightgray;
+        width: 100%;
+        background-color: lightgray;
         }
 
         .nav-link.active::after {
-            width: 100%;
-            background-color: white;
+        width: 100%;
+        background-color: white;
         }
 
-
         .homepage-link {
-            text-decoration: none;
-            background-color: #4a4a4a;
-            color: #e0e0e0;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 16px;
+        text-decoration: none;
+        background-color: #4a4a4a;
+        color: #e0e0e0;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 16px;
         }
 
         header a:hover {
-            background-color: #5c5c5c;
+        background-color: #5c5c5c;
         }
 
         /* Mobile Sub-Header - Hidden by default */
         .mobile-sub-header {
-            display: none;
-            background-color: #2e2e2e;
-            padding: 10px 0;
-            text-align: center;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        display: none;
+        background-color: #2e2e2e;
+        padding: 10px 0;
+        text-align: center;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
-        /* Mobile Nav Links */
         .mobile-sub-header a {
-            display: block;
-            color: white;
-            text-decoration: none;
-            padding: 10px;
-            font-size: 18px;
+        display: block;
+        color: white;
+        text-decoration: none;
+        padding: 10px;
+        font-size: 18px;
         }
 
-        /* Active State */
         .mobile-sub-header a.active::after {
-            content: "";
-            display: block;
-            height: 2px;
-            width: 100%;
-            background-color: white;
+        content: "";
+        display: block;
+        height: 2px;
+        width: 100%;
+        background-color: white;
         }
 
-        /* Hover effect */
         .mobile-sub-header a:hover::after {
-            background-color: lightgray;
+        background-color: lightgray;
         }
+
         /* Desktop Nav - Visible on large screens */
         .desktop-nav {
-            display: flex;
-            gap: 20px;
+        display: flex;
+        gap: 20px;
+        }
+
+        /* Toggle Button styles */
+        .toggle-mobile-nav {
+        background: none;
+        border: none;
+        color: #f2f2f2;
+        font-size: 24px;
+        cursor: pointer;
+        display: none; /* Hidden by default */
+        margin-right: 10px;
+        }
+
+        /* Mobile header container for toggle and search */
+        .mobile-header {
+        display: none; /* Only show on mobile */
+        align-items: center;
+        }
+
+        /* Mobile Search Input styling */
+        #mobile-search-input {
+        padding: 8px 12px;
+        border: none;
+        border-radius: 4px;
+        font-size: 16px;
         }
 
         /* Responsive Styles */
         @media (max-width: 600px) {
-            .desktop-nav {
-                display: none; /* Hide desktop nav on small screens */
-            }
-
-            .mobile-sub-header {
-                display: block; /* Show mobile sub-header */
-            }
+        .desktop-nav {
+            display: none; /* Hide desktop nav on small screens */
         }
+        
+        .mobile-header {
+            display: flex;
+        }
+        
+        .toggle-mobile-nav {
+            display: block;
+        }
+        
+        /* Optionally adjust the homepage link or hide it */
+        .homepage-link {
+            display: none;
+        }
+        }
+
 
         main {
             padding: 40px 20px;
@@ -746,23 +777,29 @@
 </head>
 <body>
     <header>
+        <!-- Mobile-specific header row: Toggle button & search bar -->
+        <div class="mobile-header">
+          <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
+          <input type="password" style="position: absolute; left: -9999px; opacity: 0;">
+          <input type="text" id="mobile-search-input" placeholder="Search notes..." autocomplete="off">
+        </div>
+      
+        <!-- Desktop Header Content -->
         <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
         <nav class="desktop-nav">
-            <a href="/index" class="nav-link">Personal notes</a>
-            <a href="/group-notes" class="nav-link active">Group notes</a>
-            <a href="/scheduler-page" class="nav-link">Calendar</a>
+          <a href="/index" class="nav-link active">Personal notes</a>
+          <a href="/group-notes" class="nav-link">Group notes</a>
+          <a href="/scheduler-page" class="nav-link">Calendar</a>
         </nav>
-        <input type="password" style="position: absolute; left: -9999px; opacity: 0;">
-        <input type="text" id="mobile-search-input" placeholder="Search notes..." autocomplete="off">
         <div id="profile-pic" class="profile-pic no-picture"></div>
-    </header>
-
-    <!-- Mobile Sub-Header (Only visible on mobile) -->
-    <nav class="mobile-sub-header">
-        <a href="/index" class="nav-link">Personal notes</a>
-        <a href="/group-notes" class="nav-link active">Group notes</a>
+      </header>
+      
+      <!-- Mobile Sub-Header (Only visible on mobile when toggled) -->
+      <nav id="mobileSubHeader" class="mobile-sub-header">
+        <a href="/index" class="nav-link active">Personal notes</a>
+        <a href="/group-notes" class="nav-link">Group notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
-    </nav>  
+      </nav>        
 
     <main>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background-color: #3a3a3a; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);">
@@ -948,6 +985,20 @@
                 document.getElementById("floating-add-button").style.display = "flex";
             }
         }
+
+        document.addEventListener("DOMContentLoaded", function() {
+        const toggleButton = document.getElementById("toggle-mobile-nav");
+        const mobileNav = document.getElementById("mobileSubHeader");
+
+        toggleButton.addEventListener("click", function() {
+            // Toggle mobile nav display between block and none
+            if (mobileNav.style.display === "block") {
+            mobileNav.style.display = "none";
+            } else {
+            mobileNav.style.display = "block";
+            }
+        });
+        });
 
         document.getElementById("search-button").addEventListener("click", () => {
             const searchInput = document.getElementById("search-input");
