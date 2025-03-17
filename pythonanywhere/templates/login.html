@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
-    <link rel="favicon" type ="image/x-icon" href="static/favicon.ico">
+    <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
     <style>
         /* Global Styles */
@@ -52,9 +52,9 @@
 
         form {
             background-color: #3a3a3a;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
             width: 100%;
         }
 
@@ -62,19 +62,20 @@
             display: block;
             text-align: left;
             margin-bottom: 10px;
+            font-size: 14px;
         }
 
         input[type="text"],
-        input[type="password"],
-        input[type="checkbox"] {
+        input[type="password"] {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             margin-bottom: 20px;
             border: none;
-            border-radius: 3px;
-            background-color: #6a6a6a;
+            border-radius: 5px;
+            background-color: #5a5a5a;
             color: #e0e0e0;
             box-sizing: border-box;
+            transition: background-color 0.3s ease;
         }
 
         input[type="text"]:focus,
@@ -83,18 +84,77 @@
             background-color: #7a7a7a;
         }
 
+        /* Custom Checkbox */
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-container input {
+            display: none;
+        }
+
+        .checkbox-custom {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            background: #5a5a5a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background 0.3s ease;
+        }
+
+        .checkbox-custom::after {
+            content: "✔";
+            font-size: 14px;
+            color: #e0e0e0;
+            opacity: 1;
+            transition: opacity 0.2s;
+        }
+
+        .checkbox-container input:not(:checked) + .checkbox-custom::after {
+            opacity: 0;
+        }
+
+        .checkbox-container input:checked + .checkbox-custom {
+            background: #7a7a7a;
+        }
+
+        /* Add new warning message styles */
+        .warning-message {
+            color: #ff6666;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: center;
+            display: none;
+            border: 1px solid #ff4444;
+            border-radius: 5px;
+            background-color: rgba(255, 68, 68, 0.1);
+        }
+
+        .warning-message.visible {
+            display: block;
+        }
+
         button {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             border: none;
-            border-radius: 3px;
-            background-color: #6a6a6ad5;
+            border-radius: 5px;
+            background-color: #5a5a5a;
             color: #e0e0e0;
             cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.3s ease;
         }
 
         button:hover {
-            background-color: #5a5a5a;
+            background-color: #4a4a4a;
         }
 
         p {
@@ -102,12 +162,13 @@
         }
 
         a {
-            color: #6a6a6a;
+            color: #7a7a7a;
             text-decoration: none;
+            transition: color 0.3s ease;
         }
 
         a:hover {
-            color: #5a5a5a;
+            color: #9a9a9a;
         }
 
         /* Back Button */
@@ -117,7 +178,7 @@
             left: 20px;
             width: 50px;
             height: 50px;
-            background-color: #6a6a6ad5;
+            background-color: #6a6a6a;
             border-radius: 50%;
             display: flex;
             justify-content: center;
@@ -127,7 +188,7 @@
             font-size: 24px;
             font-weight: bold;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            transition: background-color 0.3s, transform 0.2s;
+            transition: background 0.3s, transform 0.2s;
         }
 
         .back-button:hover {
@@ -171,15 +232,21 @@
 
     <div class="form-container">
         <h1>Login</h1>
+        <div id="warning-message" class="warning-message">
+            You need to log in to access that page.
+        </div>
         <form id="login-form">
             <label for="username">Username:</label>
             <input type="text" id="username" required>
             <label for="password">Password:</label>
             <input type="password" id="password" required>
-            <label>
-                <input type="checkbox" id="remember-me">
+            
+            <label class="checkbox-container">
+                <input type="checkbox" id="remember-me" checked>
+                <span class="checkbox-custom"></span>
                 Remember Me
             </label>
+            
             <button type="submit">Login</button>
         </form>
         <p>Don't have an account? <a id="signup-link" href="/signup_page">Sign Up</a></p>
@@ -197,6 +264,12 @@
             const lastingKey = localStorage.getItem("lasting_key");
             const urlParams = new URLSearchParams(window.location.search);
             const redirectUrl = urlParams.get("redirect") || "/index";
+            const showWarning = urlParams.get("warning") === "true";
+
+            // Show warning message if parameter is set
+            if (showWarning) {
+                document.getElementById("warning-message").classList.add("visible");
+            }
 
             if (lastingKey) {
                 const response = await fetch("/login", {

@@ -8,10 +8,9 @@
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
-    <link rel="favicon" type ="image/x-icon" href="static/favicon.ico">
+    <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
     <style>
-        /* Global Styles */
         body {
             background-color: #2c2c2c;
             color: #e0e0e0;
@@ -30,7 +29,6 @@
             color: #e0e0e0;
         }
 
-        /* Form Container */
         .form-container {
             display: flex;
             flex-direction: column;
@@ -38,9 +36,9 @@
             text-align: center;
             width: 100%;
             max-width: 400px;
-            opacity: 0; /* Initial state for animation */
-            transform: translateY(-20px); /* Initial position */
-            animation: fadeIn 1s ease-out forwards; /* Animation properties */
+            opacity: 0;
+            transform: translateY(-20px);
+            animation: fadeIn 1s ease-out forwards;
         }
 
         @keyframes fadeIn {
@@ -52,9 +50,9 @@
 
         form {
             background-color: #3a3a3a;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
             width: 100%;
         }
 
@@ -62,18 +60,20 @@
             display: block;
             text-align: left;
             margin-bottom: 10px;
+            font-size: 14px;
         }
 
         input[type="text"],
         input[type="password"] {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             margin-bottom: 20px;
             border: none;
-            border-radius: 3px;
-            background-color: #6a6a6a;
+            border-radius: 5px;
+            background-color: #5a5a5a;
             color: #e0e0e0;
             box-sizing: border-box;
+            transition: background-color 0.3s ease;
         }
 
         input[type="text"]:focus,
@@ -84,16 +84,19 @@
 
         button {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             border: none;
-            border-radius: 3px;
-            background-color: #6a6a6ad5;
+            border-radius: 5px;
+            background-color: #5a5a5a;
             color: #e0e0e0;
             cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.3s ease;
         }
 
         button:hover {
-            background-color: #5a5a5a;
+            background-color: #4a4a4a;
         }
 
         p {
@@ -101,21 +104,22 @@
         }
 
         a {
-            color: #6a6a6a;
+            color: #7a7a7a;
             text-decoration: none;
+            transition: color 0.3s ease;
         }
 
         a:hover {
-            color: #5a5a5a;
+            color: #9a9a9a;
         }
-        /* Back Button */
+
         .back-button {
             position: absolute;
             top: 20px;
             left: 20px;
             width: 50px;
             height: 50px;
-            background-color: #6a6a6ad5;
+            background-color: #6a6a6a;
             border-radius: 50%;
             display: flex;
             justify-content: center;
@@ -125,36 +129,34 @@
             font-size: 24px;
             font-weight: bold;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            transition: background-color 0.3s, transform 0.2s;
+            transition: background 0.3s, transform 0.2s;
         }
 
         .back-button:hover {
             background-color: #5a5a5a;
             transform: scale(1.1);
         }
-        /* Large Title */
+
         .page-title {
             position: absolute;
-            top: 0; /* Start near the top */
-            left: 50%; /* Center horizontally */
-            transform: translate(-50%, -100%); /* Center horizontally and start above the viewport */
+            top: 0;
+            left: 50%;
+            transform: translate(-50%, -100%);
             font-size: 36px;
             font-weight: bold;
             color: #e0e0e0;
-            opacity: 0; /* Start fully invisible */
-            animation: slideInFromTop 1s ease-out forwards; /* Slide down into position */
+            opacity: 0;
+            animation: slideInFromTop 1s ease-out forwards;
             text-align: center;
             margin: 0;
         }
 
-        /* Keyframes for sliding in */
         @keyframes slideInFromTop {
             to {
-                transform: translate(-50%, 20px); /* Final position with a bit of padding */
-                opacity: 1; /* Fully visible */
+                transform: translate(-50%, 20px);
+                opacity: 1;
             }
         }
-
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -166,17 +168,16 @@
 </head>
 <body>
     <h1 class="page-title">Future Notes</h1>
-
     <a href="/" class="back-button" aria-label="Go back to homepage">←</a>
 
     <div class="form-container">
-        <h1>Sign up</h1>
+        <h1>Sign Up</h1>
         <form id="signup-form">
             <label for="username">Username:</label>
             <input type="text" id="username" required>
             <label for="password">Password:</label>
             <input type="password" id="password" required>
-            <button type="submit">Sign up</button>
+            <button type="submit">Sign Up</button>
         </form>
         <p>Already have an account? <a id="login-link" href="/login_page">Login</a></p>
     </div>
@@ -185,33 +186,36 @@
         // On page load, update the login link to include any query parameters
         document.addEventListener("DOMContentLoaded", () => {
             const queryParams = window.location.search;
-            if (queryParams) {
-                const loginLink = document.getElementById("login-link");
+            const loginLink = document.getElementById("login-link");
+            if (queryParams && loginLink) {
                 loginLink.href = "/login_page" + queryParams;
             }
         });
-
+    
         document.getElementById("signup-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const username = document.getElementById("username").value;
             const password = document.getElementById("password").value;
-            const queryParams = window.location.search;
-
+            
             const response = await fetch("/signup", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ username, password }),
             });
             const data = await response.json();
-
+    
             if (response.ok) {
-                alert("Signup successful. Please login.");
-                // Redirect to the login page with the current query parameters
-                window.location.href = "/login_page" + queryParams;
+                // Automatically log in the user by saving their credentials
+                localStorage.setItem("session_key", data.session_key);
+                localStorage.setItem("user_id", data.user_id);
+                localStorage.setItem("lasting_key", data.lasting_key);
+                
+                // Redirect to a protected route (e.g., dashboard)
+                window.location.href = "/index"; // Update with your desired route
             } else {
                 alert(data.error || "Signup failed");
             }
         });
-    </script>
+    </script>    
 </body>
 </html>

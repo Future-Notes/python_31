@@ -1,7 +1,6 @@
 # ------------------------------Imports--------------------------------
 
-from flask import Flask, request, jsonify, g, render_template, make_response, session, render_template_string
-import traceback
+from flask import Flask, request, jsonify, g, render_template, make_response, session
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint
@@ -100,16 +99,6 @@ class User(db.Model):
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
     )
 
-class Note(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # Now optional
-    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)  # New field
-    title = db.Column(db.String(100), nullable=True)
-    note = db.Column(db.Text, nullable=False)
-    tag = db.Column(db.String(100), nullable=True)
-
-    group = db.relationship("Group", backref="notes")
-
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False, unique=True)
@@ -125,13 +114,45 @@ class GroupMember(db.Model):
     user = db.relationship("User", backref="group_memberships")
     group = db.relationship("Group", backref="members")
 
-class PlayerXp(db.Model):
+class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
-    xp = db.Column(db.Float, default=0)
+    title = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    start_datetime = db.Column(db.DateTime, nullable=False)
+    end_datetime = db.Column(db.DateTime, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    def __repr__(self):
-        return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
+    # New columns
+    recurrence_rule = db.Column(db.String(255), nullable=True)
+    recurrence_end_date = db.Column(db.DateTime, nullable=True)
+
+    is_all_day = db.Column(db.Boolean, nullable=False, default=False)  # New all-day field
+
+    user = db.relationship('User', backref=db.backref('appointments', lazy=True))
+    notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "start_datetime": self.start_datetime.isoformat(),
+            "end_datetime": self.end_datetime.isoformat(),
+            "user_id": self.user_id,
+            "recurrence_rule": self.recurrence_rule,
+            "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
+            "is_all_day": self.is_all_day,  # Include all-day flag in response
+            "notes": [note.to_dict() for note in self.notes]
+        }
+
+
+# Many-to-Many Association Table (Appointments <-> Notes)
+appointment_note = db.Table(
+    'appointment_note',
+    db.Column('appointment_id', db.Integer, db.ForeignKey('appointment.id'), primary_key=True),
+    db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
+)
+
 
 class Trophy(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -141,11 +162,50 @@ class Trophy(db.Model):
 
     def __repr__(self):
         return f'<Trophy level={self.level} name={self.name}>'
+    
+class PlayerXp(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), unique=True, nullable=False)
+    xp = db.Column(db.Float, default=0)
+
+    def __repr__(self):
+        return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
+
+
+class Note(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
+    title = db.Column(db.String(100), nullable=True)
+    note = db.Column(db.Text, nullable=False)
+    tag = db.Column(db.String(100), nullable=True)
+
+    group = db.relationship("Group", backref="notes")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "note": self.note,
+            "tag": self.tag,
+            "user_id": self.user_id,
+            "group_id": self.group_id
+        }
+
 
 class Messages(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), nullable=False)
     message = db.Column(db.Text, nullable=False)
+
+# Updated Invite model if storing the inviter's id
+class Invite(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=False)
+    group_name = db.Column(db.String(100), nullable=False)
+    invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -658,7 +718,7 @@ def handle_operational_error(e):
 
 @app.errorhandler(404)
 def page_note_found(error):
-    return render_template('404.html'), 200
+    return render_template('404.html'), 404
 
 # Function to generate unique error codes (or use predefined ones)
 def generate_error_code():
@@ -671,11 +731,8 @@ def global_error_handler(e):
     if isinstance(e, HTTPException):
         return e
 
-    # Generate a unique error code
-    error_code = generate_error_code()
-
-    # Display user-friendly error page
-    return render_template_string(error_template, message=ERROR_MESSAGES["ERR-1001"], code=error_code), 500
+    # Return a simple JSON error response
+    return jsonify({"error": str(e)}), 500
 
 #---------------------------------Template routes--------------------------------
 
@@ -737,6 +794,9 @@ def bot_info():
 def leaderboard():
     return render_template('leaderboard.html')
 
+@app.route('/scheduler-page')
+def scheduler_page():
+    return render_template('scheduler.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -772,7 +832,278 @@ def get_user_info():
         "role": user.role
     }), 200
 
-# Groups
+    
+# Appointments
+
+# 1. Fetch all appointments for the current user
+@app.route('/appointments', methods=['GET'])
+@require_session_key
+def get_appointments():
+    user_id = g.user_id
+    appointments = Appointment.query.filter_by(user_id=user_id).all()
+    appointments_data = [appt.to_dict() for appt in appointments]
+    return jsonify({"appointments": appointments_data}), 200
+
+# 2. Create a new appointment with start and end times
+@app.route('/appointments', methods=['POST'])
+@require_session_key
+def create_appointment():
+    data = request.get_json() or {}
+    title = data.get('title')
+    description = data.get('description', '')
+    start_datetime_str = data.get('start_datetime')
+    end_datetime_str = data.get('end_datetime')
+    recurrence_rule = data.get('recurrence_rule')  # Optional recurrence rule (e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR")
+    recurrence_end_date_str = data.get('recurrence_end_date')  # Optional recurrence end date
+    note_ids = data.get('note_ids', [])  # List of note IDs to attach
+    is_all_day = data.get('is_all_day', False)  # Optional all-day flag
+
+    # Validate required fields
+    if not title or not start_datetime_str or not end_datetime_str:
+        return jsonify({"error": "Missing required fields: title, start_datetime, and end_datetime"}), 400
+
+    # Validate datetime formats
+    try:
+        start_datetime = datetime.fromisoformat(start_datetime_str)
+        end_datetime = datetime.fromisoformat(end_datetime_str)
+    except ValueError:
+        return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
+
+    # Validate datetime logic
+    if end_datetime <= start_datetime:
+        return jsonify({"error": "end_datetime must be after start_datetime."}), 400
+
+    if end_datetime.date() != start_datetime.date():
+        return jsonify({"error": "Appointments cannot span multiple days."}), 400
+
+    # Validate optional recurrence_end_date
+    recurrence_end_date = None
+    if recurrence_end_date_str:
+        try:
+            recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
+            if recurrence_end_date <= end_datetime:
+                return jsonify({"error": "recurrence_end_date must be after end_datetime."}), 400
+        except ValueError:
+            return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
+
+    # Validate note IDs
+    if note_ids:
+        if not isinstance(note_ids, list) or not all(isinstance(note_id, int) for note_id in note_ids):
+            return jsonify({"error": "note_ids must be a list of integers."}), 400
+
+        notes = Note.query.filter(Note.id.in_(note_ids), Note.user_id == g.user_id).all()
+        if len(notes) != len(note_ids):
+            return jsonify({"error": "One or more note IDs are invalid or do not belong to the user."}), 400
+
+    # Ensure title length is reasonable
+    if len(title) > 120:
+        return jsonify({"error": "Title exceeds the maximum allowed length of 120 characters."}), 400
+
+    # Ensure description length is reasonable
+    if len(description) > 1000:
+        return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
+
+    # Create the appointment
+    new_appointment = Appointment(
+        title=title.strip(),
+        description=description.strip(),
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
+        user_id=g.user_id,
+        recurrence_rule=recurrence_rule.strip() if recurrence_rule else None,
+        recurrence_end_date=recurrence_end_date,
+        is_all_day=bool(is_all_day)  # Ensure it's a boolean
+    )
+
+    # Attach notes if provided
+    if note_ids:
+        new_appointment.notes.extend(notes)
+
+    try:
+        db.session.add(new_appointment)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred while creating the appointment: {str(e)}"}), 500
+
+    return jsonify({
+        "message": "Appointment created successfully",
+        "appointment": new_appointment.to_dict()
+    }), 201
+
+# 3. Update an existing appointment
+@app.route('/appointments/<int:appointment_id>', methods=['PUT'])
+@require_session_key
+def update_appointment(appointment_id):
+    data = request.get_json() or {}
+    appointment = Appointment.query.get(appointment_id)
+
+    if not appointment or appointment.user_id != g.user_id:
+        return jsonify({"error": "Appointment not found"}), 404
+
+    title = data.get('title')
+    description = data.get('description')
+    start_datetime_str = data.get('start_datetime')
+    end_datetime_str = data.get('end_datetime')
+    recurrence_rule = data.get('recurrence_rule')  # New: optional update for recurrence rule
+    recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional update for recurrence end date
+    note_ids = data.get('note_ids')  # Optional update to attached notes
+
+    if title:
+        appointment.title = title
+    if description is not None:
+        appointment.description = description
+
+    if 'is_all_day' in data:
+        appointment.is_all_day = bool(data['is_all_day'])
+
+
+    if start_datetime_str:
+        try:
+            new_start = datetime.fromisoformat(start_datetime_str)
+            appointment.start_datetime = new_start
+        except ValueError:
+            return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
+
+    if end_datetime_str:
+        try:
+            new_end = datetime.fromisoformat(end_datetime_str)
+            appointment.end_datetime = new_end
+        except ValueError:
+            return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
+
+    # Ensure the updated times are valid
+    if appointment.end_datetime <= appointment.start_datetime:
+        return jsonify({"error": "end_datetime must be after start_datetime."}), 400
+
+    if appointment.end_datetime.date() != appointment.start_datetime.date():
+        return jsonify({"error": "Appointments cannot span multiple days."}), 400
+
+    # Update recurrence rule if provided (can be set to None to remove recurrence)
+    if 'recurrence_rule' in data:
+        appointment.recurrence_rule = recurrence_rule
+
+    if 'recurrence_end_date' in data:
+        if recurrence_end_date_str:
+            try:
+                appointment.recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
+            except ValueError:
+                return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
+        else:
+            appointment.recurrence_end_date = None
+
+    # Update attached notes if provided
+    if note_ids is not None:
+        notes = Note.query.filter(Note.id.in_(note_ids)).all()
+        appointment.notes = notes
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Appointment updated successfully",
+        "appointment": appointment.to_dict()
+    }), 200
+
+# 4. Delete an appointment
+@app.route('/appointments/<int:appointment_id>', methods=['DELETE'])
+@require_session_key
+def delete_appointment(appointment_id):
+    appointment = Appointment.query.get(appointment_id)
+
+    if not appointment or appointment.user_id != g.user_id:
+        return jsonify({"error": "Appointment not found"}), 404
+
+    db.session.delete(appointment)
+    db.session.commit()
+
+    return jsonify({"message": "Appointment deleted successfully"}), 200
+
+# 5. Get all user notes for attaching
+
+# Fetch all notes for the current user
+@app.route('/notes-all', methods=['GET'])
+@require_session_key
+def get_all_notes():
+    user_id = g.user_id
+    notes = Note.query.filter_by(user_id=user_id).all()
+    notes_data = [note.to_dict() for note in notes]
+    return jsonify({"notes": notes_data}), 200
+
+# Groups   
+
+@app.route('/group-invite', methods=['POST'])
+@require_session_key
+def group_invite():
+    data = request.json
+    username = data.get('username')
+    group_id = data.get('group_id')
+    
+    # Corrected query using 'id' instead of 'user_id'
+    invited_by_user = User.query.filter_by(id=g.user_id).first()
+    if not invited_by_user:
+        return jsonify({"error": "Inviting user not found"}), 404
+    
+    if not username or not group_id:
+        return jsonify({"error": "Username and group ID are required"}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    group = Group.query.get(group_id)
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+
+    new_invite = Invite(
+        user_id=user.id,
+        group_id=group.id,
+        group_name=group.name,
+        invited_by=invited_by_user.id  # using id for foreign key
+    )
+    db.session.add(new_invite)
+    db.session.commit()
+
+    return jsonify({"message": "Invite sent successfully"}), 201
+
+@app.route('/check-invite', methods=['GET'])
+@require_session_key
+def check_invites():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    invites = Invite.query.filter_by(user_id=user.id).all()
+    invites_data = []
+    for invite in invites:
+        inviter = User.query.get(invite.invited_by)
+        invites_data.append({
+            "group_id": invite.group_id,
+            "group_name": invite.group_name,
+            "invited_by": inviter.username if inviter else "Unknown"
+        })
+
+    return jsonify({"invites": invites_data}), 200
+
+@app.route('/group-invite-result', methods=['POST'])
+@require_session_key
+def group_invite_result():
+    data = request.json
+    group_id = data.get('group_id')
+    result = data.get('result')
+
+    if not group_id or result not in ['accepted', 'declined']:
+        return jsonify({"error": "Invalid request data"}), 400
+
+    invite = Invite.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    if not invite:
+        return jsonify({"error": "Invite not found"}), 404
+
+    # Delete the invite
+    db.session.delete(invite)
+    db.session.commit()
+
+    return jsonify({"message": "Invite processed successfully"}), 200
+
 
 @app.route('/check-group')
 @require_session_key
@@ -1324,12 +1655,25 @@ def signup():
     data = request.json
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     try:
+        # Create the user and automatically generate a lasting key for "remember me"
         user = User(username=data['username'], password=hashed_password)
+        user.lasting_key = secrets.token_hex(32)  # Always set a lasting key
         db.session.add(user)
         db.session.commit()
-        return jsonify({"message": "User created successfully!"}), 201
-    except:
+
+        # Generate a session key for immediate login
+        key = generate_session_key(user.id)
+        
+        return jsonify({
+            "message": "User created and logged in successfully!",
+            "session_key": key,
+            "user_id": user.id,
+            "lasting_key": user.lasting_key
+        }), 201
+
+    except Exception as e:
         return jsonify({"error": "Username already exists"}), 400
+
 
 @app.route('/login', methods=['POST'])
 def login():

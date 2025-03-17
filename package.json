@@ -4,10 +4,10 @@
     "description": "A Flask project with Python dependencies for backend and GUI.",
     "main": "app.py",
     "scripts": {
-      "start": "python app.py",
+      "start": "python pythonanywhere/app.py",
       "test": "echo \"Error: no test specified\" && exit 1"
     },
-    "author": "Your Name",
+    "author": "Bosbes",
     "license": "MIT",
     "dependencies": {
       "Flask": "^2.3.2",
