@@ -127,6 +127,9 @@
     display: none; /* Hidden by default */
     margin-right: 10px;
     }
+    .toggle-mobile-nav:hover {
+      background-color: none;
+    }
     /* Desktop Nav - Visible on large screens */
     .desktop-nav {
       display: flex;
@@ -280,7 +283,7 @@
     /* Container for the entire sidebar */
     #calendar-sidebar {
       width: 300px;
-      background-color: #3a3a3a;
+      background-color: #1e1e1e;
       padding: 10px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
@@ -436,11 +439,13 @@
 
     /* Appointment block rendered over the calendar */
     .appointment-abs {
-      font-size: 14px;
-      cursor: pointer;
-      /* Remove any rounded borders to mimic Outlook style */
+      background: linear-gradient(to right, #424242 5px, #616161 5px);
+      color: #e0e0e0;
+      padding: 2px 4px;
+      box-sizing: border-box;
       border-radius: 0;
       overflow: hidden;
+      z-index: 10;
     }
 
     /* The stripe styling can remain the same */
@@ -875,13 +880,25 @@
         width:100%;
       }
       .appointment-abs {
-        font-size: 8px; /* Adjust font size for smaller screens */
+        font-size: 12px; /* Adjust font size for smaller screens */
+      }
+      .appointment-stripe {
+        display: none; /* Hide the stripe on smaller screens */
       }
       header {
         width: 91%;
       }
       #attach-note-button {
         display:none;
+      }
+      .all-day-appointment {
+        font-size: 8px; /* Adjust font size for smaller screens */
+      }
+    }
+
+    @media (max-width: 400px) {
+      .appointment-abs {
+        font-size: 8px; /* Further adjust font size for very small screens */
       }
     }
 
@@ -892,7 +909,7 @@
       align-items: center;
       gap: 1rem;
       padding: 10px;
-      background-color: rgb(97, 97, 97); /* Matches the calendar grid header */
+      background-color: #1e1e1e; /* Darker background for contrast */
       border-bottom: 1px solid #424242;
       position: sticky; /* Ensures the buttons stay on top on scroll */
       top: 0;
@@ -939,7 +956,6 @@
       position: absolute;
       background-color: #616161;  /* Matches your theme */
       color: #fff;
-      border-radius: 4px;
       padding: 4px 8px;
       margin: 5px 0;
       box-sizing: border-box;
@@ -1200,8 +1216,7 @@
     });
 
     function showModal() {
-      document.getElementById("modal-overlay").style.display = "flex";
-      document.getElementById("floating-add-button").style.display = "none";
+      window.location.href = "/login_page";
     }
     function hideModal() {
       document.getElementById("modal-overlay").style.display = "none";
@@ -1221,6 +1236,37 @@
         }
       });
     });
+
+    // Function to adjust the font size for appointments based on window width
+    function adjustAppointmentTextSize() {
+      console.log("Adjusting appointment text size based on window width");
+      const width = window.innerWidth;
+      let newSize;
+
+      // Define size ranges and corresponding font sizes
+      if (width < 600) {
+        newSize = "8px";
+      } else if (width < 900) {
+        newSize = "12px";
+      } else {
+        newSize = "16px";
+      }
+
+      // Select all appointment elements
+      const appointments = document.querySelectorAll('.appointment-abs');
+
+      // Apply the new font size
+      appointments.forEach(appointment => {
+        appointment.style.fontSize = newSize;
+      });
+    }
+
+    // Listen for the window resize event
+    window.addEventListener('resize', debounce(adjustAppointmentTextSize, 200));
+
+    // Call once on load to set the initial size
+    adjustAppointmentTextSize();
+
 
 
     // ======== Calendar & Appointments Logic =========
@@ -1741,7 +1787,6 @@
           apptDiv.style.height = apptHeight + "px";
           apptDiv.style.backgroundColor = "#616161";
           apptDiv.style.color = "#fff";
-          apptDiv.style.borderRadius = "4px";
           apptDiv.style.boxSizing = "border-box";
           apptDiv.style.padding = "2px 4px";
           apptDiv.style.overflow = "hidden";
@@ -1981,10 +2026,57 @@
         appointmentsData = data.appointments || [];
         console.log("Appointments fetched:", appointmentsData);
         renderAppointments();
+
+        // Schedule notifications for upcoming appointments
+        scheduleNotifications();
       } catch (error) {
         console.error("Error fetching appointments:", error);
       }
     }
+
+    // Loop through appointments and schedule a notification for each one
+    function scheduleNotifications() {
+      appointmentsData.forEach(appointment => {
+        // Convert the appointment start datetime into a Date object.
+        const startDate = new Date(appointment.start_datetime);
+        // Calculate notification time: 15 minutes before the start.
+        const notificationTime = new Date(startDate.getTime() - 15 * 60 * 1000);
+        const timeUntilNotification = notificationTime.getTime() - Date.now();
+
+        // Only schedule if the time is in the future.
+        if (timeUntilNotification > 0) {
+          setTimeout(() => {
+            triggerNotification(appointment);
+          }, timeUntilNotification);
+        }
+      });
+    }
+
+    // Trigger a notification for a given appointment.
+    function triggerNotification(appointment) {
+      const title = "Upcoming Task: " + appointment.title;
+      const options = {
+        body: "Your task is starting in 15 minutes.",
+        icon: "/static/notification-icon.jpg" // Update with your icon path
+      };
+      console.log("Triggering notification for appointment:", appointment.title);
+      console.log("Notification options:", options);
+
+      // Use the service worker registration to show the notification if available.
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistration().then(registration => {
+          if (registration) {
+            registration.showNotification(title, options);
+          } else {
+            // Fallback if registration is unavailable.
+            new Notification(title, options);
+          }
+        });
+      } else {
+        new Notification(title, options);
+      }
+    }
+
 
 
     // Update calendar view based on selected date
@@ -2416,6 +2508,25 @@
             alert("Failed to create appointment.");
             return;
           }
+          // NEW: On creating the first appointment, request notification permission
+          // and register the service worker if not already done.
+          if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission().then(permission => {
+              console.log("Notification permission:", permission);
+              if (permission === "granted") {
+                // Register the service worker for background notifications.
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.register('/static/sw_js/service-worker.js')
+                    .then(registration => {
+                      console.log('Service Worker registered with scope:', registration.scope);
+                    })
+                    .catch(error => {
+                      console.error('Service Worker registration failed:', error);
+                    });
+                }
+              }
+            });
+          }
         }
         hideAddModal();
         fetchSchedule();
@@ -2423,6 +2534,7 @@
         console.error("Error submitting appointment:", error);
       }
     }
+
 
 
 
