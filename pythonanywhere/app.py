@@ -20,6 +20,7 @@ import glob
 import threading
 from update_DB import update_tables
 from math import floor
+import hashlib
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -209,41 +210,59 @@ class Invite(db.Model):
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
-    key = secrets.token_hex(32)
-    session_keys[key] = {
+    """Generate a new session token, store it with an expiration time, and return the plain token."""
+    token = secrets.token_hex(32)
+    session_keys[token] = {
         "user_id": user_id,
-        "expires_at": datetime.now() + timedelta(minutes=120),
+        "expires_at": datetime.now() + timedelta(minutes=120),  # 2-hour expiration
         "last_active": datetime.now()
     }
-    seed_trophies()
-    return key
+    seed_trophies()  # existing functionality
+    return token
 
 def validate_session_key():
+    """
+    Validate the session token found either in the Authorization header (as Bearer)
+    or in the secure cookie. Returns a tuple (True, session data) if valid,
+    or (False, error message) if not.
+    """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split("Bearer ")[1]
+    else:
+        token = request.cookies.get("session_key")
+    if not token:
         return False, "Invalid or missing session API key"
-
-    key = auth_header.split("Bearer ")[1]
-    if key not in session_keys:
+    if token not in session_keys:
         return False, "Invalid or missing session API key"
-
-    session = session_keys[key]
+    session = session_keys[token]
     now = datetime.now()
-
-    # Check if key is expired
     if session["expires_at"] < now:
-        del session_keys[key]
+        del session_keys[token]
         return False, "Session expired. Please log in again."
-
-    # Check if user exists in the database
     user = User.query.get(session["user_id"])
     if not user:
-        del session_keys[key]
+        del session_keys[token]
         return False, "Invalid or missing session API key"
-
     # Update last active time
     session["last_active"] = now
     return True, session
+
+def set_auth_cookies(response, session_key, lasting_key=None):
+    """
+    Set secure, httpOnly cookies for the session token (and lasting key if provided).
+    Adjust max_age as needed.
+    """
+    # Session key cookie: expires in 2 hours (7200 seconds)
+    response.set_cookie("session_key", session_key, httponly=True, secure=True, samesite="Lax", max_age=7200)
+    if lasting_key:
+        # Lasting key cookie: for example, expires in 30 days (2592000 seconds)
+        response.set_cookie("lasting_key", lasting_key, httponly=True, secure=True, samesite="Lax", max_age=2592000)
+    return response
+
+def hash_token(token):
+    """Return a SHA-256 hash of the token."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -1655,25 +1674,28 @@ def signup():
     data = request.json
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     try:
-        # Create the user and automatically generate a lasting key for "remember me"
+        # Create the user and generate a lasting key for "remember me"
         user = User(username=data['username'], password=hashed_password)
-        user.lasting_key = secrets.token_hex(32)  # Always set a lasting key
+        # Generate lasting token and store only its hash in the DB
+        lasting_token = secrets.token_hex(32)
+        user.lasting_key = hash_token(lasting_token)
         db.session.add(user)
         db.session.commit()
 
-        # Generate a session key for immediate login
-        key = generate_session_key(user.id)
-        
-        return jsonify({
+        # Generate a session token for immediate login
+        session_key = generate_session_key(user.id)
+        response = make_response(jsonify({
             "message": "User created and logged in successfully!",
-            "session_key": key,
+            "session_key": session_key,
             "user_id": user.id,
-            "lasting_key": user.lasting_key
-        }), 201
+            "lasting_key": lasting_token
+        }), 201)
+        # Set tokens in secure cookies
+        set_auth_cookies(response, session_key, lasting_token)
+        return response
 
     except Exception as e:
         return jsonify({"error": "Username already exists"}), 400
-
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -1682,20 +1704,29 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
-        # Handle auto login with lasting_key if provided
+        # --- Lasting Key Login with Rotation ---
         lasting_key = data.get('lasting_key')
         if lasting_key:
-            user = User.query.filter_by(lasting_key=lasting_key).first()
+            # Compare the hashed version with what's stored in the DB
+            hashed_lasting = hash_token(lasting_key)
+            user = User.query.filter_by(lasting_key=hashed_lasting).first()
             if user:
-                key = generate_session_key(user.id)
-                return jsonify({
+                # Rotate lasting key: generate new token and update DB
+                new_lasting_token = secrets.token_hex(32)
+                user.lasting_key = hash_token(new_lasting_token)
+                db.session.commit()
+                session_key = generate_session_key(user.id)
+                response = make_response(jsonify({
                     "message": "Login successful!",
-                    "session_key": key,
-                    "user_id": user.id
-                }), 200
+                    "session_key": session_key,
+                    "user_id": user.id,
+                    "lasting_key": new_lasting_token
+                }), 200)
+                set_auth_cookies(response, session_key, new_lasting_token)
+                return response
             return jsonify({"error": "Invalid lasting key"}), 400
 
-        # Validate credentials when lasting_key isn't provided
+        # --- Username/Password Login ---
         username = data.get('username')
         password = data.get('password')
         if not username or not password:
@@ -1705,31 +1736,69 @@ def login():
         if not user or not bcrypt.check_password_hash(user.password, password):
             return jsonify({"error": "Invalid credentials"}), 400
 
-        # Generate a new session key for this login
-        key = generate_session_key(user.id)
+        session_key = generate_session_key(user.id)
 
-        # If the user wants to stay logged in, reuse an existing lasting_key if available,
-        # or generate a new one if not.
+        # If "keep_login" is set, generate (or rotate) lasting key
         if data.get('keep_login'):
-            if not user.lasting_key:
-                user.lasting_key = secrets.token_hex(32)
-                db.session.commit()
-            return jsonify({
+            new_lasting_token = secrets.token_hex(32)
+            user.lasting_key = hash_token(new_lasting_token)
+            db.session.commit()
+            response = make_response(jsonify({
                 "message": "Login successful!",
-                "session_key": key,
+                "session_key": session_key,
                 "user_id": user.id,
-                "lasting_key": user.lasting_key
-            }), 200
+                "lasting_key": new_lasting_token
+            }), 200)
+            set_auth_cookies(response, session_key, new_lasting_token)
+            return response
 
-        # Standard login response
-        return jsonify({
+        # Standard login response (without lasting key)
+        response = make_response(jsonify({
             "message": "Login successful!",
-            "session_key": key,
+            "session_key": session_key,
             "user_id": user.id
-        }), 200
+        }), 200)
+        set_auth_cookies(response, session_key)
+        return response
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/refresh', methods=['POST'])
+@require_session_key
+def refresh():
+    """
+    Endpoint to update (rotate) the session key and lasting key if available.
+    Call this endpoint from your templates or client-side code when you need to refresh tokens.
+    """
+    user_id = g.user_id
+
+    # Remove the old session key (if stored in our in-memory dict)
+    old_session_key = request.cookies.get("session_key")
+    if old_session_key in session_keys:
+        del session_keys[old_session_key]
+
+    # Generate a new session key.
+    new_session_key = generate_session_key(user_id)
+    user = User.query.get(user_id)
+    lasting_cookie = request.cookies.get("lasting_key")
+    if lasting_cookie:
+        # Rotate lasting key as well.
+        new_lasting_token = secrets.token_hex(32)
+        user.lasting_key = hash_token(new_lasting_token)
+        db.session.commit()
+        response = make_response(jsonify({
+            "session_key": new_session_key,
+            "lasting_key": new_lasting_token
+        }), 200)
+        set_auth_cookies(response, new_session_key, new_lasting_token)
+        return response
+    else:
+        response = make_response(jsonify({
+            "session_key": new_session_key
+        }), 200)
+        set_auth_cookies(response, new_session_key)
+        return response
 
 @app.route('/logout', methods=['POST'])
 @require_session_key
