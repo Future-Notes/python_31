@@ -443,7 +443,7 @@
       color: #e0e0e0;
       padding: 2px 4px;
       box-sizing: border-box;
-      cursor: pointer;
+      cursor:pointer;
       border-radius: 0;
       overflow: hidden;
       z-index: 10;
@@ -1155,19 +1155,23 @@
   <script>
     // ======== Authentication & Existing Logic =========
     document.addEventListener("DOMContentLoaded", async () => {
-      // Function to attempt refreshing tokens (auto-login)
+      const sessionKey = sessionStorage.getItem("session_key");
+      const lastingKey = localStorage.getItem("lasting_key");
+
       async function attemptAutoLogin() {
         try {
-          // Call the /refresh endpoint; cookies are sent automatically
-          const response = await fetch("/refresh", {
+          const response = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include"  // ensure cookies are included
+            body: JSON.stringify({ lasting_key: lastingKey }),
           });
+          const data = await response.json();
           if (response.ok) {
+            sessionStorage.setItem("session_key", data.session_key);
             console.log("Auto-login successful!");
           } else {
-            console.error("Auto-login failed:", response.statusText);
+            console.error("Auto-login failed:", data.error || "Unknown error");
+            localStorage.removeItem("lasting_key");
             showModal();
           }
         } catch (error) {
@@ -1176,34 +1180,41 @@
         }
       }
 
-      // Check session validity via an endpoint that uses the cookie for authentication
-      try {
-        const response = await fetch("/test-session", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include"  // send cookies with request
-        });
-        if (response.status === 401) {
-          // If session is invalid, attempt auto-login/refresh
-          await attemptAutoLogin();
-        } else {
-          hideModal();
-        }
-      } catch (error) {
-        console.error("Error during session validation:", error);
+      if (!sessionStorage.getItem("session_key") && lastingKey) {
+        await attemptAutoLogin();
+      } else if (!sessionStorage.getItem("session_key") && !lastingKey) {
         showModal();
+      } else {
+        try {
+          const response = await fetch("/test-session", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+            },
+          });
+          if (response.status === 401) {
+            if (lastingKey) {
+              await attemptAutoLogin();
+            } else {
+              showModal();
+            }
+          } else {
+            hideModal();
+          }
+        } catch (error) {
+          console.error("Error during session validation:", error);
+          showModal();
+        }
       }
-
-      // Continue with your other functions
       fetchSchedule();
       fetchNotes();
       // Initialize sidebar with current month
       const today = new Date();
-          currentMonthDate = new Date(today.getFullYear(), today.getMonth(), 1);
-          updateSidebarMonth(currentMonthDate);
-          updateCalendar(today);
-  });
-
+      currentMonthDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      updateSidebarMonth(currentMonthDate);
+      updateCalendar(today);
+    });
 
     function showModal() {
       window.location.href = "/login_page?redirect=/scheduler-page&warning=true";
