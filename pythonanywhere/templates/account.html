@@ -576,8 +576,8 @@
                     } else {
                         console.error("Auto-login failed:", data.error || "Unknown error");
                         localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
-                        if (window.location.pathname !== "/login") {
-                            window.location.href = "/login"; // Redirect to the login page
+                        if (window.location.pathname !== "/login_page") {
+                            window.location.href = "/login_page?redirect=/account_page&warning=true"; // Redirect to the login page
                         }
                     }
                 } catch (error) {
@@ -592,7 +592,7 @@
                 await attemptAutoLogin();
             } else if (!sessionKey && !lastingKey) {
                 // No session_key or lasting_key: redirect to the login page if not already there
-                if (window.location.pathname !== "/login") {
+                if (window.location.pathname !== "/login_page") {
                     showModal();
                     console.log("No lasting key nor session key, showing re-login modal...")
                 }
@@ -685,9 +685,7 @@
         });
 
         function showModal() {
-            console.log("Re-login modal shown!")
-            const modalOverlay = document.getElementById("modal-overlay");
-            modalOverlay.style.display = "flex";
+            window.location.href = '/login_page?redirect=/account_page&warning=true';
         }
 
         function hideModal() {
@@ -843,11 +841,10 @@
                 });
 
                 if (response.status === 200) {
-                    alert("Account deleted successfully!");
                     sessionStorage.clear();
+                    localStorage.clear();
                     window.location.href = "/login_page";
                 } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
                     sessionStorage.clear();
                     showModal();
                 } else if (response.status === 400) {
