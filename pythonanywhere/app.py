@@ -153,6 +153,24 @@ appointment_note = db.Table(
     db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
 )
 
+class Todo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    text = db.Column(db.Text, nullable=True)
+    due_date = db.Column(db.DateTime, nullable=True)
+    completed = db.Column(db.Boolean, default=False)
+
+    user = db.relationship("User", backref="todos")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "completed": self.completed,
+            "user_id": self.user_id
+        }
+
 
 class Trophy(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1028,6 +1046,115 @@ def get_all_notes():
     notes = Note.query.filter_by(user_id=user_id).all()
     notes_data = [note.to_dict() for note in notes]
     return jsonify({"notes": notes_data}), 200
+
+# Todos
+
+# 1. fetch all todos for the current user
+@app.route('/todos', methods=['GET'])
+@require_session_key
+def get_todos():
+    user_id = g.user_id
+    todos = Todo.query.filter_by(user_id=user_id).all()
+    todos_data = [todo.to_dict() for todo in todos]
+    return jsonify({"todos": todos_data}), 200
+
+# 2. create a new todo
+@app.route('/todos', methods=['POST'])
+@require_session_key
+def create_todo():
+    user_id = g.user_id
+
+    data = request.get_json() or {}
+    title = data.get('title')
+    description = data.get('description', '')
+    due_date_str = data.get('due_date')
+    is_completed = False
+
+    if not title:
+        return jsonify({"error": "Title is required"}), 400
+    if not due_date_str:
+        return jsonify({"error": "Due date is required"}), 400
+    try:
+        due_date = datetime.fromisoformat(due_date_str)
+    except ValueError:
+        return jsonify({"error": "Invalid due date format. Use ISO 8601 format."}), 400
+    if due_date < datetime.now():
+        return jsonify({"error": "Due date cannot be in the past"}), 400
+    if len(title) > 120:
+        return jsonify({"error": "Title exceeds the maximum allowed length of 120 characters."}), 400
+    if len(description) > 1000:
+        return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
+    
+    new_todo = Todo(
+        user_id=user_id,
+        title=title.strip(),
+        text=description.strip(),
+        due_date=due_date,
+        completed=is_completed
+    )
+
+    try:
+        db.session.add(new_todo)
+        db.session.commit()
+        return jsonify({"message": "Todo created successfully!", "todo": new_todo.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred while creating the todo: {str(e)}"}), 500
+    
+# 3. update an existing todo
+@app.route('/todos/<int:todo_id>', methods=['PUT'])
+@require_session_key
+def update_todo(todo_id):
+    user_id = g.user_id
+    todo = Todo.query.get(todo_id)
+    if not todo or todo.user_id != user_id:
+        return jsonify({"error": "Todo not found"}), 404
+
+    data = request.get_json() or {}
+    title = data.get('title')
+    description = data.get('description')
+    due_date_str = data.get('due_date')
+    is_completed = data.get('completed')
+
+    if title:
+        if len(title) > 120:
+            return jsonify({"error": "Title exceeds the maximum allowed length of 120 characters."}), 400
+        todo.title = title.strip()
+
+    if description is not None:
+        if len(description) > 1000:
+            return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
+        todo.text = description.strip()
+
+    if due_date_str:
+        try:
+            due_date = datetime.fromisoformat(due_date_str)
+            if due_date < datetime.now():
+                return jsonify({"error": "Due date cannot be in the past"}), 400
+            todo.due_date = due_date
+        except ValueError:
+            return jsonify({"error": "Invalid due date format. Use ISO 8601 format."}), 400
+
+    if is_completed is not None:
+        todo.completed = bool(is_completed)
+
+    db.session.commit()
+    return jsonify({"message": "Todo updated successfully!", "todo": todo.to_dict()}), 200
+
+# 4. delete a todo
+@app.route('/todos/<int:todo_id>', methods=['DELETE'])
+@require_session_key
+def delete_todo(todo_id):
+    user_id = g.user_id
+    todo = Todo.query.get(todo_id)
+    if not todo or todo.user_id != user_id:
+        return jsonify({"error": "Todo not found"}), 404
+
+    db.session.delete(todo)
+    db.session.commit()
+    return jsonify({"message": "Todo deleted successfully!"}), 200
+    
+
 
 # Groups   
 
