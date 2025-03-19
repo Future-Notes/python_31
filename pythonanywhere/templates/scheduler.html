@@ -2009,6 +2009,113 @@
       thead.classList.add("visible");
     });
 
+    // --- Navigation Functions: Update the Calendar ---
+    function navigatePrevWeek() {
+      if (currentView === 'day') {
+        currentWeekStart.setDate(currentWeekStart.getDate() - 1);
+      } else {
+        currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+      }
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
+      renderCalendar();
+      renderAppointments();
+      updateSidebarMonth(currentMonthDate);
+      document.querySelector("#calendar-table thead").classList.add("visible");
+    }
+
+    function navigateNextWeek() {
+      if (currentView === 'day') {
+        currentWeekStart.setDate(currentWeekStart.getDate() + 1);
+      } else {
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+      }
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
+      renderCalendar();
+      renderAppointments();
+      updateSidebarMonth(currentMonthDate);
+      document.querySelector("#calendar-table thead").classList.add("visible");
+    }
+
+    // --- Slide Animation Function ---
+    // direction: "next" (new week coming in from right) or "prev" (new week coming in from left)
+    // updateFunc: a function that updates your calendar (e.g., navigatePrevWeek or navigateNextWeek)
+    function animateSlide(direction, updateFunc) {
+      const container = document.getElementById("calendar-container");
+
+      // Slide out: animate the container offscreen in the appropriate direction
+      container.style.transition = "transform 0.3s ease-out";
+      let offset = direction === "next" ? "-100%" : "100%";
+      container.style.transform = `translateX(${offset})`;
+
+      // When the slide-out finishes...
+      container.addEventListener("transitionend", function handlerOut() {
+        container.removeEventListener("transitionend", handlerOut);
+
+        // Update the calendar content using the provided update function
+        updateFunc();
+
+        // Immediately reposition the container offscreen in the opposite direction
+        container.style.transition = "none";
+        container.style.transform = direction === "next" ? "translateX(100%)" : "translateX(-100%)";
+
+        // Force reflow so the browser picks up the new starting position
+        container.offsetHeight; // trigger reflow
+
+        // Slide in: animate the container back to its original position
+        container.style.transition = "transform 0.3s ease-out";
+        container.style.transform = "translateX(0)";
+
+        // Clean up once finished
+        container.addEventListener("transitionend", function handlerIn() {
+          container.removeEventListener("transitionend", handlerIn);
+          container.style.transition = "";
+        });
+      });
+    }
+
+    // --- Override the Existing Button Clicks ---
+    // We use the capturing phase to override the default click handlers.
+    document.getElementById("prev-week").addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      animateSlide("prev", navigatePrevWeek);
+    }, true);
+
+    document.getElementById("next-week").addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      animateSlide("next", navigateNextWeek);
+    }, true);
+
+    // --- Swipe Detection for Mobile ---
+    let touchStartX = 0;
+    let touchEndX = 0;
+    const swipeThreshold = 50; // Minimum horizontal distance in pixels for a swipe
+
+    calendarContainer.addEventListener("touchstart", (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    });
+
+    calendarContainer.addEventListener("touchend", (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      if (touchStartX - touchEndX > swipeThreshold) {
+        // Swiped left: trigger next-week navigation
+        document.getElementById("next-week").click();
+      } else if (touchEndX - touchStartX > swipeThreshold) {
+        // Swiped right: trigger prev-week navigation
+        document.getElementById("prev-week").click();
+      }
+    });
+
+    // --- Keyboard Arrow Keys ---
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") {
+        document.getElementById("prev-week").click();
+      } else if (e.key === "ArrowRight") {
+        document.getElementById("next-week").click();
+      }
+    });
+
     // Fetch appointments from backend
     async function fetchSchedule() {
       console.log("fetchSchedule called.");
