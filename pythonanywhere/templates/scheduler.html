@@ -400,7 +400,9 @@
     #calendar-table {
       width: 100%;
       border-collapse: collapse;
+      z-index: 1; /* Added so the grid is the lowest layer */
     }
+
     #calendar-table th,
     #calendar-table td {
       border: 1px solid #424242;
@@ -429,10 +431,11 @@
     #calendar-table thead {
       position: sticky;
       top: 0;
-      z-index: 2;
+      z-index: 100; /* Updated: higher than appointments */
       transition: transform 0.3s ease;
       transform: translateY(-100%);
     }
+
     #calendar-table thead.visible {
       transform: translateY(0);
     }
@@ -1045,7 +1048,8 @@
         <button id="prev-week">&larr;</button>
         <button id="today-button">Today</button>
         <button id="next-week">&rarr;</button>
-      </div>
+        <button id="toggle-view">Switch to Week View</button>
+      </div>      
       <!-- All Day Appointments Row (dynamically shown/hidden) -->
       <div id="all-day-appointments">
         <!-- All-day appointments will be rendered here -->
@@ -1461,7 +1465,7 @@
     let currentEditingAppointment = null;
     let currentWeekStart = null;
     let currentMonthDate = null; // First day of currently viewed month
-    let currentView = 'week'; // or 'day'
+    let currentView = 'day'; // or 'day'
 
     // Compute Monday for the given date
     function getMonday(d) {
@@ -1472,6 +1476,140 @@
       monday.setHours(0, 0, 0, 0); // Normalize to midnight
       return monday;
     }
+
+    function generateCalendarDayView(dayStart) {
+      console.log("generateCalendarDayView called with dayStart:", dayStart);
+      // Use visibleDays = 1 for day view; leave as 7 for week view.
+      const visibleDays = currentView === 'day' ? 1 : 7;
+      let table = '<table id="calendar-table">';
+      
+      // Table header: first column is the hour label.
+      table += "<thead><tr><th class='hour-label'></th>";
+      
+      const today = new Date(); // Today's date
+      const currentHour = today.getHours(); // Current hour
+      
+      // Loop for visibleDays (1 if day view, 7 if week view)
+      for (let i = 0; i < visibleDays; i++) {
+        const d = new Date(dayStart);
+        d.setDate(d.getDate() + i);
+        const options = { weekday: 'short', month: 'short', day: 'numeric' };
+        const isToday = d.toDateString() === today.toDateString();
+        table += `<th${isToday ? ' class="today-day"' : ''}>${d.toLocaleDateString(undefined, options)}</th>`;
+      }
+      table += "</tr></thead><tbody>";
+
+      // For the table body, create rows for each hour.
+      // (The hour labels and cells remain unchanged.)
+      const isCurrentPeriod = dayStart.toDateString() === new Date().toDateString();
+      console.log("isCurrentPeriod (day view):", isCurrentPeriod);
+      
+      for (let hour = 0; hour < 24; hour++) {
+        const isCurrentHour = isCurrentPeriod && hour === currentHour;
+        table += `<tr><th class='hour-label${isCurrentHour ? ' current-hour' : ''}'>${hour}:00</th>`;
+        
+        // For each visible day (1 or 7 columns)
+        for (let i = 0; i < visibleDays; i++) {
+          const d = new Date(dayStart);
+          d.setDate(d.getDate() + i);
+          const isToday = d.toDateString() === today.toDateString();
+          
+          const classes = [];
+          if (isToday) classes.push('today-day');
+          if (isCurrentHour) classes.push('current-hour');
+          const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+          
+          table += `<td data-day="${i}" data-hour="${hour}"${classAttr}></td>`;
+        }
+        table += "</tr>";
+      }
+      
+      table += "</tbody></table>";
+      
+      // Insert the generated table into the container.
+      document.getElementById("calendar-container").innerHTML = table;
+      
+      // Scroll to the current hour.
+      const container = document.getElementById("calendar-container");
+      const hourCellHeight = container.scrollHeight / 24;
+      container.scrollTop = hourCellHeight * currentHour - container.clientHeight / 2;
+      
+      // Make each cell clickable to open the add modal with autofilled date/time.
+      document.querySelectorAll("#calendar-table td").forEach(cell => {
+        cell.addEventListener("click", (e) => {
+          // Prevent triggering if an appointment div was clicked.
+          if (e.target.classList.contains("appointment")) return;
+
+          const dayIndex = parseInt(cell.getAttribute("data-day"));
+          const hour = parseInt(cell.getAttribute("data-hour"));
+
+          // Calculate the date/time for this cell based on dayStart.
+          const base = new Date(dayStart);
+          const cellDate = new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayIndex, hour, 0, 0, 0);
+          console.log("Cell clicked - dayIndex:", dayIndex, "hour:", hour, "computed cellDate:", cellDate);
+
+          // Autofill start and end datetime inputs.
+          appointmentDatetimeInput.value = toDatetimeLocal(cellDate);
+          const endDate = new Date(cellDate.getTime() + 60 * 60 * 1000);
+          appointmentEndDatetimeInput.value = toDatetimeLocal(endDate);
+
+          // Clear other fields and open the add modal.
+          appointmentTitleInput.value = "";
+          appointmentDescriptionInput.value = "";
+          currentEditingAppointment = null;
+          modalTitle.textContent = "Add Appointment";
+          deleteAppointmentButton.style.display = "none";
+          addModalOverlay.style.display = "flex";
+        });
+      });
+
+      displayDateInButtonRowDiv(); // Update the button row display.
+      console.log("Calendar grid generated.");
+    }
+
+    document.getElementById("toggle-view").addEventListener("click", () => {
+      currentView = (currentView === 'day') ? 'week' : 'day';
+
+      // Update button text dynamically
+      document.getElementById("toggle-view").textContent =
+        currentView === 'day' ? 'Switch to Week View' : 'Switch to Day View';
+      
+      // Reset currentWeekStart to ensure a clean switch  
+      if (currentView === 'day') {
+        currentWeekStart = new Date(); // Start from today in day view
+      } else {
+        currentWeekStart = getMonday(new Date()); // Start from Monday in week view
+      }
+
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
+      renderCalendar(currentView === 'day' ? currentWeekStart : undefined);
+      renderAppointments();
+      updateSidebarMonth(currentMonthDate);
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      // Basic device detection
+      const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+      // Set default view based on device type
+      currentView = isMobile ? 'day' : 'week';
+
+      // Update toggle button text to match the default view
+      document.getElementById("toggle-view").textContent =
+        currentView === 'day' ? 'Switch to Week View' : 'Switch to Day View';
+
+      // Initialize currentWeekStart based on the default view
+      currentWeekStart = currentView === 'day'
+        ? new Date()
+        : getMonday(new Date());
+
+      currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
+
+      // Initial render
+      renderCalendar(currentWeekStart);
+      renderAppointments();
+      updateSidebarMonth(currentMonthDate);
+    });
 
 
     // Helper to format a Date object as a datetime-local string
@@ -1579,23 +1717,27 @@
       console.log("Calendar grid generated.");
     }
 
-    function renderCalendar() {
+    function renderCalendar(dayOverride) {
       const today = new Date();
 
       if (currentView === 'day') {
-        // Only initialize currentWeekStart if it’s not already set
-        if (!currentWeekStart) {
+        // If no override is provided, force reset to today.
+        if (!dayOverride) {
           currentWeekStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        } else {
+          currentWeekStart = new Date(dayOverride.getFullYear(), dayOverride.getMonth(), dayOverride.getDate());
         }
         generateCalendarDayView(currentWeekStart);
         fetchSchedule(); // Fetch appointments for the current day
       } else {
+        // For week view, only set currentWeekStart if it isn't already set.
         if (!currentWeekStart) {
           currentWeekStart = getMonday(today);
         }
         generateCalendarGrid(currentWeekStart);
       }
     }
+
 
     function displayDateInButtonRowDiv() {
       const buttonRowDiv = document.getElementById("button-row-div");
@@ -1609,6 +1751,302 @@
       dateSpan.textContent = `Week of ${currentWeekStart.toLocaleDateString(undefined, options)}`;
       buttonRowDiv.appendChild(dateSpan);
     }
+
+    function renderDayAppointments() {
+      console.log("renderDayAppointments called. Appointments count:", appointmentsData.length);
+      // Remove previously rendered appointment blocks.
+      document.querySelectorAll(".appointment-abs").forEach(el => el.remove());
+      document.querySelectorAll(".all-day-appointment").forEach(el => el.remove());
+
+      const container = document.getElementById("calendar-container");
+      const allDayContainer = document.getElementById("all-day-appointments");
+      // Clear any existing all-day appointments.
+      allDayContainer.innerHTML = "";
+
+      // Get header height and hour row height.
+      const header = document.querySelector("#calendar-table thead");
+      const headerHeight = header ? header.offsetHeight : 0;
+      const firstRow = document.querySelector("#calendar-table tbody tr");
+      const hourCellHeight = firstRow ? firstRow.offsetHeight : 80;
+
+      // Determine the visible range.
+      // For day view, visibleDays is 1; for week view, it’s 7.
+      const visibleDays = currentView === 'day' ? 1 : 7;
+      const currentRangeEnd = new Date(currentWeekStart.getTime() + visibleDays * 24 * 60 * 60 * 1000);
+
+      // Separate appointments into normal and all-day.
+      let normalAppointments = [];
+      let allDayAppointments = [];
+
+      appointmentsData.forEach(appt => {
+        if (appt.recurrence_rule) {
+          let originalStart = new Date(appt.start_datetime);
+          let originalEnd = new Date(appt.end_datetime);
+          let recurrenceCap = appt.recurrence_end_date ? new Date(appt.recurrence_end_date) : currentRangeEnd;
+
+          let freq = null, interval = 1, byday = null;
+          appt.recurrence_rule.split(";").forEach(part => {
+            let [key, value] = part.split("=");
+            if (key === "FREQ") {
+              freq = value;
+            } else if (key === "INTERVAL") {
+              interval = parseInt(value);
+            } else if (key === "BYDAY") {
+              byday = value.split(",");
+            }
+          });
+
+          if (freq === "DAILY") {
+            let occStart = new Date(originalStart);
+            let occEnd = new Date(originalEnd);
+            while (occStart < currentRangeEnd && occStart < recurrenceCap) {
+              if (occStart >= currentWeekStart) {
+                let occ = Object.assign({}, appt);
+                occ.start_datetime = occStart.toISOString();
+                occ.end_datetime = occEnd.toISOString();
+                if (appt.is_all_day) {
+                  allDayAppointments.push(occ);
+                } else {
+                  normalAppointments.push(occ);
+                }
+              }
+              occStart = new Date(occStart.getTime() + interval * 24 * 60 * 60 * 1000);
+              occEnd = new Date(occEnd.getTime() + interval * 24 * 60 * 60 * 1000);
+            }
+          } else if (freq === "WEEKLY") {
+            let dayIterator = new Date(currentWeekStart);
+            while (dayIterator < currentRangeEnd) {
+              let dayName = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][dayIterator.getDay()];
+              let dayMatches = byday ? byday.includes(dayName) : (dayIterator.getDay() === originalStart.getDay());
+              if (dayMatches) {
+                let candidateWeekStart = getMonday(dayIterator);
+                let originalWeekStart = getMonday(originalStart);
+                let diffWeeks = Math.round((candidateWeekStart - originalWeekStart) / (7 * 24 * 60 * 60 * 1000));
+                if (diffWeeks >= 0 && diffWeeks % interval === 0) {
+                  let occStart = new Date(dayIterator);
+                  occStart.setHours(originalStart.getHours(), originalStart.getMinutes(), originalStart.getSeconds());
+                  let occEnd = new Date(dayIterator);
+                  occEnd.setHours(originalEnd.getHours(), originalEnd.getMinutes(), originalEnd.getSeconds());
+                  if (occStart < recurrenceCap) {
+                    let occ = Object.assign({}, appt, {
+                      start_datetime: occStart.toISOString(),
+                      end_datetime: occEnd.toISOString()
+                    });
+                    if (appt.is_all_day) {
+                      allDayAppointments.push(occ);
+                    } else {
+                      normalAppointments.push(occ);
+                    }
+                  }
+                }
+              }
+              dayIterator = new Date(dayIterator.getTime() + 24 * 60 * 60 * 1000);
+            }
+          } else {
+            // For other frequencies, render the original appointment if it falls in range.
+            if (originalStart >= currentWeekStart && originalStart < currentRangeEnd) {
+              (appt.is_all_day ? allDayAppointments : normalAppointments).push(appt);
+            }
+          }
+        } else {
+          let startDate = new Date(appt.start_datetime);
+          if (startDate >= currentWeekStart && startDate < currentRangeEnd) {
+            (appt.is_all_day ? allDayAppointments : normalAppointments).push(appt);
+          }
+        }
+      });
+
+      // --- Render All-Day Appointments ---
+      // Group all-day appointments by day index (0 to visibleDays-1).
+      const allDayAppointmentsByDay = {};
+      allDayAppointments.forEach(appt => {
+        const startDate = new Date(appt.start_datetime);
+        const diffTime = startDate - currentWeekStart;
+        const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        if (dayIndex >= 0 && dayIndex < visibleDays) {
+          if (!allDayAppointmentsByDay[dayIndex]) {
+            allDayAppointmentsByDay[dayIndex] = [];
+          }
+          allDayAppointmentsByDay[dayIndex].push(appt);
+        }
+      });
+
+      // Show or hide the all-day container.
+      if (allDayAppointments.length > 0) {
+        allDayContainer.style.display = "block";
+        allDayContainer.style.marginBottom = `${30 * allDayAppointments.length}px`;
+      } else {
+        allDayContainer.style.display = "none";
+        allDayContainer.style.marginBottom = "0";
+      }
+
+      // Render each all-day appointment.
+      Object.keys(allDayAppointmentsByDay).forEach(dayIndex => {
+        const dayAppts = allDayAppointmentsByDay[dayIndex];
+        dayAppts.sort((a, b) => new Date(a.start_datetime) - new Date(b.start_datetime));
+        // Find the day cell in the grid (data-day corresponds to dayIndex, hour 0).
+        const dayCell = document.querySelector(`#calendar-table td[data-day="${dayIndex}"][data-hour="0"]`);
+        if (!dayCell) return;
+        const cellLeft = dayCell.offsetLeft;
+        const cellWidth = dayCell.offsetWidth;
+        
+        dayAppts.forEach((appt, index) => {
+          const apptDiv = document.createElement("div");
+          apptDiv.className = "all-day-appointment";
+          apptDiv.style.position = "absolute";
+          const apptHeight = 22;
+          const margin = 2;
+          apptDiv.style.top = (index * (apptHeight + margin)) + "px";
+          apptDiv.style.left = cellLeft + "px";
+          apptDiv.style.width = cellWidth + "px";
+          apptDiv.style.height = apptHeight + "px";
+          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.color = "#fff";
+          apptDiv.style.boxSizing = "border-box";
+          apptDiv.style.padding = "2px 4px";
+          apptDiv.style.overflow = "hidden";
+          apptDiv.style.zIndex = "15";  // Above normal appointments.
+          apptDiv.style.cursor = "pointer";
+          
+          apptDiv.textContent = appt.title;
+          apptDiv.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openEditModal(appt);
+          });
+          
+          allDayContainer.appendChild(apptDiv);
+        });
+      });
+
+      // --- Render Normal (Timed) Appointments ---
+      const appointmentsByDay = {};
+      normalAppointments.forEach(appt => {
+        const startDate = new Date(appt.start_datetime);
+        const diffTime = startDate - currentWeekStart;
+        const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        if (dayIndex >= 0 && dayIndex < visibleDays) {
+          if (!appointmentsByDay[dayIndex]) {
+            appointmentsByDay[dayIndex] = [];
+          }
+          appointmentsByDay[dayIndex].push(appt);
+        }
+        appt._startDate = new Date(appt.start_datetime);
+        appt._endDate = new Date(appt.end_datetime);
+      });
+
+      // Loop through each day (should be only one in day view).
+      Object.keys(appointmentsByDay).forEach(dayIndex => {
+        const dayAppointments = appointmentsByDay[dayIndex];
+        dayAppointments.sort((a, b) => a._startDate - b._startDate);
+
+        // Cluster overlapping appointments.
+        let clusters = [];
+        let currentCluster = [];
+        let clusterEnd = null;
+        dayAppointments.forEach(appt => {
+          if (currentCluster.length === 0) {
+            currentCluster.push(appt);
+            clusterEnd = appt._endDate;
+          } else {
+            if (appt._startDate < clusterEnd) {
+              currentCluster.push(appt);
+              if (appt._endDate > clusterEnd) {
+                clusterEnd = appt._endDate;
+              }
+            } else {
+              clusters.push(currentCluster);
+              currentCluster = [appt];
+              clusterEnd = appt._endDate;
+            }
+          }
+        });
+        if (currentCluster.length > 0) {
+          clusters.push(currentCluster);
+        }
+
+        // Assign column indices for overlapping appointments.
+        clusters.forEach(cluster => {
+          let columns = [];
+          cluster.forEach(appt => {
+            let placed = false;
+            for (let i = 0; i < columns.length; i++) {
+              if (appt._startDate >= columns[i]) {
+                appt._colIndex = i;
+                columns[i] = appt._endDate;
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              appt._colIndex = columns.length;
+              columns.push(appt._endDate);
+            }
+          });
+          cluster.forEach(appt => {
+            appt._totalCols = columns.length;
+          });
+        });
+
+        // Find the day cell boundaries.
+        const dayCell = document.querySelector(`#calendar-table td[data-day="${dayIndex}"][data-hour="0"]`);
+        if (!dayCell) return;
+        const cellLeft = dayCell.offsetLeft;
+        const cellWidth = dayCell.offsetWidth;
+
+        // Render each timed appointment.
+        dayAppointments.forEach(appt => {
+          const startHourFraction = appt._startDate.getHours() + (appt._startDate.getMinutes() / 60);
+          const durationHours = (appt._endDate - appt._startDate) / (1000 * 60 * 60);
+          const top = headerHeight + startHourFraction * hourCellHeight;
+          const height = durationHours * hourCellHeight;
+          const totalCols = appt._totalCols || 1;
+          const colWidth = cellWidth / totalCols;
+          const left = cellLeft + appt._colIndex * colWidth;
+
+          const apptDiv = document.createElement("div");
+          apptDiv.className = "appointment-abs";
+          apptDiv.style.position = "absolute";
+          apptDiv.style.top = top + "px";
+          apptDiv.style.left = left + "px";
+          apptDiv.style.width = colWidth + "px";
+          apptDiv.style.height = height + "px";
+          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.color = "#e0e0e0";
+          apptDiv.style.padding = "2px 4px";
+          apptDiv.style.boxSizing = "border-box";
+          apptDiv.style.borderRadius = "0";
+          apptDiv.style.overflow = "hidden";
+          apptDiv.style.zIndex = "10";
+
+          // Appointment stripe.
+          const stripe = document.createElement("div");
+          stripe.className = "appointment-stripe";
+          stripe.style.width = "5px";
+          stripe.style.height = "100%";
+          stripe.style.backgroundColor = "#424242";
+          stripe.style.float = "left";
+          stripe.style.marginRight = "4px";
+
+          // Appointment title.
+          const title = document.createElement("div");
+          title.className = "appointment-title";
+          title.style.position = "relative";
+          title.style.top = "0";
+          title.textContent = appt.title;
+
+          apptDiv.appendChild(stripe);
+          apptDiv.appendChild(title);
+
+          apptDiv.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openEditModal(appt);
+          });
+
+          container.appendChild(apptDiv);
+        });
+      });
+    }
+
 
     // Render appointments into the grid
     function renderAppointments() {
@@ -1996,18 +2434,25 @@
     });
 
 
-    // Today button: reset currentWeekStart to this week's Monday
     document.getElementById("today-button").addEventListener("click", () => {
       console.log("Today button clicked.");
-      currentWeekStart = getMonday(new Date());
+      if (currentView === 'day') {
+        // Reset to the current day
+        currentWeekStart = new Date();
+        currentWeekStart.setHours(0, 0, 0, 0);
+      } else {
+        // Week view: reset to this week’s Monday
+        currentWeekStart = getMonday(new Date());
+      }
       currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
       console.log("Reset currentWeekStart to:", currentWeekStart);
       renderCalendar();
       renderAppointments();
       updateSidebarMonth(currentMonthDate);
       const thead = document.querySelector("#calendar-table thead");
-      thead.classList.add("visible");
+      if (thead) thead.classList.add("visible");
     });
+
 
     // --- Navigation Functions: Update the Calendar ---
     function navigatePrevWeek() {
@@ -2017,7 +2462,7 @@
         currentWeekStart.setDate(currentWeekStart.getDate() - 7);
       }
       currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
-      renderCalendar();
+      renderCalendar(currentView === 'day' ? currentWeekStart : undefined);
       renderAppointments();
       updateSidebarMonth(currentMonthDate);
       document.querySelector("#calendar-table thead").classList.add("visible");
@@ -2030,11 +2475,12 @@
         currentWeekStart.setDate(currentWeekStart.getDate() + 7);
       }
       currentMonthDate = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), 1);
-      renderCalendar();
+      renderCalendar(currentView === 'day' ? currentWeekStart : undefined);
       renderAppointments();
       updateSidebarMonth(currentMonthDate);
       document.querySelector("#calendar-table thead").classList.add("visible");
     }
+
 
     // --- Slide Animation Function ---
     // direction: "next" (new week coming in from right) or "prev" (new week coming in from left)
@@ -2191,10 +2637,17 @@
     function updateCalendar(selectedDate) {
       if (!selectedDate) return;
       const dateObj = new Date(selectedDate);
-      currentWeekStart = getMonday(dateObj);
-      renderCalendar();
+
+      if (currentView === 'day') {
+        currentWeekStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+      } else {
+        currentWeekStart = getMonday(dateObj);
+      }
+      
+      renderCalendar(currentView === 'day' ? currentWeekStart : undefined);
       renderAppointments();
     }
+
 
     // ======== Sidebar Navigation for Month =========
 
@@ -2225,10 +2678,9 @@
         dayCell.textContent = day;
         dayCell.dataset.date = new Date(year, month, day).toISOString();
         dayCell.addEventListener("click", () => {
-          // Your existing calendar update function
           updateCalendar(new Date(year, month, day));
         });
-        
+
         // Mark today
         const today = new Date();
         if (
@@ -2246,13 +2698,32 @@
     // Navigation event listeners
     document.getElementById("prev-month").addEventListener("click", () => {
       currentMonthDate.setMonth(currentMonthDate.getMonth() - 1);
+      
+      if (currentView === 'day') {
+        currentWeekStart = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1);
+      } else {
+        currentWeekStart = getMonday(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1));
+      }
+
       updateSidebarMonth(currentMonthDate);
+      renderCalendar(currentView === 'day' ? currentWeekStart : undefined);
+      renderAppointments();
     });
 
     document.getElementById("next-month").addEventListener("click", () => {
       currentMonthDate.setMonth(currentMonthDate.getMonth() + 1);
+      
+      if (currentView === 'day') {
+        currentWeekStart = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1);
+      } else {
+        currentWeekStart = getMonday(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1));
+      }
+
       updateSidebarMonth(currentMonthDate);
+      renderCalendar(currentView === 'day' ? currentWeekStart : undefined);
+      renderAppointments();
     });
+
 
 
 
