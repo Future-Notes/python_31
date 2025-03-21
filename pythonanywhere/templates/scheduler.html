@@ -1572,7 +1572,7 @@
 
       // Update button text dynamically
       document.getElementById("toggle-view").textContent =
-        currentView === 'day' ? 'Switch to Week View' : 'Switch to Day View';
+        currentView === 'day' ? 'Day' : 'Week';
       
       // Reset currentWeekStart to ensure a clean switch  
       if (currentView === 'day') {
@@ -1596,7 +1596,7 @@
 
       // Update toggle button text to match the default view
       document.getElementById("toggle-view").textContent =
-        currentView === 'day' ? 'Switch to Week View' : 'Switch to Day View';
+        currentView === 'day' ? 'Day' : 'Week';
 
       // Initialize currentWeekStart based on the default view
       currentWeekStart = currentView === 'day'

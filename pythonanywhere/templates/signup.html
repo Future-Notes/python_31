@@ -326,29 +326,37 @@
 
 
     function checkUsername() {
-        const username = usernameInput.value.trim();
-        usernameTip.classList.remove("hidden"); // Make sure it's visible
+      const username = usernameInput.value.trim();
+      usernameTip.classList.remove("hidden"); // Make sure it's visible
 
-        if (username.length > 80) {
-            usernameTip.textContent = "✖ Username cannot be longer than 80 characters";
-            usernameTip.classList.remove("success");
-            usernameTip.classList.add("error", "shake");
-            setTimeout(() => usernameTip.classList.remove("shake"), 500);
-            return false;
-        }
+      if (username.length > 80) {
+        usernameTip.textContent = "✖ Username cannot be longer than 80 characters";
+        usernameTip.classList.remove("success");
+        usernameTip.classList.add("error", "shake");
+        setTimeout(() => usernameTip.classList.remove("shake"), 500);
+        return false;
+      }
 
-        if (forbiddenRegex.test(username)) {
-            usernameTip.textContent = "✖ Username contains inappropriate words";
-            usernameTip.classList.remove("success");
-            usernameTip.classList.add("error", "shake");
-            setTimeout(() => usernameTip.classList.remove("shake"), 500);
-            return false;
-        }
+      if (forbiddenRegex.test(username)) {
+        usernameTip.textContent = "✖ Username contains inappropriate words";
+        usernameTip.classList.remove("success");
+        usernameTip.classList.add("error", "shake");
+        setTimeout(() => usernameTip.classList.remove("shake"), 500);
+        return false;
+      }
 
-        usernameTip.textContent = "✔ Username is valid";
-        usernameTip.classList.remove("error");
-        usernameTip.classList.add("success");
-        return true;
+      if (/_/.test(username)) {
+        usernameTip.textContent = "✖ Underscores are not allowed in the username";
+        usernameTip.classList.remove("success");
+        usernameTip.classList.add("error", "shake");
+        setTimeout(() => usernameTip.classList.remove("shake"), 500);
+        return false;
+      }
+
+      usernameTip.textContent = "✔ Username is valid";
+      usernameTip.classList.remove("error");
+      usernameTip.classList.add("success");
+      return true;
     }
 
 
