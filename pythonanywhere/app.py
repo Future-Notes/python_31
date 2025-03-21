@@ -288,6 +288,66 @@ def delete_profile_pictures(username):
         except Exception as e:
             print(f"Failed to delete {picture}: {e}")
 
+def sync_profile_pics_files_db():
+    """ Syncs the profile pictures in the database with the actual files for all users. """
+    # Get all users from the database
+    users = User.query.all()
+
+    # Get all profile pictures in the folder
+    profile_pictures = os.listdir(app.config['UPLOAD_FOLDER'])
+    profile_pictures = [os.path.join(app.config['UPLOAD_FOLDER'], pic).replace("\\", "/") for pic in profile_pictures]
+
+    # Ensure usernames dont have underscores before attempting to match them with files
+    cleanup_bad_usernames()
+
+    # Ensure profile picture formats are valid before attempting to match them with files
+    validate_pics_format()
+
+    for user in users:
+        # Check if the user's profile picture exists in the folder
+        if user.profile_picture and user.profile_picture not in profile_pictures:
+            # If the database has a record but the file doesn't exist, delete the record
+            user.profile_picture = None
+
+        # Check for files in the folder that are not in the database
+        for picture in profile_pictures:
+            # Extract the username from the file name (everything before the first underscore)
+            filename = os.path.basename(picture)
+            username = filename.split("_", 1)[0]
+
+            # Check if a user with this username exists in the database
+            user = User.query.filter_by(username=username).first()
+
+            if user:
+            # If the user exists, add the relative path to the database
+                user.profile_picture = picture.replace("\\", "/")
+            else:
+            # If the user does not exist, delete the file
+                try:
+                    os.remove(picture)
+                except Exception as e:
+                    print(f"Failed to delete {picture}: {e}")
+
+    # Commit all changes to the database
+    db.session.commit()
+
+def cleanup_bad_usernames():
+    """ Replaces underscores in usernames with dashes. """
+    users = User.query.all()
+    for user in users:
+        if "_" in user.username:
+            user.username = user.username.replace("_", "-")
+    db.session.commit()
+
+def validate_pics_format():
+    """ Validates the format of profile pictures in the database. """
+    users = User.query.all()
+    for user in users:
+        if user.profile_picture and not allowed_file(user.profile_picture):
+            db.session.delete(user.profile_picture)
+            user.profile_picture = None
+    db.session.commit()
+
 
 def handle_group_membership(user_id):
     """ Handles removal or admin transfer for groups the user is in. """
@@ -735,7 +795,13 @@ def handle_operational_error(e):
     return jsonify({"error": "Internal Server Error"}), 500
 
 @app.errorhandler(404)
-def page_note_found(error):
+def page_not_found(error):
+    # Check if the error is related to the profile pictures URL
+    if request.path.startswith('/static/uploads/profile_pictures'):
+        sync_profile_pics_files_db()
+        return jsonify({"message": "Profile pictures synced successfully!"}), 200
+
+    # Default behavior for other 404 errors
     return render_template('404.html'), 404
 
 # Function to generate unique error codes (or use predefined ones)
@@ -850,7 +916,6 @@ def get_user_info():
         "role": user.role
     }), 200
 
-    
 # Appointments
 
 # 1. Fetch all appointments for the current user
@@ -2342,4 +2407,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run()
