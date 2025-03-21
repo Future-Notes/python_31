@@ -1515,7 +1515,6 @@
           const isToday = d.toDateString() === today.toDateString();
           
           const classes = [];
-          if (isToday) classes.push('today-day');
           if (isCurrentHour) classes.push('current-hour');
           const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
           
