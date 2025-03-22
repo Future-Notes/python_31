@@ -1,5 +1,4 @@
 # ------------------------------Imports--------------------------------
-
 from flask import Flask, request, jsonify, g, render_template, make_response, session
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
