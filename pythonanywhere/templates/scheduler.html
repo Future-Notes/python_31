@@ -2818,12 +2818,15 @@
         appointmentDatetimeInput.value = dateStart;
         appointmentEndDatetimeInput.type = "date";
         appointmentEndDatetimeInput.value = dateEnd;
+
+        appointmentEndDatetimeInput.style.display = "none"; // Hide the end datetime input
       } else {
         // Revert to the original datetime values.
         appointmentDatetimeInput.type = "datetime-local";
         appointmentDatetimeInput.value = originalStartDatetime;
         appointmentEndDatetimeInput.type = "datetime-local";
         appointmentEndDatetimeInput.value = originalEndDatetime;
+        appointmentEndDatetimeInput.style.display = "inline-block";
       }
     }
 
@@ -2947,13 +2950,8 @@
       appointmentDatetimeInput.type = "datetime-local";
       appointmentEndDatetimeInput.type = "datetime-local";
 
-      if (appointmentColorInput) {
-        appointmentColorInput.value = "#616161"; // Default color
-      }
-      if (selectedColorHexSpan) {
-        selectedColorHexSpan.textContent = "#616161";
-      }
-
+      appointmentColorInput.value = "#616161"; // Default color
+      selectedColorHexSpan.textContent = "#616161";
       
       // Reset recurrence and note UI as before...
       recurrenceCheckbox.checked = false;

@@ -1057,6 +1057,7 @@ def update_appointment(appointment_id):
             new_start = datetime.fromisoformat(start_datetime_str)
             appointment.start_datetime = new_start
         except ValueError:
+            print("Bad start date format??")
             return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
 
     if end_datetime_str:
@@ -1064,13 +1065,16 @@ def update_appointment(appointment_id):
             new_end = datetime.fromisoformat(end_datetime_str)
             appointment.end_datetime = new_end
         except ValueError:
+            print("Bad end date format??")
             return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
 
     # Ensure the updated times are valid
     if appointment.end_datetime <= appointment.start_datetime:
+        print("Bad end date??")
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
 
     if appointment.end_datetime.date() != appointment.start_datetime.date():
+        print("Bad date??")
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
     # Update recurrence rule if provided (can be set to None to remove recurrence)
@@ -1082,6 +1086,7 @@ def update_appointment(appointment_id):
             try:
                 appointment.recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
             except ValueError:
+                print("Bad recurrence end date format??")
                 return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
         else:
             appointment.recurrence_end_date = None
@@ -1089,6 +1094,7 @@ def update_appointment(appointment_id):
     #validate color to be a valid hex color code
     if color is not None:
         if color and not re.match(r'^#[0-9A-Fa-f]{6}$', color):
+            print("Bad color format??")
             return jsonify({"error": "Invalid color format. Use hex color code (e.g., #RRGGBB)."}), 400
         appointment.color = color.strip() if color else None
 
