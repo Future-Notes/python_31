@@ -263,8 +263,8 @@
             
             const lastingKey = localStorage.getItem("lasting_key");
             const urlParams = new URLSearchParams(window.location.search);
-            const redirectUrl = urlParams.get("redirect") || "/index";
             const showWarning = urlParams.get("warning") === "true";
+            const redirectUrl = urlParams.get("redirect");
 
             // Show warning message if parameter is set
             if (showWarning) {
@@ -281,7 +281,8 @@
 
                 if (response.ok) {
                     sessionStorage.setItem("session_key", data.session_key);
-                    window.location.href = redirectUrl;
+                    // Redirect to the provided redirect URL or the user's default startpage
+                    window.location.href = redirectUrl || data.startpage || "/index";
                 } else {
                     console.log(data);
                 }
@@ -294,7 +295,9 @@
             const password = document.getElementById("password").value;
             const rememberMe = document.getElementById("remember-me").checked;
             const urlParams = new URLSearchParams(window.location.search);
-            const redirectUrl = urlParams.get("redirect") || "/index";
+            const redirectUrl = urlParams.get("redirect");
+            console.log("redirectUrl:", redirectUrl);
+
 
             if (!username || !password) {
                 alert("Please enter both username and password.");
@@ -314,7 +317,11 @@
                 if (rememberMe && data.lasting_key) {
                     localStorage.setItem("lasting_key", data.lasting_key);
                 }
-                window.location.href = redirectUrl;
+                console.log("Final redirect url:" + redirectUrl);
+                console.log("Final startpage:" + data.startpage);
+                console.log("Final decision:" + (redirectUrl || data.startpage || "/index"));
+                // Redirect to the provided redirect URL or the user's default startpage
+                window.location.href = redirectUrl || data.startpage || "/index";
             } else {
                 alert(data.error || "Login failed");
             }
