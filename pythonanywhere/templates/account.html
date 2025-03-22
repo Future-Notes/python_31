@@ -422,6 +422,14 @@
                     <span class="slider round"></span>
                 </label>
                 <span id="sharing-status">Allow Sharing Notes</span>
+                <h2>Default startpage</h2>
+                <select id="default-startpage" style="width: 100%; padding: 0.75rem; border-radius: var(--border-radius-sm); background-color: var(--input-bg); color: var(--text-color);">
+                    <option value="/index">Personal notes</option>
+                    <option value="/group-notes">Group notes</option>
+                    <option value="/scheduler-page">Scheduler</option>
+                    <option value="/pws">Zeeslag (Battleship)</option>
+                </select>
+                <!--Removed the button to set the default startpage, as it is now set automatically -->
             </div>
             <!-- Admin page link (disabled by default) -->
             <a href="admin_page" class="admin-page-link disabled">Admin Page</a>
@@ -632,6 +640,7 @@
                             const userInfo = await userInfoResponse.json();
                             const username = userInfo.username;
                             const profilePic = userInfo.profile_picture;
+                            const defaultStartpage = userInfo.startpage;
                             const sharingToggle = document.getElementById("sharing-toggle");
                             const role = userInfo.role;
 
@@ -674,6 +683,13 @@
                                     console.log("Nope!")
                                 });
                             }
+                            if (defaultStartpage) {
+                                document.getElementById("default-startpage").value = defaultStartpage;
+                            } else {
+                                console.log("No default startpage set, using personal notes as default.")
+                                document.getElementById("default-startpage").value = "/index";
+                            }
+                            console.log("Default startpage set to: " + defaultStartpage);
                         } else {
                             console.error("Failed to fetch user info");
                         }
@@ -681,6 +697,33 @@
                 } catch (error) {
                     console.error("Error during session validation:", error);
                 }
+            }
+        });
+
+        document.getElementById("default-startpage").addEventListener("change", async (e) => {
+            const selectedPage = e.target.value;
+            try {
+            const response = await fetch("/update-set-startpage", {
+                method: "POST",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ startpage: selectedPage }),
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                sessionStorage.clear();
+                showModal();
+                } else {
+                alert("Failed to update default starting page.");
+                }
+            } else {
+                console.log("Default starting page updated successfully!");
+            }
+            } catch (err) {
+            console.error("Error updating default starting page:", err);
             }
         });
 

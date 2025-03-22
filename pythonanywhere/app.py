@@ -19,6 +19,7 @@ import glob
 import threading
 from update_DB import update_tables
 from math import floor
+import re
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -92,6 +93,7 @@ class User(db.Model):
     profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
     allows_sharing = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
+    startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
     
     __table_args__ = (
@@ -126,6 +128,7 @@ class Appointment(db.Model):
     recurrence_end_date = db.Column(db.DateTime, nullable=True)
 
     is_all_day = db.Column(db.Boolean, nullable=False, default=False)  # New all-day field
+    color = db.Column(db.String(7), nullable=True)  # Optional color field
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
     notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
@@ -141,6 +144,7 @@ class Appointment(db.Model):
             "recurrence_rule": self.recurrence_rule,
             "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
             "is_all_day": self.is_all_day,  # Include all-day flag in response
+            "color": self.color,  # Include color in response
             "notes": [note.to_dict() for note in self.notes]
         }
 
@@ -912,7 +916,8 @@ def get_user_info():
         "username": user.username,
         "profile_picture": user.profile_picture,
         "allows_sharing": user.allows_sharing,
-        "role": user.role
+        "role": user.role,
+        "startpage": user.startpage
     }), 200
 
 # Appointments
@@ -939,6 +944,7 @@ def create_appointment():
     recurrence_end_date_str = data.get('recurrence_end_date')  # Optional recurrence end date
     note_ids = data.get('note_ids', [])  # List of note IDs to attach
     is_all_day = data.get('is_all_day', False)  # Optional all-day flag
+    color = data.get('color', None)  # Optional color for the appointment
 
     # Validate required fields
     if not title or not start_datetime_str or not end_datetime_str:
@@ -984,6 +990,10 @@ def create_appointment():
     # Ensure description length is reasonable
     if len(description) > 1000:
         return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
+    
+    #validate color to be a valid hex color code
+    if color and not re.match(r'^#[0-9A-Fa-f]{6}$', color):
+        return jsonify({"error": "Invalid color format. Use hex color code (e.g., #RRGGBB)."}), 400
 
     # Create the appointment
     new_appointment = Appointment(
@@ -994,7 +1004,8 @@ def create_appointment():
         user_id=g.user_id,
         recurrence_rule=recurrence_rule.strip() if recurrence_rule else None,
         recurrence_end_date=recurrence_end_date,
-        is_all_day=bool(is_all_day)  # Ensure it's a boolean
+        is_all_day=bool(is_all_day),  # Ensure it's a boolean
+        color=color.strip() if color else None,  # Ensure it's a string or None
     )
 
     # Attach notes if provided
@@ -1030,6 +1041,7 @@ def update_appointment(appointment_id):
     recurrence_rule = data.get('recurrence_rule')  # New: optional update for recurrence rule
     recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional update for recurrence end date
     note_ids = data.get('note_ids')  # Optional update to attached notes
+    color = data.get('color')  # Optional update to color
 
     if title:
         appointment.title = title
@@ -1045,6 +1057,7 @@ def update_appointment(appointment_id):
             new_start = datetime.fromisoformat(start_datetime_str)
             appointment.start_datetime = new_start
         except ValueError:
+            print("Bad start date format??")
             return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
 
     if end_datetime_str:
@@ -1052,13 +1065,16 @@ def update_appointment(appointment_id):
             new_end = datetime.fromisoformat(end_datetime_str)
             appointment.end_datetime = new_end
         except ValueError:
+            print("Bad end date format??")
             return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
 
     # Ensure the updated times are valid
     if appointment.end_datetime <= appointment.start_datetime:
+        print("Bad end date??")
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
 
     if appointment.end_datetime.date() != appointment.start_datetime.date():
+        print("Bad date??")
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
     # Update recurrence rule if provided (can be set to None to remove recurrence)
@@ -1070,9 +1086,17 @@ def update_appointment(appointment_id):
             try:
                 appointment.recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
             except ValueError:
+                print("Bad recurrence end date format??")
                 return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
         else:
             appointment.recurrence_end_date = None
+
+    #validate color to be a valid hex color code
+    if color is not None:
+        if color and not re.match(r'^#[0-9A-Fa-f]{6}$', color):
+            print("Bad color format??")
+            return jsonify({"error": "Invalid color format. Use hex color code (e.g., #RRGGBB)."}), 400
+        appointment.color = color.strip() if color else None
 
     # Update attached notes if provided
     if note_ids is not None:
@@ -1714,6 +1738,21 @@ def update_profile_picture():
 
         return jsonify({"error": "No profile picture to delete"}), 400
     
+@app.route('/update-set-startpage', methods=['POST'])
+@require_session_key
+def update_set_startpage():
+    data = request.json
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if 'startpage' not in data:
+        return jsonify({"error": "Missing startpage data"}), 400
+
+    user.startpage = data['startpage']
+    db.session.commit()
+    return jsonify({"message": "Startpage updated successfully!"}), 200
+    
 @app.route('/allow-sharing', methods=['PUT'])
 @require_session_key
 def allow_sharing():
@@ -1882,7 +1921,8 @@ def login():
                 return jsonify({
                     "message": "Login successful!",
                     "session_key": key,
-                    "user_id": user.id
+                    "user_id": user.id,
+                    "startpage": user.startpage
                 }), 200
             return jsonify({"error": "Invalid lasting key"}), 400
 
@@ -1909,14 +1949,16 @@ def login():
                 "message": "Login successful!",
                 "session_key": key,
                 "user_id": user.id,
-                "lasting_key": user.lasting_key
+                "lasting_key": user.lasting_key,
+                "startpage": user.startpage
             }), 200
 
         # Standard login response
         return jsonify({
             "message": "Login successful!",
             "session_key": key,
-            "user_id": user.id
+            "user_id": user.id,
+            "startpage": user.startpage
         }), 200
 
     except Exception as e:
@@ -2406,4 +2448,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run()
+    app.run(debug=True)

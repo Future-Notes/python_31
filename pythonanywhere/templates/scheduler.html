@@ -442,7 +442,6 @@
 
     /* Appointment block rendered over the calendar */
     .appointment-abs {
-      background: linear-gradient(to right, #424242 5px, #616161 5px);
       color: #e0e0e0;
       padding: 2px 4px;
       box-sizing: border-box;
@@ -1070,6 +1069,18 @@
       <h2 id="modal-title">Add Appointment</h2>
       <input id="appointment-title" type="text" placeholder="Title" />
       <textarea id="appointment-description" placeholder="Description"></textarea>
+      <!-- Appointment color input -->
+      <label for="appointment-color" style="display: inline-block; background-color: #424242; color: #e0e0e0; padding: 10px 20px; border-radius: 8px; cursor: pointer; text-align: center;">Appointment Color:</label>
+      <input id="appointment-color" type="color" value="#616161" style="visibility: hidden; position: absolute;" />
+      <span id="selected-color-hex" style="margin-left: 10px; color: #e0e0e0;">#616161</span>
+      <script>
+        const colorInput = document.getElementById("appointment-color");
+        const colorHexDisplay = document.getElementById("selected-color-hex");
+
+        colorInput.addEventListener("input", () => {
+          colorHexDisplay.textContent = colorInput.value;
+        });
+      </script>
       <!-- Start time input -->
       <input id="appointment-datetime" type="datetime-local" step="1" placeholder="Start Time" />
       <!-- End time input -->
@@ -1900,7 +1911,7 @@
           apptDiv.style.left = cellLeft + "px";
           apptDiv.style.width = cellWidth + "px";
           apptDiv.style.height = apptHeight + "px";
-          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.setProperty("background-color", appt.color ? appt.color : "#616161", "important");
           apptDiv.style.color = "#fff";
           apptDiv.style.boxSizing = "border-box";
           apptDiv.style.padding = "2px 4px";
@@ -2010,7 +2021,7 @@
           apptDiv.style.left = left + "px";
           apptDiv.style.width = colWidth + "px";
           apptDiv.style.height = height + "px";
-          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.backgroundColor = appt.color ? appt.color : "#616161";
           apptDiv.style.color = "#e0e0e0";
           apptDiv.style.padding = "2px 4px";
           apptDiv.style.boxSizing = "border-box";
@@ -2021,7 +2032,7 @@
           // Appointment stripe.
           const stripe = document.createElement("div");
           stripe.className = "appointment-stripe";
-          stripe.style.width = "1px";
+          stripe.style.width = "3px";
           stripe.style.height = "100%";
           stripe.style.backgroundColor = "#424242";
           stripe.style.float = "left";
@@ -2154,8 +2165,29 @@
               // Move to the next day.
               dayIterator = new Date(dayIterator.getTime() + 24 * 60 * 60 * 1000);
             }
+          } else if (freq === "MONTHLY") {
+            // For monthly recurrence, add occurrences by increasing the month.
+            let occStart = new Date(originalStart);
+            let occEnd = new Date(originalEnd);
+            while (occStart < currentWeekEnd && occStart < recurrenceCap) {
+              if (occStart >= currentWeekStart) {
+                let occ = Object.assign({}, appt);
+                occ.start_datetime = occStart.toISOString();
+                occ.end_datetime = occEnd.toISOString();
+                if (appt.is_all_day) {
+                  allDayAppointments.push(occ);
+                } else {
+                  normalAppointments.push(occ);
+                }
+              }
+              // Increase the month by the interval.
+              occStart = new Date(occStart);
+              occEnd = new Date(occEnd);
+              occStart.setMonth(occStart.getMonth() + interval);
+              occEnd.setMonth(occEnd.getMonth() + interval);
+            }
           } else {
-            // For other frequencies (monthly, yearly) render the original appointment if in range.
+            // For other frequencies (yearly, etc.) render the original appointment if in range.
             if (originalStart >= currentWeekStart && originalStart < currentWeekEnd) {
               if (appt.is_all_day) {
                 allDayAppointments.push(appt);
@@ -2224,7 +2256,7 @@
           apptDiv.style.left = cellLeft + "px";
           apptDiv.style.width = cellWidth + "px";
           apptDiv.style.height = apptHeight + "px";
-          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.backgroundColor = appt.color ? appt.color : "#616161";
           apptDiv.style.color = "#fff";
           apptDiv.style.boxSizing = "border-box";
           apptDiv.style.padding = "2px 4px";
@@ -2343,7 +2375,7 @@
           apptDiv.style.left = left + "px";
           apptDiv.style.width = colWidth + "px";
           apptDiv.style.height = height + "px";
-          apptDiv.style.backgroundColor = "#616161";
+          apptDiv.style.backgroundColor = appt.color ? appt.color : "#616161";
           apptDiv.style.color = "#e0e0e0";
           apptDiv.style.padding = "2px 4px";
           apptDiv.style.boxSizing = "border-box";
@@ -2354,7 +2386,7 @@
           // Create a slim colored stripe on the left.
           const stripe = document.createElement("div");
           stripe.className = "appointment-stripe";
-          stripe.style.width = "1px";
+          stripe.style.width = "3px";
           stripe.style.height = "100%";
           stripe.style.backgroundColor = "#424242";
           stripe.style.float = "left";
@@ -2380,6 +2412,7 @@
         });
       });
     }
+
 
 
 
@@ -2739,6 +2772,8 @@
     const appointmentRecurrenceRuleInput = document.getElementById("appointment-recurrence-rule");
     const appointmentRecurrenceEndDatetimeInput = document.getElementById("appointment-recurrence-end-datetime");
     const appointmentRecurrenceEndDatetimeInputLabel = document.getElementById("appointment-recurrence-end-datetime-label");
+    const appointmentColorInput = document.getElementById("appointment-color");
+    const selectedColorHexSpan = document.getElementById("selected-color-hex");
     const submitAppointmentButton = document.getElementById("submit-appointment");
     const cancelAppointmentButton = document.getElementById("cancel-appointment");
     const deleteAppointmentButton = document.getElementById("delete-appointment");
@@ -2783,12 +2818,15 @@
         appointmentDatetimeInput.value = dateStart;
         appointmentEndDatetimeInput.type = "date";
         appointmentEndDatetimeInput.value = dateEnd;
+
+        appointmentEndDatetimeInput.style.display = "none"; // Hide the end datetime input
       } else {
         // Revert to the original datetime values.
         appointmentDatetimeInput.type = "datetime-local";
         appointmentDatetimeInput.value = originalStartDatetime;
         appointmentEndDatetimeInput.type = "datetime-local";
         appointmentEndDatetimeInput.value = originalEndDatetime;
+        appointmentEndDatetimeInput.style.display = "inline-block";
       }
     }
 
@@ -2911,6 +2949,9 @@
       appointmentAllDayCheckbox.checked = false;
       appointmentDatetimeInput.type = "datetime-local";
       appointmentEndDatetimeInput.type = "datetime-local";
+
+      appointmentColorInput.value = "#616161"; // Default color
+      selectedColorHexSpan.textContent = "#616161";
       
       // Reset recurrence and note UI as before...
       recurrenceCheckbox.checked = false;
@@ -2990,6 +3031,19 @@
         recurrenceEndDatetimeInput.value = "";
         finalRecurrenceRule = null;
       }
+
+      if (appt.color) {
+        appointmentColorInput.value = appt.color;
+        if (selectedColorHexSpan) {
+          selectedColorHexSpan.textContent = appt.color;
+        }
+      } else {
+        appointmentColorInput.value = "#616161"; // Default color
+        if (selectedColorHexSpan) {
+          selectedColorHexSpan.textContent = "#616161";
+        }
+      }
+
       
       // Pre-load attached notes.
       attachedNoteIds = [];
@@ -3019,6 +3073,7 @@
       let start_datetime = appointmentDatetimeInput.value;
       let end_datetime = appointmentEndDatetimeInput.value;
       const is_all_day = appointmentAllDayCheckbox.checked;
+      const color = appointmentColorInput.value.trim() || "#616161"; // Default color
       
       // If it's all-day, and the current value is a date, format it as a datetime.
       if (is_all_day) {
@@ -3048,7 +3103,8 @@
         note_ids: attachedNoteIds,
         recurrence_rule,
         recurrence_end_date,
-        is_all_day
+        is_all_day,
+        color
       };
 
       try {
