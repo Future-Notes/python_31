@@ -2,9 +2,8 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
-  <meta name="theme-color" content="#ffffff">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zeeslag - Bot uitleg</title>
+  <title>Zeeslag Project Uitleg</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -14,82 +13,95 @@
       color: #333;
     }
     .container {
-      max-width: 800px;
+      max-width: 1100px;
       margin: auto;
       background: #fff;
       padding: 20px;
       border-radius: 8px;
       box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
-    h1, h2 {
+    button {
+      display: block;
+      margin: 20px auto;
+      padding: 10px 20px;
+      font-size: 16px;
+      color: white;
+      background-color: #0056b3;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #004494;
+    }
+    h2 {
+      text-align: center;
       color: #0056b3;
     }
-    ul {
-      margin-left: 20px;
-    }
-    .highlight {
-      font-weight: bold;
-      color: #d9534f;
-    }
   </style>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/static/sw_js/sw.js')
-        .then(() => console.log('Service Worker Registered'))
-        .catch(console.error);
-    }
-  </script>
 </head>
 <body>
-    <button onclick="window.location.href='/pws'" style="
-    display: block;
-    margin: 20px auto;
-    padding: 10px 20px;
-    font-size: 16px;
-    color: white;
-    background-color: #0056b3;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    ">
-    Terug
-   </button>
+  <button onclick="window.location.href='/pws'">Terug</button>
   <div class="container">
-    <h1>Hoe werkt de Bot?</h1>
+    <h2>Over het project</h2>
     <p>
-      Deze bot speelt Zeeslag op een geavanceerde manier. Belangrijk om te weten is dat de bot <span class="highlight">geen enkele hint</span> krijgt over de positie van de schepen van de tegenstander. Er wordt <span class="highlight">geen directe informatie</span> doorgegeven over waar de schepen zich bevinden!
+      Deze game is een digitale versie van het klassieke spel Zeeslag. Dit project is ontwikkeld als onderdeel van mijn PWS (Profielwerkstuk) voor school. Het begon eerst als een idee om een eenvoudige versie van het spel te maken, maar al snel groeide het uit tot een vollwaardige game, met de mogelijkheid om zowel tegen een andere speler als tegen een bot te spelen. 
     </p>
-    <h2>Wat doet de Bot?</h2>
+    <h2>Wat je kan verwachten</h2>
     <p>
-      De bot gebruikt slimme algoritmes om te berekenen welke cellen de grootste kans hebben op een schip. Dit gebeurt in twee fasen:
+      1. Een (mobielvriendelijke!) interface die het spel toegankelijk maakt voor iedereen.
+      <br>
+      2. De mogelijkheid om tegen een bot te spelen die gebruik maakt van algoritmes om zijn zetten te bepalen.
+      <br>
+      <script>
+        if (navigator.userAgent.includes('iPhone')) {
+          document.write('3. Een "normale" modus waarin je tegen je vrienden (maar die heb je niet, je gebruikt een iPhone) of andere spelers kunt spelen.');
+          console.log('iPhone gebruiker gedetecteerd, ewwwwww');
+        } else if (navigator.userAgent.includes('Android')) {
+          document.write('3. Een "normale" modus waarin je tegen je vrienden of andere spelers kunt spelen.');
+          console.log('Android gebruiker gedetecteerd, gelukkig maar');
+        } else if (navigator.userAgent.includes('Windows')) {
+          document.write('3. Een "normale" modus waarin je tegen je vrienden of andere spelers kunt spelen.');
+          console.log('Windows gebruiker gedetecteerd, gelukkig maar');
+        } else if (navigator.userAgent.includes('Macintosh')) {
+          document.write('3. Een "normale" modus waarin je tegen je vrienden (maar die heb je niet, je gebruikt een Mac) of andere spelers kunt spelen.');
+          console.log('Mac gebruiker gedetecteerd, ewwwwwww');
+        } else if (navigator.userAgent.includes('Linux')) {
+            document.write('3. Een "normale" modus waarin je tegen je vrienden (Je gebruikt linux, dus ik ben je vriend) of andere spelers kunt spelen.');
+            console.log('Linux gebruiker gedetecteerd, gelukkig maar');
+            const confettiColors = ['#ff0', '#0f0', '#00f', '#f00', '#0ff', '#f0f'];
+            for (let i = 0; i < 100; i++) {
+            const confetti = document.createElement('div');
+            confetti.style.position = 'fixed';
+            confetti.style.width = '10px';
+            confetti.style.height = '10px';
+            confetti.style.backgroundColor = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+            confetti.style.top = Math.random() * window.innerHeight + 'px';
+            confetti.style.left = Math.random() * window.innerWidth + 'px';
+            confetti.style.zIndex = '1000';
+            confetti.style.animation = `fall ${Math.random() * 3 + 2}s linear infinite`;
+            document.body.appendChild(confetti);
+            setTimeout(() => confetti.remove(), 5000);
+            }
+            const style = document.createElement('style');
+            style.innerHTML = `
+            @keyframes fall {
+              0% { transform: translateY(0); opacity: 1; }
+              100% { transform: translateY(100vh); opacity: 0; }
+            }
+            `;
+            document.head.appendChild(style);
+        }
+         else {
+          document.write('3. Een "normale" modus waarin je tegen je vrienden of andere spelers kunt spelen.');
+          console.log('Geen iPhone gebruiker gedetecteerd, gelukkig maar');
+        }
+      </script>
+      <br>
     </p>
-    <ul>
-      <li>
-        <strong>Zoekmodus:</strong> De bot berekent een zogenaamde <em>warmtekaart</em> van het speelveld. Hierbij krijgt elke cel een score die aangeeft hoe waarschijnlijk het is dat er een schip staat. De bot richt zich dan op de cellen met de hoogste kans.
-      </li>
-      <li>
-        <strong>Targetmodus:</strong> Als de bot een treffer maakt, gaat hij in targetmodus. Hier kijkt hij naar de aangrenzende cellen van de treffer om zo het hele schip te vinden en te vernietigen.
-      </li>
-    </ul>
-    <h2>Hoe plaatst de Bot zijn eigen schepen?</h2>
+    <h2>Over Future Notes</h2>
     <p>
-      Ook bij het plaatsen van zijn eigen schepen gebruikt de bot algoritmes:
-    </p>
-    <ul>
-      <li>Hij berekent voor elke mogelijke positie een <span class="highlight">risicoscore</span>, waarbij cellen in het midden (die vaak door spelers gekozen worden) een hogere score krijgen.</li>
-      <li>De bot kiest vervolgens de plaatsingen met de laagste score, zodat zijn schepen minder voorspelbaar en moeilijker te vinden zijn.</li>
-    </ul>
-    <h2>Belangrijke punten</h2>
-    <p>
-        Het belangrijkste is dat:
-    </p>
-    <ul>
-      <li>De bot <span class="highlight">geen enkele hint</span> krijgt over de echte posities van de tegenstander’s schepen.</li>
-      <li>Alle beslissingen worden gemaakt op basis van kansberekeningen en eerdere zetten. Dit maakt het algoritme onafhankelijk van directe informatie.</li>
-    </ul>
-    <p>
-      Door deze technieken is de bot in staat om op een
-      <span class="highlight">slimmere en strategischere manier</span> te spelen dan een menselijke speler. Veel plezier met spelen!
+      Future Notes is de website/web app die het hele PWS project omhulst. Future Notes is een Agenda en Notitie app die je helpt je werk te organiseren en makkelijker te maken. Geinteresseerd? Maak dan een account aan op <a href="/signup_page">Future Notes</a> en kijk even rond! Geen interesse? Geen probleem, je kan Zeeslag ook zonder account spelen. Je resultaten worden dan niet opgeslagen, en je komt niet op de leaderboard.
     </p>
   </div>
 </body>
