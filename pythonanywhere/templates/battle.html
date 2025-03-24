@@ -499,14 +499,13 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ gameCode: gameCode, player: player, x: x, y: y })
       })
-        .then(response => response.json())
-        .then(data => {
-          if (data.error) {
-            alert(data.error);
-          }
-          updateGameState();
-        })
-        .catch(err => console.error('Error firing:', err));
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          alert(data.error);
+        }
+      })
+      .catch(err => console.error('Error firing:', err));
     }
 
     function showGameOverScreen(won) {
@@ -526,8 +525,6 @@
         endTitle.innerText = "Hier had de tegenstander zijn schepen verstopt:";
       }
       overlay.classList.add('show');
-
-
       loadEndBoard();
       startNewGameTimer();
     }
@@ -601,217 +598,178 @@
       }, 1000);
     }
 
-    // --- Modified Game State Polling ---
-    let pollingInterval = setInterval(updateGameState, 500);
+    function updateGameState(game) {
+      if (game.error && game.error === "Invalid game code") {
+        const statusMsg = document.getElementById('statusMessage');
+        statusMsg.innerText = "Foute gamecode. Waarschijnlijk was de server aan het herstarten";
+        const playersInfo = document.getElementById('playersInfo');
+        playersInfo.classList.add('hidden');
+        const newGameButton = document.getElementById('newGameButton');
+        newGameButton.classList.remove('hidden');
+        newGameButton.addEventListener('click', function() {
+          localStorage.removeItem("gameCode");
+          localStorage.removeItem("player");
+          window.location.href = '/pws';
+        });
+        return;
+      }
 
-    function updateGameState() {
-      fetch(`/game_state?gameCode=${gameCode}`)
-        .then(res => res.json())
-        .then(game => {
-          if (game.error && game.error === "Invalid game code") {
-            clearInterval(pollingInterval);
-            const statusMsg = document.getElementById('statusMessage');
-            statusMsg.innerText = "Foute gamecode. Waarschijnlijk was de server aan het herstarten";
-            const playersInfo = document.getElementById('playersInfo');
-            playersInfo.classList.add('hidden');
-            const newGameButton = document.getElementById('newGameButton');
-            newGameButton.classList.remove('hidden');
-            newGameButton.addEventListener('click', function() {
-              localStorage.removeItem("gameCode");
-              localStorage.removeItem("player");
-              window.location.href = '/pws';
-            });
-            return;
-          }
+      const myData = game.players[player];
+      const enemyData = game.players[opponent];
+      const statusMsg = document.getElementById('statusMessage');
+      const sunkMsg = document.getElementById('sunkMessage');
+      const playersInfo = document.getElementById('playersInfo');
 
-          const myData = game.players[player];
-          const enemyData = game.players[opponent];
-          const statusMsg = document.getElementById('statusMessage');
-          const sunkMsg = document.getElementById('sunkMessage');
-          const playersInfo = document.getElementById('playersInfo');
+      if (enemyData && enemyData.name) {
+        playersInfo.innerText = "Tegenstander: " + enemyData.name;
+      } else {
+        playersInfo.innerText = "Wachten op tegenstander...";
+      }
 
-          if (enemyData && enemyData.name) {
-            playersInfo.innerText = "Tegenstander: " + enemyData.name;
-          } else {
-            playersInfo.innerText = "Wachten op tegenstander...";
-          }
+      if (game.status === "gameover") {
+        const won = (game.winner === player);
+        localStorage.setItem('result', won ? 'win' : 'lose');
+        eventSource.close();
+        // Optionally compute game statistics here before showing the game over screen
+        showGameOverScreen(won);
+        return;
+      } else if (game.status === "battle") {
+        if (game.turn === player) {
+          statusMsg.innerText = "Jouw beurt";
+          canFire = true;
+        } else {
+          statusMsg.innerText = "Tegenstanders beurt";
+          canFire = false;
+        }
+      } else {
+        statusMsg.innerText = "Wachten op andere speler...";
+        canFire = false;
+      }
 
-          if (game.status === "gameover") {
-            const won = (game.winner === player);
-            localStorage.setItem('result', won ? 'win' : 'lose');
-            clearInterval(pollingInterval);
-
-            // --- Compute Game Statistics ---
-            const myHits = myData && myData.hits ? myData.hits.length : 0;
-            const myMisses = myData && myData.misses ? myData.misses.length : 0;
-            const shotsFired = myHits + myMisses;
-            let sunkShips = 0;
-            if (enemyData && enemyData.ships) {
-              enemyData.ships.forEach(ship => {
-                if (ship.sunk) sunkShips++;
-              });
-            }
-            const accuracy = shotsFired > 0 ? (myHits / shotsFired) : 0;
-            const botGame = localStorage.getItem("botGame") === "true";
-
-            const statsPayload = {
-              result: won ? "win" : "lose",
-              bot_game: botGame,
-              shots_fired: shotsFired,
-              hits: myHits,
-              misses: myMisses,
-              sunk_ships: sunkShips,
-              accuracy: accuracy
-            };
-
-            // --- Send Game Stats ---
-            sendGameStats(statsPayload);
-
-            showGameOverScreen(won);
-            return;
-          } else if (game.status === "battle") {
-            if (game.turn === player) {
-              statusMsg.innerText = "Jouw beurt";
-              canFire = true;
+      // --- Update Your Board ---
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          const cell = document.getElementById(`myBoard-${x}-${y}`);
+          cell.className = "";
+          cell.innerText = "";
+        }
+      }
+      if (myData && myData.ships) {
+        myData.ships.forEach(ship => {
+          ship.positions.forEach(pos => {
+            const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
+            if (cell) cell.classList.add('ship');
+          });
+        });
+      }
+      if (enemyData && enemyData.hits) {
+        enemyData.hits.forEach(pos => {
+          const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
+          if (cell) {
+            if (cell.classList.contains('ship')) {
+              cell.classList.add('hit');
+              cell.innerText = "X";
             } else {
-              statusMsg.innerText = "Tegenstanders beurt";
-              canFire = false;
-            }
-          } else {
-            statusMsg.innerText = "Wachten op andere speler...";
-            canFire = false;
-          }
-
-          // --- Update Your Board ---
-          for (let y = 0; y < boardSize; y++) {
-            for (let x = 0; x < boardSize; x++) {
-              const cell = document.getElementById(`myBoard-${x}-${y}`);
-              cell.className = "";
-              cell.innerText = "";
-            }
-          }
-          if (myData && myData.ships) {
-            myData.ships.forEach(ship => {
-              ship.positions.forEach(pos => {
-                const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
-                if (cell) cell.classList.add('ship');
-              });
-            });
-          }
-          if (enemyData && enemyData.hits) {
-            enemyData.hits.forEach(pos => {
-              const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
-              if (cell) {
-                if (cell.classList.contains('ship')) {
-                  cell.classList.add('hit');
-                  cell.innerText = "X";
-                } else {
-                  cell.classList.add('miss');
-                  cell.innerText = "O";
-                }
-              }
-            });
-          }
-          if (myData && myData.ships) {
-            myData.ships.forEach(ship => {
-              if (ship.sunk) {
-                ship.positions.forEach(pos => {
-                  const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
-                  if (cell) {
-                    cell.classList.remove('ship');
-                    cell.classList.add('sunk');
-                    cell.innerText = "S";
-                  }
-                });
-              }
-            });
-          }
-          if (myData && myData.incoming_misses) {
-            const now = Date.now() / 1000;
-            myData.incoming_misses.forEach(miss => {
-              const timeSince = now - miss.timestamp;
-              const cell = document.getElementById(`myBoard-${miss.pos[0]}-${miss.pos[1]}`);
-              if (cell && timeSince < 2) {
-                cell.classList.add('incoming-miss');
-              }
-            });
-          }
-
-          // --- Update Enemy Board ---
-          enemyShots = [];
-          for (let y = 0; y < boardSize; y++) {
-            for (let x = 0; x < boardSize; x++) {
-              const cell = document.getElementById(`enemyBoard-${x}-${y}`);
-              cell.className = canFire ? "clickable" : "disabled-cell";
-              cell.innerText = "";
-            }
-          }
-          if (myData) {
-            if (myData.hits) {
-              myData.hits.forEach(pos => {
-                const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
-                if (cell) {
-                  cell.classList.remove("clickable");
-                  cell.classList.add("hit");
-                  cell.innerText = "X";
-                  enemyShots.push(pos);
-                }
-              });
-            }
-            if (myData.misses) {
-              myData.misses.forEach(pos => {
-                const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
-                if (cell) {
-                  cell.classList.remove("clickable");
-                  cell.classList.add("miss");
-                  cell.innerText = "O";
-                  enemyShots.push(pos);
-                }
-              });
-            }
-          }
-          if (enemyData && enemyData.ships) {
-            enemyData.ships.forEach(ship => {
-              if (ship.sunk) {
-                const shipKey = JSON.stringify(ship.positions);
-                if (!announcedSunkShips[shipKey]) {
-                  sunkMsg.innerText = `Je hebt een schip van de tegenstander gezonken met lengte ${ship.positions.length}!`;
-                  sunkMsg.classList.add('show');
-                  setTimeout(() => {
-                    sunkMsg.classList.remove('show');
-                    sunkMsg.innerText = "";
-                  }, 3000);
-                  announcedSunkShips[shipKey] = true;
-                }
-                ship.positions.forEach(pos => {
-                  const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
-                  if (cell) {
-                    cell.classList.remove("hit");
-                    cell.classList.add("sunk");
-                    cell.innerText = "S";
-                  }
-                });
-              }
-            });
-          }
-        })
-        .catch(err => {
-          console.error('Error updating game state:', err);
-          const statusMsg = document.getElementById('statusMessage');
-          statusMsg.innerText = "Serverfout. Probeer opnieuw.";
-          for (let y = 0; y < boardSize; y++) {
-            for (let x = 0; x < boardSize; x++) {
-              document.getElementById(`myBoard-${x}-${y}`).className = "";
-              document.getElementById(`myBoard-${x}-${y}`).innerText = "";
-              document.getElementById(`enemyBoard-${x}-${y}`).className = "";
-              document.getElementById(`enemyBoard-${x}-${y}`).innerText = "";
+              cell.classList.add('miss');
+              cell.innerText = "O";
             }
           }
         });
+      }
+      if (myData && myData.ships) {
+        myData.ships.forEach(ship => {
+          if (ship.sunk) {
+            ship.positions.forEach(pos => {
+              const cell = document.getElementById(`myBoard-${pos[0]}-${pos[1]}`);
+              if (cell) {
+                cell.classList.remove('ship');
+                cell.classList.add('sunk');
+                cell.innerText = "S";
+              }
+            });
+          }
+        });
+      }
+      if (myData && myData.incoming_misses) {
+        const now = Date.now() / 1000;
+        myData.incoming_misses.forEach(miss => {
+          const timeSince = now - miss.timestamp;
+          const cell = document.getElementById(`myBoard-${miss.pos[0]}-${miss.pos[1]}`);
+          if (cell && timeSince < 2) {
+            cell.classList.add('incoming-miss');
+          }
+        });
+      }
+      enemyShots = [];
+      for (let y = 0; y < boardSize; y++) {
+        for (let x = 0; x < boardSize; x++) {
+          const cell = document.getElementById(`enemyBoard-${x}-${y}`);
+          cell.className = canFire ? "clickable" : "disabled-cell";
+          cell.innerText = "";
+        }
+      }
+      if (myData) {
+        if (myData.hits) {
+          myData.hits.forEach(pos => {
+            const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
+            if (cell) {
+              cell.classList.remove("clickable");
+              cell.classList.add("hit");
+              cell.innerText = "X";
+              enemyShots.push(pos);
+            }
+          });
+        }
+        if (myData.misses) {
+          myData.misses.forEach(pos => {
+            const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
+            if (cell) {
+              cell.classList.remove("clickable");
+              cell.classList.add("miss");
+              cell.innerText = "O";
+              enemyShots.push(pos);
+            }
+          });
+        }
+      }
+      if (enemyData && enemyData.ships) {
+        enemyData.ships.forEach(ship => {
+          if (ship.sunk) {
+            const shipKey = JSON.stringify(ship.positions);
+            if (!announcedSunkShips[shipKey]) {
+              sunkMsg.innerText = `Je hebt een schip van de tegenstander gezonken met lengte ${ship.positions.length}!`;
+              sunkMsg.classList.add('show');
+              setTimeout(() => {
+                sunkMsg.classList.remove('show');
+                sunkMsg.innerText = "";
+              }, 3000);
+              announcedSunkShips[shipKey] = true;
+            }
+            ship.positions.forEach(pos => {
+              const cell = document.getElementById(`enemyBoard-${pos[0]}-${pos[1]}`);
+              if (cell) {
+                cell.classList.remove("hit");
+                cell.classList.add("sunk");
+                cell.innerText = "S";
+              }
+            });
+          }
+        });
+      }
     }
 
-    // Start polling immediately.
-    updateGameState();
+    // Replace the polling mechanism with an SSE connection:
+    const eventSource = new EventSource(`/sse?gameCode=${gameCode}`);
+
+    eventSource.onmessage = function(event) {
+      const game = JSON.parse(event.data);
+      updateGameState(game);
+    };
+
+    eventSource.onerror = function(error) {
+      console.error("SSE error:", error);
+      // Optionally handle reconnection logic or fallback here.
+    };
   </script>  
 </body>
 </html>
