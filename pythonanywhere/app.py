@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, Response, stream_with_context
+from flask import Flask, request, jsonify, g, render_template, make_response, session
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint
@@ -2166,32 +2166,6 @@ def fire():
         bot_thread.start()
 
     return response
-
-@app.route('/sse', methods=['GET'])
-def sse():
-    """
-    SSE endpoint that continuously streams the game state.
-    The client should pass the gameCode as a query parameter.
-    """
-    game_code = request.args.get("gameCode")
-    if not game_code or game_code not in games:
-        return jsonify({"error": "Invalid game code"}), 400
-
-    def event_stream():
-        while True:
-            game = games[game_code]
-            response = {
-                "players": game["players"],
-                "status": game["status"],
-                "turn": game["turn"],
-                "winner": game["winner"],
-                "opponentJoined": game["players"]["player2"] is not None
-            }
-            # SSE requires messages to be prefixed with "data: " and end with two newlines.
-            yield f"data: {json.dumps(response)}\n\n"
-            time.sleep(0.5)
-
-    return Response(stream_with_context(event_stream()), mimetype="text/event-stream")
 
 # --- Helper route to make the first user xp record ---
 @app.route('/first-xp-record', methods=['POST'])
