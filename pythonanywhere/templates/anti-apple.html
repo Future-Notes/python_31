@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exclusieve App - Welkom</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      transition: background-color 0.3s ease;
+      font-family: Arial, sans-serif;
+    }
+    /* Normale app-styling */
+    .app-container {
+      display: none;
+      padding: 20px;
+    }
+    .app-header {
+      text-align: center;
+      color: #0056b3;
+    }
+    .app-content {
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    /* Anti-Apple styling */
+    .anti-apple {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 9999;
+      text-align: center;
+      color: #fff;
+      padding-top: 20%;
+      font-size: 2rem;
+      font-weight: bold;
+    }
+    @keyframes flash {
+      0% { background-color: #ff0000; }
+      25% { background-color: #ff8000; }
+      50% { background-color: #ffff00; }
+      75% { background-color: #00ff00; }
+      100% { background-color: #00ffff; }
+    }
+    .flashing {
+      animation: flash 0.5s infinite;
+    }
+  </style>
+</head>
+<body>
+  <!-- Normale app voor niet-Apple gebruikers -->
+  <div class="app-container" id="app">
+    <h1 class="app-header">Welkom bij de Exclusieve App</h1>
+    <div class="app-content">
+      <p>Dit is een volledig functionele en strakke interface, speciaal ontworpen voor gebruikers die écht willen werken met onze service.</p>
+      <button id="actionBtn">Klik hier voor actie!</button>
+    </div>
+  </div>
+
+  <!-- Anti-Apple overlay -->
+  <div class="anti-apple flashing" id="antiApple">
+    <p>Exclusief voor Apple-gebruikers: deze app is gewoon niet voor jou!</p>
+  </div>
+
+  <script>
+    // Functie om te detecteren of het een Apple-apparaat is.
+    function isApple() {
+      return navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('Macintosh');
+    }
+
+    // Anti-Apple modus: zet allerlei irritante effecten in voor Apple-gebruikers.
+    function activateAntiApple() {
+      const antiDiv = document.getElementById('antiApple');
+      antiDiv.style.display = 'block';
+
+      // Knipperende pop-ups (maar zonder redirect zodat ze blijven hangen)
+      setInterval(() => {
+        alert("Apple-gebruiker: Wees voorbereid op irritatie!"); 
+      }, 7000);
+
+      // Vertraging in klikken: alle knoppen reageren traag
+      document.addEventListener('click', function(e) {
+        e.preventDefault();
+        setTimeout(() => {
+          // Simuleer alsnog een klik (mits element een click functie heeft)
+          if (typeof e.target.click === 'function') {
+            e.target.click();
+          }
+        }, 1500);
+      });
+
+      // Blokkeer willekeurige toetsen (30% kans per toetsdruk)
+      document.addEventListener('keydown', function(e) {
+        if (Math.random() < 0.3) {
+          e.preventDefault();
+        }
+      });
+
+      // Laat de achtergrondkleur continu knipperen (al dan niet extra irritant)
+      setInterval(() => {
+        document.body.style.backgroundColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+      }, 300);
+    }
+
+    // Normale modus: toon de gewone app interface.
+    function activateNormalApp() {
+      document.getElementById('app').style.display = 'block';
+    }
+
+    // Op basis van de user agent activeren we de juiste modus:
+    if (isApple()) {
+      activateAntiApple();
+    } else {
+      activateNormalApp();
+    }
+  </script>
+</body>
+</html>
