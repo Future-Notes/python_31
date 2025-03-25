@@ -885,6 +885,10 @@ def leaderboard():
 def scheduler_page():
     return render_template('scheduler.html')
 
+@app.route('/apple-hate')
+def apple_hate():
+    return render_template('anti-apple.html')
+
 #---------------------------------API routes--------------------------------
 
 # Homepage

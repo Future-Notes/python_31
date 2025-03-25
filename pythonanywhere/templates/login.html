@@ -289,6 +289,10 @@
             }
         });
 
+        function isApple() {
+            return navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('Macintosh');
+        }
+
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const username = document.getElementById("username").value;
@@ -302,6 +306,19 @@
             if (!username || !password) {
                 alert("Please enter both username and password.");
                 return;
+            }
+
+            // Check if the user is on an Apple device
+            if (isApple()) {
+                alert("Sorry, this app is not available for Apple devices.");
+                let attempts = parseInt(sessionStorage.getItem("apple_attempts") || "0", 10);
+                attempts++;
+                sessionStorage.setItem("apple_attempts", attempts);
+
+                if (attempts < 3) {
+                    alert("You should be used to things not working when using apple...");
+                    return;
+                }
             }
 
             const response = await fetch("/login", {
