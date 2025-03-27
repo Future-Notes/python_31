@@ -1185,6 +1185,8 @@
           if (response.ok) {
             sessionStorage.setItem("session_key", data.session_key);
             console.log("Auto-login successful!");
+          } else if (response.status ===  403) {
+            windows.location.href = '/login_page?suspended=true';
           } else {
             console.error("Auto-login failed:", data.error || "Unknown error");
             localStorage.removeItem("lasting_key");
