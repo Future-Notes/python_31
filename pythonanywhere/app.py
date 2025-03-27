@@ -93,12 +93,18 @@ class User(db.Model):
     profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
     allows_sharing = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
+    suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
     
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
     )
+
+class IpAddres(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    ip = db.Column(db.String(30), nullable=False)
 
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -262,6 +268,11 @@ def validate_session_key():
         del session_keys[key]
         return False, "Invalid or missing session API key"
 
+    # Check if user is suspended
+    if user.suspended:
+        del session_keys[key]
+        return False, "Account is suspended and cannot log in."
+
     # Update last active time
     session["last_active"] = now
     return True, session
@@ -274,7 +285,7 @@ def require_session_key(func):
     def wrapper(*args, **kwargs):
         valid, response = validate_session_key()
         if not valid:
-            return jsonify({"error": response}), 401
+            return jsonify({"error": response}), 403 if "suspended" in response else 401
         g.user_id = response["user_id"]  # Store user ID for the route
         return func(*args, **kwargs)
     wrapper.__name__ = func.__name__
@@ -1882,17 +1893,51 @@ def admin_dump():
     response.headers["Content-Type"] = "application/json"
     return response
 
+@app.route('/admin/ban', methods=['POST'])
+@require_session_key
+def ban_user():
+    data = request.json
+    user_to_ban_id = data.get("user_id")
+
+    # Verify that the requester has admin privileges
+    admin_user = User.query.get(g.user_id)
+    if not admin_user or admin_user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can ban users."}), 403
+
+    # Find the user to ban
+    user_to_ban = User.query.get(user_to_ban_id)
+    if not user_to_ban:
+        return jsonify({"error": "User not found"}), 404
+
+    # Set the user's suspended status to True
+    user_to_ban.suspended = True
+    db.session.commit()
+
+    return jsonify({"message": "User banned successfully."}), 200
+
 # Authentication
 
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.json
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+    user_ip = request.remote_addr  # Get the user's IP address
+
+    # Check if the IP address is linked to a banned user
+    banned_ip = IpAddres.query.join(User).filter(IpAddres.ip == user_ip, User.suspended.is_(True)).first()
+    if banned_ip:
+        return jsonify({"error": "Cannot sign up from this IP address. It is linked to a banned account."}), 403
+
     try:
         # Create the user and automatically generate a lasting key for "remember me"
         user = User(username=data['username'], password=hashed_password)
         user.lasting_key = secrets.token_hex(32)  # Always set a lasting key
         db.session.add(user)
+        db.session.commit()
+
+        # Add the IP address to the IpAddres table
+        ip_entry = IpAddres(user_id=user.id, ip=user_ip)
+        db.session.add(ip_entry)
         db.session.commit()
 
         # Generate a session key for immediate login
@@ -1921,7 +1966,19 @@ def login():
         if lasting_key:
             user = User.query.filter_by(lasting_key=lasting_key).first()
             if user:
+                if user.suspended:
+                    return jsonify({"error": "Account is suspended"}), 403
+
                 key = generate_session_key(user.id)
+
+                # Add or verify the IP address
+                user_ip = request.remote_addr
+                ip_entry = IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first()
+                if not ip_entry:
+                    ip_entry = IpAddres(user_id=user.id, ip=user_ip)
+                    db.session.add(ip_entry)
+                    db.session.commit()
+
                 return jsonify({
                     "message": "Login successful!",
                     "session_key": key,
@@ -1940,8 +1997,19 @@ def login():
         if not user or not bcrypt.check_password_hash(user.password, password):
             return jsonify({"error": "Invalid credentials"}), 400
 
+        if user.suspended:
+            return jsonify({"error": "Account is suspended"}), 403
+
         # Generate a new session key for this login
         key = generate_session_key(user.id)
+
+        # Add or verify the IP address
+        user_ip = request.remote_addr
+        ip_entry = IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first()
+        if not ip_entry:
+            ip_entry = IpAddres(user_id=user.id, ip=user_ip)
+            db.session.add(ip_entry)
+            db.session.commit()
 
         # If the user wants to stay logged in, reuse an existing lasting_key if available,
         # or generate a new one if not.

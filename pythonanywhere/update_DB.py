@@ -31,3 +31,6 @@ def update_tables():
                         conn.commit()
 
         print("Database schema update complete.")
+
+if __name__ == "__main__":
+    update_tables()

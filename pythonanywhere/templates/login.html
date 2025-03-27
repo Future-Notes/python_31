@@ -235,6 +235,9 @@
         <div id="warning-message" class="warning-message">
             You need to log in to access that page.
         </div>
+        <div id="ban-message" class="warning-message">
+            You are suspended and cannot log in.
+        </div>
         <form id="login-form">
             <label for="username">Username:</label>
             <input type="text" id="username" required>
@@ -264,11 +267,17 @@
             const lastingKey = localStorage.getItem("lasting_key");
             const urlParams = new URLSearchParams(window.location.search);
             const showWarning = urlParams.get("warning") === "true";
+            const showSuspended = urlParams.get("suspended") === "true";
             const redirectUrl = urlParams.get("redirect");
 
             // Show warning message if parameter is set
             if (showWarning) {
                 document.getElementById("warning-message").classList.add("visible");
+            }
+
+            // Show suspended message if parameter is set
+            if (showSuspended) {
+                document.getElementById("ban-message").classList.add("visible");
             }
 
             if (lastingKey) {
@@ -283,15 +292,14 @@
                     sessionStorage.setItem("session_key", data.session_key);
                     // Redirect to the provided redirect URL or the user's default startpage
                     window.location.href = redirectUrl || data.startpage || "/index";
+                } else if (response.status === 403 && data.error === "Account is suspended") {
+                    document.getElementById("ban-message").classList.add("visible");
                 } else {
                     console.log(data);
                 }
             }
         });
 
-        function isApple() {
-            return navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('Macintosh');
-        }
 
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -302,23 +310,9 @@
             const redirectUrl = urlParams.get("redirect");
             console.log("redirectUrl:", redirectUrl);
 
-
             if (!username || !password) {
                 alert("Please enter both username and password.");
                 return;
-            }
-
-            // Check if the user is on an Apple device
-            if (isApple()) {
-                alert("Sorry, this app is not available for Apple devices.");
-                let attempts = parseInt(sessionStorage.getItem("apple_attempts") || "0", 10);
-                attempts++;
-                sessionStorage.setItem("apple_attempts", attempts);
-
-                if (attempts < 3) {
-                    alert("You should be used to things not working when using apple...");
-                    return;
-                }
             }
 
             const response = await fetch("/login", {
@@ -339,6 +333,8 @@
                 console.log("Final decision:" + (redirectUrl || data.startpage || "/index"));
                 // Redirect to the provided redirect URL or the user's default startpage
                 window.location.href = redirectUrl || data.startpage || "/index";
+            } else if (response.status === 403 && data.error === "Account is suspended") {
+                document.getElementById("ban-message").classList.add("visible");
             } else {
                 alert(data.error || "Login failed");
             }

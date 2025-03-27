@@ -397,24 +397,31 @@
             const tableBody = document.querySelector("#users-table tbody");
             tableBody.innerHTML = "";
 
+            const currentUserId = sessionStorage.getItem("current_user_id");
+
             users.forEach((user) => {
-                const row = document.createElement("tr");
-                row.innerHTML = `
-                    <td>${user.id}</td>
-                    <td>${user.username}</td>
-                    <td>${user.profile_picture || "N/A"}</td>
-                    <td>${user.allows_sharing ? "Yes" : "No"}</td>
-                    <td>
-                        <select onchange="changeUserRole(${user.id}, this.value)">
-                            <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
-                            <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
-                        </select>
-                    </td>
-                    <td>
-                        <button onclick="deleteUser(${user.id})">Delete</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
+            if (user.id == currentUserId) {
+                return; // Skip the current user
+            }
+
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.username}</td>
+                <td>${user.profile_picture || "N/A"}</td>
+                <td>${user.allows_sharing ? "Yes" : "No"}</td>
+                <td>
+                <select onchange="changeUserRole(${user.id}, this.value)">
+                    <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
+                    <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
+                </select>
+                </td>
+                <td>
+                <button onclick="deleteUser(${user.id})">Delete</button>
+                <button onclick="banUser(${user.id})" style="background-color: red;">Suspend</button>
+                </td>
+            `;
+            tableBody.appendChild(row);
             });
         }
 
@@ -459,6 +466,30 @@
                     }
                 } catch (error) {
                     console.error("Error deleting user:", error);
+                }
+            }
+        }
+
+        async function banUser(userId) {
+            if (confirm("Are you sure you want to suspend this user?")) {
+                try {
+                    const response = await fetch("/admin/ban", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                        body: JSON.stringify({ user_id: userId }),
+                    });
+
+                    if (response.ok) {
+                        alert("User suspended successfully.");
+                        fetchAdminData();
+                    } else {
+                        alert("Failed to suspend user.");
+                    }
+                } catch (error) {
+                    console.error("Error suspending user:", error);
                 }
             }
         }

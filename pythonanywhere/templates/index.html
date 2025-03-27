@@ -781,7 +781,10 @@
                         } else {
                             showModal();
                         }
-                    } else {
+                    } else if (response.status === 403) {
+                        window.location.href = '/login_page?suspended=true';
+                    }
+                    else {
                         console.log("Session key is valid, user is logged in.");
                         hideModal();
                     }
