@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint
@@ -837,6 +837,10 @@ def global_error_handler(e):
 @app.route('/')
 def home():
     return render_template('home.html')
+
+@app.route('/favicon.ico')
+def send_favicon():
+    return send_from_directory('static', 'favicon.ico')
 
 @app.route('/index')
 def index():
