@@ -864,6 +864,10 @@ def account_page():
 def admin_page():
     return render_template('admin.html')
 
+@app.route('/database')
+def database_viewer():
+    return render_template('database_viewer.html')
+
 @app.route('/group-notes')
 def group_notes():
     return render_template("group_index.html")
@@ -1918,6 +1922,158 @@ def ban_user():
     db.session.commit()
 
     return jsonify({"message": "User banned successfully."}), 200
+
+@app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@require_session_key
+def manage_database():
+    # Authorization check
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can manage the database."}), 403
+
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+
+    # ------------------------
+    # GET: Fetch schema or table data
+    # ------------------------
+    if request.method == 'GET':
+        table = request.args.get('table')
+        column = request.args.get('column')
+
+        if not table:
+            # Return schema information
+            try:
+                tables = {t: [col['name'] for col in inspector.get_columns(t)] for t in inspector.get_table_names()}
+                return jsonify({"tables": tables}), 200
+            except Exception as e:
+                return jsonify({"error": f"Failed to fetch database schema: {str(e)}"}), 500
+        else:
+            try:
+                query = text(f"SELECT {column} FROM {table}") if column else text(f"SELECT * FROM {table}")
+
+                # ...
+                with db.engine.connect() as connection:
+                    result = connection.execute(query)
+                    rows = [dict(row) for row in result.mappings().all()]
+
+                return jsonify({"data": rows}), 200
+
+            except Exception as e:
+                return jsonify({"error": f"Failed to fetch data from table '{table}': {str(e)}"}), 500
+
+    # ------------------------
+    # POST, PUT, DELETE: Require JSON payload
+    # ------------------------
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    data_operation = data.get('data_operation')
+
+    # ------------------------
+    # Data Operations: Insert, Update, Delete rows
+    # ------------------------
+    if data_operation:
+        table_name = data.get('table_name')
+        if not table_name:
+            return jsonify({"error": "Table name is required for data operations"}), 400
+
+        try:
+            with db.engine.connect() as connection:
+                if request.method == 'POST' and data_operation == 'insert':
+                    row_data = data.get('row')
+                    if not row_data or not isinstance(row_data, dict):
+                        return jsonify({"error": "Row data must be provided as a dictionary"}), 400
+
+                    # Insert row
+                    columns = ', '.join(row_data.keys())
+                    placeholders = ', '.join([f":{key}" for key in row_data.keys()])
+                    stmt = text(f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})")
+                    
+                    connection.execute(stmt, row_data)
+                    connection.commit()
+                    return jsonify({"message": f"Row inserted successfully into '{table_name}'"}), 201
+
+                elif request.method == 'PUT' and data_operation == 'update':
+                    row_data = data.get('row')
+                    row_id = data.get('row_id')
+                    if not row_data or row_id is None:
+                        return jsonify({"error": "Row id and row data are required for update"}), 400
+
+                    # Update row
+                    set_clause = ', '.join([f"{k} = :{k}" for k in row_data.keys()])
+                    stmt = text(f"UPDATE {table_name} SET {set_clause} WHERE id = :id")
+
+                    connection.execute(stmt, {**row_data, "id": row_id})
+                    connection.commit()
+                    return jsonify({"message": f"Row with id {row_id} updated in '{table_name}'"}), 200
+
+                elif request.method == 'DELETE' and data_operation == 'delete':
+                    row_id = data.get('row_id')
+                    if row_id is None:
+                        return jsonify({"error": "Row id is required for deletion"}), 400
+
+                    # Delete row
+                    stmt = text(f"DELETE FROM {table_name} WHERE id = :id")
+                    connection.execute(stmt, {"id": row_id})
+                    connection.commit()
+                    return jsonify({"message": f"Row with id {row_id} deleted from '{table_name}'"}), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to modify data: {str(e)}"}), 500
+
+    # ------------------------
+    # Schema Operations: Creating, Modifying, Dropping Tables or Columns
+    # ------------------------
+    try:
+        with db.engine.connect() as connection:
+            if request.method == 'POST':
+                # Add a new table
+                table_name = data.get('table_name')
+                columns = data.get('columns')  # List of column definitions
+                if not table_name or not columns:
+                    return jsonify({"error": "Table name and columns are required"}), 400
+
+                column_definitions = ", ".join([f"{col['name']} {col['type']}" for col in columns])
+                stmt = text(f"CREATE TABLE {table_name} ({column_definitions})")
+                connection.execute(stmt)
+                connection.commit()
+                return jsonify({"message": f"Table '{table_name}' created successfully"}), 201
+
+            elif request.method == 'PUT':
+                # Modify a table (add/drop columns)
+                table_name = data.get('table_name')
+                action = data.get('action')  # 'add' or 'drop'
+                column = data.get('column')  # Column definition for 'add', column name for 'drop'
+
+                if not table_name or not action or not column:
+                    return jsonify({"error": "Table name, action, and column are required"}), 400
+
+                if action == 'add':
+                    stmt = text(f"ALTER TABLE {table_name} ADD COLUMN {column['name']} {column['type']}")
+                elif action == 'drop':
+                    stmt = text(f"ALTER TABLE {table_name} DROP COLUMN {column}")
+                else:
+                    return jsonify({"error": "Invalid action. Use 'add' or 'drop'"}), 400
+
+                connection.execute(stmt)
+                connection.commit()
+                return jsonify({"message": f"Column '{column}' {('added to' if action == 'add' else 'dropped from')} table '{table_name}'"}), 200
+
+            elif request.method == 'DELETE':
+                # Drop a table
+                table_name = data.get('table_name')
+                if not table_name:
+                    return jsonify({"error": "Table name is required"}), 400
+
+                stmt = text(f"DROP TABLE {table_name}")
+                connection.execute(stmt)
+                connection.commit()
+                return jsonify({"message": f"Table '{table_name}' dropped successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to modify schema: {str(e)}"}), 500
+
+    return jsonify({"error": "Invalid request"}), 400
 
 # Authentication
 

@@ -227,6 +227,33 @@
             }
         }
 
+        button.deprecated {
+            background-color: #FF5252;
+            color: #FFFFFF;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button.deprecated:hover {
+            background-color: #FF1744;
+        }
+
+        a {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #424242;
+            color: #E0E0E0;
+            text-decoration: none;
+            border-radius: 8px;
+            text-align: center;
+            transition: background-color 0.3s ease;
+        }
+
+        a:hover {
+            background-color: #616161;
+        }
+
 
 
     </style>
@@ -258,7 +285,9 @@
         <p id="error-message"></p>
 
         <!-- Database Dump Button -->
-        <button id="dump-database">Dump Database</button>
+        <button id="dump-database" class="deprecated">Dump Database</button>
+
+        <a href="/database">Database editor</a>
 
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
