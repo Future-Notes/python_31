@@ -2075,6 +2075,43 @@ def manage_database():
 
     return jsonify({"error": "Invalid request"}), 400
 
+@app.route('/admin/login-as-user', methods=['POST'])
+@require_session_key
+def login_as_user():
+    admin_user = User.query.get(g.user_id)
+    if not admin_user or admin_user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can log in as another user."}), 403
+
+    data = request.json
+    target_user_id = data.get("user_id")
+    if not target_user_id:
+        return jsonify({"error": "User ID is required"}), 400
+
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        return jsonify({"error": "Target user not found"}), 404
+
+    if target_user.suspended:
+        return jsonify({"error": "Cannot log in as a suspended user"}), 403
+
+    # Generate a session key for the target user
+    key = generate_session_key(target_user.id)
+
+    return jsonify({
+        "message": f"{target_user.username}",
+        "session_key": key,
+        "user_id": target_user.id,
+        "startpage": target_user.startpage,
+        "lasting_key": target_user.lasting_key if target_user.lasting_key else ""
+    }), 200
+
+@app.route('/api/user/<int:user_id>')
+def get_username(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"username": user.username}), 200
+
 # Authentication
 
 @app.route('/signup', methods=['POST'])

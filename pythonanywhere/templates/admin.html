@@ -239,7 +239,7 @@
             background-color: #FF1744;
         }
 
-        a {
+        .db {
             display: inline-block;
             padding: 10px 20px;
             background-color: #424242;
@@ -250,7 +250,7 @@
             transition: background-color 0.3s ease;
         }
 
-        a:hover {
+        .db:hover {
             background-color: #616161;
         }
 
@@ -285,9 +285,9 @@
         <p id="error-message"></p>
 
         <!-- Database Dump Button -->
-        <button id="dump-database" class="deprecated">Dump Database</button>
+        <button id="dump-database">Dump Database</button>
 
-        <a href="/database">Database editor</a>
+        <a class="db" href="/database">Database editor</a>
 
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
@@ -368,6 +368,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     sessionStorage.setItem("session_key", data.session_key);
+                    sessionStorage.setItem("user_id", data.user_id);
                     hideModal();
                 } else {
                     alert("Invalid username or password. Please try again.");
@@ -429,30 +430,33 @@
             const currentUserId = sessionStorage.getItem("current_user_id");
 
             users.forEach((user) => {
-            if (user.id == currentUserId) {
-                return; // Skip the current user
-            }
+                // Skip rendering the current admin user
+                if (user.id == currentUserId) {
+                    return;
+                }
 
-            const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${user.id}</td>
-                <td>${user.username}</td>
-                <td>${user.profile_picture || "N/A"}</td>
-                <td>${user.allows_sharing ? "Yes" : "No"}</td>
-                <td>
-                <select onchange="changeUserRole(${user.id}, this.value)">
-                    <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
-                    <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
-                </select>
-                </td>
-                <td>
-                <button onclick="deleteUser(${user.id})">Delete</button>
-                <button onclick="banUser(${user.id})" style="background-color: red;">Suspend</button>
-                </td>
-            `;
-            tableBody.appendChild(row);
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${user.id}</td>
+                    <td>${user.username}</td>
+                    <td>${user.profile_picture || "N/A"}</td>
+                    <td>${user.allows_sharing ? "Yes" : "No"}</td>
+                    <td>
+                        <select onchange="changeUserRole(${user.id}, this.value)">
+                            <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
+                            <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
+                        </select>
+                    </td>
+                    <td>
+                        ${user.role !== "admin" ? `<button onclick="loginUser(${user.id})">Login</button>` : ""}
+                        <button onclick="deleteUser(${user.id})" style="background-color: red;">Delete</button>
+                        <button onclick="banUser(${user.id})" style="background-color: red;">Suspend</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
             });
         }
+
 
         async function deleteMessage(id) {
             try {
@@ -523,6 +527,52 @@
             }
         }
 
+        async function loginUser(userId) {
+            if (confirm("You will be logged out of your own account and logged in as the selected user. Do you want to proceed?")) {
+                try {
+                    // Save admin's credentials if they haven't been saved yet.
+                    if (!localStorage.getItem("admin_session_key")) {
+                        const adminSession = sessionStorage.getItem("session_key");
+                        if (adminSession) {
+                            localStorage.setItem("admin_session_key", adminSession);
+                        }
+                        const adminLasting = localStorage.getItem("lasting_key");
+                        if (adminLasting) {
+                            localStorage.setItem("admin_lasting_key", adminLasting);
+                        }
+                    }
+                    
+                    const response = await fetch("/admin/login-as-user", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${sessionKey}`,
+                        },
+                        body: JSON.stringify({ user_id: userId }),
+                    });
+
+                    const user_id = sessionStorage.getItem("user_id");
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        sessionStorage.clear(); // Clear the current session
+                        sessionStorage.setItem("session_key", data.session_key);
+                        localStorage.setItem("current_user_id", data.user_id);
+                        localStorage.setItem("admin_user_id", user_id)
+                        alert(`Logged in as ${data.message}`);
+                        window.location.href = data.startpage; // Redirect to the user's start page
+                    } else {
+                        const error = await response.json();
+                        alert(error.error || "Failed to log in as the user.");
+                    }
+                } catch (error) {
+                    console.error("Error logging in as user:", error);
+                    alert("An unexpected error occurred.");
+                }
+            }
+        }
+
+
         async function changeUserRole(userId, newRole) {
             try {
                 const response = await fetch("/admin", {
@@ -536,6 +586,7 @@
 
                 if (response.ok) {
                     alert("Role updated successfully.");
+                    location.reload();
                 } else {
                     alert("Failed to update role.");
                 }
