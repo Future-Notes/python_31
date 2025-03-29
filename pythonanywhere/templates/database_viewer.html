@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Database Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Bootstrap CSS -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <style>
+    body {
+      background-color: #f8f9fa;
+    }
+    .navbar {
+      margin-bottom: 20px;
+    }
+    .table-list-item:hover {
+      background-color: #e9ecef;
+      cursor: pointer;
+    }
+    .action-btn {
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <a class="navbar-brand" href="#">Database Viewer</a>
+  </nav>
+  <div class="container">
+    <div id="main-content">
+      <!-- Table List Section -->
+      <div id="table-list-section">
+        <h2>Tables</h2>
+        <ul class="list-group" id="table-list"></ul>
+        <button class="btn btn-primary mt-3" onclick="openCreateTableModal()">Create New Table</button>
+      </div>
+
+      <!-- Table Details Section (Simulated separate page) -->
+      <div id="table-details-section" style="display:none;">
+        <button class="btn btn-secondary mb-3" onclick="backToTableList()">Back to Tables</button>
+        <div id="table-details"></div>
+        <div id="table-data-section" class="mt-4">
+          <h4>Table Data</h4>
+          <button class="btn btn-info mb-3" onclick="fetchTableData()">Load Data</button>
+          <button class="btn btn-success mb-3" onclick="openRowModal('insert')">Insert Row</button>
+          <div id="table-data"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Table Modal -->
+  <div class="modal fade" id="createTableModal" tabindex="-1" role="dialog" aria-labelledby="createTableModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <div class="modal-header">
+           <h5 class="modal-title" id="createTableModalLabel">Create New Table</h5>
+           <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+             <span aria-hidden="true">&times;</span>
+           </button>
+         </div>
+         <div class="modal-body">
+           <div class="form-group">
+             <label for="new-table-name">Table Name</label>
+             <input type="text" class="form-control" id="new-table-name">
+           </div>
+           <div id="columns-container"></div>
+           <button class="btn btn-secondary" onclick="addColumnInput()">Add Column</button>
+         </div>
+         <div class="modal-footer">
+           <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+           <button type="button" class="btn btn-primary" onclick="createTable()">Create Table</button>
+         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Column Modal -->
+  <div class="modal fade" id="addColumnModal" tabindex="-1" role="dialog" aria-labelledby="addColumnModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <div class="modal-header">
+           <h5 class="modal-title" id="addColumnModalLabel">Add Column</h5>
+           <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+             <span aria-hidden="true">&times;</span>
+           </button>
+         </div>
+         <div class="modal-body">
+           <div class="form-group">
+             <label for="new-column-name">Column Name</label>
+             <input type="text" class="form-control" id="new-column-name">
+           </div>
+           <div class="form-group">
+             <label for="new-column-type">Column Type</label>
+             <select class="form-control" id="new-column-type">
+               <option value="INTEGER">INTEGER</option>
+               <option value="TEXT">TEXT</option>
+               <option value="REAL">REAL</option>
+             </select>
+           </div>
+         </div>
+         <div class="modal-footer">
+           <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+           <button type="button" class="btn btn-primary" id="add-column-button">Add Column</button>
+         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row Modal (Insert / Edit Row) -->
+  <div class="modal fade" id="rowModal" tabindex="-1" role="dialog" aria-labelledby="rowModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+         <div class="modal-header">
+           <h5 class="modal-title" id="rowModalLabel">Insert/Edit Row</h5>
+           <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+             <span aria-hidden="true">&times;</span>
+           </button>
+         </div>
+         <div class="modal-body">
+           <form id="row-form">
+             <!-- Dynamic input fields will be appended here -->
+           </form>
+         </div>
+         <div class="modal-footer">
+           <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+           <button type="button" class="btn btn-primary" id="row-submit-button">Save</button>
+         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap and dependencies -->
+  <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+  
+  <script>
+    const sessionKey = sessionStorage.getItem('session_key');
+    if (!sessionKey) {
+      window.location.href = '/login_page?redirect=/database&warning=true';
+    }
+    const apiUrl = '/admin/database';
+    let currentTable = '';
+    let currentColumns = []; // Store schema for current table (list of column names)
+    let rowModalMode = 'insert'; // or 'edit'
+    let editingRowId = null;
+
+    async function fetchTables() {
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${sessionKey}` }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        displayTables(data.tables);
+      } else if (response.status === 401) {
+        window.location.href = '/login_page?redirect=/database&warning=true';
+      } else {
+        alert(data.error);
+      }
+    }
+
+    function displayTables(tables) {
+      const tableList = document.getElementById('table-list');
+      tableList.innerHTML = '';
+      for (const tableName in tables) {
+        const li = document.createElement('li');
+        li.className = 'list-group-item table-list-item';
+        li.textContent = tableName;
+        li.onclick = () => showTableDetails(tableName, tables[tableName]);
+        tableList.appendChild(li);
+      }
+    }
+
+    function showTableDetails(tableName, columns) {
+      currentTable = tableName;
+      currentColumns = columns; // Save schema info for row form
+      document.getElementById('table-list-section').style.display = 'none';
+      document.getElementById('table-details-section').style.display = 'block';
+      const tableDetails = document.getElementById('table-details');
+      tableDetails.innerHTML = `
+        <h3>${tableName}</h3>
+        <h5>Schema</h5>
+        <ul class="list-group mb-3">
+          ${columns.map(col => `<li class="list-group-item">${col}</li>`).join('')}
+        </ul>
+        <button class="btn btn-primary" onclick="openAddColumnModal('${tableName}')">Add Column</button>
+        <button class="btn btn-danger" onclick="deleteTable('${tableName}')">Delete Table</button>
+      `;
+      // Clear any previous row data
+      document.getElementById('table-data').innerHTML = '';
+    }
+
+    function backToTableList() {
+      document.getElementById('table-details-section').style.display = 'none';
+      document.getElementById('table-list-section').style.display = 'block';
+      fetchTables();
+    }
+
+    function openCreateTableModal() {
+      // Reset form fields
+      document.getElementById('new-table-name').value = '';
+      document.getElementById('columns-container').innerHTML = '';
+      $('#createTableModal').modal('show');
+    }
+
+    function addColumnInput() {
+      const container = document.getElementById('columns-container');
+      const columnGroup = document.createElement('div');
+      columnGroup.className = 'form-group';
+      columnGroup.innerHTML = `
+        <label>Column Name</label>
+        <input type="text" class="form-control column-name">
+        <label>Column Type</label>
+        <select class="form-control column-type">
+          <option value="INTEGER">INTEGER</option>
+          <option value="TEXT">TEXT</option>
+          <option value="REAL">REAL</option>
+        </select>
+      `;
+      container.appendChild(columnGroup);
+    }
+
+    async function createTable() {
+      const tableName = document.getElementById('new-table-name').value;
+      const columns = Array.from(document.querySelectorAll('#columns-container .form-group')).map(group => ({
+        name: group.querySelector('.column-name').value,
+        type: group.querySelector('.column-type').value
+      }));
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify({ table_name: tableName, columns })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        $('#createTableModal').modal('hide');
+        fetchTables();
+      } else if (response.status === 401) {
+        window.location.href = '/login_page?redirect=/database&warning=true';
+      } else {
+        alert(data.error);
+      }
+    }
+
+    async function deleteTable(tableName) {
+      const response = await fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify({ table_name: tableName })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        backToTableList();
+      } else if (response.status === 401) {
+        window.location.href = '/login_page?redirect=/database&warning=true';
+      } else {
+        alert(data.error);
+      }
+    }
+
+    function openAddColumnModal(tableName) {
+      currentTable = tableName;
+      $('#addColumnModal').modal('show');
+      document.getElementById('new-column-name').value = '';
+      document.getElementById('new-column-type').value = 'INTEGER';
+      document.getElementById('add-column-button').onclick = addColumn;
+    }
+
+    async function addColumn() {
+      const columnName = document.getElementById('new-column-name').value;
+      const columnType = document.getElementById('new-column-type').value;
+
+      const response = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify({ table_name: currentTable, action: 'add', column: { name: columnName, type: columnType } })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        $('#addColumnModal').modal('hide');
+        // Refresh the table details (schema)
+        fetchTables();
+        setTimeout(() => showTableDetails(currentTable, []), 500);
+      } else if (response.status === 401) {
+        window.location.href = '/login_page?redirect=/database&warning=true';
+      } else {
+        console.log(data.error);
+        alert(data.error);
+      }
+    }
+
+    // -------------------------
+    // Data (Row) Operations
+    // -------------------------
+    async function fetchTableData() {
+      const response = await fetch(apiUrl + `?table=${currentTable}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${sessionKey}` }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        displayTableData(data.data);
+      } else if (response.status === 401) {
+        window.location.href = '/login_page?redirect=/database&warning=true';
+      } else {
+        alert(data.error);
+      }
+    }
+
+    function displayTableData(rows) {
+      const container = document.getElementById('table-data');
+      if (!rows.length) {
+        container.innerHTML = '<p>No data available.</p>';
+        return;
+      }
+      // Create a table with headers (using currentColumns or keys from first row)
+      let headers = currentColumns.length ? currentColumns : Object.keys(rows[0]);
+      let html = `<table class="table table-striped"><thead><tr>`;
+      headers.forEach(header => {
+        html += `<th>${header}</th>`;
+      });
+      html += `<th>Actions</th></tr></thead><tbody>`;
+      rows.forEach(row => {
+        html += `<tr>`;
+        headers.forEach(header => {
+          html += `<td>${row[header] !== null ? row[header] : ''}</td>`;
+        });
+        html += `<td>
+                  <button class="btn btn-sm btn-warning action-btn" onclick='openRowModal("edit", ${JSON.stringify(row)})'>Edit</button>
+                  <button class="btn btn-sm btn-danger action-btn" onclick='deleteRow(${row.id})'>Delete</button>
+                 </td>`;
+        html += `</tr>`;
+      });
+      html += `</tbody></table>`;
+      container.innerHTML = html;
+    }
+
+    // Open row modal for inserting or editing rows.
+    function openRowModal(mode, row = {}) {
+      rowModalMode = mode;
+      // If editing, store the row id
+      editingRowId = mode === 'edit' ? row.id : null;
+      // Clear previous form fields
+      const form = document.getElementById('row-form');
+      form.innerHTML = '';
+      // Build input fields dynamically based on currentColumns.
+      // Skip the id field for insert operations.
+      currentColumns.forEach(col => {
+        // Optionally, skip id for insert.
+        if (mode === 'insert' && col === 'id') return;
+        const value = row[col] !== undefined ? row[col] : '';
+        const group = document.createElement('div');
+        group.className = 'form-group';
+        group.innerHTML = `
+          <label>${col}</label>
+          <input type="text" class="form-control" name="${col}" value="${value}">
+        `;
+        form.appendChild(group);
+      });
+      // Set modal title based on mode
+      document.getElementById('rowModalLabel').textContent = mode === 'insert' ? 'Insert Row' : 'Edit Row';
+      // Set submit button handler
+      document.getElementById('row-submit-button').onclick = submitRow;
+      $('#rowModal').modal('show');
+    }
+
+    async function submitRow() {
+        const formData = new FormData(document.getElementById('row-form'));
+        let rowData = {};
+        for (let [key, value] of formData.entries()) {
+            rowData[key] = value;
+        }
+        let url = apiUrl;
+        let method;
+        let payload = { table_name: currentTable };
+        
+        if (rowModalMode === 'insert') {
+            method = 'POST';
+            payload.data_operation = 'insert';
+            payload.row = rowData;  // nest row data
+        } else {
+            method = 'PUT';
+            payload.data_operation = 'update';
+            payload.row_id = editingRowId;
+            payload.row = rowData;  // nest row data
+        }
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionKey}`
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        if (response.ok) {
+            alert(data.message);
+            $('#rowModal').modal('hide');
+            fetchTableData();
+        } else if (response.status === 401) {
+            window.location.href = '/login_page?redirect=/database&warning=true';
+        } else {
+            alert(data.error);
+        }
+        }
+
+
+    async function deleteRow(rowId) {
+      if (!confirm("Are you sure you want to delete this row?")) return;
+      const response = await fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify({ table_name: currentTable, data_operation: 'delete', row_id: rowId })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        alert(data.message);
+        fetchTableData();
+      } else if (response.status === 401) {
+        window.location.href = '/login_page?redirect=/database&warning=true';
+      } else {
+        alert(data.error);
+      }
+    }
+
+    fetchTables();
+  </script>
+</body>
+</html>

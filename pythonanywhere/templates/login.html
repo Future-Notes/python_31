@@ -290,6 +290,7 @@
 
                 if (response.ok) {
                     sessionStorage.setItem("session_key", data.session_key);
+                    sessionStorage.setItem("user_id", data.user_id)
                     // Redirect to the provided redirect URL or the user's default startpage
                     window.location.href = redirectUrl || data.startpage || "/index";
                 } else if (response.status === 403 && data.error === "Account is suspended") {
@@ -328,6 +329,7 @@
                 if (rememberMe && data.lasting_key) {
                     localStorage.setItem("lasting_key", data.lasting_key);
                 }
+                sessionStorage.setItem("user_id", data.user_id)
                 console.log("Final redirect url:" + redirectUrl);
                 console.log("Final startpage:" + data.startpage);
                 console.log("Final decision:" + (redirectUrl || data.startpage || "/index"));

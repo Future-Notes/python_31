@@ -128,15 +128,15 @@ class Appointment(db.Model):
     start_datetime = db.Column(db.DateTime, nullable=False)
     end_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=False)  # New field
 
-    # New columns
     recurrence_rule = db.Column(db.String(255), nullable=True)
     recurrence_end_date = db.Column(db.DateTime, nullable=True)
-
-    is_all_day = db.Column(db.Boolean, nullable=False, default=False)  # New all-day field
-    color = db.Column(db.String(7), nullable=True)  # Optional color field
+    is_all_day = db.Column(db.Boolean, nullable=False, default=False)
+    color = db.Column(db.String(7), nullable=True)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
+    calendar = db.relationship('Calendar', backref=db.backref('appointments', lazy=True))
     notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
 
     def to_dict(self):
@@ -147,11 +147,28 @@ class Appointment(db.Model):
             "start_datetime": self.start_datetime.isoformat(),
             "end_datetime": self.end_datetime.isoformat(),
             "user_id": self.user_id,
+            "calendar_id": self.calendar_id,  # Include calendar id
             "recurrence_rule": self.recurrence_rule,
             "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
-            "is_all_day": self.is_all_day,  # Include all-day flag in response
-            "color": self.color,  # Include color in response
+            "is_all_day": self.is_all_day,
+            "color": self.color,
             "notes": [note.to_dict() for note in self.notes]
+        }
+    
+class Calendar(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False, default="My calendar")
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    is_default = db.Column(db.Boolean, default=False)
+
+    user = db.relationship('User', backref=db.backref('calendars', lazy=True))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "user_id": self.user_id,
+            "is_default": self.is_default,
         }
 
 
@@ -276,6 +293,12 @@ def validate_session_key():
     # Update last active time
     session["last_active"] = now
     return True, session
+
+def create_default_calendar(user_id):
+    default_calendar = Calendar(name="My calendar", user_id=user_id, is_default=True)
+    db.session.add(default_calendar)
+    db.session.commit()
+    return default_calendar
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -864,6 +887,10 @@ def account_page():
 def admin_page():
     return render_template('admin.html')
 
+@app.route('/database')
+def database_viewer():
+    return render_template('database_viewer.html')
+
 @app.route('/group-notes')
 def group_notes():
     return render_template("group_index.html")
@@ -946,7 +973,15 @@ def get_user_info():
 @require_session_key
 def get_appointments():
     user_id = g.user_id
-    appointments = Appointment.query.filter_by(user_id=user_id).all()
+    calendar_id = request.args.get('calendar_id', type=int)
+    query = Appointment.query.filter_by(user_id=user_id)
+    # Ensure the user has a default calendar
+    user_calendars = Calendar.query.filter_by(user_id=user_id).all()
+    if not any(cal.is_default for cal in user_calendars):
+        create_default_calendar(user_id)
+    if calendar_id:
+        query = query.filter_by(calendar_id=calendar_id)
+    appointments = query.all()
     appointments_data = [appt.to_dict() for appt in appointments]
     return jsonify({"appointments": appointments_data}), 200
 
@@ -964,10 +999,22 @@ def create_appointment():
     note_ids = data.get('note_ids', [])  # List of note IDs to attach
     is_all_day = data.get('is_all_day', False)  # Optional all-day flag
     color = data.get('color', None)  # Optional color for the appointment
+    calendar_id = data.get('calendar_id')  # New field
 
     # Validate required fields
     if not title or not start_datetime_str or not end_datetime_str:
         return jsonify({"error": "Missing required fields: title, start_datetime, and end_datetime"}), 400
+    
+    # Retrieve the calendar: either the one provided or the default calendar for the user
+    if calendar_id:
+        calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+        if not calendar:
+            return jsonify({"error": "Calendar not found or not owned by user."}), 404
+    else:
+        # Fetch default calendar
+        calendar = Calendar.query.filter_by(user_id=g.user_id, is_default=True).first()
+        if not calendar:
+            return jsonify({"error": "Default calendar not found for user."}), 404
 
     # Validate datetime formats
     try:
@@ -1020,6 +1067,7 @@ def create_appointment():
         description=description.strip(),
         start_datetime=start_datetime,
         end_datetime=end_datetime,
+        calendar_id=calendar.id,  # Set calendar id
         user_id=g.user_id,
         recurrence_rule=recurrence_rule.strip() if recurrence_rule else None,
         recurrence_end_date=recurrence_end_date,
@@ -1057,10 +1105,11 @@ def update_appointment(appointment_id):
     description = data.get('description')
     start_datetime_str = data.get('start_datetime')
     end_datetime_str = data.get('end_datetime')
-    recurrence_rule = data.get('recurrence_rule')  # New: optional update for recurrence rule
-    recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional update for recurrence end date
+    recurrence_rule = data.get('recurrence_rule')  # Optional update for recurrence rule
+    recurrence_end_date_str = data.get('recurrence_end_date')  # Optional update for recurrence end date
     note_ids = data.get('note_ids')  # Optional update to attached notes
     color = data.get('color')  # Optional update to color
+    calendar_id = data.get('calendar_id')  # New field
 
     if title:
         appointment.title = title
@@ -1070,13 +1119,25 @@ def update_appointment(appointment_id):
     if 'is_all_day' in data:
         appointment.is_all_day = bool(data['is_all_day'])
 
+    # Retrieve the calendar: either the one provided or the default calendar for the user
+    if calendar_id:
+        calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+        if not calendar:
+            return jsonify({"error": "Calendar not found or not owned by user."}), 404
+    else:
+        # Fetch default calendar
+        calendar = Calendar.query.filter_by(user_id=g.user_id, is_default=True).first()
+        if not calendar:
+            return jsonify({"error": "Default calendar not found for user."}), 404
+
+    # Update the appointment's calendar_id
+    appointment.calendar_id = calendar.id
 
     if start_datetime_str:
         try:
             new_start = datetime.fromisoformat(start_datetime_str)
             appointment.start_datetime = new_start
         except ValueError:
-            print("Bad start date format??")
             return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
 
     if end_datetime_str:
@@ -1084,16 +1145,13 @@ def update_appointment(appointment_id):
             new_end = datetime.fromisoformat(end_datetime_str)
             appointment.end_datetime = new_end
         except ValueError:
-            print("Bad end date format??")
             return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
 
     # Ensure the updated times are valid
     if appointment.end_datetime <= appointment.start_datetime:
-        print("Bad end date??")
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
 
     if appointment.end_datetime.date() != appointment.start_datetime.date():
-        print("Bad date??")
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
     # Update recurrence rule if provided (can be set to None to remove recurrence)
@@ -1105,15 +1163,13 @@ def update_appointment(appointment_id):
             try:
                 appointment.recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
             except ValueError:
-                print("Bad recurrence end date format??")
                 return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
         else:
             appointment.recurrence_end_date = None
 
-    #validate color to be a valid hex color code
+    # Validate color to be a valid hex color code if provided
     if color is not None:
         if color and not re.match(r'^#[0-9A-Fa-f]{6}$', color):
-            print("Bad color format??")
             return jsonify({"error": "Invalid color format. Use hex color code (e.g., #RRGGBB)."}), 400
         appointment.color = color.strip() if color else None
 
@@ -1142,6 +1198,82 @@ def delete_appointment(appointment_id):
     db.session.commit()
 
     return jsonify({"message": "Appointment deleted successfully"}), 200
+
+@app.route('/calendars', methods=['POST'])
+@require_session_key
+def create_calendar():
+    data = request.get_json() or {}
+    name = data.get('name', "My calendar").strip()
+
+    if not name:
+        return jsonify({"error": "Calendar name is required."}), 400
+
+    # Optionally, enforce uniqueness per user if desired
+    new_calendar = Calendar(name=name, user_id=g.user_id)
+    db.session.add(new_calendar)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Calendar created successfully",
+        "calendar": new_calendar.to_dict()
+    }), 201
+
+@app.route('/calendars', methods=['GET'])
+@require_session_key
+def get_calendars():
+    calendars = Calendar.query.filter_by(user_id=g.user_id).all()
+    calendars_data = [cal.to_dict() for cal in calendars]
+    return jsonify({"calendars": calendars_data}), 200
+
+@app.route('/calendars/<int:calendar_id>', methods=['PUT'])
+@require_session_key
+def update_calendar(calendar_id):
+    data = request.get_json() or {}
+    calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+    if not calendar:
+        return jsonify({"error": "Calendar not found"}), 404
+
+    new_name = data.get('name', '').strip()
+    if not new_name:
+        return jsonify({"error": "Calendar name is required."}), 400
+
+    calendar.name = new_name
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to update calendar: {str(e)}"}), 500
+
+    return jsonify({
+        "message": "Calendar updated successfully",
+        "calendar": calendar.to_dict()
+    }), 200
+
+@app.route('/calendars/<int:calendar_id>', methods=['DELETE'])
+@require_session_key
+def delete_calendar(calendar_id):
+    calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+    if not calendar:
+        return jsonify({"error": "Calendar not found"}), 404
+
+    if calendar.is_default:
+        return jsonify({"error": "Default calendar cannot be deleted."}), 400
+
+    # Optional: reassign appointments from this calendar to the user's default calendar
+    default_calendar = Calendar.query.filter_by(user_id=g.user_id, is_default=True).first()
+    if default_calendar:
+        Appointment.query.filter_by(calendar_id=calendar.id, user_id=g.user_id).update({"calendar_id": default_calendar.id})
+    
+    try:
+        db.session.delete(calendar)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete calendar: {str(e)}"}), 500
+
+    return jsonify({"message": "Calendar deleted successfully"}), 200
+
+
 
 # 5. Get all user notes for attaching
 
@@ -1919,6 +2051,195 @@ def ban_user():
 
     return jsonify({"message": "User banned successfully."}), 200
 
+@app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@require_session_key
+def manage_database():
+    # Authorization check
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can manage the database."}), 403
+
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+
+    # ------------------------
+    # GET: Fetch schema or table data
+    # ------------------------
+    if request.method == 'GET':
+        table = request.args.get('table')
+        column = request.args.get('column')
+
+        if not table:
+            # Return schema information
+            try:
+                tables = {t: [col['name'] for col in inspector.get_columns(t)] for t in inspector.get_table_names()}
+                return jsonify({"tables": tables}), 200
+            except Exception as e:
+                return jsonify({"error": f"Failed to fetch database schema: {str(e)}"}), 500
+        else:
+            try:
+                query = text(f"SELECT {column} FROM {table}") if column else text(f"SELECT * FROM {table}")
+
+                # ...
+                with db.engine.connect() as connection:
+                    result = connection.execute(query)
+                    rows = [dict(row) for row in result.mappings().all()]
+
+                return jsonify({"data": rows}), 200
+
+            except Exception as e:
+                return jsonify({"error": f"Failed to fetch data from table '{table}': {str(e)}"}), 500
+
+    # ------------------------
+    # POST, PUT, DELETE: Require JSON payload
+    # ------------------------
+    data = request.json
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    data_operation = data.get('data_operation')
+
+    # ------------------------
+    # Data Operations: Insert, Update, Delete rows
+    # ------------------------
+    if data_operation:
+        table_name = data.get('table_name')
+        if not table_name:
+            return jsonify({"error": "Table name is required for data operations"}), 400
+
+        try:
+            with db.engine.connect() as connection:
+                if request.method == 'POST' and data_operation == 'insert':
+                    row_data = data.get('row')
+                    if not row_data or not isinstance(row_data, dict):
+                        return jsonify({"error": "Row data must be provided as a dictionary"}), 400
+
+                    # Insert row
+                    columns = ', '.join(row_data.keys())
+                    placeholders = ', '.join([f":{key}" for key in row_data.keys()])
+                    stmt = text(f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})")
+                    
+                    connection.execute(stmt, row_data)
+                    connection.commit()
+                    return jsonify({"message": f"Row inserted successfully into '{table_name}'"}), 201
+
+                elif request.method == 'PUT' and data_operation == 'update':
+                    row_data = data.get('row')
+                    row_id = data.get('row_id')
+                    if not row_data or row_id is None:
+                        return jsonify({"error": "Row id and row data are required for update"}), 400
+
+                    # Update row
+                    set_clause = ', '.join([f"{k} = :{k}" for k in row_data.keys()])
+                    stmt = text(f"UPDATE {table_name} SET {set_clause} WHERE id = :id")
+
+                    connection.execute(stmt, {**row_data, "id": row_id})
+                    connection.commit()
+                    return jsonify({"message": f"Row with id {row_id} updated in '{table_name}'"}), 200
+
+                elif request.method == 'DELETE' and data_operation == 'delete':
+                    row_id = data.get('row_id')
+                    if row_id is None:
+                        return jsonify({"error": "Row id is required for deletion"}), 400
+
+                    # Delete row
+                    stmt = text(f"DELETE FROM {table_name} WHERE id = :id")
+                    connection.execute(stmt, {"id": row_id})
+                    connection.commit()
+                    return jsonify({"message": f"Row with id {row_id} deleted from '{table_name}'"}), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to modify data: {str(e)}"}), 500
+
+    # ------------------------
+    # Schema Operations: Creating, Modifying, Dropping Tables or Columns
+    # ------------------------
+    try:
+        with db.engine.connect() as connection:
+            if request.method == 'POST':
+                # Add a new table
+                table_name = data.get('table_name')
+                columns = data.get('columns')  # List of column definitions
+                if not table_name or not columns:
+                    return jsonify({"error": "Table name and columns are required"}), 400
+
+                column_definitions = ", ".join([f"{col['name']} {col['type']}" for col in columns])
+                stmt = text(f"CREATE TABLE {table_name} ({column_definitions})")
+                connection.execute(stmt)
+                connection.commit()
+                return jsonify({"message": f"Table '{table_name}' created successfully"}), 201
+
+            elif request.method == 'PUT':
+                # Modify a table (add/drop columns)
+                table_name = data.get('table_name')
+                action = data.get('action')  # 'add' or 'drop'
+                column = data.get('column')  # Column definition for 'add', column name for 'drop'
+
+                if not table_name or not action or not column:
+                    return jsonify({"error": "Table name, action, and column are required"}), 400
+
+                if action == 'add':
+                    stmt = text(f"ALTER TABLE {table_name} ADD COLUMN {column['name']} {column['type']}")
+                elif action == 'drop':
+                    stmt = text(f"ALTER TABLE {table_name} DROP COLUMN {column}")
+                else:
+                    return jsonify({"error": "Invalid action. Use 'add' or 'drop'"}), 400
+
+                connection.execute(stmt)
+                connection.commit()
+                return jsonify({"message": f"Column '{column}' {('added to' if action == 'add' else 'dropped from')} table '{table_name}'"}), 200
+
+            elif request.method == 'DELETE':
+                # Drop a table
+                table_name = data.get('table_name')
+                if not table_name:
+                    return jsonify({"error": "Table name is required"}), 400
+
+                stmt = text(f"DROP TABLE {table_name}")
+                connection.execute(stmt)
+                connection.commit()
+                return jsonify({"message": f"Table '{table_name}' dropped successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to modify schema: {str(e)}"}), 500
+
+    return jsonify({"error": "Invalid request"}), 400
+
+@app.route('/admin/login-as-user', methods=['POST'])
+@require_session_key
+def login_as_user():
+    admin_user = User.query.get(g.user_id)
+    if not admin_user or admin_user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can log in as another user."}), 403
+
+    data = request.json
+    target_user_id = data.get("user_id")
+    if not target_user_id:
+        return jsonify({"error": "User ID is required"}), 400
+
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        return jsonify({"error": "Target user not found"}), 404
+
+    if target_user.suspended:
+        return jsonify({"error": "Cannot log in as a suspended user"}), 403
+
+    # Generate a session key for the target user
+    key = generate_session_key(target_user.id)
+
+    return jsonify({
+        "message": f"{target_user.username}",
+        "session_key": key,
+        "user_id": target_user.id,
+        "startpage": target_user.startpage,
+        "lasting_key": target_user.lasting_key if target_user.lasting_key else ""
+    }), 200
+
+@app.route('/api/user/<int:user_id>')
+def get_username(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"username": user.username}), 200
+
 # Authentication
 
 @app.route('/signup', methods=['POST'])
@@ -1946,6 +2267,8 @@ def signup():
 
         # Generate a session key for immediate login
         key = generate_session_key(user.id)
+
+        create_default_calendar(user.id)
         
         return jsonify({
             "message": "User created and logged in successfully!",
