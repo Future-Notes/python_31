@@ -128,15 +128,15 @@ class Appointment(db.Model):
     start_datetime = db.Column(db.DateTime, nullable=False)
     end_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=False)  # New field
 
-    # New columns
     recurrence_rule = db.Column(db.String(255), nullable=True)
     recurrence_end_date = db.Column(db.DateTime, nullable=True)
-
-    is_all_day = db.Column(db.Boolean, nullable=False, default=False)  # New all-day field
-    color = db.Column(db.String(7), nullable=True)  # Optional color field
+    is_all_day = db.Column(db.Boolean, nullable=False, default=False)
+    color = db.Column(db.String(7), nullable=True)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
+    calendar = db.relationship('Calendar', backref=db.backref('appointments', lazy=True))
     notes = db.relationship('Note', secondary='appointment_note', backref='appointments')
 
     def to_dict(self):
@@ -147,11 +147,28 @@ class Appointment(db.Model):
             "start_datetime": self.start_datetime.isoformat(),
             "end_datetime": self.end_datetime.isoformat(),
             "user_id": self.user_id,
+            "calendar_id": self.calendar_id,  # Include calendar id
             "recurrence_rule": self.recurrence_rule,
             "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
-            "is_all_day": self.is_all_day,  # Include all-day flag in response
-            "color": self.color,  # Include color in response
+            "is_all_day": self.is_all_day,
+            "color": self.color,
             "notes": [note.to_dict() for note in self.notes]
+        }
+    
+class Calendar(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False, default="My calendar")
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    is_default = db.Column(db.Boolean, default=False)
+
+    user = db.relationship('User', backref=db.backref('calendars', lazy=True))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "user_id": self.user_id,
+            "is_default": self.is_default,
         }
 
 
@@ -276,6 +293,12 @@ def validate_session_key():
     # Update last active time
     session["last_active"] = now
     return True, session
+
+def create_default_calendar(user_id):
+    default_calendar = Calendar(name="My calendar", user_id=user_id, is_default=True)
+    db.session.add(default_calendar)
+    db.session.commit()
+    return default_calendar
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -950,7 +973,15 @@ def get_user_info():
 @require_session_key
 def get_appointments():
     user_id = g.user_id
-    appointments = Appointment.query.filter_by(user_id=user_id).all()
+    calendar_id = request.args.get('calendar_id', type=int)
+    query = Appointment.query.filter_by(user_id=user_id)
+    # Ensure the user has a default calendar
+    user_calendars = Calendar.query.filter_by(user_id=user_id).all()
+    if not any(cal.is_default for cal in user_calendars):
+        create_default_calendar(user_id)
+    if calendar_id:
+        query = query.filter_by(calendar_id=calendar_id)
+    appointments = query.all()
     appointments_data = [appt.to_dict() for appt in appointments]
     return jsonify({"appointments": appointments_data}), 200
 
@@ -968,10 +999,22 @@ def create_appointment():
     note_ids = data.get('note_ids', [])  # List of note IDs to attach
     is_all_day = data.get('is_all_day', False)  # Optional all-day flag
     color = data.get('color', None)  # Optional color for the appointment
+    calendar_id = data.get('calendar_id')  # New field
 
     # Validate required fields
     if not title or not start_datetime_str or not end_datetime_str:
         return jsonify({"error": "Missing required fields: title, start_datetime, and end_datetime"}), 400
+    
+    # Retrieve the calendar: either the one provided or the default calendar for the user
+    if calendar_id:
+        calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+        if not calendar:
+            return jsonify({"error": "Calendar not found or not owned by user."}), 404
+    else:
+        # Fetch default calendar
+        calendar = Calendar.query.filter_by(user_id=g.user_id, is_default=True).first()
+        if not calendar:
+            return jsonify({"error": "Default calendar not found for user."}), 404
 
     # Validate datetime formats
     try:
@@ -1024,6 +1067,7 @@ def create_appointment():
         description=description.strip(),
         start_datetime=start_datetime,
         end_datetime=end_datetime,
+        calendar_id=calendar.id,  # Set calendar id
         user_id=g.user_id,
         recurrence_rule=recurrence_rule.strip() if recurrence_rule else None,
         recurrence_end_date=recurrence_end_date,
@@ -1061,10 +1105,11 @@ def update_appointment(appointment_id):
     description = data.get('description')
     start_datetime_str = data.get('start_datetime')
     end_datetime_str = data.get('end_datetime')
-    recurrence_rule = data.get('recurrence_rule')  # New: optional update for recurrence rule
-    recurrence_end_date_str = data.get('recurrence_end_date')  # New: optional update for recurrence end date
+    recurrence_rule = data.get('recurrence_rule')  # Optional update for recurrence rule
+    recurrence_end_date_str = data.get('recurrence_end_date')  # Optional update for recurrence end date
     note_ids = data.get('note_ids')  # Optional update to attached notes
     color = data.get('color')  # Optional update to color
+    calendar_id = data.get('calendar_id')  # New field
 
     if title:
         appointment.title = title
@@ -1074,13 +1119,25 @@ def update_appointment(appointment_id):
     if 'is_all_day' in data:
         appointment.is_all_day = bool(data['is_all_day'])
 
+    # Retrieve the calendar: either the one provided or the default calendar for the user
+    if calendar_id:
+        calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+        if not calendar:
+            return jsonify({"error": "Calendar not found or not owned by user."}), 404
+    else:
+        # Fetch default calendar
+        calendar = Calendar.query.filter_by(user_id=g.user_id, is_default=True).first()
+        if not calendar:
+            return jsonify({"error": "Default calendar not found for user."}), 404
+
+    # Update the appointment's calendar_id
+    appointment.calendar_id = calendar.id
 
     if start_datetime_str:
         try:
             new_start = datetime.fromisoformat(start_datetime_str)
             appointment.start_datetime = new_start
         except ValueError:
-            print("Bad start date format??")
             return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
 
     if end_datetime_str:
@@ -1088,16 +1145,13 @@ def update_appointment(appointment_id):
             new_end = datetime.fromisoformat(end_datetime_str)
             appointment.end_datetime = new_end
         except ValueError:
-            print("Bad end date format??")
             return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
 
     # Ensure the updated times are valid
     if appointment.end_datetime <= appointment.start_datetime:
-        print("Bad end date??")
         return jsonify({"error": "end_datetime must be after start_datetime."}), 400
 
     if appointment.end_datetime.date() != appointment.start_datetime.date():
-        print("Bad date??")
         return jsonify({"error": "Appointments cannot span multiple days."}), 400
 
     # Update recurrence rule if provided (can be set to None to remove recurrence)
@@ -1109,15 +1163,13 @@ def update_appointment(appointment_id):
             try:
                 appointment.recurrence_end_date = datetime.fromisoformat(recurrence_end_date_str)
             except ValueError:
-                print("Bad recurrence end date format??")
                 return jsonify({"error": "Invalid recurrence_end_date format. Use ISO 8601 format."}), 400
         else:
             appointment.recurrence_end_date = None
 
-    #validate color to be a valid hex color code
+    # Validate color to be a valid hex color code if provided
     if color is not None:
         if color and not re.match(r'^#[0-9A-Fa-f]{6}$', color):
-            print("Bad color format??")
             return jsonify({"error": "Invalid color format. Use hex color code (e.g., #RRGGBB)."}), 400
         appointment.color = color.strip() if color else None
 
@@ -1146,6 +1198,82 @@ def delete_appointment(appointment_id):
     db.session.commit()
 
     return jsonify({"message": "Appointment deleted successfully"}), 200
+
+@app.route('/calendars', methods=['POST'])
+@require_session_key
+def create_calendar():
+    data = request.get_json() or {}
+    name = data.get('name', "My calendar").strip()
+
+    if not name:
+        return jsonify({"error": "Calendar name is required."}), 400
+
+    # Optionally, enforce uniqueness per user if desired
+    new_calendar = Calendar(name=name, user_id=g.user_id)
+    db.session.add(new_calendar)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Calendar created successfully",
+        "calendar": new_calendar.to_dict()
+    }), 201
+
+@app.route('/calendars', methods=['GET'])
+@require_session_key
+def get_calendars():
+    calendars = Calendar.query.filter_by(user_id=g.user_id).all()
+    calendars_data = [cal.to_dict() for cal in calendars]
+    return jsonify({"calendars": calendars_data}), 200
+
+@app.route('/calendars/<int:calendar_id>', methods=['PUT'])
+@require_session_key
+def update_calendar(calendar_id):
+    data = request.get_json() or {}
+    calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+    if not calendar:
+        return jsonify({"error": "Calendar not found"}), 404
+
+    new_name = data.get('name', '').strip()
+    if not new_name:
+        return jsonify({"error": "Calendar name is required."}), 400
+
+    calendar.name = new_name
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to update calendar: {str(e)}"}), 500
+
+    return jsonify({
+        "message": "Calendar updated successfully",
+        "calendar": calendar.to_dict()
+    }), 200
+
+@app.route('/calendars/<int:calendar_id>', methods=['DELETE'])
+@require_session_key
+def delete_calendar(calendar_id):
+    calendar = Calendar.query.filter_by(id=calendar_id, user_id=g.user_id).first()
+    if not calendar:
+        return jsonify({"error": "Calendar not found"}), 404
+
+    if calendar.is_default:
+        return jsonify({"error": "Default calendar cannot be deleted."}), 400
+
+    # Optional: reassign appointments from this calendar to the user's default calendar
+    default_calendar = Calendar.query.filter_by(user_id=g.user_id, is_default=True).first()
+    if default_calendar:
+        Appointment.query.filter_by(calendar_id=calendar.id, user_id=g.user_id).update({"calendar_id": default_calendar.id})
+    
+    try:
+        db.session.delete(calendar)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Failed to delete calendar: {str(e)}"}), 500
+
+    return jsonify({"message": "Calendar deleted successfully"}), 200
+
+
 
 # 5. Get all user notes for attaching
 
@@ -2139,6 +2267,8 @@ def signup():
 
         # Generate a session key for immediate login
         key = generate_session_key(user.id)
+
+        create_default_calendar(user.id)
         
         return jsonify({
             "message": "User created and logged in successfully!",
