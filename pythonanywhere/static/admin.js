@@ -4,7 +4,10 @@ document.addEventListener("DOMContentLoaded", function() {
         var currentSessionKey = sessionStorage.getItem("session_key");
         var currentUserId = sessionStorage.getItem("current_user_id");
 
+        console.log("Admin.js ran!")
+
         if (adminSessionKey && currentSessionKey && (currentSessionKey !== adminSessionKey) && currentUserId) {
+            console.log("All required fields are present!")
             // Fetch the username of the currently impersonated user
             let username = "another user"; // Default fallback
             try {
@@ -94,12 +97,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 // Remove stored admin credentials
                 localStorage.removeItem("admin_session_key");
                 localStorage.removeItem("admin_lasting_key");
-            
-                // Fix: Reset current_user_id to ensure correct user list filtering
-                const adminUserId = localStorage.getItem("admin_user_id");
-                if (adminUserId) {
-                    sessionStorage.setItem("current_user_id", adminUserId);
-                }
+                sessionStorage.removeItem("current_user_id");
             
                 // Reload page to apply admin session
                 window.location.reload();

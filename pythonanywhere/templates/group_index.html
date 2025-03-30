@@ -1263,70 +1263,110 @@
             tbody.innerHTML = ''; // Clear previous entries
 
             members.forEach(member => {
-                const tr = document.createElement('tr');
-                tr.classList.add('group-member');
+            const tr = document.createElement('tr');
+            tr.classList.add('group-member');
 
-                // Profile picture cell
-                const picTd = document.createElement('td');
-                const picDiv = document.createElement('div');
-                picDiv.classList.add('profile-pic');
-                if (member.profile_pic) {
-                    picDiv.style.backgroundImage = `url(${member.profile_pic})`;
-                } else {
-                    picDiv.textContent = member.username.charAt(0).toUpperCase();
-                    picDiv.classList.add('no-picture');
-                }
-                picTd.appendChild(picDiv);
-                tr.appendChild(picTd);
+            // Profile picture cell
+            const picTd = document.createElement('td');
+            const picDiv = document.createElement('div');
+            picDiv.classList.add('profile-pic');
+            if (member.profile_pic) {
+                picDiv.style.backgroundImage = `url(${member.profile_pic})`;
+            } else {
+                picDiv.textContent = member.username.charAt(0).toUpperCase();
+                picDiv.classList.add('no-picture');
+            }
+            picTd.appendChild(picDiv);
+            tr.appendChild(picTd);
 
-                // Username cell
-                const usernameTd = document.createElement('td');
-                usernameTd.textContent = member.username;
-                tr.appendChild(usernameTd);
+            // Username cell
+            const usernameTd = document.createElement('td');
+            usernameTd.textContent = member.username;
+            tr.appendChild(usernameTd);
 
-                // If the current user is admin and the member is not admin (you may also choose to prevent self‑removal)
-                if (currentUserIsAdmin && !member.is_admin) {
-                    const btnTd = document.createElement('td');
-                    const removeButton = document.createElement('button');
-                    removeButton.textContent = 'Remove';
-                    removeButton.classList.add('remove-user-button');
-                    removeButton.onclick = () => removeGroupMember(member.user_id);
-                    btnTd.appendChild(removeButton);
-                    tr.appendChild(btnTd);
-                }
+            // If the current user is admin and the member is not admin (you may also choose to prevent self‑removal)
+            if (currentUserIsAdmin && !member.is_admin) {
+                const btnTd = document.createElement('td');
+                const removeButton = document.createElement('button');
+                removeButton.textContent = 'Remove';
+                removeButton.classList.add('remove-user-button');
+                removeButton.onclick = () => removeGroupMember(member.user_id);
+                btnTd.appendChild(removeButton);
+                tr.appendChild(btnTd);
+            }
 
-                tbody.appendChild(tr);
+            tbody.appendChild(tr);
             });
 
-            // Optionally, if the current user is admin, add a "Delete Group" button to the sidebar if not already present
+            // Optionally, if the current user is admin, add admin-specific buttons to the sidebar
             const sidebar = document.getElementById('group-members-sidebar');
             let deleteGroupButton = document.getElementById('delete-group-button');
+            let copyGroupUuidButton = document.getElementById('copy-group-uuid-button');
             if (currentUserIsAdmin) {
-                if (!deleteGroupButton) {
-                    inviteButton = document.createElement('button');
-                    inviteButton.id = 'invite-btn';
-                    inviteButton.textContent = 'Invite people to this group';
-                    deleteGroupButton = document.createElement('button');
-                    deleteGroupButton.id = 'delete-group-button';
-                    deleteGroupButton.textContent = 'Delete Group';
-                    // Style the button similarly to your other buttons
-                    deleteGroupButton.style.backgroundColor = '#b33a3a';
-                    deleteGroupButton.style.color = '#e0e0e0';
-                    deleteGroupButton.style.border = 'none';
-                    deleteGroupButton.style.padding = '10px 20px';
-                    deleteGroupButton.style.borderRadius = '8px';
-                    deleteGroupButton.style.cursor = 'pointer';
-                    deleteGroupButton.style.marginTop = '10px';
-                    inviteButton.addEventListener('click', invitePeopleToGroup)
-                    deleteGroupButton.addEventListener('click', deleteGroup);
-                    sidebar.appendChild(inviteButton);
-                    sidebar.appendChild(deleteGroupButton);
-                }
+            if (!deleteGroupButton) {
+                const inviteButton = document.createElement('button');
+                inviteButton.id = 'invite-btn';
+                inviteButton.textContent = 'Invite people to this group';
+                deleteGroupButton = document.createElement('button');
+                deleteGroupButton.id = 'delete-group-button';
+                deleteGroupButton.textContent = 'Delete Group';
+                deleteGroupButton.style.backgroundColor = '#b33a3a';
+                deleteGroupButton.style.color = '#e0e0e0';
+                deleteGroupButton.style.border = 'none';
+                deleteGroupButton.style.padding = '10px 20px';
+                deleteGroupButton.style.borderRadius = '8px';
+                deleteGroupButton.style.cursor = 'pointer';
+                deleteGroupButton.style.marginTop = '10px';
+                inviteButton.addEventListener('click', invitePeopleToGroup);
+                deleteGroupButton.addEventListener('click', deleteGroup);
+                sidebar.appendChild(inviteButton);
+                sidebar.appendChild(deleteGroupButton);
+            }
+
+            if (!copyGroupUuidButton) {
+                copyGroupUuidButton = document.createElement('button');
+                copyGroupUuidButton.id = 'copy-group-uuid-button';
+                copyGroupUuidButton.textContent = 'Copy Group UUID';
+                copyGroupUuidButton.style.backgroundColor = '#4CAF50';
+                copyGroupUuidButton.style.color = '#e0e0e0';
+                copyGroupUuidButton.style.border = 'none';
+                copyGroupUuidButton.style.padding = '10px 20px';
+                copyGroupUuidButton.style.borderRadius = '8px';
+                copyGroupUuidButton.style.cursor = 'pointer';
+                copyGroupUuidButton.style.marginTop = '10px';
+                copyGroupUuidButton.addEventListener('click', () => {
+                    const groupId = sessionStorage.getItem('group_id');
+                    if (groupId) {
+                        navigator.clipboard.writeText(groupId).then(() => {
+                            copyGroupUuidButton.textContent = 'Copied UUID!';
+                            copyGroupUuidButton.style.transition = 'background-color 0.3s ease';
+                            copyGroupUuidButton.style.backgroundColor = '#3e8e41';
+                            setTimeout(() => {
+                                copyGroupUuidButton.textContent = 'Copy Group UUID';
+                                copyGroupUuidButton.style.backgroundColor = '#4CAF50';
+                            }, 2000);
+                        }).catch(err => {
+                            console.error('Failed to copy Group UUID:', err);
+                        });
+                    } else {
+                        copyGroupUuidButton.textContent = 'UUID Not Found';
+                        copyGroupUuidButton.style.backgroundColor = '#F44336';
+                        setTimeout(() => {
+                            copyGroupUuidButton.textContent = 'Copy Group UUID';
+                            copyGroupUuidButton.style.backgroundColor = '#4CAF50';
+                        }, 2000);
+                    }
+                });
+                sidebar.appendChild(copyGroupUuidButton);
+            }
             } else {
-                // If not admin, remove the delete button if it exists
-                if (deleteGroupButton) {
-                    sidebar.removeChild(deleteGroupButton);
-                }
+            // If not admin, remove admin-specific buttons if they exist
+            if (deleteGroupButton) {
+                sidebar.removeChild(deleteGroupButton);
+            }
+            if (copyGroupUuidButton) {
+                sidebar.removeChild(copyGroupUuidButton);
+            }
             }
         }
 
@@ -1481,7 +1521,6 @@
             try {
                 console.log("About to fetch invites...");
                 const sessionKey = sessionStorage.getItem("session_key");
-                console.log("Session key:", sessionKey);
                 const response = await fetch("/check-invite", {
                     method: "GET",
                     headers: {

@@ -551,16 +551,13 @@
                         body: JSON.stringify({ user_id: userId }),
                     });
 
-                    const user_id = sessionStorage.getItem("user_id");
-
                     if (response.ok) {
                         const data = await response.json();
                         sessionStorage.clear(); // Clear the current session
                         sessionStorage.setItem("session_key", data.session_key);
-                        localStorage.setItem("current_user_id", data.user_id);
-                        localStorage.setItem("admin_user_id", user_id)
+                        sessionStorage.setItem("current_user_id", data.user_id);
                         alert(`Logged in as ${data.message}`);
-                        window.location.href = data.startpage; // Redirect to the user's start page
+                        window.location.href = data.startpage;
                     } else {
                         const error = await response.json();
                         alert(error.error || "Failed to log in as the user.");
