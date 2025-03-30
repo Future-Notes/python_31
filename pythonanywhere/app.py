@@ -975,10 +975,19 @@ def get_appointments():
     user_id = g.user_id
     calendar_id = request.args.get('calendar_id', type=int)
     query = Appointment.query.filter_by(user_id=user_id)
+    
     # Ensure the user has a default calendar
     user_calendars = Calendar.query.filter_by(user_id=user_id).all()
-    if not any(cal.is_default for cal in user_calendars):
-        create_default_calendar(user_id)
+    default_calendar = next((cal for cal in user_calendars if cal.is_default), None)
+    if not default_calendar:
+        default_calendar = create_default_calendar(user_id)
+    
+    # Assign appointments without a calendar ID to the default calendar
+    appointments_without_calendar = query.filter_by(calendar_id=None).all()
+    for appt in appointments_without_calendar:
+        appt.calendar_id = default_calendar.id
+    db.session.commit()
+    
     if calendar_id:
         query = query.filter_by(calendar_id=calendar_id)
     appointments = query.all()
