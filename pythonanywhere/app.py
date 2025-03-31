@@ -154,13 +154,6 @@ class Appointment(db.Model):
             "color": self.color,
             "notes": [note.to_dict() for note in self.notes]
         }
-    
-# Association table for shared users
-shared_calendars = db.Table(
-    'shared_calendars',
-    db.Column('calendar_id', db.Integer, db.ForeignKey('calendar.id'), primary_key=True),
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
-)
 
 class Calendar(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -169,7 +162,6 @@ class Calendar(db.Model):
     is_default = db.Column(db.Boolean, default=False)
 
     user = db.relationship('User', backref=db.backref('calendars', lazy=True))
-    shared_users = db.relationship('User', secondary=shared_calendars, backref='shared_calendars')
 
     def to_dict(self):
         return {
@@ -259,12 +251,6 @@ class Invite(db.Model):
     group_name = db.Column(db.String(100), nullable=False)
     invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
-
-class CalendarInvite(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    token = db.Column(db.String(64), unique=True, nullable=False)
-    calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
