@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, url_for, abort, redirect
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint
@@ -155,6 +155,13 @@ class Appointment(db.Model):
             "notes": [note.to_dict() for note in self.notes]
         }
     
+# Association table for shared users
+shared_calendars = db.Table(
+    'shared_calendars',
+    db.Column('calendar_id', db.Integer, db.ForeignKey('calendar.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
 class Calendar(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), nullable=False, default="My calendar")
@@ -162,6 +169,7 @@ class Calendar(db.Model):
     is_default = db.Column(db.Boolean, default=False)
 
     user = db.relationship('User', backref=db.backref('calendars', lazy=True))
+    shared_users = db.relationship('User', secondary=shared_calendars, backref='shared_calendars')
 
     def to_dict(self):
         return {
@@ -169,6 +177,7 @@ class Calendar(db.Model):
             "name": self.name,
             "user_id": self.user_id,
             "is_default": self.is_default,
+            "shared_users": [user.id for user in self.shared_users],  # Include shared users in response
         }
 
 
@@ -250,6 +259,12 @@ class Invite(db.Model):
     group_name = db.Column(db.String(100), nullable=False)
     invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class CalendarInvite(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, nullable=False)
+    calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -2040,25 +2055,44 @@ def admin_dump():
 
 @app.route('/admin/ban', methods=['POST'])
 @require_session_key
-def ban_user():
+def toggle_ban_user():
     data = request.json
-    user_to_ban_id = data.get("user_id")
+    user_id = data.get("user_id")
 
     # Verify that the requester has admin privileges
     admin_user = User.query.get(g.user_id)
     if not admin_user or admin_user.role != "admin":
-        return jsonify({"error": "Unauthorized: only admins can ban users."}), 403
+        return jsonify({"error": "Unauthorized: only admins can toggle user ban status."}), 403
 
-    # Find the user to ban
-    user_to_ban = User.query.get(user_to_ban_id)
-    if not user_to_ban:
+    # Find the user to toggle ban status
+    user = User.query.get(user_id)
+    if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Set the user's suspended status to True
-    user_to_ban.suspended = True
+    # Toggle the user's suspended status
+    user.suspended = not user.suspended
     db.session.commit()
 
-    return jsonify({"message": "User banned successfully."}), 200
+    status = "banned" if user.suspended else "unbanned"
+    return jsonify({"message": f"User {status} successfully."}), 200
+
+@app.route('/admin/user-status', methods=['GET'])
+@require_session_key
+def user_status():
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can access user status."}), 403
+
+    users = User.query.with_entities(
+        User.id, User.username, User.suspended, User.role
+    ).all()
+
+    user_status_data = [
+        {"id": u.id, "username": u.username, "suspended": u.suspended, "role": u.role}
+        for u in users
+    ]
+
+    return jsonify({"users": user_status_data}), 200
 
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @require_session_key

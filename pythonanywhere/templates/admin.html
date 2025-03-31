@@ -264,6 +264,8 @@
             .catch(console.error);
         }
     </script>
+
+    <script src="/static/custom-alert.js"></script>
       
 </head>
 <body>
@@ -390,6 +392,7 @@
                     const data = await response.json();
                     populateMessagesTable(data.messages);
                     populateUsersTable(data.users);
+                    fetchUserStatus();
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
@@ -404,6 +407,46 @@
                     "An unexpected error occurred. Please try again later.";
             }
         }
+
+        async function fetchUserStatus() {
+            try {
+                const response = await fetch("/admin/user-status", {
+                    method: "GET",
+                    headers: { Authorization: `Bearer ${sessionKey}` },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    updateBanButtons(data.users);
+                } else {
+                    console.error("Failed to fetch user status.");
+                }
+            } catch (error) {
+                console.error("Error fetching user status:", error);
+            }
+        }
+
+        function updateBanButtons(users) {
+            const tableBody = document.querySelector("#users-table tbody");
+            const rows = tableBody.querySelectorAll("tr");
+
+            // Loop through each user from the API data
+            users.forEach((user) => {
+                // For each row in the table
+                rows.forEach((row) => {
+                    // Select the first cell of the row
+                    const firstCell = row.querySelector("td:first-child");
+                    if (firstCell && firstCell.textContent.trim() === String(user.id)) {
+                        // If a matching row is found, update the button text
+                        const banButton = row.querySelector("button[onclick^='banUser']");
+                        if (banButton) {
+                            banButton.textContent = user.suspended ? "Unban" : "Ban";
+                        }
+                    }
+                });
+            });
+        }
+
 
         function populateMessagesTable(messages) {
             const tableBody = document.querySelector("#messages-table tbody");
