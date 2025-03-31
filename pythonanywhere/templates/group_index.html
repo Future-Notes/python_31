@@ -224,7 +224,7 @@
         }
 
         button {
-            background-color: #6a6a6a;
+            background-color: #3a3a3a;
             color: #e0e0e0;
             border: none;
             padding: 12px 20px;
@@ -776,6 +776,7 @@
     </script>
 
     <script src="/static/admin.js"></script>
+    <script src="/static/custom-alert.js"></script>
 </head>
 <body>
     <header>
@@ -824,7 +825,7 @@
     <aside id="group-members-sidebar">
         <div class="sidebar-header">
           <h2>Group Members</h2>
-          <button id="toggle-sidebar">
+          <button aria-label="Toggle sidebar" id="toggle-sidebar">
             <!-- An inline SVG arrow with no shaft. Initially pointing up. -->
             <svg width="24" height="24" viewBox="0 0 24 24">
               <path d="M12 8L8 12h8L12 8z" fill="currentColor"></path>
@@ -1148,10 +1149,10 @@
                         <div style="text-align: center; margin-top: 50px;">
                             <h1>Welcome to groups!</h1>
                             <h5>Sharing notes has never been so easy. Enter a group UUID to join a group, or click Create New Group to create a new group.</h5>
-                            <button id="create-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #6a6a6a; color: #e0e0e0; border: none; cursor: pointer;">Create New Group</button>
+                            <button id="create-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #3a3a3a; color: #e0e0e0; border: none; cursor: pointer;">Create New Group</button>
                             <div style="margin-top: 20px;">
                                 <input type="text" id="group-uuid" placeholder="Enter Group UUID" style="padding: 10px; font-size: 16px; border-radius: 8px; width: 80%; max-width: 300px; margin-bottom: 10px;">
-                                <button id="join-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #6a6a6a; color: #e0e0e0; border: none; cursor: pointer;">Join Group</button>
+                                <button id="join-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: #3a3a3a; color: #e0e0e0; border: none; cursor: pointer;">Join Group</button>
                             </div>
                             <h3>Invites</h3>
                             <div id="invites-container" style="margin-top: 20px;"></div>

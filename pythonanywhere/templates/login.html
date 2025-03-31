@@ -225,6 +225,8 @@
             .catch(console.error);
         }
     </script>
+
+    <script src="/static/custom-alert.js"></script>
 </head>
 <body>
     <h1 class="page-title">Future Notes</h1>
@@ -312,7 +314,7 @@
             console.log("redirectUrl:", redirectUrl);
 
             if (!username || !password) {
-                alert("Please enter both username and password.");
+                alert("Please enter both username and password.", "error");
                 return;
             }
 
@@ -338,7 +340,7 @@
             } else if (response.status === 403 && data.error === "Account is suspended") {
                 document.getElementById("ban-message").classList.add("visible");
             } else {
-                alert(data.error || "Login failed");
+                alert(data.error || "Login failed", "error");
             }
         });
     </script>
