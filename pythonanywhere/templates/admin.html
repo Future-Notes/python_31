@@ -295,6 +295,10 @@
         <div id="update-status"></div>
         <button id="run-update" style="display: none; background-color: red;">Run updates</button>
 
+        <button id="scan-dev-vs-master">Check Dev vs Master</button>
+        <div id="dev-status"></div>
+        <button id="merge-dev-master" style="display: none; background-color: red;">Merge Dev into Master</button>
+
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
             <div id="password-confirmation-modal">
@@ -697,6 +701,67 @@
 
         document.getElementById("scan-updates").addEventListener("click", scanForUpdates);
         document.getElementById("run-update").addEventListener("click", runUpdate);
+
+        async function scanDevVsMaster() {
+            try {
+            const response = await fetch("/admin/scan-dev-vs-master", {
+                method: "GET",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const statusDiv = document.getElementById("dev-status");
+                
+                if (data.dev_ahead_of_master) {
+                statusDiv.innerText = `Dev is ahead of Master by ${data.commits_ahead} commit(s).`;
+                document.getElementById("merge-dev-master").style.display = "inline-block";
+                } else {
+                statusDiv.innerText = "Dev branch is not ahead of Master.";
+                document.getElementById("merge-dev-master").style.display = "none";
+                }
+            } else {
+                const error = await response.json();
+                alert(error.error || "Failed to check dev vs master.");
+            }
+            } catch (error) {
+            console.error("Error checking dev vs master:", error);
+            alert("An unexpected error occurred while checking dev vs master.");
+            }
+        }
+
+        document.getElementById("scan-dev-vs-master").addEventListener("click", scanDevVsMaster);
+
+        async function mergeDevIntoMaster() {
+            if (!confirm("Are you sure you want to merge Dev into Master? This cannot be undone.")) return;
+
+            try {
+            const response = await fetch("/admin/merge-dev-into-master", {
+                method: "POST",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                alert(data.status || "Merge completed successfully.");
+                document.getElementById("merge-dev-master").style.display = "none";
+            } else {
+                const error = await response.json();
+                alert(error.error || "Merge failed.");
+            }
+            } catch (error) {
+            console.error("Error merging branches:", error);
+            alert("An unexpected error occurred while merging.");
+            }
+        }
+
+        document.getElementById("merge-dev-master").addEventListener("click", mergeDevIntoMaster);
 
         document.getElementById("confirm-dump").addEventListener("click", async () => {
             const password = document.getElementById("confirm-password").value.trim();
