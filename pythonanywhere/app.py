@@ -169,7 +169,6 @@ class Calendar(db.Model):
             "name": self.name,
             "user_id": self.user_id,
             "is_default": self.is_default,
-            "shared_users": [user.id for user in self.shared_users],  # Include shared users in response
         }
 
 
