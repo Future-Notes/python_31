@@ -21,6 +21,7 @@ from update_DB import update_tables
 from math import floor
 import re
 import traceback
+import subprocess
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -314,6 +315,21 @@ def require_session_key(func):
         return func(*args, **kwargs)
     wrapper.__name__ = func.__name__
     return wrapper
+
+def run_update_script():
+    # This function runs the update script in a separate thread
+    try:
+        # Change directory if necessary and run the update script
+        result = subprocess.run(
+            "python /home/Bosbes/mysite/pull.py",
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        app.logger.info("Update successful: %s", result.stdout)
+    except subprocess.CalledProcessError as e:
+        app.logger.error("Update failed: %s", e.stderr)
 
 def delete_profile_pictures(username):
     """ Deletes all profile pictures associated with the given username. """
@@ -2092,6 +2108,18 @@ def user_status():
     ]
 
     return jsonify({"users": user_status_data}), 200
+
+@app.route('/admin/update', methods=['POST'])
+@require_session_key
+def update_code():
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error", "Unauthorized: only admins can update the code"}), 403
+    
+    thread = threading.Thread(target=run_update_script)
+    thread.start()
+
+    return jsonify({"status": "Update initiated"})
 
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @require_session_key
