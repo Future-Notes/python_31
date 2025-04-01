@@ -254,7 +254,26 @@
             background-color: #616161;
         }
 
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+            }
 
+            .button-row button, .button-row a {
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 8px;
+            text-align: center;
+            text-decoration: none;
+            transition: background-color 0.3s ease;
+            }
+
+            .button-row button:hover, .button-row a:hover {
+            background-color: #616161;
+        }
 
     </style>
     <script>
@@ -287,17 +306,16 @@
         <p id="error-message"></p>
 
         <!-- Database Dump Button -->
-        <button id="dump-database">Dump Database</button>
-
-        <a class="db" href="/database">Database editor</a>
-
-        <button id="scan-updates">Scan for updates</button>
-        <div id="update-status"></div>
-        <button id="run-update" style="display: none; background-color: red;">Run updates</button>
-
-        <button id="scan-dev-vs-master">Check Dev vs Master</button>
-        <div id="dev-status"></div>
-        <button id="merge-dev-master" style="display: none; background-color: red;">Merge Dev into Master</button>
+        <div class="button-row">
+            <button id="dump-database">Dump Database</button>
+            <a class="db" href="/database">Database editor</a>
+            <button id="scan-updates">Scan for updates</button>
+            <div id="update-status"></div>
+            <button id="run-update" style="background-color: red;">Run updates</button>
+            <button id="scan-dev-vs-master">Check Dev vs Master</button>
+            <div id="dev-status"></div>
+            <button id="merge-dev-master" style="background-color: red;">Merge Dev into Master</button>
+        </div>
 
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
