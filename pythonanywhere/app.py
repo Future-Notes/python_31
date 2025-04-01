@@ -2124,33 +2124,31 @@ def update_code():
 @app.route('/admin/scan-updates', methods=['GET'])
 @require_session_key
 def scan_updates():
-    # Ensure only admin users can access this endpoint
     user = User.query.get(g.user_id)
     if not user or user.role != "admin":
         return jsonify({"error": "Unauthorized: only admins can scan for updates"}), 403
 
     try:
-        # Set repository directory to the correct location
         repo_path = "/home/Bosbes/mysite/python_31"
         os.chdir(repo_path)
-        
-        # Update remote tracking info
+
+        # Fetch latest remote updates
         subprocess.run("git fetch", shell=True, check=True, capture_output=True, text=True)
-        
-        # Check how many commits the local master is behind origin/master
+
+        # Count how many commits dev is ahead of master
         result = subprocess.run(
-            "git rev-list HEAD...origin/master --count",
+            "git rev-list master..dev --count",
             shell=True,
             check=True,
             capture_output=True,
             text=True
         )
-        behind_count = int(result.stdout.strip())
-        update_available = behind_count > 0
-        
+        commits_behind = int(result.stdout.strip())
+
+        update_available = commits_behind > 0
         return jsonify({
             "update_available": update_available,
-            "commits_behind": behind_count,
+            "commits_behind": commits_behind,
             "message": "Updates available" if update_available else "Already up-to-date"
         })
     except subprocess.CalledProcessError as e:
