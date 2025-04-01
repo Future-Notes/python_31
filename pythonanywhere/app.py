@@ -2156,6 +2156,75 @@ def scan_updates():
     except subprocess.CalledProcessError as e:
         app.logger.error("Error scanning for updates: %s", e.stderr)
         return jsonify({"error": "Failed to scan for updates"}), 500
+    
+@app.route('/admin/scan-dev-vs-master', methods=['GET'])
+@require_session_key
+def scan_dev_vs_master():
+    # Ensure only admin users can access this endpoint
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can scan for updates"}), 403
+
+    try:
+        # Set the repository directory to the correct location
+        repo_path = "/home/Bosbes/mysite/python_31"
+        os.chdir(repo_path)
+        
+        # Fetch the latest remote info for both branches
+        subprocess.run("git fetch origin dev master", shell=True, check=True, capture_output=True, text=True)
+        
+        # Count the commits where origin/dev is ahead of origin/master
+        result = subprocess.run(
+            "git rev-list origin/master..origin/dev --count",
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        commits_ahead = int(result.stdout.strip())
+        update_available = commits_ahead > 0
+        
+        return jsonify({
+            "dev_ahead_of_master": update_available,
+            "commits_ahead": commits_ahead,
+            "message": f"Dev branch is ahead by {commits_ahead} commit(s)" if update_available else "Dev branch is not ahead of master"
+        })
+    except subprocess.CalledProcessError as e:
+        app.logger.error("Error scanning dev vs master: %s", e.stderr)
+        return jsonify({"error": "Failed to scan dev vs master"}), 500
+    
+@app.route('/admin/merge-dev-into-master', methods=['POST'])
+@require_session_key
+def merge_dev_into_master():
+    # Ensure only admin users can perform the merge
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can merge branches"}), 403
+
+    try:
+        repo_path = "/home/Bosbes/mysite/python_31"
+        os.chdir(repo_path)
+
+        # Ensure we have the latest remote info
+        subprocess.run("git fetch origin dev master", shell=True, check=True, capture_output=True, text=True)
+
+        # Merge dev into master
+        result = subprocess.run(
+            "git checkout master && git merge origin/dev -m 'Auto-merged dev into master'",
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+
+        return jsonify({
+            "status": "Merge completed successfully",
+            "output": result.stdout
+        })
+    except subprocess.CalledProcessError as e:
+        app.logger.error("Merge failed: %s", e.stderr)
+        return jsonify({"error": "Merge failed", "details": e.stderr}), 500
+
 
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @require_session_key
