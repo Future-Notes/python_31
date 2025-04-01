@@ -659,12 +659,11 @@
             });
             if (response.ok) {
                 const data = await response.json();
-                const statusDiv = document.getElementById("update-status");
                 if (data.update_available) {
-                statusDiv.innerText = `${data.commits_behind} update(s) available.`;
+                alert(`${data.commits_behind} update(s) available.`);
                 document.getElementById("run-update").style.display = "inline-block";
                 } else {
-                statusDiv.innerText = "Your code is up-to-date.";
+                alert("Your code is up-to-date.");
                 document.getElementById("run-update").style.display = "none";
                 }
             } else {
@@ -714,13 +713,12 @@
 
             if (response.ok) {
                 const data = await response.json();
-                const statusDiv = document.getElementById("dev-status");
-                
+
                 if (data.dev_ahead_of_master) {
-                statusDiv.innerText = `Dev is ahead of Master by ${data.commits_ahead} commit(s).`;
+                alert(`Dev is ahead of Master by ${data.commits_ahead} commit(s).`);
                 document.getElementById("merge-dev-master").style.display = "inline-block";
                 } else {
-                statusDiv.innerText = "Dev branch is not ahead of Master.";
+                alert("Dev branch is not ahead of Master.");
                 document.getElementById("merge-dev-master").style.display = "none";
                 }
             } else {
