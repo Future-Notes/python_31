@@ -291,6 +291,8 @@
 
         <a class="db" href="/database">Database editor</a>
 
+        <button id="update-code" style="background-color: red;">Run updates</button>
+
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
             <div id="password-confirmation-modal">
@@ -638,6 +640,29 @@
         document.getElementById("dump-database").addEventListener("click", () => {
             const overlay = document.getElementById("password-confirmation-overlay");
             overlay.style.display = "flex";
+        });
+
+        document.getElementById("update-code").addEventListener("click", async () => {
+            try {
+                const response = await fetch("/admin/update", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(data.status || "Update initiated successfully.");
+                } else {
+                    const error = await response.json();
+                    alert(error.error || "Failed to initiate update.");
+                }
+            } catch (error) {
+                console.error("Error initiating update:", error);
+                alert("An unexpected error occurred.");
+            }
         });
 
         document.getElementById("confirm-dump").addEventListener("click", async () => {
