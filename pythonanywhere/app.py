@@ -20,6 +20,7 @@ import threading
 from update_DB import update_tables
 from math import floor
 import re
+import traceback
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -830,6 +831,19 @@ def handle_operational_error(e):
         # Optionally: you can either retry the request or inform the client to retry.
         return jsonify({"message": "Database schema updated. Please retry your request."}), 500
     return jsonify({"error": "Internal Server Error"}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    # Capture the full traceback
+    tb = traceback.format_exc()
+    # Log the traceback for your own record
+    app.logger.error(tb)
+    
+    # Return the full traceback to the client
+    return jsonify({
+        "error": "An unexpected error occurred.",
+        "traceback": tb
+    }), 500
 
 @app.errorhandler(404)
 def page_not_found(error):
