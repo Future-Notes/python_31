@@ -291,9 +291,9 @@
 
         <a class="db" href="/database">Database editor</a>
 
-        <button id="update-code" style="background-color: red;">Run updates</button>
-
-        <h2>test</h2>
+        <button id="scan-updates" style="background-color: gray;">Scan for updates</button>
+        <div id="update-status"></div>
+        <button id="run-update" style="display: none; background-color: red;">Run updates</button>
 
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
@@ -644,28 +644,59 @@
             overlay.style.display = "flex";
         });
 
-        document.getElementById("update-code").addEventListener("click", async () => {
+        async function scanForUpdates() {
             try {
-                const response = await fetch("/admin/update", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
-                    },
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    alert(data.status || "Update initiated successfully.");
+            const response = await fetch("/admin/scan-updates", {
+                method: "GET",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                const statusDiv = document.getElementById("update-status");
+                if (data.update_available) {
+                statusDiv.innerText = `${data.commits_behind} update(s) available.`;
+                document.getElementById("run-update").style.display = "inline-block";
                 } else {
-                    const error = await response.json();
-                    alert(error.error || "Failed to initiate update.");
+                statusDiv.innerText = "Your code is up-to-date.";
+                document.getElementById("run-update").style.display = "none";
                 }
-            } catch (error) {
-                console.error("Error initiating update:", error);
-                alert("An unexpected error occurred.");
+            } else {
+                const error = await response.json();
+                alert(error.error || "Failed to scan for updates.");
             }
-        });
+            } catch (error) {
+            console.error("Error scanning for updates:", error);
+            alert("An unexpected error occurred while scanning for updates.");
+            }
+        }
+
+        async function runUpdate() {
+            try {
+            const response = await fetch("/admin/update", {
+                method: "POST",
+                headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionKey}`,
+                },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                alert(data.status || "Update initiated successfully.");
+            } else {
+                const error = await response.json();
+                alert(error.error || "Failed to initiate update.");
+            }
+            } catch (error) {
+            console.error("Error initiating update:", error);
+            alert("An unexpected error occurred while initiating update.");
+            }
+        }
+
+        document.getElementById("scan-updates").addEventListener("click", scanForUpdates);
+        document.getElementById("run-update").addEventListener("click", runUpdate);
 
         document.getElementById("confirm-dump").addEventListener("click", async () => {
             const password = document.getElementById("confirm-password").value.trim();
