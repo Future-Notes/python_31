@@ -2121,6 +2121,42 @@ def update_code():
 
     return jsonify({"status": "Update initiated"})
 
+@app.route('/admin/scan-updates', methods=['GET'])
+@require_session_key
+def scan_updates():
+    # Make sure only admin can scan for updates.
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Unauthorized: only admins can scan for updates"}), 403
+
+    try:
+        # Change to your repository directory.
+        repo_path = "/home/Bosbes/mysite"
+        os.chdir(repo_path)
+        
+        # Fetch the latest remote info.
+        subprocess.run("git fetch", shell=True, check=True, capture_output=True, text=True)
+        
+        # Get the number of commits that the local master is behind origin/master.
+        result = subprocess.run(
+            "git rev-list HEAD...origin/master --count",
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        behind_count = int(result.stdout.strip())
+        update_available = behind_count > 0
+        
+        return jsonify({
+            "update_available": update_available,
+            "commits_behind": behind_count,
+            "message": "Updates available" if update_available else "Already up-to-date"
+        })
+    except subprocess.CalledProcessError as e:
+        app.logger.error("Error scanning for updates: %s", e.stderr)
+        return jsonify({"error": "Failed to scan for updates"}), 500
+
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @require_session_key
 def manage_database():
