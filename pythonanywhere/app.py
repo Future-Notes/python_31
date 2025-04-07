@@ -244,6 +244,14 @@ class Messages(db.Model):
     email = db.Column(db.String(100), nullable=False)
     message = db.Column(db.Text, nullable=False)
 
+class UTMTracking(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    utm_source = db.Column(db.String(50))
+    utm_medium = db.Column(db.String(50))
+    utm_campaign = db.Column(db.String(50))
+    ip = db.Column(db.String(50))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
 # Updated Invite model if storing the inviter's id
 class Invite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -263,6 +271,32 @@ def generate_session_key(user_id):
     }
     seed_trophies()
     return key
+
+@app.before_request
+def capture_utm_params():
+    # Extract UTM parameters from the query string
+    utm_source = request.args.get('utm_source')
+    utm_medium = request.args.get('utm_medium')
+    utm_campaign = request.args.get('utm_campaign')
+
+    # Store them in the session if provided, keeping previous values if they already exist
+    if utm_source:
+        session['utm_source'] = utm_source
+    if utm_medium:
+        session['utm_medium'] = utm_medium
+    if utm_campaign:
+        session['utm_campaign'] = utm_campaign
+
+    # Optionally, log the UTM data to the database on each visit that has UTM parameters.
+    if utm_source or utm_medium or utm_campaign:
+        tracking = UTMTracking(
+            utm_source=utm_source,
+            utm_medium=utm_medium,
+            utm_campaign=utm_campaign,
+            ip=request.remote_addr
+        )
+        db.session.add(tracking)
+        db.session.commit()
 
 def validate_session_key():
     auth_header = request.headers.get("Authorization")
@@ -916,6 +950,10 @@ def account_page():
 @app.route('/admin_page')
 def admin_page():
     return render_template('admin.html')
+
+@app.route('/admin-utm-tracking')
+def admin_utm_tracking():
+    return render_template('source_dashboard.html')
 
 @app.route('/database')
 def database_viewer():
@@ -2407,6 +2445,26 @@ def login_as_user():
         "startpage": target_user.startpage,
         "lasting_key": target_user.lasting_key if target_user.lasting_key else ""
     }), 200
+
+@app.route('/api/source-tracking', methods=['GET'])
+@require_session_key
+def source_tracking():
+    # Use g.user_id to retrieve the current user
+    user = User.query.get(g.user_id)
+    if not user or user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # Fetch all UTM tracking records
+    records = UTMTracking.query.all()
+    result = [{
+        'id': record.id,
+        'utm_source': record.utm_source,
+        'utm_medium': record.utm_medium,
+        'utm_campaign': record.utm_campaign,
+        'ip': record.ip,
+        'timestamp': record.timestamp.isoformat()
+    } for record in records]
+    return jsonify(result)
 
 @app.route('/api/user/<int:user_id>')
 def get_username(user_id):
