@@ -1,5 +1,6 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, redirect, url_for
+from functools import wraps
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, desc
@@ -98,10 +99,30 @@ class User(db.Model):
     suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
+    colors = db.relationship(
+        "UserColor",
+        uselist=False,
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
     )
+
+class UserColor(db.Model):
+    __tablename__ = "user_colors"
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    background_color  = db.Column(db.String(7), nullable=False, default="#2c2c2c")
+    header_color      = db.Column(db.String(7), nullable=False, default="#3a3a3a")
+    contrasting_color = db.Column(db.String(7), nullable=False, default="#1e1e1e")
+    button_color      = db.Column(db.String(7), nullable=False, default="#424242")
+
+    user = db.relationship("User", back_populates="colors")
 
 class IpAddres(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -349,6 +370,54 @@ def require_session_key(func):
         return func(*args, **kwargs)
     wrapper.__name__ = func.__name__
     return wrapper
+
+def require_login_for_templates(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        key = request.cookies.get("session_key")
+        if not key:
+            # no key → send to your login page
+            return redirect(url_for("login_page", next=request.path))
+
+        # reuse your existing validator, but pretend it came in as a header:
+        # you could refactor validate_session_key to take an optional key argument;
+        # for now we’ll monkey‑patch the header:
+        request.headers.environ["HTTP_AUTHORIZATION"] = f"Bearer {key}"
+        valid, session_or_msg = validate_session_key()
+        if not valid:
+            return redirect(url_for("login_page", next=request.path))
+
+        # success → stash user_id for route & templates
+        g.user_id = session_or_msg["user_id"]
+        return func(*args, **kwargs)
+    return wrapper
+
+@app.context_processor
+def inject_user_colors():
+    if getattr(g, "user_id", None):
+        user = User.query.get(g.user_id)
+        # if they somehow have no row yet, fall back to defaults
+        cols = ensure_user_colors(user.id)
+        return {
+            "bg_color":  cols.background_color,
+            "hdr_color": cols.header_color,
+            "ctr_color": cols.contrasting_color,
+            "btn_color": cols.button_color,
+        }
+    return {}
+
+def ensure_user_colors(user_id):
+    """
+    Guarantee there is a UserColor row for this user_id.
+    If missing, create one with all the default colors.
+    Returns the UserColor instance.
+    """
+    uc = UserColor.query.filter_by(user_id=user_id).first()
+    if not uc:
+        uc = UserColor(user_id=user_id)  # defaults are on the model
+        db.session.add(uc)
+        db.session.commit()
+    return uc
 
 def run_update_script():
     # This function runs the update script in a separate thread
@@ -930,6 +999,7 @@ def send_favicon():
     return send_from_directory('static', 'favicon.ico')
 
 @app.route('/index')
+@require_login_for_templates
 def index():
     return render_template('index.html')
 
@@ -960,6 +1030,7 @@ def database_viewer():
     return render_template('database_viewer.html')
 
 @app.route('/group-notes')
+@require_login_for_templates
 def group_notes():
     return render_template("group_index.html")
 
@@ -992,6 +1063,7 @@ def leaderboard():
     return render_template('leaderboard.html')
 
 @app.route('/scheduler-page')
+@require_login_for_templates
 def scheduler_page():
     return render_template('scheduler.html')
 
@@ -2502,6 +2574,8 @@ def signup():
         key = generate_session_key(user.id)
 
         create_default_calendar(user.id)
+
+        ensure_user_colors(user.id)
         
         return jsonify({
             "message": "User created and logged in successfully!",
@@ -2521,7 +2595,19 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
-        # Handle auto login with lasting_key if provided
+        # helper to wrap JSON + Set‑Cookie
+        def success(payload, status=200):
+            resp = make_response(jsonify(payload), status)
+            resp.set_cookie(
+                "session_key",
+                payload["session_key"],
+                httponly=True,
+                samesite="Lax",
+                # secure=True    # enable in production
+            )
+            return resp
+
+        # 1) Auto‑login via lasting_key
         lasting_key = data.get('lasting_key')
         if lasting_key:
             user = User.query.filter_by(lasting_key=lasting_key).first()
@@ -2539,15 +2625,17 @@ def login():
                     db.session.add(ip_entry)
                     db.session.commit()
 
-                return jsonify({
-                    "message": "Login successful!",
+                return success({
+                    "message":     "Login successful!",
                     "session_key": key,
-                    "user_id": user.id,
-                    "startpage": user.startpage
-                }), 200
+                    "user_id":     user.id,
+                    "lasting_key": user.lasting_key,
+                    "startpage":   user.startpage
+                })
+
             return jsonify({"error": "Invalid lasting key"}), 400
 
-        # Validate credentials when lasting_key isn't provided
+        # 2) Username/password
         username = data.get('username')
         password = data.get('password')
         if not username or not password:
@@ -2571,27 +2659,22 @@ def login():
             db.session.add(ip_entry)
             db.session.commit()
 
-        # If the user wants to stay logged in, reuse an existing lasting_key if available,
-        # or generate a new one if not.
+        # Build standard payload
+        payload = {
+            "message":     "Login successful!",
+            "session_key": key,
+            "user_id":     user.id,
+            "startpage":   user.startpage
+        }
+
+        # 3) If the user wants to stay logged in, include lasting_key
         if data.get('keep_login'):
             if not user.lasting_key:
                 user.lasting_key = secrets.token_hex(32)
                 db.session.commit()
-            return jsonify({
-                "message": "Login successful!",
-                "session_key": key,
-                "user_id": user.id,
-                "lasting_key": user.lasting_key,
-                "startpage": user.startpage
-            }), 200
+            payload["lasting_key"] = user.lasting_key
 
-        # Standard login response
-        return jsonify({
-            "message": "Login successful!",
-            "session_key": key,
-            "user_id": user.id,
-            "startpage": user.startpage
-        }), 200
+        return success(payload)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

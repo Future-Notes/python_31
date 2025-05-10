@@ -15,7 +15,7 @@
     body {
       margin: 0;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #2c2c2c;
+      background-color: var(--bg-color);
       color: #e0e0e0;
     }
     /* Hide scrollbar for WebKit browsers */
@@ -23,7 +23,7 @@
       display: none;
     }
     header {
-        background-color: #3a3a3a;
+        background-color: var(--hdr-color);
         padding: 20px;
         display: flex;
         justify-content: space-between;
@@ -76,7 +76,7 @@
     }
     .homepage-link {
       text-decoration: none;
-      background-color: #4a4a4a;
+      background-color: var(--ctr-color);
       color: #e0e0e0;
       padding: 10px 20px;
       border-radius: 8px;
@@ -88,7 +88,7 @@
     /* Mobile Sub-Header - Hidden by default */
     .mobile-sub-header {
       display: none;
-      background-color: #2e2e2e;
+      background-color: var(--bg-color);
       padding: 10px 0;
       text-align: center;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
@@ -165,7 +165,7 @@
       flex: 1;
       padding: 12px;
       font-size: 18px;
-      background-color: #4a4a4a;
+      background-color: var(--btn-color);
       color: #e0e0e0;
       border: none;
       border-radius: 8px;
@@ -180,7 +180,7 @@
       max-width: 150px;
     }
     button {
-      background-color: #6a6a6a;
+      background-color: var(--btn-color);
       color: #e0e0e0;
       border: none;
       padding: 12px 20px;
@@ -215,7 +215,7 @@
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background-color: #3a3a3a;
+      background-color: var(--hdr-color);
       color: #e0e0e0;
       display: flex;
       justify-content: center;
@@ -247,7 +247,7 @@
       align-items: center;
     }
     #modal {
-      background-color: #1E1E1E;
+      background-color: var(--bg-color);
       padding: 20px 30px;
       border-radius: 12px;
       text-align: center;
@@ -265,12 +265,12 @@
     #password {
       width: calc(100% - 24px);
       margin: 10px 0;
-      background-color: #2E2E2E;
+      background-color: var(--btn-color);
       border: 1px solid #424242;
       color: #E0E0E0;
     }
     button #submit-credentials {
-      background-color: #424242;
+      background-color: var(--btn-color);
       color: #E0E0E0;
       border: none;
       cursor: pointer;
@@ -283,7 +283,7 @@
     /* Container for the entire sidebar */
     #calendar-sidebar {
       width: 300px;
-      background-color: #1e1e1e;
+      background-color: var(--ctr-color);
       padding: 10px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
@@ -300,7 +300,7 @@
       flex-direction: row;
       justify-content: space-between;
       align-items: center;
-      background-color: #3a3a3a; /* Microsoft blue */
+      background-color: var(--hdr-color); /* Microsoft blue */
       color: white;
       padding: 4px 8px;
       border-radius: 4px;
@@ -346,7 +346,7 @@
     /* Each day cell */
     .days div {
       padding: 4px;
-      background-color: #4b4b4b;
+      background-color: var(--btn-color);
       border-radius: 3px;
       cursor: pointer;
     }
@@ -419,12 +419,12 @@
       overflow: auto;
     }
     #calendar-table th {
-      background-color: #3a3a3a;
+      background-color: var(--hdr-color);
       font-weight: normal;
     }
     /* Hour label column */
     #calendar-table th.hour-label {
-      background-color: #2e2e2e;
+      background-color: var(--bg-color);
       width: 80px;
     }
     /* Animated Thead (for 7-day view) */
@@ -474,7 +474,7 @@
       width: 60px;
       height: 60px;
       border-radius: 50%;
-      background-color: #424242;
+      background-color: var(--btn-color);
       color: #e0e0e0;
       border: none;
       font-size: 30px;
@@ -503,7 +503,7 @@
     }
 
     #add-modal {
-      background-color: #1E1E1E;
+      background-color: var(--bg-color);
       padding: 20px 30px;
       border-radius: 12px;
       height: auto;
@@ -535,7 +535,7 @@
       width: 90%;
       margin-bottom: 10px;
       padding: 12px;
-      background-color: #2E2E2E;
+      background-color: var(--btn-color);
       border: 1px solid #424242;
       color: #E0E0E0;
       border-radius: 8px;
@@ -548,7 +548,7 @@
     }
 
     #add-modal button {
-      background-color: #424242;
+      background-color: var(--btn-color);
       border: none;
       cursor: pointer;
       transition: background-color 0.3s ease;
@@ -573,7 +573,7 @@
       padding: 10px;
       border: 1px solid #424242;
       border-radius: 8px;
-      background-color: #2E2E2E;
+      background-color: var(--bg-color);
     }
 
     /* Style for the recurrence preset dropdown */
@@ -581,7 +581,7 @@
       width: 100%;
       margin-bottom: 10px;
       padding: 12px;
-      background-color: #2E2E2E;
+      background-color: var(--btn-color);
       border: 1px solid #424242;
       color: #E0E0E0;
       border-radius: 8px;
@@ -590,7 +590,7 @@
 
     /* Advanced Options button */
     #advanced-recurrence-button {
-      background-color: #424242;
+      background-color: var(--btn-color);
       border: none;
       cursor: pointer;
       transition: background-color 0.3s ease;
@@ -616,7 +616,7 @@
     #add-modal input[type="checkbox"] {
       appearance: none;
       -webkit-appearance: none;
-      background-color: #2E2E2E; /* Same gray as inputs */
+      background-color: var(--btn-color); /* Same gray as inputs */
       border: 1px solid #424242;
       width: 20px;
       height: 20px;
@@ -673,7 +673,7 @@
     }
 
     #advanced-recurrence-modal {
-      background-color: #1E1E1E;
+      background-color: var(--bg-color);
       padding: 20px 30px;
       border-radius: 12px;
       max-width: 400px;
@@ -689,7 +689,7 @@
       width: 100%;
       margin-bottom: 10px;
       padding: 12px;
-      background-color: #2E2E2E;
+      background-color: var(--btn-color);
       border: 1px solid #424242;
       color: #E0E0E0;
       border-radius: 8px;
@@ -719,7 +719,7 @@
       width: 100%;
       margin-bottom: 10px;
       padding: 12px;
-      background-color: #424242;
+      background-color: var(--btn-color);
       border: none;
       color: #E0E0E0;
       border-radius: 8px;
@@ -735,7 +735,7 @@
 
     #notes-panel {
       display: none;
-      background-color: #1E1E1E;
+      background-color: var(--bg-color);
       padding: 10px;
       margin-left: 20px;
       max-width: 400px;
@@ -748,7 +748,7 @@
       animation: slideDown 0.3s ease-out;
     }
     .draggable-note {
-      background: #2c2c2c;
+      background: var(--ctr-color);
       margin: 5px 0;
       padding: 5px;
       cursor: grab;
@@ -768,7 +768,7 @@
     }
     .attached-note-tag {
       display: inline-block;
-      background: #2c2c2c;
+      background: var(--btn-color);
       margin: 3px;
       padding: 3px 6px;
       border-radius: 3px;
@@ -785,7 +785,7 @@
       animation: fadeIn 0.5s forwards 0.3s;
     }
     #notes-list li {
-      background-color: #3a3a3a;
+      background-color: var(--ctr-color);
       padding: 20px;
       border-radius: 15px;
       position: relative;
@@ -817,7 +817,7 @@
       z-index: 1;
     }
     .note-tag {
-      background-color: #6a6a6a;
+      background-color: var(--btn-color);
       border-bottom-left-radius: 15px;
       border-bottom-right-radius: 15px;
     }
@@ -912,7 +912,7 @@
       align-items: center;
       gap: 1rem;
       padding: 10px;
-      background-color: #1e1e1e; /* Darker background for contrast */
+      background-color: var(--ctr-color); /* Darker background for contrast */
       border-bottom: 1px solid #424242;
       position: sticky; /* Ensures the buttons stay on top on scroll */
       top: 0;
@@ -921,7 +921,7 @@
 
     /* Style for the buttons */
     #button-row-div button {
-      background-color: #424242;
+      background-color: var(--btn-color);
       color: #fff;
       border: none;
       padding: 5px 12px;
@@ -947,7 +947,7 @@
       width: 100%;
       margin-bottom: 10px;
       display: none; /* Hidden by default – JS will toggle it */
-      background-color: #3a3a3a; /* Add a background color to make it visible */
+      background-color: var(--bg-color); /* Add a background color to make it visible */
       color: #e0e0e0; /* Text color */
       border-radius: 4px; /* Slightly round the corners */
       font-size: 14px; /* Adjust font size */
@@ -957,7 +957,7 @@
     /* Style for each All-Day Appointment Block */
     .all-day-appointment {
       position: absolute;
-      background-color: #616161;  /* Matches your theme */
+      background-color: var(--ctr-color);  /* Matches your theme */
       color: #fff;
       padding: 4px 8px;
       margin: 5px 0;
@@ -1006,7 +1006,7 @@
     }
 
     #calendars-list li.active {
-      background-color: #3c3c3c;
+      background-color: var(--hdr-color);
       color: #fff;
     }
 
@@ -1026,7 +1026,7 @@
     }
 
     #calendars-list li button.edit-calendar-btn {
-      background-color: #6a6a6a;
+      background-color: var(--btn-color);
       color: white;
     }
 
@@ -1039,7 +1039,7 @@
       margin-top: 10px;
       padding: 5px 10px;
       cursor: pointer;
-      background-color: #3c3c3c;
+      background-color: var(--btn-color);
     }
 
     #add-calendar-form {
@@ -1065,6 +1065,25 @@
 
   <script src="/static/admin.js"></script>
   <script src="/static/custom-alert.js"></script>
+
+  <style>
+    :root {
+      --bg-color:  #2c2c2c;  /* defaults */
+      --hdr-color: #3a3a3a;
+      --ctr-color: #1e1e1e;
+      --btn-color: #424242;
+    }
+  </style>
+
+  <script>
+    // one‑time injection of all four colors
+    window.appConfig = {
+      backgroundColor: "{{ bg_color }}",
+      headerColor:     "{{ hdr_color }}",
+      contrastingColor:"{{ ctr_color }}",
+      buttonColor:     "{{ btn_color }}"
+    };
+  </script>
 </head>
 <body>
   <header>
@@ -1348,6 +1367,28 @@
 
     // Global variable to track the current active calendar id
     let currentCalendarId = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const cfg = window.appConfig || {};
+
+      // store in a JS var if you need it elsewhere
+      const userColors = {
+        bg:  cfg.backgroundColor,
+        hdr: cfg.headerColor,
+        ctr: cfg.contrastingColor,
+        btn: cfg.buttonColor
+      };
+
+      // apply each to the CSS custom properties
+      const root = document.documentElement;
+      root.style.setProperty("--bg-color",  userColors.bg);
+      root.style.setProperty("--hdr-color", userColors.hdr);
+      root.style.setProperty("--ctr-color", userColors.ctr);
+      root.style.setProperty("--btn-color", userColors.btn);
+
+      // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
+    });
+
 
     document.addEventListener("DOMContentLoaded", async () => {
 
@@ -1668,7 +1709,7 @@
       noNotesItem.innerHTML = `
         <h3>No Notes Available</h3>
         <span>You currently have no notes.</span>
-        <button onclick="window.location.href='/index'" style="margin-top: 10px; padding: 8px 12px; background-color: #424242; color: #e0e0e0; border: none; border-radius: 4px; cursor: pointer;">Create a note</button>
+        <button onclick="window.location.href='/index'" style="margin-top: 10px; padding: 8px 12px; background-color: var(--btn-color); color: #e0e0e0; border: none; border-radius: 4px; cursor: pointer;">Create a note</button>
       `;
       notesList.appendChild(noNotesItem);
       return;
@@ -2208,7 +2249,7 @@
           apptDiv.style.left = cellLeft + "px";
           apptDiv.style.width = cellWidth + "px";
           apptDiv.style.height = apptHeight + "px";
-          apptDiv.style.setProperty("background-color", appt.color ? appt.color : "#616161", "important");
+          apptDiv.style.setProperty("background-color", appt.color ? appt.color : "var(--ctr-color)", "important");
           apptDiv.style.color = "#fff";
           apptDiv.style.boxSizing = "border-box";
           apptDiv.style.padding = "2px 4px";
@@ -2318,7 +2359,7 @@
           apptDiv.style.left = left + "px";
           apptDiv.style.width = colWidth + "px";
           apptDiv.style.height = height + "px";
-          apptDiv.style.backgroundColor = appt.color ? appt.color : "#616161";
+          apptDiv.style.backgroundColor = appt.color ? appt.color : "var(--ctr-color)";
           apptDiv.style.color = "#e0e0e0";
           apptDiv.style.padding = "2px 4px";
           apptDiv.style.boxSizing = "border-box";
@@ -2553,7 +2594,7 @@
           apptDiv.style.left = cellLeft + "px";
           apptDiv.style.width = cellWidth + "px";
           apptDiv.style.height = apptHeight + "px";
-          apptDiv.style.backgroundColor = appt.color ? appt.color : "#616161";
+          apptDiv.style.backgroundColor = appt.color ? appt.color : "var(--ctr-color)";
           apptDiv.style.color = "#fff";
           apptDiv.style.boxSizing = "border-box";
           apptDiv.style.padding = "2px 4px";
@@ -2672,7 +2713,7 @@
           apptDiv.style.left = left + "px";
           apptDiv.style.width = colWidth + "px";
           apptDiv.style.height = height + "px";
-          apptDiv.style.backgroundColor = appt.color ? appt.color : "#616161";
+          apptDiv.style.backgroundColor = appt.color ? appt.color : "var(--ctr-color)";
           apptDiv.style.color = "#e0e0e0";
           apptDiv.style.padding = "2px 4px";
           apptDiv.style.boxSizing = "border-box";
@@ -3255,8 +3296,8 @@
       appointmentDatetimeInput.type = "datetime-local";
       appointmentEndDatetimeInput.type = "datetime-local";
 
-      appointmentColorInput.value = "#616161"; // Default color
-      selectedColorHexSpan.textContent = "#616161";
+      appointmentColorInput.value = userColors.ctr || "#616161"; // Default color
+      selectedColorHexSpan.textContent = userColors.ctr || "#616161";
       
       // Reset recurrence and note UI as before...
       recurrenceCheckbox.checked = false;
@@ -3343,9 +3384,9 @@
           selectedColorHexSpan.textContent = appt.color;
         }
       } else {
-        appointmentColorInput.value = "#616161"; // Default color
+        appointmentColorInput.value = userColors.ctr || "#616161"; // Use userColors.ctr or fallback to default color
         if (selectedColorHexSpan) {
-          selectedColorHexSpan.textContent = "#616161";
+          selectedColorHexSpan.textContent = userColors.ctr || "#616161";
         }
       }
 
@@ -3378,7 +3419,7 @@
       let start_datetime = appointmentDatetimeInput.value;
       let end_datetime = appointmentEndDatetimeInput.value;
       const is_all_day = appointmentAllDayCheckbox.checked;
-      const color = appointmentColorInput.value.trim() || "#616161"; // Default color
+      const color = appointmentColorInput.value.trim() || userColors.ctr || "#616161"; // Default color
       
       // If it's all-day, and the current value is a date, format it as a datetime.
       if (is_all_day) {
