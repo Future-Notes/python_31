@@ -190,7 +190,8 @@
               leaderboardList.appendChild(listItem);
             });
           } else {
-            console.error("Failed to fetch leaderboard info");
+            const err = await response.json().catch(() => ({}));
+            console.error("Failed to fetch leaderboard info:", err.error || err);
           }
         } catch (error) {
           console.error("Error fetching leaderboard info:", error);
