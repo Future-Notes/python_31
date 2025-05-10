@@ -42,30 +42,30 @@
         body {
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #2c2c2c;
+            background-color: var(--bg-color);
             color: #e0e0e0;
         }
 
         /* Base Header Styles */
         header {
-        background-color: #3a3a3a;
-        padding: 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            background-color: var(--hdr-color);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
         header h1 {
-        margin: 0;
-        font-size: 28px;
-        font-weight: 600;
-        color: #f2f2f2;
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: #f2f2f2;
         }
 
         nav {
-        display: flex;
-        gap: 20px;
+            display: flex;
+            gap: 20px;
         }
 
         nav a {
@@ -101,7 +101,7 @@
 
         .homepage-link {
         text-decoration: none;
-        background-color: #4a4a4a;
+        background-color: var(--ctr-color);
         color: #e0e0e0;
         padding: 10px 20px;
         border-radius: 8px;
@@ -115,7 +115,7 @@
         /* Mobile Sub-Header - Hidden by default */
         .mobile-sub-header {
         display: none;
-        background-color: #2e2e2e;
+        background-color: var(--bg-color);
         padding: 10px 0;
         text-align: center;
         box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
@@ -210,7 +210,7 @@
             flex: 1;
             padding: 12px;
             font-size: 18px;
-            background-color: #4a4a4a;
+            background-color: var(--btn-color);
             color: #e0e0e0;
             border: none;
             border-radius: 8px;
@@ -227,7 +227,7 @@
         }
 
         button {
-            background-color: #6a6a6a;
+            background-color: var(--btn-color);
             color: #e0e0e0;
             border: none;
             padding: 12px 20px;
@@ -252,7 +252,7 @@
         }
 
         #notes-list li {
-            background-color: #3a3a3a;
+            background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
             position: relative;
@@ -288,7 +288,7 @@
         }
 
         .note-tag {
-            background-color: #6a6a6a;
+            background-color: var(--btn-color);
             border-bottom-left-radius: 15px;
             border-bottom-right-radius: 15px;
         }
@@ -326,7 +326,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: #4a4a4a;
+            background: var(--bg-color);
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
@@ -347,7 +347,7 @@
         }
 
         #update-menu button {
-            background-color: #6a6a6a;
+            background-color: var(--btn-color);
             color: #e0e0e0;
         }
 
@@ -410,7 +410,7 @@
                 font-size: 16px;
                 border-radius: 8px;
                 border: none;
-                background-color: #4a4a4a;
+                background-color: var(--btn-color);
                 color: #e0e0e0;
                 margin-top: 10px;
             }
@@ -419,7 +419,7 @@
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background-color: #3a3a3a;
+            background-color: var(--hdr-color);
             color: #e0e0e0;
             display: flex;
             justify-content: center;
@@ -442,7 +442,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: #4a4a4a;
+            background: var(--bg-color);
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
@@ -459,7 +459,7 @@
             padding: 12px;
             font-size: 16px;
             border-radius: 8px;
-            background-color: #5a5a5a;
+            background-color: var(--btn-color);
             color: #e0e0e0;
             border: none;
             resize: none;
@@ -467,7 +467,7 @@
         }
 
         #view-menu button {
-            background-color: #6a6a6a;
+            background-color: var(--btn-color);
             color: #e0e0e0;
             border: none;
             padding: 12px 20px;
@@ -488,7 +488,7 @@
             padding: 12px;
             font-size: 16px;
             border-radius: 8px;
-            background-color: #5a5a5a;
+            background-color: var(--btn-color);
             color: #e0e0e0;
             border: none;
             resize: none;
@@ -500,7 +500,7 @@
             padding: 12px !important;
             font-size: 16px !important;
             border-radius: 8px !important;
-            background-color: #5a5a5a !important;
+            background-color: var(--btn-color) !important;
             color: #e0e0e0 !important;
             border: none !important;
             outline: none !important;
@@ -527,7 +527,7 @@
                 right: 20px;
                 width: 60px;
                 height: 60px;
-                background-color: #6a6a6a;
+                background-color: var(--btn-color);
                 color: #e0e0e0;
                 border-radius: 50%;
                 justify-content: center;
@@ -549,7 +549,7 @@
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                background: #4a4a4a;
+                background: var(--bg-color);
                 padding: 30px;
                 border-radius: 15px;
                 box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
@@ -570,7 +570,7 @@
             }
 
             #mobile-add-menu button {
-                background-color: #6a6a6a;
+                background-color: var(--btn-color);
                 color: #e0e0e0;
             }
 
@@ -594,7 +594,7 @@
         }
 
         #modal {
-            background-color: #1E1E1E;
+            background-color: var(--ctr-color);
             padding: 20px 30px;
             border-radius: 12px;
             text-align: center;
@@ -612,13 +612,13 @@
         #username, #password {
             width: calc(100% - 24px);
             margin: 10px 0;
-            background-color: #2E2E2E;
+            background-color: var(--btn-color);
             border: 1px solid #424242;
             color: #E0E0E0;
         }
 
         button #submit-credentials {
-            background-color: #424242;
+            background-color: var(--btn-color);
             color: #E0E0E0;
             border: none;
             cursor: pointer;
@@ -639,6 +639,25 @@
 
     <script src="/static/admin.js"></script>
     <script src="/static/custom-alert.js"></script>
+
+    <style>
+        :root {
+          --bg-color:  #2c2c2c;  /* defaults */
+          --hdr-color: #3a3a3a;
+          --ctr-color: #1e1e1e;
+          --btn-color: #424242;
+        }
+      </style>
+    
+      <script>
+        // one‑time injection of all four colors
+        window.appConfig = {
+          backgroundColor: "{{ bg_color }}",
+          headerColor:     "{{ hdr_color }}",
+          contrastingColor:"{{ ctr_color }}",
+          buttonColor:     "{{ btn_color }}"
+        };
+      </script>
 </head>
 <body>
     <header>
@@ -798,6 +817,28 @@
             }
             fetchNotes(); // Move fetchNotes() here to ensure it's only called once
         });
+
+        document.addEventListener("DOMContentLoaded", () => {
+        const cfg = window.appConfig || {};
+
+        // store in a JS var if you need it elsewhere
+        const userColors = {
+            bg:  cfg.backgroundColor,
+            hdr: cfg.headerColor,
+            ctr: cfg.contrastingColor,
+            btn: cfg.buttonColor
+        };
+
+        // apply each to the CSS custom properties
+        const root = document.documentElement;
+        root.style.setProperty("--bg-color",  userColors.bg);
+        root.style.setProperty("--hdr-color", userColors.hdr);
+        root.style.setProperty("--ctr-color", userColors.ctr);
+        root.style.setProperty("--btn-color", userColors.btn);
+
+        // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
+        });
+
 
         function showModal() {
             window.location.href = '/login_page?redirect=/index&warning=true';
@@ -987,7 +1028,7 @@
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                background: #4a4a4a;
+                background: var(--bg-color);
                 padding: 30px;
                 border-radius: 15px;
                 box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);

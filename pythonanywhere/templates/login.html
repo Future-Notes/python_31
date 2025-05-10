@@ -265,35 +265,36 @@
                 const signupLink = document.getElementById("signup-link");
                 signupLink.href = "/signup_page" + queryParams;
             }
-            
+        
             const lastingKey = localStorage.getItem("lasting_key");
             const urlParams = new URLSearchParams(window.location.search);
             const showWarning = urlParams.get("warning") === "true";
             const showSuspended = urlParams.get("suspended") === "true";
             const redirectUrl = urlParams.get("redirect");
-
+        
             // Show warning message if parameter is set
             if (showWarning) {
                 document.getElementById("warning-message").classList.add("visible");
             }
-
+        
             // Show suspended message if parameter is set
             if (showSuspended) {
                 document.getElementById("ban-message").classList.add("visible");
             }
-
+        
             if (lastingKey) {
                 const response = await fetch("/login", {
                     method: "POST",
+                    credentials: "include",              // ← ensure cookie is set
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ lasting_key: lastingKey }),
                 });
                 const data = await response.json();
-
+        
                 if (response.ok) {
-                    sessionStorage.setItem("session_key", data.session_key);
-                    sessionStorage.setItem("user_id", data.user_id)
-                    // Redirect to the provided redirect URL or the user's default startpage
+                    // session_key cookie is now stored; still stash user_id client‑side
+                    sessionStorage.setItem("user_id", data.user_id);
+                    // Redirect as before
                     window.location.href = redirectUrl || data.startpage || "/index";
                 } else if (response.status === 403 && data.error === "Account is suspended") {
                     document.getElementById("ban-message").classList.add("visible");
@@ -302,8 +303,7 @@
                 }
             }
         });
-
-
+        
         document.getElementById("login-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const username = document.getElementById("username").value;
@@ -311,31 +311,28 @@
             const rememberMe = document.getElementById("remember-me").checked;
             const urlParams = new URLSearchParams(window.location.search);
             const redirectUrl = urlParams.get("redirect");
-            console.log("redirectUrl:", redirectUrl);
-
+        
             if (!username || !password) {
                 alert("Please enter both username and password.", "error");
                 return;
             }
-
+        
             const response = await fetch("/login", {
                 method: "POST",
+                credentials: "include",              // ← ensure cookie is set
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ username, password, keep_login: rememberMe }),
             });
-
+        
             const data = await response.json();
-
+        
             if (response.ok) {
-                sessionStorage.setItem("session_key", data.session_key);
+                // session_key cookie is now stored; still stash user_id client‑side
+                sessionStorage.setItem("user_id", data.user_id);
                 if (rememberMe && data.lasting_key) {
                     localStorage.setItem("lasting_key", data.lasting_key);
                 }
-                sessionStorage.setItem("user_id", data.user_id)
-                console.log("Final redirect url:" + redirectUrl);
-                console.log("Final startpage:" + data.startpage);
-                console.log("Final decision:" + (redirectUrl || data.startpage || "/index"));
-                // Redirect to the provided redirect URL or the user's default startpage
+                // Redirect as before
                 window.location.href = redirectUrl || data.startpage || "/index";
             } else if (response.status === 403 && data.error === "Account is suspended") {
                 document.getElementById("ban-message").classList.add("visible");
@@ -343,6 +340,6 @@
                 alert(data.error || "Login failed", "error");
             }
         });
-    </script>
+        </script>
 </body>
 </html>
