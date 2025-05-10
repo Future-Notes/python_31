@@ -1,8 +1,8 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, url_for, abort, redirect
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint
+from sqlalchemy import CheckConstraint, desc
 from sqlalchemy.exc import IntegrityError, OperationalError                        
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
@@ -2962,19 +2962,36 @@ def game_stats_return():
         "trophies": trophies_data
     })
 
+
 @app.route('/leaderboard-info', methods=['GET'])
 def leaderboard_info():
-    # Fetch the top 10 players by XP.
-    top_players = PlayerXp.query.order_by(PlayerXp.xp.desc()).limit(10).all()
-    leaderboard = []
-    for player in top_players:
-        user = User.query.get(player.user_id)
-        leaderboard.append({
-            "username": user.username,
-            "xp": player.xp,
-            "profile_picture": user.profile_picture
-        })
-    return jsonify(leaderboard)
+    try:
+        rows = (
+            db.session.query(
+                User.username,
+                PlayerXp.xp,
+                User.profile_picture
+            )
+            .join(User, User.id == PlayerXp.user_id)
+            .order_by(desc(PlayerXp.xp))
+            .limit(10)
+            .all()
+        )
+
+        leaderboard = [
+            {
+                "username": username,
+                "xp": xp,
+                "profile_picture": pic
+            }
+            for username, xp, pic in rows
+        ]
+
+        return jsonify(leaderboard)
+
+    except Exception:
+        current_app.logger.exception("Error in /leaderboard-info")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/leaderboard-info-players', methods=['GET', 'POST'])
 def leaderboard_info_players():
