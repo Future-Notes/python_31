@@ -198,7 +198,7 @@
           align-items: center;
           padding: 0.9375rem 1.25rem;
           width: 100%;
-          max-width: 50rem;
+          max-width: 69rem;
           margin-bottom: 1.875rem;
           border-radius: var(--border-radius-md);
           box-shadow: 0 0.25rem 0.5rem var(--box-shadow-light);
@@ -231,7 +231,7 @@
           display: flex;
           gap: 1.25rem;
           width: 100%;
-          max-width: 50rem;
+          max-width: 69rem;
         }
       
         .section {
@@ -472,7 +472,6 @@
             <h2>Account Actions</h2>
             <button id="delete-account">Delete Account</button>
             <button id="logout">Logout</button>
-            <div class="section">
                 <h2>Sharing Preferences</h2>
                 <label class="switch">
                     <input type="checkbox" id="sharing-toggle">
@@ -487,9 +486,10 @@
                     <option value="/pws">Zeeslag (Battleship)</option>
                 </select>
                 <!--Removed the button to set the default startpage, as it is now set automatically -->
+                <a href="admin_page" class="admin-page-link disabled">Admin Page</a>
             </div>
             <!-- Admin page link (disabled by default) -->
-            <a href="admin_page" class="admin-page-link disabled">Admin Page</a>
+            
 
 
             <style>
@@ -538,7 +538,6 @@
                     transform: translateX(26px);
                 }
             </style>
-        </div>
         <div class="section" id="color-settings">
             <h2>Color Settings</h2>
           
