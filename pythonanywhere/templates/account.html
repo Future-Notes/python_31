@@ -18,12 +18,9 @@
       
         :root {
           /* Kleurvariabelen */
-          --bg-color: #2c2c2c;
           --text-color: #e0e0e0;
           --light-gray: #a0a0a0;
           --form-bg: #3a3a3a;
-          --header-bg: #2c2c2c;
-          --button-bg: #6a6a6ad5;
           --button-hover: #5a5a5a;
           --input-bg: #6a6a6a;
           --input-bg-focus: #7a7a7a;
@@ -32,7 +29,6 @@
           --back-bg: #4a4d52;
           --back-hover: #383b3f;
           --banner-bg: #4f83cc;
-          --modal-bg: #1e1e1e;
           --tooltip-bg: #3a3a3a;
           --profile-pic-color: #4f83cc;
           --profile-pic-no-pic: #cc4f4f;
@@ -66,7 +62,7 @@
         /* Formulieren en inputs */
         form {
           margin-bottom: 1.875rem;
-          background-color: var(--form-bg);
+          background-color: var(--btn-color);
           padding: 1.25rem;
           border-radius: var(--border-radius-md);
           box-shadow: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.2);
@@ -89,7 +85,7 @@
         input {
           width: 100%;
           max-width: 21.875rem;
-          background-color: var(--input-bg);
+          background-color: var(--btn-color);
           color: var(--text-color);
         }
       
@@ -105,7 +101,7 @@
         button {
           width: 100%;
           max-width: 21.875rem;
-          background-color: var(--button-bg);
+          background-color: var(--btn-color);
           color: var(--text-color);
           font-weight: bold;
           cursor: pointer;
@@ -132,7 +128,7 @@
       
         #back-home {
           margin-top: 1.25rem;
-          background-color: var(--back-bg);
+          background-color: var(--btn-color);
         }
       
         #back-home:hover {
@@ -150,7 +146,7 @@
       
         /* Header en back-button */
         header {
-          background-color: var(--header-bg);
+          background-color: var(--hdr-color);
           padding: 1.25rem;
           display: flex;
           justify-content: space-between;
@@ -176,7 +172,7 @@
           left: 1.25rem;
           width: 3.125rem;
           height: 3.125rem;
-          background-color: var(--button-bg);
+          background-color: var(--btn-color);
           border-radius: 50%;
           display: flex;
           justify-content: center;
@@ -376,6 +372,44 @@
             width: 90%;
           }
         }
+
+        .input-with-swatch {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        }
+
+        /* style your text input outlines as before */
+        .color-field input[type="text"] {
+        flex: 1;
+        /* …padding, borders, outline rules… */
+        }
+
+        /* swatch wrapper: relative, so the hidden picker can sit on top */
+        .color-swatch-wrapper {
+        position: relative;
+        width: 24px;
+        height: 24px;
+        }
+
+        /* the colored square the user sees */
+        .color-swatch-wrapper .swatch {
+        width: 100%;
+        height: 100%;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+        }
+
+        /* the real <input type=color> is invisible but clickable */
+        .color-swatch-wrapper input[type="color"] {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        opacity: 0;
+        cursor: pointer;
+        }
+
       </style>
       
     <script>
@@ -387,6 +421,26 @@
     </script>
 
     <script src="/static/admin.js"></script>
+    <script src="/static/custom-alert.js"></script>
+
+    <style>
+        :root {
+          --bg-color:  #2c2c2c;  /* defaults */
+          --hdr-color: #3a3a3a;
+          --ctr-color: #1e1e1e;
+          --btn-color: #424242;
+        }
+      </style>
+    
+      <script>
+        // one‑time injection of all four colors
+        window.appConfig = {
+          backgroundColor: "{{ bg_color }}",
+          headerColor:     "{{ hdr_color }}",
+          contrastingColor:"{{ ctr_color }}",
+          buttonColor:     "{{ btn_color }}"
+        };
+    </script>
 
       
 </head>
@@ -485,7 +539,140 @@
                 }
             </style>
         </div>
-    </div>
+        <div class="section" id="color-settings">
+            <h2>Color Settings</h2>
+          
+            <!-- Presets dropdown -->
+            <label for="color-presets">Preset:</label>
+            <select id="color-presets" style="margin-bottom: 1rem;">
+              <option value="custom">Custom</option>
+              <option value="default">Future Notes – Default</option>
+              <option value="colorful">Future Notes – Colorful</option>
+            </select>
+          
+            <!-- Color inputs with pickers and validation messages -->
+            <div class="color-inputs" style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem;">
+              <!-- We'll repeat this block for each channel -->
+              <div class="color-field">
+                <label for="background-color">Background:</label>
+                <div class="input-with-swatch">
+                  <!-- hex‐text input -->
+                  <input
+                    type="text"
+                    id="background-color"
+                    placeholder="#2c2c2c"
+                    value="#2c2c2c"
+                    pattern="^#([A-Fa-f0-9]{6})$"
+                    required
+                  >
+                  <!-- custom swatch wrapper -->
+                  <div class="color-swatch-wrapper">
+                    <!-- the visible swatch -->
+                    <div class="swatch" id="background-color-swatch"></div>
+                    <!-- the hidden native picker sits on top -->
+                    <input
+                      type="color"
+                      id="background-color-picker"
+                      value="#2c2c2c"
+                    >
+                  </div>
+                </div>
+                <span class="error-msg" aria-live="polite"></span>
+              </div>
+              
+          
+              <!-- Header -->
+              <div class="color-field">
+                <label for="header-color">Header:</label>
+                <div class="input-with-swatch">
+                  <!-- hex‐text input -->
+                  <input
+                    type="text"
+                    id="header-color"
+                    placeholder="#2c2c2c"
+                    value="#2c2c2c"
+                    pattern="^#([A-Fa-f0-9]{6})$"
+                    required
+                  >
+                  <!-- custom swatch wrapper -->
+                  <div class="color-swatch-wrapper">
+                    <!-- the visible swatch -->
+                    <div class="swatch" id="header-color-swatch"></div>
+                    <!-- the hidden native picker sits on top -->
+                    <input
+                      type="color"
+                      id="header-color-picker"
+                      value="#2c2c2c"
+                    >
+                  </div>
+                </div>
+                <span class="error-msg" aria-live="polite"></span>
+              </div>
+              
+          
+              <!-- Contrast -->
+              <div class="color-field">
+                <label for="contrast-color">Contrast:</label>
+                <div class="input-with-swatch">
+                  <!-- hex‐text input -->
+                  <input
+                    type="text"
+                    id="contrast-color"
+                    placeholder="#2c2c2c"
+                    value="#2c2c2c"
+                    pattern="^#([A-Fa-f0-9]{6})$"
+                    required
+                  >
+                  <!-- custom swatch wrapper -->
+                  <div class="color-swatch-wrapper">
+                    <!-- the visible swatch -->
+                    <div class="swatch" id="contrast-color-swatch"></div>
+                    <!-- the hidden native picker sits on top -->
+                    <input
+                      type="color"
+                      id="contrast-color-picker"
+                      value="#2c2c2c"
+                    >
+                  </div>
+                </div>
+                <span class="error-msg" aria-live="polite"></span>
+              </div>
+              
+          
+              <!-- Buttons -->
+              <div class="color-field">
+                <label for="button-color">Buttons:</label>
+                <div class="input-with-swatch">
+                  <!-- hex‐text input -->
+                  <input
+                    type="text"
+                    id="button-color"
+                    placeholder="#2c2c2c"
+                    value="#2c2c2c"
+                    pattern="^#([A-Fa-f0-9]{6})$"
+                    required
+                  >
+                  <!-- custom swatch wrapper -->
+                  <div class="color-swatch-wrapper">
+                    <!-- the visible swatch -->
+                    <div class="swatch" id="button-color-swatch"></div>
+                    <!-- the hidden native picker sits on top -->
+                    <input
+                      type="color"
+                      id="button-color-picker"
+                      value="#2c2c2c"
+                    >
+                  </div>
+                </div>
+                <span class="error-msg" aria-live="polite"></span>
+              </div>
+              
+            </div>
+          
+            <button id="save-colors-btn" style="padding: 0.75rem 1.5rem; border:none; border-radius:4px; cursor:pointer;">
+              Save Colors
+            </button>
+          </div>
 
     <!-- Modal for profile picture -->
     <div id="modal-overlay-2">
@@ -702,6 +889,201 @@
                 }
             }
         });
+
+        document.addEventListener("DOMContentLoaded", () => {
+        const cfg = window.appConfig || {};
+
+        // store in a JS var if you need it elsewhere
+        const userColors = {
+            bg:  cfg.backgroundColor,
+            hdr: cfg.headerColor,
+            ctr: cfg.contrastingColor,
+            btn: cfg.buttonColor
+        };
+
+        // apply each to the CSS custom properties
+        const root = document.documentElement;
+        root.style.setProperty("--bg-color",  userColors.bg);
+        root.style.setProperty("--hdr-color", userColors.hdr);
+        root.style.setProperty("--ctr-color", userColors.ctr);
+        root.style.setProperty("--btn-color", userColors.btn);
+
+        // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
+        });
+
+        document.addEventListener("DOMContentLoaded", async () => {
+      const presets = {
+        default: { bg: "#2c2c2c", hdr: "#3a3a3a", ctr: "#1e1e1e", btn: "#424242" },
+        colorful: { bg: "#1b1b1b", hdr: "#2e7d32", ctr: "#1b5e20", btn: "#388e3c" }
+      };
+
+      const channels = [
+        { key: "bg", text: "background-color" },
+        { key: "hdr", text: "header-color" },
+        { key: "ctr", text: "contrast-color" },
+        { key: "btn", text: "button-color" },
+      ];
+
+      const select     = document.getElementById("color-presets");
+      const saveBtn    = document.getElementById("save-colors-btn");
+
+      // Build inputs map
+      const inputs = {};
+      channels.forEach(c => {
+        inputs[c.key] = {
+          txtEl:    document.getElementById(c.text),
+          pickerEl: document.getElementById(`${c.text}-picker`),
+          swatchEl: document.getElementById(`${c.text}-swatch`),
+          errEl:    document.querySelector(`#${c.text}`).parentNode.nextElementSibling
+        };
+      });
+
+      // Validate & style
+      function validateField({ txtEl, pickerEl, swatchEl, errEl }) {
+        const val   = txtEl.value.trim();
+        const valid = /^#([A-Fa-f0-9]{6})$/.test(val);
+
+        txtEl.classList.toggle("invalid",  !valid);
+        txtEl.classList.toggle("valid",     valid);
+        errEl.textContent      = valid ? "" : "Invalid color";
+        errEl.style.visibility = valid ? "hidden" : "visible";
+
+        if (valid) {
+          pickerEl.value           = val;
+          swatchEl.style.backgroundColor = val;
+          txtEl.style.color        = val;
+        }
+        return valid;
+      }
+
+      // Wire up each field
+      Object.values(inputs).forEach(field => {
+        const { txtEl, pickerEl, swatchEl } = field;
+
+        // text ↔ picker events
+        txtEl.addEventListener("input", () => {
+          if (validateField(field)) {
+            swatchEl.style.backgroundColor = txtEl.value.trim();
+          }
+        });
+        pickerEl.addEventListener("input", () => {
+          txtEl.value = pickerEl.value;
+          swatchEl.style.backgroundColor = pickerEl.value;
+          validateField(field);
+        });
+
+        // initial
+        validateField(field);
+      });
+
+      // Enable/disable custom fields
+      function toggleCustom(on) {
+        Object.values(inputs).forEach(f => {
+          f.txtEl.disabled    = !on;
+          f.pickerEl.disabled = !on;
+        });
+      }
+
+      // Handle preset changes
+      select.addEventListener("change", () => {
+        if (select.value === "custom") {
+          toggleCustom(true);
+        } else {
+          toggleCustom(false);
+          const p = presets[select.value];
+          Object.entries(inputs).forEach(([k, f]) => {
+            f.txtEl.value    = p[k];
+            f.pickerEl.value = p[k];
+            validateField(f);
+          });
+        }
+      });
+
+      // Load initial from API
+      try {
+        const res  = await fetch("/api/user/colors", {
+          method: "GET",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${sessionKey}`
+          }
+        });
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        const cur  = {
+          bg:  data.backgroundColor.trim().toLowerCase(),
+          hdr: data.headerColor.trim().toLowerCase(),
+          ctr: data.contrastingColor.trim().toLowerCase(),
+          btn: data.buttonColor.trim().toLowerCase()
+        };
+
+        let match = null;
+        for (const [k,p] of Object.entries(presets)) {
+          if (p.bg===cur.bg && p.hdr===cur.hdr && p.ctr===cur.ctr && p.btn===cur.btn) {
+            match = k; break;
+          }
+        }
+
+        if (match) {
+          select.value = match;
+          toggleCustom(false);
+          Object.entries(inputs).forEach(([k,f]) => {
+            f.txtEl.value    = presets[match][k];
+            f.pickerEl.value = presets[match][k];
+            validateField(f);
+          });
+        } else {
+          select.value = "custom";
+          toggleCustom(true);
+          Object.entries(inputs).forEach(([k,f]) => {
+            f.txtEl.value    = cur[k];
+            f.pickerEl.value = cur[k];
+            validateField(f);
+          });
+        }
+      } catch (err) {
+        console.error("Could not load user colors:", err);
+      }
+
+      // Save handler
+      saveBtn.addEventListener("click", async () => {
+        const allValid = Object.values(inputs).every(validateField);
+        if (!allValid) {
+          alert("Please fix invalid colors before saving.");
+          return;
+        }
+        const payload = {
+          background: inputs.bg.txtEl.value,
+          header:     inputs.hdr.txtEl.value,
+          contrast:   inputs.ctr.txtEl.value,
+          buttons:    inputs.btn.txtEl.value
+        };
+        try {
+          const resp = await fetch("/api/set-colors", {
+            method: "POST",
+            headers: {
+              "Content-Type":  "application/json",
+              "Authorization": `Bearer ${sessionKey}`
+            },
+            body: JSON.stringify(payload)
+          });
+          if (resp.ok) {
+            alert("Colors saved!");
+            location.reload();
+          } else if (resp.status === 401 || resp.status === 403) {
+            sessionStorage.clear();
+            showModal();
+          } else {
+            const e = await resp.json();
+            alert("Error: " + e.error);
+          }
+        } catch (e) {
+          console.error("Network error:", e);
+          alert("Failed to save colors.");
+        }
+      });
+    });
+
 
         document.getElementById("default-startpage").addEventListener("change", async (e) => {
             const selectedPage = e.target.value;
