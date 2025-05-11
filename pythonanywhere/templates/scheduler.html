@@ -300,7 +300,7 @@
       flex-direction: row;
       justify-content: space-between;
       align-items: center;
-      background-color: var(--hdr-color); /* Microsoft blue */
+      background-color: var(--btn-color); /* Microsoft blue */
       color: white;
       padding: 4px 8px;
       border-radius: 4px;
@@ -419,7 +419,7 @@
       overflow: auto;
     }
     #calendar-table th {
-      background-color: var(--hdr-color);
+      background-color: var(--btn-color);
       font-weight: normal;
     }
     /* Hour label column */
@@ -1006,7 +1006,7 @@
     }
 
     #calendars-list li.active {
-      background-color: var(--hdr-color);
+      background-color: var(--btn-color);
       color: #fff;
     }
 
@@ -1368,26 +1368,32 @@
     // Global variable to track the current active calendar id
     let currentCalendarId = null;
 
+    // Declare userColors in the global scope
+    let userColors = {
+      bg:  "#ffffff",
+      hdr: "#eeeeee",
+      ctr: "#616161", // Fallback default
+      btn: "#cccccc"
+    };
+
     document.addEventListener("DOMContentLoaded", () => {
       const cfg = window.appConfig || {};
 
-      // store in a JS var if you need it elsewhere
-      const userColors = {
-        bg:  cfg.backgroundColor,
-        hdr: cfg.headerColor,
-        ctr: cfg.contrastingColor,
-        btn: cfg.buttonColor
+      // Update global userColors with actual values
+      userColors = {
+        bg:  cfg.backgroundColor || userColors.bg,
+        hdr: cfg.headerColor     || userColors.hdr,
+        ctr: cfg.contrastingColor || userColors.ctr,
+        btn: cfg.buttonColor     || userColors.btn
       };
 
-      // apply each to the CSS custom properties
       const root = document.documentElement;
       root.style.setProperty("--bg-color",  userColors.bg);
       root.style.setProperty("--hdr-color", userColors.hdr);
       root.style.setProperty("--ctr-color", userColors.ctr);
       root.style.setProperty("--btn-color", userColors.btn);
-
-      // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
     });
+
 
 
     document.addEventListener("DOMContentLoaded", async () => {

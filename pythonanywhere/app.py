@@ -1014,6 +1014,7 @@ def signup_page():
     return render_template('signup.html', **args)
 
 @app.route('/account_page')
+@require_login_for_templates
 def account_page():
     return render_template('account.html')
 
@@ -2052,6 +2053,65 @@ def update_set_startpage():
     user.startpage = data['startpage']
     db.session.commit()
     return jsonify({"message": "Startpage updated successfully!"}), 200
+
+@app.route("/api/set-colors", methods=["POST"])
+@require_session_key
+def set_colors():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing JSON data"}), 400
+
+    # Extract color values
+    background = data.get("background")
+    header = data.get("header")
+    contrast = data.get("contrast")
+    buttons = data.get("buttons")
+
+    # Validate color format (must be hex, 7 characters, starts with '#')
+    def is_valid_hex(color):
+        return isinstance(color, str) and len(color) == 7 and color.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in color[1:])
+
+    if not all(map(is_valid_hex, [background, header, contrast, buttons])):
+        return jsonify({"error": "One or more colors are invalid. Must be valid hex codes like #123456"}), 400
+
+    # Check if user already has a color entry
+    user_colors = UserColor.query.filter_by(user_id=g.user_id).first()
+    if not user_colors:
+        user_colors = UserColor(
+            user_id=g.user_id,
+            background_color=background,
+            header_color=header,
+            contrast_color=contrast,
+            button_color=buttons
+        )
+        db.session.add(user_colors)
+    else:
+        user_colors.background_color = background
+        user_colors.header_color = header
+        user_colors.contrasting_color = contrast
+        user_colors.button_color = buttons
+
+    db.session.commit()
+    return jsonify({"message": "Color configuration updated successfully."}), 200
+
+@app.route("/api/user/colors", methods=["GET"])
+@require_session_key
+def get_user_colors():
+    """
+    Fetch the current user's color settings.
+    """
+    # Try to load an existing row
+    uc = UserColor.query.filter_by(user_id=g.user_id).first()
+
+    ensure_user_colors(g.user_id)
+
+    return jsonify({
+        "backgroundColor":  uc.background_color,
+        "headerColor":      uc.header_color,
+        "contrastingColor": uc.contrasting_color,
+        "buttonColor":      uc.button_color
+    }), 200
+
     
 @app.route('/allow-sharing', methods=['PUT'])
 @require_session_key
