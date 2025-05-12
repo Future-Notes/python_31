@@ -41,8 +41,6 @@ games = {}
 BOARD_SIZE = 10
 CORRECT_PIN = "1234"
 app.secret_key = os.urandom(24)
-FLAG_FILE = "/home/Bosbes/mysite/update_in_progress.flag"
-MAX_MAINTENANCE_DURATION = 300  # seconds (5 minutes)
 ERROR_MESSAGES = {
     "ERR-1001": "Something went wrong. Please try again later.",
     "DB-2002": "A database issue occurred. Please retry your request.",
@@ -2284,24 +2282,14 @@ def user_status():
 @app.route('/admin/update', methods=['POST'])
 @require_session_key
 def update_code():
-    # Block if running on localhost
     host = request.host.split(':')[0]
-    if host in ('localhost', '127.0.0.1'):
+    if host in ('127.0.0.1'):
         return jsonify({"error": "Updates only allowed in production"}), 403
-
+    
     user = User.query.get(g.user_id)
     if not user or user.role != "admin":
-        return jsonify({"error": "Unauthorized: only admins can update"}), 403
-
-    # Create flag file with timestamp
-    try:
-        with open(FLAG_FILE, 'w') as f:
-            f.write(str(int(time.time())))
-    except IOError as e:
-        app.logger.error("Could not write flag file: %s", e)
-        return jsonify({"error": "Failed to initiate update"}), 500
-
-    # Run update script asynchronously
+        return jsonify({"error", "Unauthorized: only admins can update the code"}), 403
+    
     thread = threading.Thread(target=run_update_script)
     thread.start()
 
