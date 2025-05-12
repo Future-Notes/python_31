@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, redirect, url_for
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, redirect, url_for, abort
 from functools import wraps
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
@@ -623,176 +623,182 @@ def process_fire(game, player, x, y):
         "sunk": sunk_ship
     }
 
+# Helper: check if already fired
+
 def already_fired(bot, x, y):
     return [x, y] in bot.get("hits", []) or [x, y] in bot.get("misses", [])
 
+# Compute probability heatmap for hunt mode
 def compute_probability_map(bot, board_size):
-    """
-    Computes a heatmap of scores for each cell based on remaining unsunk ships.
-    For each remaining ship, every possible horizontal and vertical placement that does not
-    overlap a fired cell adds the ship’s count to each cell in that placement.
-    """
     fired = set(tuple(cell) for cell in bot.get("hits", []) + bot.get("misses", []))
-    remaining_ships = bot.get("remaining_ships", {5: 1, 4: 1, 3: 2, 2: 1})
-    heatmap = [[0 for _ in range(board_size)] for _ in range(board_size)]
-
-    for ship_size, count in remaining_ships.items():
+    remaining_ships = bot.get("remaining_ships", {5:1,4:1,3:2,2:1})
+    heatmap = [[0]*board_size for _ in range(board_size)]
+    for size, count in remaining_ships.items():
         if count <= 0:
             continue
+        # horizontal placements
         for x in range(board_size):
-            for y in range(board_size - ship_size + 1):
-                placement = [(x, y + i) for i in range(ship_size)]
-                if any(cell in fired for cell in placement):
+            for y in range(board_size - size + 1):
+                placement = [(x, y+i) for i in range(size)]
+                if any(c in fired for c in placement):
                     continue
-                for (px, py) in placement:
+                for px, py in placement:
                     heatmap[px][py] += count
-        for x in range(board_size - ship_size + 1):
+        # vertical placements
+        for x in range(board_size - size + 1):
             for y in range(board_size):
-                placement = [(x + i, y) for i in range(ship_size)]
-                if any(cell in fired for cell in placement):
+                placement = [(x+i, y) for i in range(size)]
+                if any(c in fired for c in placement):
                     continue
-                for (px, py) in placement:
+                for px, py in placement:
                     heatmap[px][py] += count
     return heatmap
 
+# Cluster management helpers
+def normalize_clusters(bot_state):
+    """
+    Ensure each cluster is a connected, collinear set. Split clusters with non-linear shapes into connected components.
+    """
+    new_clusters = []
+    for cluster in bot_state['clusters']:
+        cells = list(cluster)
+        unvisited = set(cells)
+        while unvisited:
+            comp = []
+            stack = [unvisited.pop()]
+            while stack:
+                cell = stack.pop()
+                comp.append(cell)
+                x, y = cell
+                neighbors = [(x+dx, y+dy) for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]]
+                for n in neighbors:
+                    if n in unvisited:
+                        unvisited.remove(n)
+                        stack.append(n)
+            new_clusters.append(comp)
+    bot_state['clusters'] = new_clusters
+
+
+def record_hit(bot, bot_state, x, y):
+    """Add a unique hit and update clusters."""
+    # prevent duplicate
+    if [x, y] not in bot.setdefault('hits', []):
+        bot['hits'].append([x, y])
+    # add to cluster
+    added = False
+    for cluster in bot_state['clusters']:
+        if any(abs(cx-x) + abs(cy-y) == 1 for cx, cy in cluster):
+            cluster.append((x, y))
+            added = True
+            break
+    if not added:
+        bot_state['clusters'].append([(x, y)])
+    normalize_clusters(bot_state)
+
+
+def record_sink(bot, bot_state, length, sunk_cells):
+    """Remove sunk cluster and update remaining ships."""
+    # update ship count
+    if length in bot.get('remaining_ships', {}):
+        bot['remaining_ships'][length] = max(bot['remaining_ships'][length] - 1, 0)
+    # remove matching cluster
+    for cluster in list(bot_state['clusters']):
+        if all(cell in cluster for cell in sunk_cells) or len(cluster) == length:
+            bot_state['clusters'].remove(cluster)
+            break
+    normalize_clusters(bot_state)
+    # remove hits of sunk ship
+    bot['hits'] = [h for h in bot['hits'] if tuple(h) not in sunk_cells]
+
+
+def get_next_cluster_shot(bot, bot_state, board_size):
+    unknown = {(x, y) for x in range(board_size) for y in range(board_size)
+               if not already_fired(bot, x, y)}
+    for cluster in bot_state['clusters']:
+        xs = [c[0] for c in cluster]
+        ys = [c[1] for c in cluster]
+        # horizontal cluster
+        if len(cluster) >= 2 and len(set(xs)) == 1:
+            row = xs[0]
+            for col in (min(ys)-1, max(ys)+1):
+                if 0 <= col < board_size and (row, col) in unknown:
+                    return [row, col]
+        # vertical cluster
+        if len(cluster) >= 2 and len(set(ys)) == 1:
+            col = ys[0]
+            for row in (min(xs)-1, max(xs)+1):
+                if 0 <= row < board_size and (row, col) in unknown:
+                    return [row, col]
+        # single or ambiguous
+        for x, y in cluster:
+            for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
+                nx, ny = x+dx, y+dy
+                if (nx, ny) in unknown and 0 <= nx < board_size and 0 <= ny < board_size:
+                    return [nx, ny]
+    return None
+
+# Main bot move
+
 def bot_move(game_code):
-    """
-    Determines and executes the bot's move.
-    The bot uses two modes:
-      - SEARCH: Uses a probability map (with parity filtering) to hunt for ships.
-      - TARGET: Once a hit is made, targets adjacent cells using refined heuristics.
-    """
     game = games[game_code]
-    bot = game["players"]["player2"]
+    bot = game['players']['player2']
+    state = bot.setdefault('botState', {'mode': 'search', 'clusters': []})
+    bot.setdefault('remaining_ships', {5:1, 4:1, 3:2, 2:1})
+    board_size = game.get('board_size', BOARD_SIZE)
 
-    if "botState" not in bot:
-        bot["botState"] = {
-            "mode": "search",
-            "target_hits": [],
-            "potential_targets": []
-        }
-    state = bot["botState"]
-
-    if "remaining_ships" not in bot:
-        bot["remaining_ships"] = {5: 1, 4: 1, 3: 2, 2: 1}
-
-    board_size = game.get("board_size", BOARD_SIZE)
-
-    if state["mode"] == "search":
+    # select move based on mode
+    if state['mode'] == 'search':
         heatmap = compute_probability_map(bot, board_size)
-        possible_moves = []
-        max_prob = -1
+        candidates = []
+        maxh = -1
         for x in range(board_size):
             for y in range(board_size):
-                if not already_fired(bot, x, y) and ((x + y) % 2 == 0):
-                    prob = heatmap[x][y]
-                    if prob > max_prob:
-                        max_prob = prob
-                        possible_moves = [[x, y]]
-                    elif prob == max_prob:
-                        possible_moves.append([x, y])
-        if not possible_moves:
-            for x in range(board_size):
-                for y in range(board_size):
-                    if not already_fired(bot, x, y):
-                        possible_moves.append([x, y])
-        if not possible_moves:
-            return {"error": "No more moves available"}
-        move = random.choice(possible_moves)
-
+                if not already_fired(bot, x, y) and (x+y) % 2 == 0:
+                    h = heatmap[x][y]
+                    if h > maxh:
+                        maxh = h
+                        candidates = [[x, y]]
+                    elif h == maxh:
+                        candidates.append([x, y])
+        if not candidates:
+            candidates = [[x, y] for x in range(board_size) for y in range(board_size)
+                          if not already_fired(bot, x, y)]
+        move = random.choice(candidates)
     else:
-        if not state["potential_targets"]:
-            if len(state["target_hits"]) == 1:
-                hit = state["target_hits"][0]
-                x, y = hit
-                adjacent = []
-                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < board_size and 0 <= ny < board_size and not already_fired(bot, nx, ny):
-                        adjacent.append([nx, ny])
-                state["potential_targets"] = adjacent
-            else:
-                hit1, hit2 = state["target_hits"][0], state["target_hits"][1]
-                potential = []
-                if hit1[0] == hit2[0]:
-                    col = hit1[0]
-                    ys = sorted(hit[1] for hit in state["target_hits"])
-                    min_y, max_y = ys[0], ys[-1]
-                    if min_y - 1 >= 0 and not already_fired(bot, col, min_y - 1):
-                        potential.append([col, min_y - 1])
-                    if max_y + 1 < board_size and not already_fired(bot, col, max_y + 1):
-                        potential.append([col, max_y + 1])
-                elif hit1[1] == hit2[1]:
-                    row = hit1[1]
-                    xs = sorted(hit[0] for hit in state["target_hits"])
-                    min_x, max_x = xs[0], xs[-1]
-                    if min_x - 1 >= 0 and not already_fired(bot, min_x - 1, row):
-                        potential.append([min_x - 1, row])
-                    if max_x + 1 < board_size and not already_fired(bot, max_x + 1, row):
-                        potential.append([max_x + 1, row])
-                if not potential:
-                    hit = state["target_hits"][0]
-                    x, y = hit
-                    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                        nx, ny = x + dx, y + dy
-                        if 0 <= nx < board_size and 0 <= ny < board_size and not already_fired(bot, nx, ny):
-                            potential.append([nx, ny])
-                state["potential_targets"] = potential
-
-        if state["potential_targets"]:
-            heatmap = compute_probability_map(bot, board_size)
-            best_target = None
-            best_prob = -1
-            for target in state["potential_targets"]:
-                tx, ty = target
-                if heatmap[tx][ty] > best_prob:
-                    best_prob = heatmap[tx][ty]
-                    best_target = target
-            move = best_target
-        else:
-            state["mode"] = "search"
+        # Target mode: try cluster shots first
+        move = get_next_cluster_shot(bot, state, board_size)
+        if move is None:
+            state['mode'] = 'search'
+            # fallback to search next turn
             return bot_move(game_code)
 
     x, y = move
-    result = process_fire(game, "player2", x, y)
+    result = process_fire(game, 'player2', x, y)
 
-    if result["hit"]:
-        state["target_hits"].append([x, y])
-        if state["mode"] != "target":
-            state["mode"] = "target"
-        if len(state["target_hits"]) >= 2:
-            hit1, hit2 = state["target_hits"][0], state["target_hits"][1]
-            potential = []
-            if hit1[0] == hit2[0]:
-                col = hit1[0]
-                ys = sorted(hit[1] for hit in state["target_hits"])
-                if ys[0] - 1 >= 0 and not already_fired(bot, col, ys[0] - 1):
-                    potential.append([col, ys[0] - 1])
-                if ys[-1] + 1 < board_size and not already_fired(bot, col, ys[-1] + 1):
-                    potential.append([col, ys[-1] + 1])
-            elif hit1[1] == hit2[1]:
-                row = hit1[1]
-                xs = sorted(hit[0] for hit in state["target_hits"])
-                if xs[0] - 1 >= 0 and not already_fired(bot, xs[0] - 1, row):
-                    potential.append([xs[0] - 1, row])
-                if xs[-1] + 1 < board_size and not already_fired(bot, xs[-1] + 1, row):
-                    potential.append([xs[-1] + 1, row])
-            state["potential_targets"] = potential
-
-        if result.get("sunk"):
-            ship_size = result.get("ship_size")
-            if ship_size:
-                bot["remaining_ships"][ship_size] = max(bot["remaining_ships"].get(ship_size, 0) - 1, 0)
-            state["mode"] = "search"
-            state["target_hits"] = []
-            state["potential_targets"] = []
-
-        if game.get("status", "battle") == "battle" and game.get("turn") == "player2":
-            time.sleep(0.5)
-            bot_move(game_code)
+    # handle result
+    if result.get('hit'):
+        record_hit(bot, state, x, y)
+        state['mode'] = 'target'
+        if result.get('sunk'):
+            length = result.get('ship_size')
+            # derive sunk cluster
+            sunk_cells = None
+            for cluster in state['clusters']:
+                if (x, y) in cluster:
+                    sunk_cells = list(cluster)
+                    break
+            if sunk_cells:
+                record_sink(bot, state, length, sunk_cells)
+            # decide next mode
+            state['mode'] = 'target' if state['clusters'] else 'search'
     else:
-        if state["mode"] == "target" and move in state["potential_targets"]:
-            state["potential_targets"].remove(move)
+        bot.setdefault('misses', []).append([x, y])
+
+    # continue turn if still playing
+    if game.get('status', 'battle') == 'battle' and game.get('turn') == 'player2':
+        time.sleep(0.5)
+        return bot_move(game_code)
+
     return result
 
 def calculate_xp_gain(current_xp, result, accuracy, sunk_ships):
@@ -1073,6 +1079,23 @@ def apple_hate():
     return render_template('anti-apple.html')
 
 #---------------------------------API routes--------------------------------
+
+# Only expose in non-production or over localhost for safety
+@app.route('/_manager/routes', methods=['GET'])
+def manager_list_routes():
+    # Block if not coming from localhost
+    if request.remote_addr not in ('127.0.0.1', '::1', 'localhost'):
+        abort(403)
+
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "rule": str(rule),
+            "methods": sorted(rule.methods - {'HEAD', 'OPTIONS'})  # filter out boilerplate
+        })
+    return jsonify(routes)
+
 
 # Homepage
 

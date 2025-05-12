@@ -10,3 +10,5 @@ init_db.py
 key.txt
 autopyexeconfigv1.json
 **/output
+wsgi.py
+manager.py
