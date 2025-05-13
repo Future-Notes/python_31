@@ -739,21 +739,31 @@ def get_next_cluster_shot(bot, bot_state, board_size):
 
 # Main bot move
 
-def bot_move(game_code):
+def bot_move(game_code, skip_delays=False):
+    """
+    Make the bot take turns until it's the player's turn again or the game ends.
+    skip_delays=True disables time.sleep() for instant moves.
+    Returns the last shot result dict, including 'x' and 'y'.
+    """
     game = games[game_code]
-    bot = game['players']['player2']
+    bot  = game['players']['player2']
     state = bot.setdefault('botState', {'mode': 'search', 'clusters': []})
     bot.setdefault('remaining_ships', {5:1, 4:1, 3:2, 2:1})
     board_size = game.get('board_size', BOARD_SIZE)
 
-    # select move based on mode
+    # Helper to optionally sleep
+    def maybe_sleep(sec):
+        if not skip_delays:
+            time.sleep(sec)
+
+    # Choose move
     if state['mode'] == 'search':
         heatmap = compute_probability_map(bot, board_size)
         candidates = []
         maxh = -1
         for x in range(board_size):
             for y in range(board_size):
-                if not already_fired(bot, x, y) and (x+y) % 2 == 0:
+                if not already_fired(bot, x, y) and (x + y) % 2 == 0:
                     h = heatmap[x][y]
                     if h > maxh:
                         maxh = h
@@ -761,27 +771,31 @@ def bot_move(game_code):
                     elif h == maxh:
                         candidates.append([x, y])
         if not candidates:
-            candidates = [[x, y] for x in range(board_size) for y in range(board_size)
+            candidates = [[x, y] for x in range(board_size)
+                          for y in range(board_size)
                           if not already_fired(bot, x, y)]
         move = random.choice(candidates)
     else:
-        # Target mode: try cluster shots first
+        # Target mode
         move = get_next_cluster_shot(bot, state, board_size)
         if move is None:
             state['mode'] = 'search'
-            # fallback to search next turn
-            return bot_move(game_code)
+            return bot_move(game_code, skip_delays=skip_delays)
 
     x, y = move
-    result = process_fire(game, 'player2', x, y)
 
-    # handle result
+    # Fire and record
+    result = process_fire(game, 'player2', x, y)
+    # Expose coords so client can render them
+    result['x'] = x
+    result['y'] = y
+
     if result.get('hit'):
         record_hit(bot, state, x, y)
         state['mode'] = 'target'
         if result.get('sunk'):
             length = result.get('ship_size')
-            # derive sunk cluster
+            # Find the sunk cluster
             sunk_cells = None
             for cluster in state['clusters']:
                 if (x, y) in cluster:
@@ -789,15 +803,14 @@ def bot_move(game_code):
                     break
             if sunk_cells:
                 record_sink(bot, state, length, sunk_cells)
-            # decide next mode
             state['mode'] = 'target' if state['clusters'] else 'search'
     else:
         bot.setdefault('misses', []).append([x, y])
 
-    # continue turn if still playing
+    # Continue firing if still bot's turn
     if game.get('status', 'battle') == 'battle' and game.get('turn') == 'player2':
-        time.sleep(0.5)
-        return bot_move(game_code)
+        maybe_sleep(0.5)
+        return bot_move(game_code, skip_delays=skip_delays)
 
     return result
 
@@ -2989,13 +3002,24 @@ def game_state():
     game_code = request.args.get("gameCode")
     if not game_code or game_code not in games:
         return jsonify({"error": "Invalid game code"}), 400
+
     game = games[game_code]
+
+    # If it's the bot's turn, let it move ONCE immediately (no delays)
+    if (game["status"] == "battle"
+        and game["turn"]  == "player2"
+        and game["players"]["player2"]["name"] == "Bot"):
+        
+        # This updates game["status"], game["turn"], hits/misses, etc.
+        bot_move(game_code, skip_delays=True)
+
+    # Now return the fresh state
     response = {
-        "players": game["players"],
-        "status": game["status"],
-        "turn": game["turn"],
-        "winner": game["winner"],
-        "opponentJoined": game["players"]["player2"] is not None
+        "players":       game["players"],
+        "status":        game["status"],
+        "turn":          game["turn"],
+        "winner":        game.get("winner"),
+        "opponentJoined": game["players"].get("player2") is not None
     }
     return jsonify(response)
 
