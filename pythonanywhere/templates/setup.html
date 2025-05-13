@@ -450,19 +450,17 @@
           positions: ship.positions.map(p => [p.x, p.y])
         }))
       };
+
+      // Send placement, but don't block the redirect
       fetch('/place_ships', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      .then(response => response.json())
-      .then(data => {
-        if (data.error) {
-          alert(data.error);
-        } else {
-          window.location.href = '/battle';
-        }
-      });
+      .catch(err => console.error('Ship placement failed:', err));
+
+      // Immediately go to the battle page
+      window.location.href = '/battle';
     });
     
     /* --- Random Placement Code --- */
