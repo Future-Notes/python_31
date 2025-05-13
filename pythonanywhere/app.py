@@ -2964,8 +2964,7 @@ def fire():
     # If it's the bot's turn, execute bot_move in a separate thread
     if (game["status"] == "battle" and game["turn"] == "player2" and
             game["players"]["player2"]["name"] == "Bot"):
-        bot_thread = threading.Thread(target=bot_move, args=(game_code,))
-        bot_thread.start()
+        bot_move(game_code)
 
     return response
 
