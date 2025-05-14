@@ -78,6 +78,11 @@
     .disabled-cell {
       cursor: not-allowed;
     }
+    .disabled {
+      background-color: #333 !important;
+      cursor: not-allowed !important;
+      opacity: 0.6 !important;
+    }
     .sunk {
       background-color: darkred;
       color: white;
@@ -611,6 +616,11 @@
           if (game.error && game.error === "Invalid game code") {
             clearInterval(pollingInterval);
             const statusMsg = document.getElementById('statusMessage');
+            const leaveGameButton = document.getElementById('leaveGameButton');
+            leaveGameButton.classList.add('disabled');
+            const newLeaveGameButton = leaveGameButton.cloneNode(true);
+            leaveGameButton.parentNode.replaceChild(newLeaveGameButton, leaveGameButton);
+            newLeaveGameButton.disabled = true;
             statusMsg.innerText = "Foute gamecode. Waarschijnlijk was de server aan het herstarten";
             const playersInfo = document.getElementById('playersInfo');
             playersInfo.classList.add('hidden');
