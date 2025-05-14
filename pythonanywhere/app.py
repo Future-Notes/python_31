@@ -3,8 +3,9 @@ from flask import Flask, request, jsonify, g, render_template, make_response, se
 from functools import wraps
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, desc
-from sqlalchemy.exc import IntegrityError, OperationalError                        
+from sqlalchemy import CheckConstraint, desc, event, text
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm.attributes import get_history
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -41,6 +42,10 @@ games = {}
 BOARD_SIZE = 10
 CORRECT_PIN = "1234"
 app.secret_key = os.urandom(24)
+_pending_mutations = {}
+excluded_tables = {
+    'trophy',  # example: skip your own audit table
+}
 ERROR_MESSAGES = {
     "ERR-1001": "Something went wrong. Please try again later.",
     "DB-2002": "A database issue occurred. Please retry your request.",
@@ -282,6 +287,19 @@ class Invite(db.Model):
     invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
+class MutationLog(db.Model):
+    __tablename__ = 'mutation_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    transaction_id = db.Column(db.String(36), nullable=False)
+    table_name = db.Column(db.String(50), nullable=False)
+    pk = db.Column(db.String(100), nullable=False)
+    column_name = db.Column(db.String(100), nullable=True)
+    old_value = db.Column(db.Text, nullable=True)
+    new_value = db.Column(db.Text, nullable=True)
+    action = db.Column(db.Enum('insert', 'update', 'delete', name='mutation_action'), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
@@ -292,6 +310,45 @@ def generate_session_key(user_id):
     }
     seed_trophies()
     return key
+
+
+def rollback_transaction(transaction_id):
+    logs = (
+        MutationLog.query
+        .filter_by(transaction_id=transaction_id)
+        .order_by(MutationLog.id.desc())  # reverse order
+        .all()
+    )
+
+    for log in logs:
+        table = log.table_name
+        pk = log.pk
+        col = log.column_name
+        old_val = json.loads(log.old_value) if log.old_value else None
+
+        if log.action == 'insert':
+            # Rollback insert = delete the row
+            db.session.execute(
+                text(f"DELETE FROM {table} WHERE id = :pk"),
+                {"pk": pk}
+            )
+
+        elif log.action == 'delete':
+            # Rollback delete = re-insert old values
+            cols = ', '.join(old_val.keys())
+            placeholders = ', '.join([f":{k}" for k in old_val.keys()])
+            db.session.execute(
+                text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"),
+                old_val
+            )
+
+        elif log.action == 'update':
+            db.session.execute(
+                text(f"UPDATE {table} SET {col} = :old WHERE id = :pk"),
+                {"old": old_val, "pk": pk}
+            )
+
+    db.session.commit()
 
 @app.before_request
 def capture_utm_params():
@@ -357,6 +414,12 @@ def create_default_calendar(user_id):
     db.session.commit()
     return default_calendar
 
+def _start_transaction(session):
+    # assign a transaction UUID for this commit
+    txid = str(uuid.uuid4())
+    session.info['txid'] = txid
+    _pending_mutations[txid] = []
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -370,6 +433,88 @@ def require_session_key(func):
         return func(*args, **kwargs)
     wrapper.__name__ = func.__name__
     return wrapper
+
+@event.listens_for(db.session.__class__, "before_flush")
+def before_flush(session, flush_context, instances):
+    # Create a new transaction ID and init its list
+    txid = str(uuid.uuid4())
+    session.info['txid'] = txid
+    mutations = []
+    _pending_mutations[txid] = mutations
+
+    # Handle INSERTs
+    for obj in session.new:
+        table = obj.__tablename__
+        if table in excluded_tables:
+            continue
+        pk = getattr(obj, 'id', None)
+        mutations.append({
+            'action': 'insert',
+            'table': table,
+            'pk': str(pk),
+            'column': None,
+            'old': None,
+            'new': json.dumps({c.name: getattr(obj, c.name) for c in obj.__table__.columns})
+        })
+
+    # Handle DELETEs
+    for obj in session.deleted:
+        table = obj.__tablename__
+        if table in excluded_tables:
+            continue
+        pk = getattr(obj, 'id', None)
+        mutations.append({
+            'action': 'delete',
+            'table': table,
+            'pk': str(pk),
+            'column': None,
+            'old': json.dumps({c.name: getattr(obj, c.name) for c in obj.__table__.columns}),
+            'new': None
+        })
+
+    # Handle UPDATEs
+    for obj in session.dirty:
+        table = obj.__tablename__
+        if table in excluded_tables:
+            continue
+        if session.is_modified(obj, include_collections=False):
+            pk = getattr(obj, 'id', None)
+            for col in obj.__table__.columns:
+                hist = get_history(obj, col.name)
+                if not hist.has_changes():
+                    continue
+                old_val = hist.deleted[0] if hist.deleted else None
+                new_val = hist.added[0] if hist.added else None
+                mutations.append({
+                    'action': 'update',
+                    'table': table,
+                    'pk': str(pk),
+                    'column': col.name,
+                    'old': json.dumps(old_val),
+                    'new': json.dumps(new_val)
+                })
+
+@event.listens_for(db.session.__class__, "after_commit")
+def after_commit(session):
+    txid = session.info.pop('txid', None)
+    if not txid:
+        return
+    mutations = _pending_mutations.pop(txid, [])
+
+    # Write logs outside the session to avoid locking issues
+    with db.engine.begin() as conn:
+        for m in mutations:
+            conn.execute(
+                MutationLog.__table__.insert().values(
+                    transaction_id=txid,
+                    table_name=m['table'],
+                    pk=m['pk'],
+                    column_name=m['column'],
+                    old_value=m['old'],
+                    new_value=m['new'],
+                    action=m['action']
+                )
+            )
 
 def require_login_for_templates(func):
     @wraps(func)
@@ -1090,6 +1235,10 @@ def scheduler_page():
 @app.route('/apple-hate')
 def apple_hate():
     return render_template('anti-apple.html')
+
+@app.route('/mutations_page')
+def mutations_page():
+    return render_template('mutations.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -2829,6 +2978,67 @@ def update_delete_note(note_id):
         db.session.delete(note)
         db.session.commit()
         return jsonify({"message": "Note deleted successfully!"}), 200
+    
+@app.route('/mutations', methods=['GET'])
+@require_session_key
+def list_transactions():
+    user = User.query.get(g.user_id)
+    if user.role != "admin":
+        return jsonify({"error": "Insufficient permissions"}), 400
+    rows = (
+        db.session.query(
+            MutationLog.transaction_id,
+            db.func.count(MutationLog.id).label('count'),
+            db.func.min(MutationLog.timestamp).label('timestamp')
+        )
+        .group_by(MutationLog.transaction_id)
+        .all()
+    )
+    data = [
+        {
+            "txid": tx,
+            "count": cnt,
+            "timestamp": ts.isoformat()
+        }
+        for tx, cnt, ts in rows
+    ]
+    return jsonify(data)
+
+@app.route('/mutations/<txid>/rollback', methods=['POST'])
+@require_session_key
+def rollback_tx(txid):
+    user = User.query.get(g.user_id)
+    if user.role != "admin":
+        return jsonify({"error": "Insufficient permissions"}), 400
+    try:
+        rollback_transaction(txid)
+        return jsonify({"status": "ok", "message": f"Rolled back {txid}"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
+@app.route('/logs', methods=['GET'])
+@require_session_key
+def list_logs():
+    user = User.query.get(g.user_id)
+    if user.role != "admin":
+        return jsonify({"error": "Insufficient permissions"}), 400
+    
+    # return all logs, newest first
+    logs = (MutationLog.query
+               .order_by(MutationLog.timestamp.desc())
+               .all())
+    data = [{
+        "id": log.id,
+        "txid": log.transaction_id,
+        "table": log.table_name,
+        "column": log.column_name,
+        "old": log.old_value,
+        "new": log.new_value,
+        "timestamp": log.timestamp.isoformat()
+    } for log in logs]
+    return jsonify(data)
+
     
 #---------------------------------Battleship routes--------------------------------
 
