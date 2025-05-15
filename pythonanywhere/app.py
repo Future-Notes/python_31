@@ -2484,7 +2484,7 @@ def create_backup():
 
     # Extract local path
     # strip prefix 'sqlite:///'
-    local_path = db_path.replace('sqlite:///', '')
+    local_path = "/home/Bosbes/mysite/python_31/pythonanywhere/instance/data.db"
     if not os.path.exists(local_path):
         return jsonify({'error': 'Live database file not found'}), 404
 
