@@ -105,3 +105,57 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     })();
 });
+
+/*
+  Subtle Testing Environment Bar for localhost
+  Injects a fixed bar at the top of the page when running on localhost or 127.0.0.1
+  Styles use !important on every property to override any default page CSS
+*/
+
+document.addEventListener('DOMContentLoaded', () => {
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') {
+    // Create and append style element
+    const style = document.createElement('style');
+    style.id = 'env-testing-bar-style';
+    style.textContent = `
+      /* Bar container */
+      #env-testing-bar { all: unset !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 24px !important;
+        background-color: rgba(104, 196, 43, 0.2) !important;
+        color: rgb(255, 255, 255) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-family: sans-serif !important;
+        font-size: 12px !important;
+        z-index: 9999 !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+      }
+      /* Prevent bar text from inheriting unwanted styles */
+      #env-testing-bar * { all: unset !important; }
+      /* Ensure html and body have no conflict margins */
+      html, body { margin: 0 !important; padding: 0 !important; }
+    `;
+    document.head.appendChild(style);
+
+    // Create the bar element
+    const bar = document.createElement('div');
+    bar.id = 'env-testing-bar';
+    // Build the live server URL with the same path and query
+    const liveHost = "bosbes.eu.pythonanywhere.com"; // Replace with your live domain
+    const liveUrl = `${window.location.protocol}//${liveHost}${window.location.pathname}${window.location.search}${window.location.hash}`;
+    bar.innerHTML = `Testing Environment. <a href="${liveUrl}" style="color:#2a7ae2;text-decoration:underline !important; cursor:pointer;">Click here to go to the live environment</a>`;
+    document.body.insertBefore(bar, document.body.firstChild);
+
+    // Calculate and apply push to page content
+    const barHeight = bar.offsetHeight + 'px';
+    // Apply padding-top on html and body to prevent content hiding
+    document.documentElement.style.setProperty('padding-top', barHeight, 'important');
+    document.body.style.setProperty('padding-top', barHeight, 'important');
+  }
+});

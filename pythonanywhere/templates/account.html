@@ -547,6 +547,7 @@
               <option value="custom">Custom</option>
               <option value="default">Future Notes – Default</option>
               <option value="colorful">Future Notes – Colorful</option>
+              <option value="light">Future Notes - Light</option> <!--Hopefully nobody uses this-->
             </select>
           
             <!-- Color inputs with pickers and validation messages -->
@@ -913,7 +914,8 @@
         document.addEventListener("DOMContentLoaded", async () => {
       const presets = {
         default: { bg: "#2c2c2c", hdr: "#3a3a3a", ctr: "#1e1e1e", btn: "#424242" },
-        colorful: { bg: "#1b1b1b", hdr: "#2e7d32", ctr: "#1b5e20", btn: "#388e3c" }
+        colorful: { bg: "#1b1b1b", hdr: "#2e7d32", ctr: "#1b5e20", btn: "#388e3c" },
+        light: { bg: "#d3d3d3", hdr: "#c5c5c5", ctr: "#e1e1e1", btn: "#bdbdbd" }
       };
 
       const channels = [
