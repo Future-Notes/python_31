@@ -12,3 +12,4 @@ autopyexeconfigv1.json
 **/output
 wsgi.py
 manager.py
+**/backups
