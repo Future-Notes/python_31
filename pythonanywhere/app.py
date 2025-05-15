@@ -25,6 +25,7 @@ from math import floor
 import re
 import traceback
 import subprocess
+import shutil
 
 # ------------------------------Global variables--------------------------------
 app = Flask(__name__)
@@ -49,6 +50,9 @@ excluded_tables = {
 }
 REPO_PATH = "/home/Bosbes/mysite/python_31"
 PYANYWHERE_RE = re.compile(r"^[^.]+\.(pythonanywhere\.com)$$", re.IGNORECASE)
+BACKUP_DIR = os.path.join(os.getcwd(), 'backups')
+if not os.path.isdir(BACKUP_DIR):
+    os.makedirs(BACKUP_DIR, exist_ok=True)
 ERROR_MESSAGES = {
     "ERR-1001": "Something went wrong. Please try again later.",
     "DB-2002": "A database issue occurred. Please retry your request.",
@@ -2464,6 +2468,63 @@ def admin_dump():
     response.headers["Content-Disposition"] = "attachment; filename=database_dump.json"
     response.headers["Content-Type"] = "application/json"
     return response
+
+@app.route('/create_backup', methods=['POST'])
+@require_session_key
+@require_admin
+def create_backup():
+    """
+    Create a timestamped copy of the live database file in the backups directory.
+    """
+    # Path to the live database configured in Flask app
+    db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+    # Assuming SQLite: URI like 'sqlite:////absolute/path/to/db.sqlite'
+    if not db_path.startswith('sqlite:///'):
+        return jsonify({'error': 'Backup creation only implemented for SQLite databases.'}), 400
+
+    # Extract local path
+    # strip prefix 'sqlite:///'
+    local_path = db_path.replace('sqlite:///', '')
+    if not os.path.exists(local_path):
+        return jsonify({'error': 'Live database file not found'}), 404
+
+    # Create timestamped filename
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    filename = f"backup_{timestamp}.db"
+    dest_path = os.path.join(BACKUP_DIR, filename)
+
+    try:
+        # Copy the database file
+        shutil.copy(local_path, dest_path)
+    except Exception as e:
+        current_app.logger.error(f"Backup failed: {e}")
+        return jsonify({'error': 'Backup creation failed'}), 500
+
+    return jsonify({'message': 'Backup created', 'file': filename}), 201
+
+@app.route('/list', methods=['GET'])
+@require_session_key
+@require_admin
+def list_backups():
+    """
+    List available backup files in the backups directory.
+    """
+    files = sorted(os.listdir(BACKUP_DIR))
+    return jsonify({'backups': files}), 200
+
+@app.route('/download/<filename>', methods=['GET'])
+@require_session_key
+@require_admin
+def download_backup(filename):
+    """
+    Send a specific backup file to the client for download.
+    """
+    from flask import send_from_directory
+
+    if filename not in os.listdir(BACKUP_DIR):
+        return jsonify({'error': 'Backup file not found'}), 404
+
+    return send_from_directory(BACKUP_DIR, filename, as_attachment=True)
 
 @app.route('/admin/ban', methods=['POST'])
 @require_session_key

@@ -317,6 +317,7 @@
             <button id="scan-dev-vs-master">Check Dev vs Master</button>
             <div id="dev-status"></div>
             <button id="merge-dev-master">Merge Dev into Master</button>
+            <button id="create-backup-btn">Create Backup</button>
         </div>
 
         <!-- Password Confirmation Modal -->
@@ -405,6 +406,33 @@
                 alert("There was an error. Please try again.");
             }
         });
+
+        document.getElementById('create-backup-btn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/create_backup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionKey}`
+                }
+                });
+
+                if (!response.ok) {
+                const error = await response.json();
+                console.error('Backup failed:', error);
+                alert(`Backup failed: ${error.error || response.statusText}`);
+                return;
+                }
+
+                const data = await response.json();
+                console.log('Backup created:', data.file);
+                alert(`Backup created successfully: ${data.file}`);
+            } catch (err) {
+                console.error('Network or server error:', err);
+                alert('Could not create backup. Check console for details.');
+            }
+        });
+
 
         async function fetchAdminData() {
             try {
