@@ -11,6 +11,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import secrets
 from werkzeug.utils import secure_filename
+from git import Repo, GitCommandError
 import os
 import json
 import uuid
@@ -44,8 +45,10 @@ CORRECT_PIN = "1234"
 app.secret_key = os.urandom(24)
 _pending_mutations = {}
 excluded_tables = {
-    'trophy',  # example: skip your own audit table
+    'trophy',
 }
+REPO_PATH = "/home/Bosbes/mysite/python_31"
+PYANYWHERE_RE = re.compile(r"^[^.]+\.(pythonanywhere\.com)$$", re.IGNORECASE)
 ERROR_MESSAGES = {
     "ERR-1001": "Something went wrong. Please try again later.",
     "DB-2002": "A database issue occurred. Please retry your request.",
@@ -600,6 +603,38 @@ def run_update_script():
         app.logger.info("Update successful: %s", result.stdout)
     except subprocess.CalledProcessError as e:
         app.logger.error("Update failed: %s", e.stderr)
+
+# Helper to get repo object
+def get_repo(path):
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Repository path not found: {path}")
+    return Repo(path)
+
+# Common admin check decorator (you already have this)
+def require_admin(fn):
+    def wrapper(*args, **kwargs):
+        user = User.query.get(g.user_id)
+        if not user or user.role != "admin":
+            return jsonify({"error": "Unauthorized: only admins"}), 403
+        return fn(*args, **kwargs)
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+def require_pythonanywhere_domain(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        # request.host can include “:5000” or similar—split that off
+        host = request.host.split(":", 1)[0].lower()
+
+        if not PYANYWHERE_RE.match(host):
+            return (
+                jsonify({
+                    "error": "Forbidden: this endpoint only works on pythonanywhere.com domain"
+                }),
+                403
+            )
+        return fn(*args, **kwargs)
+    return wrapper
 
 def delete_profile_pictures(username):
     """ Deletes all profile pictures associated with the given username. """
@@ -2476,124 +2511,105 @@ def user_status():
     return jsonify({"users": user_status_data}), 200
 
 @app.route('/admin/update', methods=['POST'])
+@require_pythonanywhere_domain
 @require_session_key
+@require_admin
 def update_code():
-    host = request.host.split(':')[0]
-    if host in ('127.0.0.1'):
-        return jsonify({"error": "Updates only allowed in production"}), 403
-    
-    user = User.query.get(g.user_id)
-    if not user or user.role != "admin":
-        return jsonify({"error", "Unauthorized: only admins can update the code"}), 403
-    
     thread = threading.Thread(target=run_update_script)
     thread.start()
 
     return jsonify({"status": "Update initiated"})
 
 @app.route('/admin/scan-updates', methods=['GET'])
+@require_pythonanywhere_domain
 @require_session_key
+@require_admin
 def scan_updates():
-    # Ensure only admin users can access this endpoint
-    user = User.query.get(g.user_id)
-    if not user or user.role != "admin":
-        return jsonify({"error": "Unauthorized: only admins can scan for updates"}), 403
-
     try:
-        # Set repository directory to the correct location
-        repo_path = "/home/Bosbes/mysite/python_31"
-        os.chdir(repo_path)
-        
-        # Update remote tracking info
-        subprocess.run("git fetch", shell=True, check=True, capture_output=True, text=True)
-        
-        # Check how many commits the local master is behind origin/master
-        result = subprocess.run(
-            "git rev-list HEAD...origin/master --count",
-            shell=True,
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        behind_count = int(result.stdout.strip())
-        update_available = behind_count > 0
-        
+        repo = get_repo(REPO_PATH)
+        # Fetch only origin/master (or origin/main)
+        remote = repo.remote("origin")
+        remote.fetch()
+
+        # Determine default branch name
+        default_branch = repo.remotes.origin.refs.master if "master" in repo.remotes.origin.refs else repo.remotes.origin.refs.main
+        local = repo.heads[default_branch.remote_head]
+        remote_ref = default_branch
+
+        # Count how many commits local is behind remote
+        commits_behind = sum(1 for _ in repo.iter_commits(f"{local.commit.hexsha}..{remote_ref.commit.hexsha}"))
+        up_to_date = (commits_behind == 0)
+
         return jsonify({
-            "update_available": update_available,
-            "commits_behind": behind_count,
-            "message": "Updates available" if update_available else "Already up-to-date"
+            "update_available": not up_to_date,
+            "commits_behind": commits_behind,
+            "message": ("Already up-to-date" if up_to_date else f"{commits_behind} commit(s) behind")
         })
-    except subprocess.CalledProcessError as e:
-        app.logger.error("Error scanning for updates: %s", e.stderr)
-        return jsonify({"error": "Failed to scan for updates"}), 500
-    
+
+    except (GitCommandError, FileNotFoundError) as e:
+        app.logger.error("Error in scan_updates: %s", str(e))
+        return jsonify({"error": "Failed to scan for updates", "details": str(e)}), 500
+
+
 @app.route('/admin/scan-dev-vs-master', methods=['GET'])
+@require_pythonanywhere_domain
 @require_session_key
+@require_admin
 def scan_dev_vs_master():
-    # Ensure only admin users can access this endpoint
-    user = User.query.get(g.user_id)
-    if not user or user.role != "admin":
-        return jsonify({"error": "Unauthorized: only admins can scan for updates"}), 403
-
     try:
-        # Set the repository directory to the correct location
-        repo_path = "/home/Bosbes/mysite/python_31"
-        os.chdir(repo_path)
-        
-        # Fetch the latest remote info for both branches
-        subprocess.run("git fetch origin dev master", shell=True, check=True, capture_output=True, text=True)
-        
-        # Count the commits where origin/dev is ahead of origin/master
-        result = subprocess.run(
-            "git rev-list origin/master..origin/dev --count",
-            shell=True,
-            check=True,
-            capture_output=True,
-            text=True
-        )
-        commits_ahead = int(result.stdout.strip())
-        update_available = commits_ahead > 0
-        
+        repo = get_repo(REPO_PATH)
+        remote = repo.remote("origin")
+        remote.fetch("dev")
+        remote.fetch("master")
+
+        # Count commits where origin/dev is ahead of origin/master
+        dev_ref = repo.remotes.origin.refs.dev
+        master_ref = repo.remotes.origin.refs.master if "master" in repo.remotes.origin.refs else repo.remotes.origin.refs.main
+
+        commits_ahead = sum(1 for _ in repo.iter_commits(f"{master_ref.commit.hexsha}..{dev_ref.commit.hexsha}"))
+        ahead = (commits_ahead > 0)
+
         return jsonify({
-            "dev_ahead_of_master": update_available,
+            "dev_ahead_of_master": ahead,
             "commits_ahead": commits_ahead,
-            "message": f"Dev branch is ahead by {commits_ahead} commit(s)" if update_available else "Dev branch is not ahead of master"
+            "message": ("Dev branch is not ahead of master"
+                        if not ahead
+                        else f"Dev branch is ahead by {commits_ahead} commit(s)")
         })
-    except subprocess.CalledProcessError as e:
-        app.logger.error("Error scanning dev vs master: %s", e.stderr)
-        return jsonify({"error": "Failed to scan dev vs master"}), 500
-    
+
+    except (GitCommandError, IndexError) as e:
+        app.logger.error("Error in scan_dev_vs_master: %s", str(e))
+        return jsonify({"error": "Failed to scan dev vs master", "details": str(e)}), 500
+
+
 @app.route('/admin/merge-dev-into-master', methods=['POST'])
+@require_pythonanywhere_domain
 @require_session_key
+@require_admin
 def merge_dev_into_master():
-    # Ensure only admin users can perform the merge
-    user = User.query.get(g.user_id)
-    if not user or user.role != "admin":
-        return jsonify({"error": "Unauthorized: only admins can merge branches"}), 403
-
     try:
-        repo_path = "/home/Bosbes/mysite/python_31"
-        os.chdir(repo_path)
+        repo = get_repo(REPO_PATH)
+        # Ensure origin info is up‑to‑date
+        origin = repo.remote("origin")
+        origin.fetch()
 
-        # Ensure we have the latest remote info
-        subprocess.run("git fetch origin dev master", shell=True, check=True, capture_output=True, text=True)
-
-        # Merge dev into master
-        result = subprocess.run(
-            "git checkout master && git merge origin/dev -m 'Auto-merged dev into master'",
-            shell=True,
-            check=True,
-            capture_output=True,
-            text=True
-        )
+        # Checkout master (or main)
+        target_branch = "master" if "master" in repo.heads else "main"
+        repo.git.checkout(target_branch)
+        # Merge origin/dev
+        merge_index = repo.git.merge("origin/dev", m="Auto-merged dev into master")
 
         return jsonify({
             "status": "Merge completed successfully",
-            "output": result.stdout
+            "merge_output": merge_index
         })
-    except subprocess.CalledProcessError as e:
+
+    except GitCommandError as e:
         app.logger.error("Merge failed: %s", e.stderr)
         return jsonify({"error": "Merge failed", "details": e.stderr}), 500
+    except Exception as e:
+        app.logger.error("Unexpected error: %s", str(e))
+        return jsonify({"error": "Unexpected failure", "details": str(e)}), 500
 
 
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
