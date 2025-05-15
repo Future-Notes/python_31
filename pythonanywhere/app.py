@@ -288,17 +288,16 @@ class Invite(db.Model):
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
 class MutationLog(db.Model):
-    __tablename__ = 'mutation_log'
-
-    id = db.Column(db.Integer, primary_key=True)
-    transaction_id = db.Column(db.String(36), nullable=False)
-    table_name = db.Column(db.String(50), nullable=False)
-    pk = db.Column(db.String(100), nullable=False)
-    column_name = db.Column(db.String(100), nullable=True)
-    old_value = db.Column(db.Text, nullable=True)
-    new_value = db.Column(db.Text, nullable=True)
-    action = db.Column(db.Enum('insert', 'update', 'delete', name='mutation_action'), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    __tablename__   = 'mutation_log'
+    id              = db.Column(db.Integer, primary_key=True)
+    transaction_id  = db.Column(db.String, index=True)
+    table_name      = db.Column(db.String)
+    pk              = db.Column(db.String)
+    column_name     = db.Column(db.String, nullable=True)
+    old_value       = db.Column(db.Text,   nullable=True)
+    new_value       = db.Column(db.Text,   nullable=True)
+    action          = db.Column(db.String)  # 'insert', 'update', 'delete'
+    timestamp       = db.Column(db.DateTime, default=db.func.now())
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -313,42 +312,65 @@ def generate_session_key(user_id):
 
 
 def rollback_transaction(transaction_id):
+    """
+    Rolls back all mutations in a transaction, in reverse order.
+    Handles edge cases, errors, and ensures atomicity.
+    """
     logs = (
         MutationLog.query
         .filter_by(transaction_id=transaction_id)
         .order_by(MutationLog.id.desc())  # reverse order
         .all()
     )
+    if not logs:
+        raise ValueError(f"No logs found for transaction {transaction_id}")
 
-    for log in logs:
-        table = log.table_name
-        pk = log.pk
-        col = log.column_name
-        old_val = json.loads(log.old_value) if log.old_value else None
+    try:
+        for log in logs:
+            table = log.table_name
+            pk = log.pk
+            col = log.column_name
+            old_val = json.loads(log.old_value) if log.old_value else None
 
-        if log.action == 'insert':
-            # Rollback insert = delete the row
-            db.session.execute(
-                text(f"DELETE FROM {table} WHERE id = :pk"),
-                {"pk": pk}
-            )
+            # Skip excluded tables for safety
+            if table in excluded_tables:
+                continue
 
-        elif log.action == 'delete':
-            # Rollback delete = re-insert old values
-            cols = ', '.join(old_val.keys())
-            placeholders = ', '.join([f":{k}" for k in old_val.keys()])
-            db.session.execute(
-                text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"),
-                old_val
-            )
+            if log.action == 'insert':
+                # Rollback insert = delete the row
+                db.session.execute(
+                    text(f"DELETE FROM {table} WHERE id = :pk"),
+                    {"pk": pk}
+                )
 
-        elif log.action == 'update':
-            db.session.execute(
-                text(f"UPDATE {table} SET {col} = :old WHERE id = :pk"),
-                {"old": old_val, "pk": pk}
-            )
+            elif log.action == 'delete':
+                # Rollback delete = re-insert old values
+                if not old_val:
+                    continue  # nothing to restore
+                cols = ', '.join(old_val.keys())
+                placeholders = ', '.join([f":{k}" for k in old_val.keys()])
+                try:
+                    db.session.execute(
+                        text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"),
+                        old_val
+                    )
+                except Exception as e:
+                    # If row already exists, skip
+                    if "UNIQUE constraint failed" in str(e):
+                        continue
+                    raise
 
-    db.session.commit()
+            elif log.action == 'update':
+                if col is None:
+                    continue  # nothing to update
+                db.session.execute(
+                    text(f"UPDATE {table} SET {col} = :old WHERE id = :pk"),
+                    {"old": old_val, "pk": pk}
+                )
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        raise RuntimeError(f"Failed to rollback transaction {transaction_id}: {e}")
 
 @app.before_request
 def capture_utm_params():
@@ -506,13 +528,13 @@ def after_commit(session):
         for m in mutations:
             conn.execute(
                 MutationLog.__table__.insert().values(
-                    transaction_id=txid,
-                    table_name=m['table'],
-                    pk=m['pk'],
-                    column_name=m['column'],
-                    old_value=m['old'],
-                    new_value=m['new'],
-                    action=m['action']
+                    transaction_id = txid,
+                    table_name     = m['table'],
+                    pk             = m['pk'],
+                    column_name    = m['column'],
+                    old_value      = m['old'],
+                    new_value      = m['new'],
+                    action         = m['action']
                 )
             )
 
@@ -2978,6 +3000,8 @@ def update_delete_note(note_id):
         db.session.delete(note)
         db.session.commit()
         return jsonify({"message": "Note deleted successfully!"}), 200
+    
+#---------------------------------Mutations--------------------------------
     
 @app.route('/mutations', methods=['GET'])
 @require_session_key
