@@ -623,14 +623,10 @@ def require_admin(fn):
 def require_pythonanywhere_domain(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        # request.host can include “:5000” or similar—split that off
         host = request.host.split(":", 1)[0].lower()
-
-        if not PYANYWHERE_RE.match(host):
+        if not host.endswith(".pythonanywhere.com"):
             return (
-                jsonify({
-                    "error": "Forbidden: this endpoint only works on pythonanywhere.com domain"
-                }),
+                jsonify({"error": "Forbidden: this endpoint only works on pythonanywhere.com domain"}),
                 403
             )
         return fn(*args, **kwargs)
