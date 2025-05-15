@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify, g, render_template, make_response, se
 from functools import wraps
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, desc, event, text
+from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm.attributes import get_history
 from flask_bcrypt import Bcrypt                                 
@@ -2407,40 +2407,29 @@ def admin_dump():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    if user.role != "admin":
-        return jsonify({"error": "Insufficient permissions"}), 403
-    
-    if not user.database_dump_tag:
+    if user.role != "admin" or not user.database_dump_tag:
         return jsonify({"error": "Insufficient permissions"}), 403
 
-    data = request.json
+    data = request.json or {}
     password = data.get("password")
-
-    if not bcrypt.check_password_hash(user.password, password):
+    if not password or not bcrypt.check_password_hash(user.password, password):
         return jsonify({"error": "Incorrect password"}), 400
 
-    # Fetch raw database data
-    users = User.query.with_entities(
-        User.id, User.username, User.profile_picture, User.allows_sharing, User.role, User.database_dump_tag, User.lasting_key
-    ).all()
-    messages = Messages.query.with_entities(Messages.id, Messages.email, Messages.message).all()
-    notes = Note.query.with_entities(Note.id, Note.title, Note.tag, Note.note, Note.user_id)
-    playerxp = PlayerXp.query.with_entities(PlayerXp.id, PlayerXp.user_id, PlayerXp.xp).all()
-    group_members = GroupMember.query.with_entities(GroupMember.id, GroupMember.user_id, GroupMember.group_id, GroupMember.admin).all()
-    groups = Group.query.with_entities(Group.id, Group.name).all()
+    # Reflect all tables automatically
+    metadata = MetaData()
+    metadata.reflect(bind=db.engine)
 
-    # Prepare data for dumping
-    dump_data = {
-        "users": [user._asdict() for user in users],
-        "messages": [message._asdict() for message in messages],
-        "notes": [note._asdict() for note in notes],
-        "playerxp": [xp._asdict() for xp in playerxp],
-        "group_members": [member._asdict() for member in group_members],
-        "groups": [group._asdict() for group in groups],
-    }
+    dump_data = {}
+    # Loop through each table and fetch all rows
+    for table in metadata.sorted_tables:
+        stmt = select(table)
+        rows = db.session.execute(stmt).all()
+        dump_data[table.name] = [dict(row._mapping) for row in rows]
 
-    # Return as downloadable JSON file
-    response = make_response(json.dumps(dump_data, indent=4))
+    # Return as downloadable JSON file, auto-converting non-serializable types
+    response = make_response(
+        json.dumps(dump_data, indent=4, default=lambda o: o.isoformat() if hasattr(o, 'isoformat') else str(o))
+    )
     response.headers["Content-Disposition"] = "attachment; filename=database_dump.json"
     response.headers["Content-Type"] = "application/json"
     return response
