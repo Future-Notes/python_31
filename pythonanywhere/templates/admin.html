@@ -678,10 +678,8 @@
                 const data = await response.json();
                 if (data.update_available) {
                 alert(`${data.commits_behind} update(s) available.`);
-                document.getElementById("run-update").style.display = "inline-block";
                 } else {
                 alert("Your code is up-to-date.");
-                document.getElementById("run-update").style.display = "none";
                 }
             } else {
                 const error = await response.json();
@@ -733,10 +731,8 @@
 
                 if (data.dev_ahead_of_master) {
                 alert(`Dev is ahead of Master by ${data.commits_ahead} commit(s).`);
-                document.getElementById("merge-dev-master").style.display = "inline-block";
                 } else {
                 alert("Dev branch is not ahead of Master.");
-                document.getElementById("merge-dev-master").style.display = "none";
                 }
             } else {
                 const error = await response.json();
@@ -765,7 +761,6 @@
             if (response.ok) {
                 const data = await response.json();
                 alert(data.status || "Merge completed successfully.");
-                document.getElementById("merge-dev-master").style.display = "none";
             } else {
                 const error = await response.json();
                 alert(error.error || "Merge failed.");
