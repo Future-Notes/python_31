@@ -32,6 +32,12 @@ app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+app.json_encoder = CustomJSONEncoder
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 UPLOAD_FOLDER = 'static/uploads/profile_pictures'
@@ -215,22 +221,37 @@ appointment_note = db.Table(
 )
 
 class Todo(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    title = db.Column(db.String(100), nullable=False)
-    text = db.Column(db.Text, nullable=True)
-    due_date = db.Column(db.DateTime, nullable=True)
-    completed = db.Column(db.Boolean, default=False)
+    id             = db.Column(db.Integer, primary_key=True)
+    user_id        = db.Column(db.Integer, db.ForeignKey('user.id'),
+                               nullable=False)
+    title          = db.Column(db.String(100), nullable=False)
+    text           = db.Column(db.Text, nullable=True)
+    due_date       = db.Column(db.DateTime, nullable=True)
+    completed      = db.Column(db.Boolean, default=False)
+    
+    # New columns:
+    note_id        = db.Column(db.Integer, db.ForeignKey('note.id'),
+                               nullable=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'),
+                               nullable=True)
 
-    user = db.relationship("User", backref="todos")
+    # Relationships:
+    note           = db.relationship("Note", backref="todos")
+    appointment    = db.relationship("Appointment", backref="todos")
+    user           = db.relationship("User", backref="todos")
 
     def to_dict(self):
         return {
             "id": self.id,
             "title": self.title,
+            "text": self.text,
+            "due_date": self.due_date.isoformat() if self.due_date else None,
             "completed": self.completed,
-            "user_id": self.user_id
+            "user_id": self.user_id,
+            "note_id": self.note_id,
+            "appointment_id": self.appointment_id
         }
+
 
 
 class Trophy(db.Model):
@@ -1224,6 +1245,11 @@ def send_favicon():
 def index():
     return render_template('index.html')
 
+# @app.route('/todo_page')
+# @require_login_for_templates
+# def todo_page():
+#     return render_template('todo.html')
+
 @app.route('/login_page')
 def login_page():
     args = request.args.to_dict()
@@ -1694,83 +1720,163 @@ def get_todos():
 @require_session_key
 def create_todo():
     user_id = g.user_id
-
     data = request.get_json() or {}
-    title = data.get('title')
-    description = data.get('description', '')
-    due_date_str = data.get('due_date')
-    is_completed = False
 
+    # --- Basic fields ---
+    title   = (data.get('title') or "").strip()
+    text    = (data.get('description') or "").strip()
+    due_str = data.get('due_date')
+
+    # --- Attachment IDs ---
+    note_id        = data.get('note_id')
+    appointment_id = data.get('appointment_id')
+
+    # --- Validation: title & due date ---
     if not title:
-        return jsonify({"error": "Title is required"}), 400
-    if not due_date_str:
-        return jsonify({"error": "Due date is required"}), 400
-    try:
-        due_date = datetime.fromisoformat(due_date_str)
-    except ValueError:
-        return jsonify({"error": "Invalid due date format. Use ISO 8601 format."}), 400
-    if due_date < datetime.now():
-        return jsonify({"error": "Due date cannot be in the past"}), 400
+        return jsonify(error="Title is required"), 400
     if len(title) > 120:
-        return jsonify({"error": "Title exceeds the maximum allowed length of 120 characters."}), 400
-    if len(description) > 1000:
-        return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
-    
+        return jsonify(error="Title exceeds 120 characters"), 400
+
+    if not due_str:
+        return jsonify(error="Due date is required"), 400
+    try:
+        due_date = datetime.fromisoformat(due_str)
+    except ValueError:
+        return jsonify(error="Invalid due date format; use ISO 8601"), 400
+    if due_date < datetime.now():
+        return jsonify(error="Due date cannot be in the past"), 400
+
+    # --- Attachments lookup & ownership check ---
+    note        = None
+    appointment = None
+
+    if note_id is not None:
+        note = Note.query.filter_by(id=note_id, user_id=user_id).first()
+        if note is None:
+            return jsonify(error="Note not found or not yours"), 404
+
+    if appointment_id is not None:
+        appointment = Appointment.query.\
+            filter_by(id=appointment_id, user_id=user_id).first()
+        if appointment is None:
+            return jsonify(error="Appointment not found or not yours"), 404
+
+    # --- Create & commit ---
     new_todo = Todo(
-        user_id=user_id,
-        title=title.strip(),
-        text=description.strip(),
-        due_date=due_date,
-        completed=is_completed
+        user_id        = user_id,
+        title          = title,
+        text           = text,
+        due_date       = due_date,
+        completed      = False,
+        note           = note,
+        appointment    = appointment
     )
 
     try:
         db.session.add(new_todo)
         db.session.commit()
-        return jsonify({"message": "Todo created successfully!", "todo": new_todo.to_dict()}), 201
+
+        # DEBUG: inspect the payload
+        payload = {
+            "message": "Todo created successfully!",
+            "todo": new_todo.to_dict()
+        }
+        print("DEBUG create_todo payload:", payload)   # ← add this
+        return jsonify(**payload), 201
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": f"An error occurred while creating the todo: {str(e)}"}), 500
+        return jsonify(error=f"Error creating todo: {str(e)}"), 500
     
-# 3. update an existing todo
 @app.route('/todos/<int:todo_id>', methods=['PUT'])
 @require_session_key
 def update_todo(todo_id):
     user_id = g.user_id
+
+    # 1️⃣ Fetch and ownership check
     todo = Todo.query.get(todo_id)
     if not todo or todo.user_id != user_id:
-        return jsonify({"error": "Todo not found"}), 404
+        return jsonify(error="Todo not found"), 404
 
     data = request.get_json() or {}
-    title = data.get('title')
-    description = data.get('description')
-    due_date_str = data.get('due_date')
-    is_completed = data.get('completed')
 
-    if title:
+    # 2️⃣ Simple scalar fields
+    title   = data.get('title')
+    text    = data.get('description')
+    due_str = data.get('due_date')
+    done    = data.get('completed')
+
+    # 3️⃣ Attachment IDs
+    new_note_id        = data.get('note_id')        # could be None
+    new_appointment_id = data.get('appointment_id') # could be None
+
+    # — Validate & apply title
+    if title is not None:
+        title = title.strip()
+        if not title:
+            return jsonify(error="Title cannot be empty"), 400
         if len(title) > 120:
-            return jsonify({"error": "Title exceeds the maximum allowed length of 120 characters."}), 400
-        todo.title = title.strip()
+            return jsonify(error="Title exceeds 120 characters"), 400
+        todo.title = title
 
-    if description is not None:
-        if len(description) > 1000:
-            return jsonify({"error": "Description exceeds the maximum allowed length of 1000 characters."}), 400
-        todo.text = description.strip()
+    # — Validate & apply description
+    if text is not None:
+        text = text.strip()
+        if len(text) > 1000:
+            return jsonify(error="Description exceeds 1000 characters"), 400
+        todo.text = text
 
-    if due_date_str:
-        try:
-            due_date = datetime.fromisoformat(due_date_str)
+    # — Validate & apply due date
+    if due_str is not None:
+        if due_str == "":
+            # explicit empty string: clear the due date
+            todo.due_date = None
+        else:
+            try:
+                due_date = datetime.fromisoformat(due_str)
+            except ValueError:
+                return jsonify(error="Invalid due date format; use ISO 8601"), 400
             if due_date < datetime.now():
-                return jsonify({"error": "Due date cannot be in the past"}), 400
+                return jsonify(error="Due date cannot be in the past"), 400
             todo.due_date = due_date
-        except ValueError:
-            return jsonify({"error": "Invalid due date format. Use ISO 8601 format."}), 400
 
-    if is_completed is not None:
-        todo.completed = bool(is_completed)
+    # — Validate & apply completed flag
+    if done is not None:
+        todo.completed = bool(done)
 
-    db.session.commit()
-    return jsonify({"message": "Todo updated successfully!", "todo": todo.to_dict()}), 200
+    # 4️⃣ Validate & apply note linkage
+    if 'note_id' in data:
+        if new_note_id is None:
+            # unlink the note
+            todo.note = None
+        else:
+            note = Note.query.filter_by(id=new_note_id, user_id=user_id).first()
+            if note is None:
+                return jsonify(error="Note not found or not yours"), 404
+            todo.note = note
+
+    # 5️⃣ Validate & apply appointment linkage
+    if 'appointment_id' in data:
+        if new_appointment_id is None:
+            # unlink the appointment
+            todo.appointment = None
+        else:
+            appt = Appointment.query.\
+                filter_by(id=new_appointment_id, user_id=user_id).first()
+            if appt is None:
+                return jsonify(error="Appointment not found or not yours"), 404
+            todo.appointment = appt
+
+    # 6️⃣ Commit and respond
+    try:
+        db.session.commit()
+        return jsonify(
+            message="Todo updated successfully!",
+            todo=todo.to_dict()
+        ), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify(error=f"Error updating todo: {str(e)}"), 500
 
 # 4. delete a todo
 @app.route('/todos/<int:todo_id>', methods=['DELETE'])
