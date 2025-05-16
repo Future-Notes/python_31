@@ -15,12 +15,12 @@
     body {
       margin: 0;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #2c2c2c;
+      background-color: var(--bg-color);
       color: #e0e0e0;
     }
 
     header {
-        background-color: #3a3a3a;
+        background-color: var(--hdr-color);
         padding: 20px;
         display: flex;
         justify-content: space-between;
@@ -73,7 +73,7 @@
     }
     .homepage-link {
       text-decoration: none;
-      background-color: #4a4a4a;
+      background-color: var(--ctr-color);
       color: #e0e0e0;
       padding: 10px 20px;
       border-radius: 8px;
@@ -85,7 +85,7 @@
     /* Mobile Sub-Header - Hidden by default */
     .mobile-sub-header {
       display: none;
-      background-color: #2e2e2e;
+      background-color: var(--hdr-color);
       padding: 10px 0;
       text-align: center;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
@@ -112,6 +112,106 @@
     /* Hover effect */
     .mobile-sub-header a:hover::after {
       background-color: lightgray;
+    }
+    .profile-pic {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background-color: var(--hdr-color);
+        color: #e0e0e0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 18px;
+        font-weight: bold;
+        text-transform: uppercase;
+        cursor: pointer;
+        background-size: cover;
+        background-position: center;
+    }
+    .profile-pic.no-picture {
+        background-color: #cc4f4f; /* Soft blue background when no picture */
+        color: white; /* White text for the initial */
+        border-radius: 50%;
+    }
+
+     #floating-add-button {
+      display: flex;
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 60px;
+      height: 60px;
+      background-color: var(--btn-color);
+      color: #e0e0e0;
+      border-radius: 50%;
+      justify-content: center;
+      align-items: center;
+      font-size: 30px;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      transition: background-color 0.3s ease;
+      z-index: 1000;
+    }
+    #floating-add-button:hover {
+      background-color: #7a7a7a;
+    }
+
+    /* Modal Overlay */
+    #todo-modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1001;
+    }
+    #todo-modal {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    #todo-modal h2 {
+      margin-top: 0;
+    }
+    #todo-modal form {
+      display: flex;
+      flex-direction: column;
+    }
+    #todo-modal label {
+      margin: 10px 0 5px;
+    }
+    #todo-modal input,
+    #todo-modal textarea {
+      padding: 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #todo-modal .actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 15px;
+    }
+    #todo-modal button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      background-color: var(--btn-color);
+      color: white;
+    }
+    #todo-modal button.cancel {
+      background: #ccc;
+      margin-right: 10px;
     }
 
     /* Toggle Button - hidden by default */
@@ -144,8 +244,72 @@
         display: none;
       }
     }
+    /* Root variables from your default colors */
+    #todo-overview-container {
+      background-color: var(--bg-color);
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 800px;
+      margin: 20px auto;
+    }
+    #todo-overview-container h2 {
+      color: var(--hdr-color);
+      margin-bottom: 16px;
+      font-size: 24px;
+    }
+    .todo-card {
+      background-color: var(--btn-color);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .todo-title {
+      color: var(--ctr-color);
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .todo-text {
+      color: #e0e0e0;
+      font-size: 16px;
+    }
+    .todo-due {
+      font-size: 14px;
+      font-weight: 500;
+      align-self: flex-end;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background-color: rgba(255, 255, 255, 0.1);
+      transition: background-color 0.3s ease;
+    }
+    .todo-due.near {
+      background-color: #d9534f; /* matching your palette */
+      color: #fff;
+    }
   </style>
   <script src="static/admin.js"></script>
+
+  <style>
+        :root {
+          --bg-color:  #2c2c2c;  /* defaults */
+          --hdr-color: #3a3a3a;
+          --ctr-color: #1e1e1e;
+          --btn-color: #424242;
+        }
+      </style>
+    
+      <script>
+        // one‑time injection of all four colors
+        window.appConfig = {
+          backgroundColor: "{{ bg_color }}",
+          headerColor:     "{{ hdr_color }}",
+          contrastingColor:"{{ ctr_color }}",
+          buttonColor:     "{{ btn_color }}"
+        };
+      </script>
 
 <header>
     <!-- Toggle button (only visible on mobile) -->
@@ -173,18 +337,37 @@
 
   <div id="overlay"></div>
 
-  <!-- Existing Login Modal -->
-  <div id="modal-overlay">
-    <div id="modal">
-      <h2>Session Expired</h2>
-      <p>Please re-enter your username and password:</p>
-      <input id="username" type="text" placeholder="Username" />
-      <input id="password" type="password" placeholder="Password" />
-      <button id="submit-credentials">Submit</button>
+  <div id="todo-overview-container">
+    <h2>Your Todos</h2>
+    <div id="todo-list"></div>
+  </div>
+
+  <div id="floating-add-button">+</div>
+
+  <div id="todo-modal-overlay">
+    <div id="todo-modal">
+      <h2 id="modal-title">Add Todo</h2>
+      <form id="todo-form">
+        <input type="hidden" id="todo-id">
+        <label for="todo-title">Title</label>
+        <input type="text" id="todo-title" required>
+
+        <label for="todo-due">Due Date</label>
+        <input type="datetime-local" id="todo-due">
+
+        <label for="todo-desc">Description</label>
+        <textarea id="todo-desc" rows="3"></textarea>
+
+        <div class="actions">
+          <button type="button" class="cancel">Cancel</button>
+          <button type="submit" id="submit-button">Add</button>
+        </div>
+      </form>
     </div>
   </div>
 <script>
 // ======== Authentication & Existing Logic =========
+    // globaly define sessionKey
     document.addEventListener("DOMContentLoaded", async () => {
       const sessionKey = sessionStorage.getItem("session_key");
       const lastingKey = localStorage.getItem("lasting_key");
@@ -238,15 +421,85 @@
           showModal();
         }
       }
-      fetchTodoList();
+      fetchTodos();
+    });
+
+    const addBtn = document.getElementById('floating-add-button');
+    const overlay = document.getElementById('todo-modal-overlay');
+    const modalTitle = document.getElementById('modal-title');
+    const form = document.getElementById('todo-form');
+    const submitBtn = document.getElementById('submit-button');
+    const cancelBtn = document.querySelector('#todo-modal .cancel');
+
+    // Open modal in add or edit mode
+    function openModal(mode, data = {}) {
+      overlay.style.display = 'flex';
+      modalTitle.textContent = mode === 'add' ? 'Add Todo' : 'Edit Todo';
+      submitBtn.textContent = mode === 'add' ? 'Add' : 'Save';
+
+      // Prefill fields
+      document.getElementById('todo-id').value = data.id || '';
+      document.getElementById('todo-title').value = data.title || '';
+      document.getElementById('todo-due').value = data.due ? data.due.substring(0,16) : '';
+      document.getElementById('todo-desc').value = data.description || '';
+
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+          title: document.getElementById('todo-title').value,
+          due_date: document.getElementById('todo-due').value,
+          description: document.getElementById('todo-desc').value
+        };
+        let url = '/todos';
+        if (mode === 'edit') {
+          url = `/todos/${data.id}`;
+        }
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${sessionStorage.getItem("session_key")}`
+            },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) {
+            location.reload();
+          } else {
+            console.error('Error saving todo');
+          }
+        } catch (err) {
+          console.error('Network error', err);
+        }
+      };
+    }
+
+    function closeModal() {
+      overlay.style.display = 'none';
+    }
+
+    // Event: Add button click
+    addBtn.addEventListener('click', () => openModal('add'));
+    cancelBtn.addEventListener('click', closeModal);
+
+    // Event: Clicking a todo item
+    document.getElementById('todo-list').addEventListener('click', e => {
+      const li = e.target.closest('li');
+      if (!li) return;
+      const data = {
+        id: li.dataset.id,
+        title: li.dataset.title,
+        due: li.dataset.due,
+        description: li.dataset.description
+      };
+      openModal('edit', data);
     });
 
     function showModal() {
-      window.location.href = "/login_page?redirect=/todo-page&warning=true";
+
     }
     function hideModal() {
-      document.getElementById("modal-overlay").style.display = "none";
-      document.getElementById("floating-add-button").style.display = window.innerWidth < 600 ? "flex" : "block";
+      // No action needed; placeholder function
     }
     document.addEventListener("DOMContentLoaded", function() {
       const toggleButton = document.getElementById("toggle-mobile-nav");
@@ -262,32 +515,26 @@
       });
     });
 
-    document.getElementById("submit-credentials").addEventListener("click", async () => {
-      const username = document.getElementById("username").value.trim();
-      const password = document.getElementById("password").value.trim();
-      if (!username || !password) {
-        alert("Both fields are required.");
-        return;
-      }
-      try {
-        const response = await fetch("/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
+    document.addEventListener("DOMContentLoaded", () => {
+        const cfg = window.appConfig || {};
+
+        // store in a JS var if you need it elsewhere
+        const userColors = {
+            bg:  cfg.backgroundColor,
+            hdr: cfg.headerColor,
+            ctr: cfg.contrastingColor,
+            btn: cfg.buttonColor
+        };
+
+        // apply each to the CSS custom properties
+        const root = document.documentElement;
+        root.style.setProperty("--bg-color",  userColors.bg);
+        root.style.setProperty("--hdr-color", userColors.hdr);
+        root.style.setProperty("--ctr-color", userColors.ctr);
+        root.style.setProperty("--btn-color", userColors.btn);
+
+        // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
         });
-        if (response.ok) {
-          const data = await response.json();
-          sessionStorage.setItem("session_key", data.session_key);
-          hideModal();
-          fetchSchedule();
-        } else {
-          alert("Invalid username or password. Please try again.");
-        }
-      } catch (error) {
-        console.error("Error during re-login:", error);
-        alert("There was an error. Please try again.");
-      }
-    });
     window.onload = async () => {
       const sessionKey = sessionStorage.getItem("session_key");
       if (!sessionKey) {
@@ -338,52 +585,60 @@
     function showAccountMenu() {
       window.location.href = "/account_page";
     }
-    sessionStorage.setItem("last_page", "/todo-page");
+    sessionStorage.setItem("last_page", "/todo_page");
 
-    // ======== Todo List Logic =========
-    async function fetchTodoList() {
-      //const sessionKey = sessionStorage.getItem("session_key");
-      //try {
-      //  const response = await fetch("/todo", {
-      //    method: "GET",
-      //    headers: {
-      //      "Content-Type": "application/json",
-      //      Authorization: `Bearer ${sessionKey}`,
-      //    },
-      //  });
-      //  if (response.ok) {
-      //    const data = await response.json();
-      //    renderTodoList(data.todo_list);
-      //  } else {
-      //    console.error("Failed to fetch todo list:", response.statusText);
-      //  }
-      //  } catch (error) {
-      //    console.error("Error fetching todo list:", error);
-      //  }
-    }
+    // Async function to fetch and render todos
+    async function fetchTodos() {
+      const sessionKey = sessionStorage.getItem("session_key");
+      const listEl = document.getElementById('todo-list');
+      listEl.innerHTML = ''; // Clear existing
+      const now = new Date();
+      try {
+        const res = await fetch('/todos', {
+          headers: {
+            'Authorization': `Bearer ${sessionKey}`
+          }
+        });
+        const data = await res.json();
+        if (!data.todos) {
+          listEl.textContent = 'No todos available.';
+          return;
+        }
+        data.todos.forEach(todo => {
+          const dueDate = todo.due_date ? new Date(todo.due_date) : null;
+          const card = document.createElement('div');
+          card.className = 'todo-card';
 
-    function renderTodoList(todoList) {
-      const todoContainer = document.getElementById("todo-list");
-      todoContainer.innerHTML = ""; // Clear existing items
-      todoList.forEach((item) => {
-        const todoItem = document.createElement("div");
-        todoItem.className = "todo-item";
-        todoItem.innerHTML = `
-          <input type="checkbox" class="checkbox" ${item.completed ? "checked" : ""} data-id="${item.id}" />
-          <span class="todo-text ${item.completed ? "completed" : ""}">${item.text}</span>
-          <button class="delete-button" data-id="${item.id}">Delete</button>
-        `;
-        todoContainer.appendChild(todoItem);
-      });
-    }
-    document.getElementById("todo-list").addEventListener("click", async (event) => {
-      if (event.target.classList.contains("checkbox")) {
-        const todoId = event.target.getAttribute("data-id");
-        const completed = event.target.checked;
-        await updateTodoItem(todoId, completed);
-      } else if (event.target.classList.contains("delete-button")) {
-        const todoId = event.target.getAttribute("data-id");
-        await deleteTodoItem(todoId);
+          const title = document.createElement('div');
+          title.className = 'todo-title';
+          title.textContent = todo.title;
+
+          const text = document.createElement('div');
+          text.className = 'todo-text';
+          text.textContent = todo.text || '';
+
+          card.appendChild(title);
+          card.appendChild(text);
+
+          if (dueDate) {
+            const dueEl = document.createElement('div');
+            dueEl.className = 'todo-due';
+            const diffMs = dueDate - now;
+            const diffDays = diffMs / (1000 * 60 * 60 * 24);
+            dueEl.textContent = `Due: ${dueDate.toLocaleString()}`;
+            if (diffDays <= 1) {
+              dueEl.classList.add('near');
+            }
+            card.appendChild(dueEl);
+          }
+          listEl.appendChild(card);
+        });
+      } catch (err) {
+        console.error('Error fetching todos:', err);
+        listEl.textContent = 'Failed to load todos.';
       }
-    });
+    }
+
+    // Expose fetchTodos to global scope for auth logic to call
+    window.fetchTodos = fetchTodos;
 </script>
