@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Supermode</title>
+  <style>
+    :root {
+      --bg: #1e1e2e;
+      --surface: #2a2a3d;
+      --accent: #4f85ff;
+      --text: #e0e0e0;
+      --muted: #8a8a9e;
+      --border: #3a3a4f;
+      --danger: #ff5f5f;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      background: var(--bg);
+      color: var(--text);
+      padding: 1rem;
+    }
+
+    h1, h2 {
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: var(--surface);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+      margin-bottom: 2rem;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+
+    thead th {
+      background: #33334d;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.9rem;
+    }
+
+    tbody tr:hover {
+      background: #33334d;
+    }
+
+    form.inline {
+      display: inline-flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0;
+    }
+
+    input[type=text],
+    select {
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 4px;
+      font-size: 0.9rem;
+      width: 140px;
+      transition: border-color 0.2s;
+    }
+
+    input[type=text]:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    button {
+      padding: 0.5rem 1rem;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.9rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    button:hover {
+      background: #6a98ff;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button.delete {
+      background: var(--danger);
+    }
+
+    button.delete:hover {
+      background: #ff7f7f;
+    }
+
+    #createForm {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    #createForm input,
+    #createForm select {
+      flex: 1 1 140px;
+    }
+
+    #createForm button {
+      flex: 0 0 auto;
+      margin-top: auto;
+    }
+  </style>
+</head>
+<script src="/static/custom-alert.js"></script>
+<script src="static/admin.js"></script>
+<body>
+  <h1>Supermode</h1>
+  <table id="settingsTable">
+    <thead>
+      <tr>
+        <th>Key</th>
+        <th>Value</th>
+        <th>Type</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Create New Check</h2>
+  <form id="createForm">
+    <input type="text" name="key" placeholder="Key" required>
+    <input type="text" name="value" placeholder="Value" required>
+    <select name="type">
+      <option value="BOOL">Bool</option>
+      <option value="STRING">String</option>
+    </select>
+    <button type="submit">Create</button>
+  </form>
+
+  <script>
+    let sessionKey = null;
+    document.addEventListener("DOMContentLoaded", async () => {
+      sessionKey = sessionStorage.getItem("session_key");
+      const lastingKey = localStorage.getItem("lasting_key");
+
+      async function attemptAutoLogin() {
+        try {
+          const response = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lasting_key: lastingKey }),
+          });
+          const data = await response.json();
+          if (response.ok) {
+            sessionStorage.setItem("session_key", data.session_key);
+            console.log("Auto-login successful!");
+          } else {
+            console.error("Auto-login failed:", data.error || "Unknown error");
+            localStorage.removeItem("lasting_key");
+            showModal();
+          }
+        } catch (error) {
+          console.error("Error during auto-login:", error);
+          showModal();
+        }
+      }
+
+      if (!sessionStorage.getItem("session_key") && lastingKey) {
+        await attemptAutoLogin();
+      } else if (!sessionStorage.getItem("session_key") && !lastingKey) {
+        showModal();
+      } else {
+        try {
+          const response = await fetch("/test-session", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+            },
+          });
+          if (response.status === 401) {
+            if (lastingKey) {
+              await attemptAutoLogin();
+            } else {
+              showModal();
+            }
+          } else {
+            hideModal();
+          }
+        } catch (error) {
+          console.error("Error during session validation:", error);
+          showModal();
+        }
+      }
+      fetchSettings();
+    });
+
+    function showModal() {
+
+    }
+    function hideModal() {
+      // No action needed; placeholder function
+    }
+    const tableBody = document.querySelector('#settingsTable tbody');
+    const createForm = document.getElementById('createForm');
+
+    async function fetchSettings() {
+    const res = await fetch('/checks', {
+      headers: {
+        'Authorization': `Bearer ${sessionKey}`
+      }
+    });
+      const settings = await res.json();
+      tableBody.innerHTML = '';
+
+      settings.forEach(setting => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${setting.key}</td>
+          <td>
+            <input type="text" value="${setting.value}" id="val-${setting.key}">
+          </td>
+          <td>
+            <select id="type-${setting.key}">
+              <option value="BOOL" ${setting.type === 'BOOL' ? 'selected' : ''}>Bool</option>
+              <option value="STRING" ${setting.type === 'STRING' ? 'selected' : ''}>String</option>
+            </select>
+          </td>
+          <td>
+            <button onclick="updateSetting('${setting.key}')">Update</button>
+            <button onclick="deleteSetting('${setting.key}')">Delete</button>
+          </td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+
+    async function updateSetting(key) {
+      const value = document.getElementById(`val-${key}`).value;
+      const type = document.getElementById(`type-${key}`).value;
+      await fetch(`/checks/${key}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify({ value, type })
+      });
+      fetchSettings();
+    }
+
+    async function deleteSetting(key) {
+      if (!confirm(`Delete setting "${key}"?`)) return;
+        await fetch(`/checks/${key}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${sessionKey}`
+        }
+        });
+      fetchSettings();
+    }
+
+    createForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(createForm);
+      const data = {
+        key: formData.get('key'),
+        value: formData.get('value'),
+        type: formData.get('type')
+      };
+      const res = await fetch('/checks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionKey}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (res.ok) {
+        createForm.reset();
+        fetchSettings();
+      } else {
+        alert('Could not create setting (maybe key already exists?)');
+      }
+    });
+  </script>
+</body>
+</html>
