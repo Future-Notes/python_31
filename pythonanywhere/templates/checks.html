@@ -136,7 +136,6 @@
       <tr>
         <th>Key</th>
         <th>Value</th>
-        <th>Type</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -147,12 +146,10 @@
   <form id="createForm">
     <input type="text" name="key" placeholder="Key" required>
     <input type="text" name="value" placeholder="Value" required>
-    <select name="type">
-      <option value="BOOL">Bool</option>
-      <option value="STRING">String</option>
-    </select>
     <button type="submit">Create</button>
   </form>
+</body>
+
 
   <script>
     let sessionKey = null;
@@ -222,11 +219,11 @@
     const createForm = document.getElementById('createForm');
 
     async function fetchSettings() {
-    const res = await fetch('/checks', {
-      headers: {
-        'Authorization': `Bearer ${sessionKey}`
-      }
-    });
+      const res = await fetch('/checks', {
+        headers: {
+          'Authorization': `Bearer ${sessionKey}`
+        }
+      });
       const settings = await res.json();
       tableBody.innerHTML = '';
 
@@ -236,12 +233,6 @@
           <td>${setting.key}</td>
           <td>
             <input type="text" value="${setting.value}" id="val-${setting.key}">
-          </td>
-          <td>
-            <select id="type-${setting.key}">
-              <option value="BOOL" ${setting.type === 'BOOL' ? 'selected' : ''}>Bool</option>
-              <option value="STRING" ${setting.type === 'STRING' ? 'selected' : ''}>String</option>
-            </select>
           </td>
           <td>
             <button onclick="updateSetting('${setting.key}')">Update</button>
@@ -254,26 +245,25 @@
 
     async function updateSetting(key) {
       const value = document.getElementById(`val-${key}`).value;
-      const type = document.getElementById(`type-${key}`).value;
       await fetch(`/checks/${key}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${sessionKey}`
         },
-        body: JSON.stringify({ value, type })
+        body: JSON.stringify({ value })
       });
       fetchSettings();
     }
 
     async function deleteSetting(key) {
       if (!confirm(`Delete setting "${key}"?`)) return;
-        await fetch(`/checks/${key}`, {
+      await fetch(`/checks/${key}`, {
         method: 'DELETE',
         headers: {
-            'Authorization': `Bearer ${sessionKey}`
+          'Authorization': `Bearer ${sessionKey}`
         }
-        });
+      });
       fetchSettings();
     }
 
@@ -282,13 +272,13 @@
       const formData = new FormData(createForm);
       const data = {
         key: formData.get('key'),
-        value: formData.get('value'),
-        type: formData.get('type')
+        value: formData.get('value')
       };
       const res = await fetch('/checks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionKey}`
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionKey}`
         },
         body: JSON.stringify(data)
       });

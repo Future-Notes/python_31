@@ -316,39 +316,13 @@ class Invite(db.Model):
     invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
-class SettingType(enum.Enum):
-    BOOL = "bool"
-    STRING = "string"
-
+# Simplified model: only string values
 class Setting(db.Model):
     __tablename__ = 'settings'
 
     key = db.Column(db.String(100), primary_key=True)
     value = db.Column(db.String, nullable=False)
-    type = db.Column(db.Enum(SettingType), nullable=False)
 
-    def get_value(self):
-        """
-        Parses the stored string value back to its proper type.
-        """
-        if self.type == SettingType.BOOL:
-            return self.value.lower() in ('true', '1', 'yes', 'on')
-        return self.value
-
-    @classmethod
-    def parse_and_create(cls, key, default):
-        """
-        Parses default Python value into Setting record values.
-        """
-        # Determine type and store as string
-        if isinstance(default, bool):
-            stype = SettingType.BOOL
-            sval = 'true' if default else 'false'
-        else:
-            stype = SettingType.STRING
-            sval = str(default)
-
-        return cls(key=key, value=sval, type=stype)
 
 class MutationLog(db.Model):
     __tablename__   = 'mutation_log'
@@ -373,32 +347,30 @@ def generate_session_key(user_id):
     seed_trophies()
     return key
 
-def check(key: str, default):
+def check(key: str, default: str) -> str:
     """
-    Returns the application-wide setting for `key`.
+    Returns the application-wide setting for `key` as a string.
 
-    If the setting does not exist, it will be created with the provided default
-    value and returned.
+    If the setting does not exist, it will be created with the provided
+    default value and returned.
 
     Args:
-        key (str): The name of the setting to lookup or create.
-        default (bool|str): The default value if the setting does not exist.
+        key (str): Name of the setting to lookup or create.
+        default (str): Default string value if the setting does not exist.
 
     Returns:
-        bool|str: The current or newly-created value of the setting.
+        str: The current or newly-created value of the setting.
     """
-    # Ensure we're inside an application context
     app = current_app._get_current_object()
     with app.app_context():
         setting = Setting.query.get(key)
         if not setting:
-            # Create new setting with default
-            setting = Setting.parse_and_create(key, default)
+            # Create new setting with default string
+            setting = Setting(key=key, value=default)
             db.session.add(setting)
             db.session.commit()
             return default
-        # If exists, parse and return
-        return setting.get_value()
+        return setting.value
 
 
 def rollback_transaction(transaction_id):
@@ -539,6 +511,7 @@ def allowed_file(filename):
 def require_session_key(func):
     def wrapper(*args, **kwargs):
         valid, response = validate_session_key()
+        check("test", "test")
         if not valid:
             return jsonify({"error": response}), 403 if "suspended" in response else 401
         g.user_id = response["user_id"]  # Store user ID for the route
@@ -1441,51 +1414,59 @@ def get_user_info():
         "startpage": user.startpage
     }), 200
 
+# Routes for managing settings
 @app.route('/checks', methods=['GET'])
 @require_session_key
 @require_admin
 def list_settings():
-    all_s = Setting.query.order_by(Setting.key).all()
-    return jsonify([{ 'key': s.key, 'value': s.get_value(), 'type': s.type.name } for s in all_s])
+    """Returns all settings as JSON."""
+    settings = Setting.query.all()
+    return jsonify([
+        {'key': s.key, 'value': s.value}
+        for s in settings
+    ])
 
 @app.route('/checks', methods=['POST'])
 @require_session_key
 @require_admin
 def create_setting():
     data = request.get_json() or {}
-    if Setting.query.get(data.get('key')):
+    key = data.get('key')
+    value = data.get('value')
+
+    if not key or value is None:
+        abort(400, 'Key and value are required')
+    if Setting.query.get(key):
         abort(400, 'Key exists')
-    try:
-        stype = SettingType[data['type']]
-        setting = Setting(key=data['key'], value=str(data['value']), type=stype)
-        db.session.add(setting)
-        db.session.commit()
-        return jsonify({'status':'created'}), 201
-    except KeyError:
-        abort(400, 'Invalid type')
+
+    setting = Setting(key=key, value=str(value))
+    db.session.add(setting)
+    db.session.commit()
+    return jsonify({'status': 'created'}), 201
 
 @app.route('/checks/<string:key>', methods=['PUT'])
 @require_session_key
 @require_admin
 def update_setting(key):
     data = request.get_json() or {}
+    if 'value' not in data:
+        abort(400, 'Value is required')
+
     setting = Setting.query.get_or_404(key)
-    try:
-        setting.value = str(data['value'])
-        setting.type = SettingType[data['type']]
-        db.session.commit()
-        return jsonify({'status':'updated'})
-    except KeyError:
-        abort(400, 'Invalid type')
+    setting.value = str(data['value'])
+    db.session.commit()
+    return jsonify({'status': 'updated'})
 
 @app.route('/checks/<string:key>', methods=['DELETE'])
 @require_session_key
 @require_admin
 def delete_setting(key):
+    """Deletes a setting by key."""
     setting = Setting.query.get_or_404(key)
     db.session.delete(setting)
     db.session.commit()
-    return jsonify({'status':'deleted'})
+    return jsonify({'status': 'deleted'})
+
 
 # Appointments
 
