@@ -1261,16 +1261,6 @@ def page_not_found(error):
 def generate_error_code():
     return f"ERR-{random.randint(1000, 9999)}"
 
-# Global error handler (catches all unhandled exceptions)
-@app.errorhandler(Exception)
-def global_error_handler(e):
-    # If the exception is an HTTP error, let Flask use the standard response
-    if isinstance(e, HTTPException):
-        return e
-
-    # Return a simple JSON error response
-    return jsonify({"error": str(e)}), 500
-
 #---------------------------------Template routes--------------------------------
 
 @app.route('/')
@@ -2034,6 +2024,9 @@ def group_invite():
     user = User.query.filter_by(username=username).first()
     if not user:
         return jsonify({"error": "User not found"}), 404
+    
+    if user.suspended:
+        return jsonify({"error": "This user is suspended from Future Notes!"}), 403
 
     group = Group.query.get(group_id)
     if not group:
