@@ -1,5 +1,6 @@
 # ------------------------------Imports--------------------------------
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, redirect, url_for, abort
+from flask.json.provider import DefaultJSONProvider
 from functools import wraps
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
@@ -9,6 +10,7 @@ from sqlalchemy.orm.attributes import get_history
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
+import datetime as dt_module
 import secrets
 from werkzeug.utils import secure_filename
 from git import Repo, GitCommandError
@@ -26,18 +28,20 @@ import re
 import traceback
 import subprocess
 import shutil
+import enum
 
 # ------------------------------Global variables--------------------------------
+class CustomJSONProvider(DefaultJSONProvider):
+    def default(self, obj):
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        # fall back to the built‑in handlers
+        return super().default(obj)
 app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-class CustomJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
-app.json_encoder = CustomJSONEncoder
+app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 UPLOAD_FOLDER = 'static/uploads/profile_pictures'
@@ -315,6 +319,14 @@ class Invite(db.Model):
     invited_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
+# Simplified model: only string values
+class Setting(db.Model):
+    __tablename__ = 'settings'
+
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.String, nullable=False)
+
+
 class MutationLog(db.Model):
     __tablename__   = 'mutation_log'
     id              = db.Column(db.Integer, primary_key=True)
@@ -337,6 +349,31 @@ def generate_session_key(user_id):
     }
     seed_trophies()
     return key
+
+def check(key: str, default: str) -> str:
+    """
+    Returns the application-wide setting for `key` as a string.
+
+    If the setting does not exist, it will be created with the provided
+    default value and returned.
+
+    Args:
+        key (str): Name of the setting to lookup or create.
+        default (str): Default string value if the setting does not exist.
+
+    Returns:
+        str: The current or newly-created value of the setting.
+    """
+    app = current_app._get_current_object()
+    with app.app_context():
+        setting = Setting.query.get(key)
+        if not setting:
+            # Create new setting with default string
+            setting = Setting(key=key, value=default)
+            db.session.add(setting)
+            db.session.commit()
+            return default
+        return setting.value
 
 
 def rollback_transaction(transaction_id):
@@ -486,49 +523,53 @@ def require_session_key(func):
 
 @event.listens_for(db.session.__class__, "before_flush")
 def before_flush(session, flush_context, instances):
-    # Create a new transaction ID and init its list
     txid = str(uuid.uuid4())
     session.info['txid'] = txid
     mutations = []
     _pending_mutations[txid] = mutations
 
-    # Handle INSERTs
+    def serialize_row(obj):
+        row = {}
+        for c in obj.__table__.columns:
+            row[c.name] = getattr(obj, c.name)
+        # let json.dumps handle datetimes (and any other weird types) by converting to str
+        return json.dumps(row, default=lambda o: o.isoformat() if isinstance(o, dt_module.datetime) else str(o))
+
+    # INSERTs
     for obj in session.new:
         table = obj.__tablename__
         if table in excluded_tables:
             continue
-        pk = getattr(obj, 'id', None)
         mutations.append({
             'action': 'insert',
             'table': table,
-            'pk': str(pk),
+            'pk': str(getattr(obj, 'id', None)),
             'column': None,
             'old': None,
-            'new': json.dumps({c.name: getattr(obj, c.name) for c in obj.__table__.columns})
+            'new': serialize_row(obj)
         })
 
-    # Handle DELETEs
+    # DELETEs
     for obj in session.deleted:
         table = obj.__tablename__
         if table in excluded_tables:
             continue
-        pk = getattr(obj, 'id', None)
         mutations.append({
             'action': 'delete',
             'table': table,
-            'pk': str(pk),
+            'pk': str(getattr(obj, 'id', None)),
             'column': None,
-            'old': json.dumps({c.name: getattr(obj, c.name) for c in obj.__table__.columns}),
+            'old': serialize_row(obj),
             'new': None
         })
 
-    # Handle UPDATEs
+    # UPDATEs
     for obj in session.dirty:
         table = obj.__tablename__
         if table in excluded_tables:
             continue
         if session.is_modified(obj, include_collections=False):
-            pk = getattr(obj, 'id', None)
+            pk = str(getattr(obj, 'id', None))
             for col in obj.__table__.columns:
                 hist = get_history(obj, col.name)
                 if not hist.has_changes():
@@ -538,10 +579,10 @@ def before_flush(session, flush_context, instances):
                 mutations.append({
                     'action': 'update',
                     'table': table,
-                    'pk': str(pk),
+                    'pk': pk,
                     'column': col.name,
-                    'old': json.dumps(old_val),
-                    'new': json.dumps(new_val)
+                    'old': json.dumps(old_val, default=lambda o: o.isoformat() if isinstance(o, datetime.datetime) else str(o)),
+                    'new': json.dumps(new_val, default=lambda o: o.isoformat() if isinstance(o, datetime.datetime) else str(o))
                 })
 
 @event.listens_for(db.session.__class__, "after_commit")
@@ -1245,10 +1286,13 @@ def send_favicon():
 def index():
     return render_template('index.html')
 
-# @app.route('/todo_page')
-# @require_login_for_templates
-# def todo_page():
-#     return render_template('todo.html')
+@app.route('/todo_page')
+@require_login_for_templates
+def todo_page():
+    if check("todo", "Nee") == "Ja":
+        return render_template('todo.html')
+    else: 
+        abort(404)
 
 @app.route('/login_page')
 def login_page():
@@ -1323,6 +1367,10 @@ def apple_hate():
 def mutations_page():
     return render_template('mutations.html')
 
+@app.route('/checks_page')
+def checks_page():
+    return render_template('checks.html')
+
 #---------------------------------API routes--------------------------------
 
 # Only expose in non-production or over localhost for safety
@@ -1374,6 +1422,60 @@ def get_user_info():
         "role": user.role,
         "startpage": user.startpage
     }), 200
+
+# Routes for managing settings
+@app.route('/checks', methods=['GET'])
+@require_session_key
+@require_admin
+def list_settings():
+    """Returns all settings as JSON."""
+    settings = Setting.query.all()
+    return jsonify([
+        {'key': s.key, 'value': s.value}
+        for s in settings
+    ])
+
+@app.route('/checks', methods=['POST'])
+@require_session_key
+@require_admin
+def create_setting():
+    data = request.get_json() or {}
+    key = data.get('key')
+    value = data.get('value')
+
+    if not key or value is None:
+        abort(400, 'Key and value are required')
+    if Setting.query.get(key):
+        abort(400, 'Key exists')
+
+    setting = Setting(key=key, value=str(value))
+    db.session.add(setting)
+    db.session.commit()
+    return jsonify({'status': 'created'}), 201
+
+@app.route('/checks/<string:key>', methods=['PUT'])
+@require_session_key
+@require_admin
+def update_setting(key):
+    data = request.get_json() or {}
+    if 'value' not in data:
+        abort(400, 'Value is required')
+
+    setting = Setting.query.get_or_404(key)
+    setting.value = str(data['value'])
+    db.session.commit()
+    return jsonify({'status': 'updated'})
+
+@app.route('/checks/<string:key>', methods=['DELETE'])
+@require_session_key
+@require_admin
+def delete_setting(key):
+    """Deletes a setting by key."""
+    setting = Setting.query.get_or_404(key)
+    db.session.delete(setting)
+    db.session.commit()
+    return jsonify({'status': 'deleted'})
+
 
 # Appointments
 
@@ -1721,29 +1823,37 @@ def get_todos():
 def create_todo():
     user_id = g.user_id
     data = request.get_json() or {}
+    current_app.logger.info(f"[create_todo] Received data: {data} for user_id: {user_id}")
 
     # --- Basic fields ---
     title   = (data.get('title') or "").strip()
     text    = (data.get('description') or "").strip()
     due_str = data.get('due_date')
+    current_app.logger.debug(f"[create_todo] Parsed fields - title: '{title}', text: '{text}', due_date: '{due_str}'")
 
     # --- Attachment IDs ---
     note_id        = data.get('note_id')
     appointment_id = data.get('appointment_id')
+    current_app.logger.debug(f"[create_todo] Attachments - note_id: {note_id}, appointment_id: {appointment_id}")
 
     # --- Validation: title & due date ---
     if not title:
+        current_app.logger.warning("[create_todo] Title is missing")
         return jsonify(error="Title is required"), 400
     if len(title) > 120:
+        current_app.logger.warning("[create_todo] Title exceeds 120 characters")
         return jsonify(error="Title exceeds 120 characters"), 400
 
     if not due_str:
+        current_app.logger.warning("[create_todo] Due date is missing")
         return jsonify(error="Due date is required"), 400
     try:
         due_date = datetime.fromisoformat(due_str)
     except ValueError:
+        current_app.logger.warning(f"[create_todo] Invalid due date format: {due_str}")
         return jsonify(error="Invalid due date format; use ISO 8601"), 400
     if due_date < datetime.now():
+        current_app.logger.warning(f"[create_todo] Due date is in the past: {due_date}")
         return jsonify(error="Due date cannot be in the past"), 400
 
     # --- Attachments lookup & ownership check ---
@@ -1753,13 +1863,17 @@ def create_todo():
     if note_id is not None:
         note = Note.query.filter_by(id=note_id, user_id=user_id).first()
         if note is None:
+            current_app.logger.warning(f"[create_todo] Note not found or not owned by user: note_id={note_id}, user_id={user_id}")
             return jsonify(error="Note not found or not yours"), 404
+        current_app.logger.info(f"[create_todo] Linked note: {note_id}")
 
     if appointment_id is not None:
         appointment = Appointment.query.\
             filter_by(id=appointment_id, user_id=user_id).first()
         if appointment is None:
+            current_app.logger.warning(f"[create_todo] Appointment not found or not owned by user: appointment_id={appointment_id}, user_id={user_id}")
             return jsonify(error="Appointment not found or not yours"), 404
+        current_app.logger.info(f"[create_todo] Linked appointment: {appointment_id}")
 
     # --- Create & commit ---
     new_todo = Todo(
@@ -1771,21 +1885,28 @@ def create_todo():
         note           = note,
         appointment    = appointment
     )
+    current_app.logger.info(f"[create_todo] Creating Todo: {new_todo}")
 
     try:
         db.session.add(new_todo)
         db.session.commit()
+        current_app.logger.info(f"[create_todo] Todo created successfully with id: {new_todo.id}")
 
-        # DEBUG: inspect the payload
-        payload = {
-            "message": "Todo created successfully!",
-            "todo": new_todo.to_dict()
-        }
-        print("DEBUG create_todo payload:", payload)   # ← add this
-        return jsonify(**payload), 201
+        # Build the response dict manually, stringifying due_date
+        todo_data = new_todo.to_dict()
+        if new_todo.due_date:
+            todo_data['due_date'] = new_todo.due_date.isoformat()
+
+        current_app.logger.debug(f"[create_todo] Response data: {todo_data}")
+
+        return jsonify(
+            message="Todo created successfully!",
+            todo=todo_data
+        ), 201
 
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"[create_todo] Error creating todo: {str(e)}", exc_info=True)
         return jsonify(error=f"Error creating todo: {str(e)}"), 500
     
 @app.route('/todos/<int:todo_id>', methods=['PUT'])
