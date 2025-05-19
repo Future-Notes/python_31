@@ -125,6 +125,7 @@ class User(db.Model):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    notifications = db.relationship('Notification', back_populates='user')
     
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
@@ -337,6 +338,20 @@ class MutationLog(db.Model):
     action          = db.Column(db.String)  # 'insert', 'update', 'delete'
     timestamp       = db.Column(db.DateTime, default=db.func.now())
 
+# --- 1) Notification model ---
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.String(120), nullable=False)
+    text = db.Column(db.Text, nullable=False)
+    module = db.Column(db.String(50), nullable=False)
+    seen = db.Column(db.Boolean, default=False, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', back_populates='notifications')
+
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
@@ -372,6 +387,20 @@ def check(key: str, default: str) -> str:
             db.session.commit()
             return default
         return setting.value
+
+def send_notification(user_id, title, text, module):
+    """
+    Create and store a notification for a user.
+    """
+    notif = Notification(
+        user_id=user_id,
+        title=title,
+        text=text,
+        module=module,
+    )
+    db.session.add(notif)
+    db.session.commit()
+    return notif
 
 
 def rollback_transaction(transaction_id):
@@ -1389,6 +1418,37 @@ def manager_list_routes():
         })
     return jsonify(routes)
 
+@app.route('/notifications', methods=['GET'])
+@require_session_key
+def get_unseen_notifications():
+    """
+    Fetch all unseen notifications for the current user.
+    """
+    notifs = (
+        Notification.query
+        .filter_by(user_id=g.user_id, seen=False)
+        .order_by(Notification.timestamp.desc())
+        .all()
+    )
+    result = [{
+        'id':        n.id,
+        'title':     n.title,
+        'text':      n.text,
+        'module':    n.module,
+        'timestamp': n.timestamp.isoformat()
+    } for n in notifs]
+    return jsonify({'notifications': result})
+
+@app.route('/notifications/<int:notif_id>', methods=['POST'])
+@require_session_key
+def mark_notification_seen(notif_id):
+    """
+    Mark a single notification as seen.
+    """
+    notif = Notification.query.filter_by(id=notif_id, user_id=g.user_id).first_or_404()
+    notif.seen = True
+    db.session.commit()
+    return jsonify({'success': True, 'id': notif_id})
 
 # Homepage
 
