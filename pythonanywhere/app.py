@@ -523,6 +523,8 @@ def require_session_key(func):
 
 @event.listens_for(db.session.__class__, "before_flush")
 def before_flush(session, flush_context, instances):
+    import datetime as dt_module  # ✅ bring in the datetime module under the alias dt_module
+
     txid = str(uuid.uuid4())
     session.info['txid'] = txid
     mutations = []
@@ -533,7 +535,10 @@ def before_flush(session, flush_context, instances):
         for c in obj.__table__.columns:
             row[c.name] = getattr(obj, c.name)
         # let json.dumps handle datetimes (and any other weird types) by converting to str
-        return json.dumps(row, default=lambda o: o.isoformat() if isinstance(o, dt_module.datetime) else str(o))
+        return json.dumps(
+            row,
+            default=lambda o: o.isoformat() if isinstance(o, dt_module.datetime) else str(o)
+        )
 
     # INSERTs
     for obj in session.new:
@@ -581,8 +586,14 @@ def before_flush(session, flush_context, instances):
                     'table': table,
                     'pk': pk,
                     'column': col.name,
-                    'old': json.dumps(old_val, default=lambda o: o.isoformat() if isinstance(o, datetime.datetime) else str(o)),
-                    'new': json.dumps(new_val, default=lambda o: o.isoformat() if isinstance(o, datetime.datetime) else str(o))
+                    'old': json.dumps(
+                        old_val,
+                        default=lambda o: o.isoformat() if isinstance(o, dt_module.datetime) else str(o)
+                    ),
+                    'new': json.dumps(
+                        new_val,
+                        default=lambda o: o.isoformat() if isinstance(o, dt_module.datetime) else str(o)
+                    )
                 })
 
 @event.listens_for(db.session.__class__, "after_commit")
@@ -606,6 +617,7 @@ def after_commit(session):
                     action         = m['action']
                 )
             )
+
 
 def require_login_for_templates(func):
     @wraps(func)
@@ -1902,6 +1914,8 @@ def create_todo():
 @app.route('/todos/<int:todo_id>', methods=['PUT'])
 @require_session_key
 def update_todo(todo_id):
+    import datetime as dt
+
     user_id = g.user_id
 
     # 1️⃣ Fetch and ownership check
@@ -1918,8 +1932,8 @@ def update_todo(todo_id):
     done    = data.get('completed')
 
     # 3️⃣ Attachment IDs
-    new_note_id        = data.get('note_id')        # could be None
-    new_appointment_id = data.get('appointment_id') # could be None
+    new_note_id        = data.get('note_id')
+    new_appointment_id = data.get('appointment_id')
 
     # — Validate & apply title
     if title is not None:
@@ -1940,14 +1954,13 @@ def update_todo(todo_id):
     # — Validate & apply due date
     if due_str is not None:
         if due_str == "":
-            # explicit empty string: clear the due date
             todo.due_date = None
         else:
             try:
-                due_date = datetime.fromisoformat(due_str)
+                due_date = dt.datetime.fromisoformat(due_str)
             except ValueError:
                 return jsonify(error="Invalid due date format; use ISO 8601"), 400
-            if due_date < datetime.now():
+            if due_date < dt.datetime.now():
                 return jsonify(error="Due date cannot be in the past"), 400
             todo.due_date = due_date
 
@@ -1958,7 +1971,6 @@ def update_todo(todo_id):
     # 4️⃣ Validate & apply note linkage
     if 'note_id' in data:
         if new_note_id is None:
-            # unlink the note
             todo.note = None
         else:
             note = Note.query.filter_by(id=new_note_id, user_id=user_id).first()
@@ -1969,7 +1981,6 @@ def update_todo(todo_id):
     # 5️⃣ Validate & apply appointment linkage
     if 'appointment_id' in data:
         if new_appointment_id is None:
-            # unlink the appointment
             todo.appointment = None
         else:
             appt = Appointment.query.\
@@ -2002,6 +2013,22 @@ def delete_todo(todo_id):
     db.session.commit()
     return jsonify({"message": "Todo deleted successfully!"}), 200
     
+@app.route('/notes_fetch', methods=['GET'])
+@require_session_key
+def get_notes_fetch():
+    user_id = g.user_id
+    notes = Note.query.filter_by(user_id=user_id, group_id=None).all()
+    notes_data = [note.to_dict() for note in notes]
+    return jsonify({"notes": notes_data}), 200
+
+
+@app.route('/appointments_fetch', methods=['GET'])
+@require_session_key
+def get_appointments_fetch():
+    user_id = g.user_id
+    appointments = Appointment.query.filter_by(user_id=user_id).all()
+    appts_data = [appt.to_dict() for appt in appointments]
+    return jsonify({"appointments": appts_data}), 200
 
 
 # Groups   

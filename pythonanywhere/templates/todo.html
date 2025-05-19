@@ -170,6 +170,46 @@
       align-items: center;
       z-index: 1001;
     }
+    /* Side‑panels: match #todo-modal height & styling */
+    #todo-modal {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .side-panel {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 200px;
+      background-color: var(--bg-color);
+      border: 1px solid var(--hdr-color);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.3s ease;
+      z-index: 10;
+      overflow-y: auto;
+      color: #e0e0e0; /* ensure text visibility */
+    }
+
+    .side-panel.left {
+      left: 100%;
+      transform: translateX(-100%) scaleX(0);
+      transform-origin: left center;
+    }
+
+    .side-panel.right {
+      right: 100%;
+      transform: translateX(100%) scaleX(0);
+      transform-origin: right center;
+    }
+
+    .side-panel.open {
+      transform: translateX(0) scaleX(1);
+    }
+
+
     #todo-modal {
       background: var(--bg-color);
       border-radius: 8px;
@@ -201,8 +241,15 @@
       justify-content: flex-end;
       margin-top: 15px;
     }
+    #delete-button {
+      background-color: #d9534f !important;
+    }
+    #delete-button:hover {
+      background-color: #c9302c !important;
+    }
     #todo-modal button {
       padding: 10px 20px;
+      margin-right: 10px;
       border: none;
       border-radius: 4px;
       cursor: pointer;
@@ -254,7 +301,7 @@
       margin: 20px auto;
     }
     #todo-overview-container h2 {
-      color: var(--hdr-color);
+      color: white;
       margin-bottom: 16px;
       font-size: 24px;
     }
@@ -290,10 +337,123 @@
       background-color: #d9534f; /* matching your palette */
       color: #fff;
     }
+    .item-list {
+      margin-top: 10px;
+      max-height: calc(100% - 50px); /* leave room for header */
+      overflow-y: auto;
+    }
+
+    .item-card {
+      background-color: var(--ctr-color);
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    .item-card.selected {
+      background-color: var(--buttonColor, #555); /* highlight */
+    }
+
+    .item-card:hover {
+      background-color: rgba(255,255,255,0.1);
+    }
+
+    .item-card .tag {
+      font-size: 12px;
+      font-weight: bold;
+      color: #ccc;
+      margin-bottom: 4px;
+    }
+
+    .item-card .title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .item-card .snippet {
+      font-size: 13px;
+      color: #ddd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .item-list {
+      /* Firefox */
+      scrollbar-width: none;
+      /* IE 10+ */
+      -ms-overflow-style: none;
+    }
+
+    /* WebKit browsers */
+    .item-list::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+
+    .side-panel {
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE 10+ */
+    }
+
+    .side-panel::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+
+    /* MOBILE LAYOUT: panels above/below under 600px width */
+    @media (max-width: 800px) {
+      #todo-modal {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px;
+        overflow: visible;
+        max-height: 90%;
+      }
+      #todo-modal {
+        font-size: x-small;
+      }
+
+      .side-panel {
+        position: static !important; /* override side position */
+        width: 90%;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease, opacity 0.3s ease;
+        opacity: 0;
+        border: 1px solid var(--hdr-color);
+        border-radius: 8px;
+        background: var(--bg-color);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      }
+
+      .side-panel.open {
+        max-height: 150px; /* You can tune this */
+        opacity: 1;
+        overflow-y: auto;
+      }
+
+      .side-panel .item-list {
+        padding: 8px;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+
+      /* Remove old transforms */
+      .side-panel.left,
+      .side-panel.right {
+        transform: none !important;
+      }
+    }
+
+
   </style>
   <script src="static/admin.js"></script>
 
-  <style>
+      <style>
         :root {
           --bg-color:  #2c2c2c;  /* defaults */
           --hdr-color: #3a3a3a;
@@ -348,6 +508,28 @@
   <div id="todo-modal-overlay">
     <div id="todo-modal">
       <h2 id="modal-title">Add Todo</h2>
+      
+      <!-- New Attach Buttons -->
+      <div class="attach-controls">
+        <button type="button" id="toggle-appt">Attach Appointment</button>
+        <button type="button" id="toggle-note">Attach Note</button>
+      </div>
+
+      <!-- Note panel -->
+      <div class="side-panel left" id="note-panel">
+        <h3>Select Note</h3>
+        <!-- hidden input to hold chosen id -->
+        <input type="hidden" id="note-id-input" name="note_id">
+        <div class="item-list" id="note-list"><!-- populated by JS --></div>
+      </div>
+
+      <!-- Appointment Panel -->
+      <div class="side-panel right" id="appt-panel">
+        <h3>Select Appointment</h3>
+        <input type="hidden" id="appt-id-input" name="appointment_id">
+        <div class="item-list" id="appt-list"><!-- populated by JS --></div>
+      </div>
+
       <form id="todo-form">
         <input type="hidden" id="todo-id">
         <label for="todo-title">Title</label>
@@ -426,25 +608,45 @@
       fetchTodos();
     });
 
-    const addBtn = document.getElementById('floating-add-button');
-    const overlay = document.getElementById('todo-modal-overlay');
-    const modalTitle = document.getElementById('modal-title');
-    const form = document.getElementById('todo-form');
-    const submitBtn = document.getElementById('submit-button');
-    const cancelBtn = document.querySelector('#todo-modal .cancel');
-    const deleteBtn = document.getElementById('delete-button');
+    // Element refs
+    const addBtn        = document.getElementById('floating-add-button');
+    const overlay       = document.getElementById('todo-modal-overlay');
+    const modalTitle    = document.getElementById('modal-title');
+    const form          = document.getElementById('todo-form');
+    const submitBtn     = document.getElementById('submit-button');
+    const cancelBtn     = document.querySelector('#todo-modal .cancel');
+    const deleteBtn     = document.getElementById('delete-button');
 
-    // Open modal in add or edit mode
-    function openModal(mode, data = {}) {
-      overlay.style.display = 'flex';
-      modalTitle.textContent = mode === 'add' ? 'Add Todo' : 'Edit Todo';
-      submitBtn.textContent = mode === 'add' ? 'Add' : 'Save';
+    const toggleNoteBtn = document.getElementById('toggle-note');
+    const toggleApptBtn = document.getElementById('toggle-appt');
+    const notePanel     = document.getElementById('note-panel');
+    const apptPanel     = document.getElementById('appt-panel');
 
-      // Prefill fields
-      document.getElementById('todo-id').value = data.id || '';
-      document.getElementById('todo-title').value = data.title || '';
-      document.getElementById('todo-due').value = data.due ? data.due.substring(0,16) : '';
+    const noteListEl    = document.getElementById('note-list');
+    const apptListEl    = document.getElementById('appt-list');
+    const noteIdInput   = document.getElementById('note-id-input');
+    const apptIdInput   = document.getElementById('appt-id-input');
+
+    // State
+    let notesList = [];
+    let apptsList = [];
+
+    async function openModal(mode, data = {}) {
+      overlay.style.display     = 'flex';
+      modalTitle.textContent    = mode === 'add' ? 'Add Todo' : 'Edit Todo';
+      submitBtn.textContent     = mode === 'add' ? 'Add' : 'Save';
+
+      // Prefill core fields
+      document.getElementById('todo-id').value   = data.id || '';
+      document.getElementById('todo-title').value= data.title || '';
+      document.getElementById('todo-due').value  = data.due ? data.due.substring(0,16) : '';
       document.getElementById('todo-desc').value = data.description || '';
+
+      // Reset panels & inputs
+      notePanel.classList.remove('open');
+      apptPanel.classList.remove('open');
+      noteIdInput.value = data.note_id || '';
+      apptIdInput.value = data.appointment_id || '';
 
       // Toggle delete button only in edit mode
       if (mode === 'edit') {
@@ -456,36 +658,150 @@
         deleteBtn.dataset.id = '';
       }
 
+      // Fetch attachments
+      try {
+        const [notesRes, apptsRes] = await Promise.all([
+          fetch('/notes_fetch', {
+            headers: { 'Authorization': `Bearer ${sessionStorage.getItem("session_key")}` }
+          }),
+          fetch('/appointments_fetch', {
+            headers: { 'Authorization': `Bearer ${sessionStorage.getItem("session_key")}` }
+          })
+        ]);
+        if (notesRes.ok && apptsRes.ok) {
+          notesList = (await notesRes.json()).notes;
+          apptsList = (await apptsRes.json()).appointments;
+          populateList(noteListEl, notesList, 'note');
+          populateList(apptListEl, apptsList, 'appt');
+        }
+      } catch (err) {
+        console.error('Error fetching attachments', err);
+      }
+
+      // After populateList(...) and before submit handler:
+
+      // Auto‑select existing attachments
+      if (data.note_id) {
+        notePanel.classList.add('open');
+        const noteCard = noteListEl.querySelector(`.item-card[data-id="${data.note_id}"]`);
+        if (noteCard) {
+          noteCard.classList.add('selected');
+          // Wait for panel to finish sliding in, then scroll
+          setTimeout(() => {
+            noteCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 300);
+        }
+        noteIdInput.value = data.note_id;
+      }
+
+      if (data.appointment_id) {
+        apptPanel.classList.add('open');
+        const apptCard = apptListEl.querySelector(`.item-card[data-id="${data.appointment_id}"]`);
+        if (apptCard) {
+          apptCard.classList.add('selected');
+          setTimeout(() => {
+            apptCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 300);
+        }
+        apptIdInput.value = data.appointment_id;
+      }
+
+
+      // Submit handler
       form.onsubmit = async (e) => {
         e.preventDefault();
         const payload = {
-          title: document.getElementById('todo-title').value,
-          due_date: document.getElementById('todo-due').value,
-          description: document.getElementById('todo-desc').value
+          title:          document.getElementById('todo-title').value,
+          due_date:       document.getElementById('todo-due').value,
+          description:    document.getElementById('todo-desc').value,
+          note_id:        noteIdInput.value || null,
+          appointment_id: apptIdInput.value || null
         };
         let url = '/todos';
+        let method = 'POST';
         if (mode === 'edit') {
           url = `/todos/${data.id}`;
+          method = 'PUT';
         }
         try {
           const res = await fetch(url, {
-            method: 'POST',
-            headers: { 
+            method,
+            headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${sessionStorage.getItem("session_key")}`
             },
             body: JSON.stringify(payload)
           });
-          if (res.ok) {
-            location.reload();
-          } else {
-            console.error('Error saving todo');
-          }
+          if (res.ok) location.reload();
+          else console.error('Error saving todo');
         } catch (err) {
           console.error('Network error', err);
         }
       };
     }
+
+    // Toggle handlers
+    toggleNoteBtn.onclick = () => {
+      notePanel.classList.toggle('open');
+    };
+
+    toggleApptBtn.onclick = () => {
+      apptPanel.classList.toggle('open');
+    };
+
+    cancelBtn.onclick = closeModal;
+
+
+    // Utility: truncate text to N words
+    function firstWords(text, n=5) {
+      return text.split(/\s+/).slice(0, n).join(' ') + (text.split(/\s+/).length > n ? '…' : '');
+    }
+
+    // Populate a list of cards
+    function populateList(containerEl, items, type) {
+      containerEl.innerHTML = '';
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.dataset.id = item.id;
+
+        // build inner HTML (same as before)…
+        if (type === 'note') {
+          const tag   = item.tag ? `<div class="tag">${item.tag}</div>` : '';
+          const title = item.title
+            ? `<div class="title">${item.title}</div>`
+            : `<div class="title">${firstWords(item.note)}</div>`;
+          const snippet = `<div class="snippet">${firstWords(item.note, 10)}</div>`;
+          card.innerHTML = tag + title + snippet;
+        } else {
+          const title   = `<div class="title">${item.title}</div>`;
+          const endDt   = new Date(item.end_datetime).toLocaleString();
+          const snippet = `<div class="snippet">Ends: ${endDt}</div>`;
+          card.innerHTML = title + snippet;
+        }
+
+        card.addEventListener('click', () => {
+          const alreadySelected = card.classList.contains('selected');
+
+          // Clear all selections
+          Array.from(containerEl.children).forEach(c => c.classList.remove('selected'));
+
+          if (!alreadySelected) {
+            // Select this one
+            card.classList.add('selected');
+            if (type === 'note')     noteIdInput.value = item.id;
+            else                      apptIdInput.value = item.id;
+          } else {
+            // Deselected
+            if (type === 'note')     noteIdInput.value = '';
+            else                      apptIdInput.value = '';
+          }
+        });
+
+        containerEl.appendChild(card);
+      });
+    }
+
 
     function closeModal() {
       overlay.style.display = 'none';
@@ -498,10 +814,6 @@
     deleteBtn.addEventListener('click', async () => {
       const todoId = deleteBtn.dataset.id;
       if (!todoId) return;
-
-      if (!confirm('Are you sure you want to delete this todo?')) {
-        return;
-      }
 
       try {
         const res = await fetch(`/todos/${todoId}`, {
@@ -527,15 +839,16 @@
 
     // Event: Clicking a todo item
     document.getElementById('todo-list').addEventListener('click', e => {
-      // Find the nearest .todo-card
       const card = e.target.closest('.todo-card');
       if (!card) return;
 
       openModal('edit', {
-        id:          card.dataset.id,
-        title:       card.dataset.title,
-        due:         card.dataset.due,
-        description: card.dataset.description
+        id:             card.dataset.id,
+        title:          card.dataset.title,
+        due:            card.dataset.due,
+        description:    card.dataset.description,
+        note_id:        card.dataset.noteId || '',
+        appointment_id: card.dataset.apptId  || ''
       });
     });
 
@@ -645,8 +958,16 @@
           }
         });
         const data = await res.json();
-        if (!data.todos) {
-          listEl.textContent = 'No todos available.';
+        if (!Array.isArray(data.todos) || data.todos.length === 0) {
+            // Create a clickable message when there are no todos
+            const emptyMsg = document.createElement('div');
+            emptyMsg.textContent = 'You have no todos yet. Click here to add one!';
+            emptyMsg.style.cursor = 'pointer';
+            emptyMsg.style.textAlign = 'center';
+            emptyMsg.style.padding = '24px 0';
+            emptyMsg.style.color = '#bbb';
+            emptyMsg.addEventListener('click', () => openModal('add'));
+            listEl.appendChild(emptyMsg);
           return;
         }
         data.todos.forEach(todo => {
@@ -658,6 +979,13 @@
             card.dataset.title       = todo.title;
             card.dataset.due         = todo.due_date || '';
             card.dataset.description = todo.text || '';
+            // Store attachment IDs
+            if (todo.note_id) {
+              card.dataset.noteId = todo.note_id;
+            }
+            if (todo.appointment_id) {
+              card.dataset.apptId = todo.appointment_id;
+            }
 
           const title = document.createElement('div');
           title.className = 'todo-title';
