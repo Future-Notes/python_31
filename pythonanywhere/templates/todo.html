@@ -669,6 +669,48 @@
       modalTitle.textContent    = mode === 'add' ? 'Add Todo' : 'Edit Todo';
       submitBtn.textContent     = mode === 'add' ? 'Add' : 'Save';
 
+      // Show pro-tip label only once using localStorage
+      const proTipKey = "todo_protip_shown";
+      let proTipLabel = document.getElementById("pro-tip-label");
+      if (!localStorage.getItem(proTipKey)) {
+        if (!proTipLabel) {
+          proTipLabel = document.createElement("div");
+          proTipLabel.id = "pro-tip-label";
+          proTipLabel.textContent = "Pro tip: Ctrl+click on an appointment or note in the panel opens a new tab to view your notes or appointments!";
+          proTipLabel.style.position = "absolute";
+          proTipLabel.style.left = "50%";
+          proTipLabel.style.transform = "translateX(-50%)";
+          proTipLabel.style.top = "60px";
+          proTipLabel.style.background = "linear-gradient(90deg, #333 0%, #444 100%)";
+          proTipLabel.style.color = "#fff";
+          proTipLabel.style.padding = "10px 18px";
+          proTipLabel.style.borderRadius = "8px";
+          proTipLabel.style.boxShadow = "0 2px 8px rgba(0,0,0,0.18)";
+          proTipLabel.style.fontSize = "14px";
+          proTipLabel.style.zIndex = "1002";
+          proTipLabel.style.whiteSpace = "normal";
+          proTipLabel.style.maxWidth = "320px";
+          proTipLabel.style.textAlign = "center";
+          proTipLabel.style.pointerEvents = "auto";
+          proTipLabel.style.userSelect = "none";
+          proTipLabel.style.fontWeight = "500";
+          proTipLabel.style.lineHeight = "1.4";
+          proTipLabel.style.transition = "opacity 0.3s";
+          proTipLabel.style.opacity = "1";
+          proTipLabel.style.marginTop = "8px";
+          proTipLabel.innerHTML += `<span style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:12px solid #333;z-index:1003;"></span>`;
+          // Insert after the attach-controls div
+          const attachControls = document.querySelector(".attach-controls");
+          attachControls.style.position = "relative";
+          attachControls.appendChild(proTipLabel);
+          proTipLabel.addEventListener("click", () => {
+            proTipLabel.style.opacity = "0";
+            setTimeout(() => proTipLabel.remove(), 400);
+          });
+        }
+        localStorage.setItem(proTipKey, "1");
+      }
+
       // Prefill core fields
       document.getElementById('todo-id').value   = data.id || '';
       document.getElementById('todo-title').value= data.title || '';
@@ -835,7 +877,12 @@
         card.innerHTML = title + snippet;
       }
 
-      card.addEventListener('click', () => {
+      card.addEventListener('click', (e) => {
+        // Ctrl+click: open /index or /scheduler-page
+        if (e.ctrlKey || e.metaKey) {
+        window.open(type === 'note' ? '/index' : '/scheduler-page', '_blank');
+        return;
+        }
         const alreadySelected = card.classList.contains('selected');
 
         // Clear all selections
