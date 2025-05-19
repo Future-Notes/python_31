@@ -258,7 +258,6 @@
       color: white;
     }
     #todo-modal button.cancel {
-      background: #ccc;
       margin-right: 10px;
     }
 
@@ -354,6 +353,25 @@
 
     .item-card.selected {
       background-color: var(--buttonColor, #555); /* highlight */
+    }
+    .item-card.selected::after {
+      content: "✓";
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      font-size: 14px;
+      color: #4caf50;
+      background: transparent;
+      border-radius: 0;
+      padding: 0;
+      z-index: 2;
+      pointer-events: none;
+      font-weight: bold;
+      opacity: 0.85;
+      letter-spacing: 0.05em;
+    }
+    .item-card {
+      position: relative; /* Needed for ::after positioning */
     }
 
     .item-card:hover {
@@ -482,7 +500,7 @@
       <a href="/index" class="nav-link">Personal notes</a>
       <a href="/group-notes" class="nav-link">Group notes</a>
       <a href="/scheduler-page" class="nav-link">Calendar</a>
-      <a href="/todo-page" class="nav-link active">Todo</a>
+      <a href="/todo_page" class="nav-link active">Todo</a>
     </nav>
     
     <div id="profile-pic" class="profile-pic no-picture"></div>
@@ -493,15 +511,30 @@
     <a href="/index" class="nav-link">Personal notes</a>
     <a href="/group-notes" class="nav-link">Group notes</a>
     <a href="/scheduler-page" class="nav-link">Calendar</a>
-    <a href="/todo-page" class="nav-link active">Todo</a>
+    <a href="/todo_page" class="nav-link active">Todo</a>
   </nav>  
 
   <div id="overlay"></div>
 
   <div id="todo-overview-container">
     <h2>Your Todos</h2>
-    <div id="todo-list"></div>
+
+    <section class="todo-section" id="overdue-section">
+      <h3>Overdue</h3>
+      <div class="todo-list" id="todo-overdue-list"></div>
+    </section>
+
+    <section class="todo-section" id="active-section">
+      <h3>Active</h3>
+      <div class="todo-list" id="todo-active-list"></div>
+    </section>
+
+    <section class="todo-section" id="completed-section">
+      <h3>Completed</h3>
+      <div class="todo-list" id="todo-completed-list"></div>
+    </section>
   </div>
+
 
   <div id="floating-add-button">+</div>
 
@@ -680,31 +713,28 @@
 
       // After populateList(...) and before submit handler:
 
-      // Auto‑select existing attachments
-      if (data.note_id) {
-        notePanel.classList.add('open');
-        const noteCard = noteListEl.querySelector(`.item-card[data-id="${data.note_id}"]`);
-        if (noteCard) {
-          noteCard.classList.add('selected');
-          // Wait for panel to finish sliding in, then scroll
-          setTimeout(() => {
-            noteCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 300);
+      // Auto‑select existing attachments sequentially
+      async function selectAttachment(panel, listEl, inputEl, id) {
+        if (!id) return;
+        panel.classList.add('open');
+        // Wait for panel transition (300ms)
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const card = listEl.querySelector(`.item-card[data-id="${id}"]`);
+        if (card) {
+          card.classList.add('selected');
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-        noteIdInput.value = data.note_id;
+        inputEl.value = id;
       }
 
-      if (data.appointment_id) {
-        apptPanel.classList.add('open');
-        const apptCard = apptListEl.querySelector(`.item-card[data-id="${data.appointment_id}"]`);
-        if (apptCard) {
-          apptCard.classList.add('selected');
-          setTimeout(() => {
-            apptCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 300);
+      (async () => {
+        if (data.note_id) {
+          await selectAttachment(notePanel, noteListEl, noteIdInput, data.note_id);
         }
-        apptIdInput.value = data.appointment_id;
-      }
+        if (data.appointment_id) {
+          await selectAttachment(apptPanel, apptListEl, apptIdInput, data.appointment_id);
+        }
+      })();
 
 
       // Submit handler
@@ -760,45 +790,70 @@
     // Populate a list of cards
     function populateList(containerEl, items, type) {
       containerEl.innerHTML = '';
+      if (!items || items.length === 0) {
+      // Show message and button if empty
+      const msg = document.createElement('div');
+      msg.style.textAlign = 'center';
+      msg.style.padding = '20px 0';
+      msg.style.color = '#bbb';
+      msg.textContent = `You don't have any ${type === 'note' ? 'notes' : 'appointments'} yet!`;
+
+      const btn = document.createElement('button');
+      btn.textContent = `Create your first ${type === 'note' ? 'note' : 'appointment'}!`;
+      btn.style.marginTop = '12px';
+      btn.style.padding = '8px 18px';
+      btn.style.borderRadius = '6px';
+      btn.style.border = 'none';
+      btn.style.background = 'var(--btn-color)';
+      btn.style.color = '#fff';
+      btn.style.cursor = 'pointer';
+      btn.onclick = () => {
+        window.location.href = type === 'note' ? '/index' : '/scheduler-page';
+      };
+
+      containerEl.appendChild(msg);
+      containerEl.appendChild(btn);
+      return;
+      }
       items.forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'item-card';
-        card.dataset.id = item.id;
+      const card = document.createElement('div');
+      card.className = 'item-card';
+      card.dataset.id = item.id;
 
-        // build inner HTML (same as before)…
-        if (type === 'note') {
-          const tag   = item.tag ? `<div class="tag">${item.tag}</div>` : '';
-          const title = item.title
-            ? `<div class="title">${item.title}</div>`
-            : `<div class="title">${firstWords(item.note)}</div>`;
-          const snippet = `<div class="snippet">${firstWords(item.note, 10)}</div>`;
-          card.innerHTML = tag + title + snippet;
+      // build inner HTML (same as before)…
+      if (type === 'note') {
+        const tag   = item.tag ? `<div class="tag">${item.tag}</div>` : '';
+        const title = item.title
+        ? `<div class="title">${item.title}</div>`
+        : `<div class="title">${firstWords(item.note)}</div>`;
+        const snippet = `<div class="snippet">${firstWords(item.note, 10)}</div>`;
+        card.innerHTML = tag + title + snippet;
+      } else {
+        const title   = `<div class="title">${item.title}</div>`;
+        const endDt   = new Date(item.end_datetime).toLocaleString();
+        const snippet = `<div class="snippet">Ends: ${endDt}</div>`;
+        card.innerHTML = title + snippet;
+      }
+
+      card.addEventListener('click', () => {
+        const alreadySelected = card.classList.contains('selected');
+
+        // Clear all selections
+        Array.from(containerEl.children).forEach(c => c.classList.remove('selected'));
+
+        if (!alreadySelected) {
+        // Select this one
+        card.classList.add('selected');
+        if (type === 'note')     noteIdInput.value = item.id;
+        else                      apptIdInput.value = item.id;
         } else {
-          const title   = `<div class="title">${item.title}</div>`;
-          const endDt   = new Date(item.end_datetime).toLocaleString();
-          const snippet = `<div class="snippet">Ends: ${endDt}</div>`;
-          card.innerHTML = title + snippet;
+        // Deselected
+        if (type === 'note')     noteIdInput.value = '';
+        else                      apptIdInput.value = '';
         }
+      });
 
-        card.addEventListener('click', () => {
-          const alreadySelected = card.classList.contains('selected');
-
-          // Clear all selections
-          Array.from(containerEl.children).forEach(c => c.classList.remove('selected'));
-
-          if (!alreadySelected) {
-            // Select this one
-            card.classList.add('selected');
-            if (type === 'note')     noteIdInput.value = item.id;
-            else                      apptIdInput.value = item.id;
-          } else {
-            // Deselected
-            if (type === 'note')     noteIdInput.value = '';
-            else                      apptIdInput.value = '';
-          }
-        });
-
-        containerEl.appendChild(card);
+      containerEl.appendChild(card);
       });
     }
 
@@ -837,20 +892,22 @@
     });
 
 
-    // Event: Clicking a todo item
-    document.getElementById('todo-list').addEventListener('click', e => {
-      const card = e.target.closest('.todo-card');
-      if (!card) return;
+    // Event: Clicking a todo item (delegated to the overview container)
+    document.getElementById('todo-overview-container')
+      .addEventListener('click', e => {
+        const card = e.target.closest('.todo-card');
+        if (!card) return;
 
-      openModal('edit', {
-        id:             card.dataset.id,
-        title:          card.dataset.title,
-        due:            card.dataset.due,
-        description:    card.dataset.description,
-        note_id:        card.dataset.noteId || '',
-        appointment_id: card.dataset.apptId  || ''
+        openModal('edit', {
+          id:             card.dataset.id,
+          title:          card.dataset.title,
+          due:            card.dataset.due,
+          description:    card.dataset.text,       // use data-text
+          note_id:        card.dataset.noteId   || '',
+          appointment_id: card.dataset.apptId   || ''
+        });
       });
-    });
+
 
 
     function showModal() {
@@ -945,78 +1002,259 @@
     }
     sessionStorage.setItem("last_page", "/todo_page");
 
-    // Async function to fetch and render todos
+    // Fetch and render todos into Overdue, Active, and Completed lists
     async function fetchTodos() {
       const sessionKey = sessionStorage.getItem("session_key");
-      const listEl = document.getElementById('todo-list');
-      listEl.innerHTML = ''; // Clear existing
       const now = new Date();
+
+      // List containers
+      const overdueList   = document.getElementById('todo-overdue-list');
+      const activeList    = document.getElementById('todo-active-list');
+      const completedList = document.getElementById('todo-completed-list');
+
+      // Clear existing
+      [overdueList, activeList, completedList].forEach(el => el.innerHTML = '');
+
       try {
-        const res = await fetch('/todos', {
-          headers: {
-            'Authorization': `Bearer ${sessionKey}`
-          }
+        const res  = await fetch('/todos', {
+          headers: { 'Authorization': `Bearer ${sessionKey}` }
         });
         const data = await res.json();
-        if (!Array.isArray(data.todos) || data.todos.length === 0) {
-            // Create a clickable message when there are no todos
-            const emptyMsg = document.createElement('div');
-            emptyMsg.textContent = 'You have no todos yet. Click here to add one!';
-            emptyMsg.style.cursor = 'pointer';
-            emptyMsg.style.textAlign = 'center';
-            emptyMsg.style.padding = '24px 0';
-            emptyMsg.style.color = '#bbb';
-            emptyMsg.addEventListener('click', () => openModal('add'));
-            listEl.appendChild(emptyMsg);
+        const todos = Array.isArray(data.todos) ? data.todos : [];
+
+        if (todos.length === 0) {
+          // No todos at all → placeholder in Active
+          activeList.appendChild(createEmptyMsg('You have no todos yet. Click here to add one!'));
           return;
         }
-        data.todos.forEach(todo => {
-          const dueDate = todo.due_date ? new Date(todo.due_date) : null;
-          const card = document.createElement('div');
-          card.className = 'todo-card';
 
-            card.dataset.id          = todo.id;
-            card.dataset.title       = todo.title;
-            card.dataset.due         = todo.due_date || '';
-            card.dataset.description = todo.text || '';
-            // Store attachment IDs
-            if (todo.note_id) {
-              card.dataset.noteId = todo.note_id;
-            }
-            if (todo.appointment_id) {
-              card.dataset.apptId = todo.appointment_id;
-            }
+        todos.forEach(todo => {
+          const dueDate    = todo.due_date ? new Date(todo.due_date) : null;
+          const isOverdue  = !todo.completed && dueDate && dueDate < now;
+          const isActive   = !todo.completed && (!dueDate || dueDate >= now);
+          const isComplete = !!todo.completed;
 
-          const title = document.createElement('div');
-          title.className = 'todo-title';
-          title.textContent = todo.title;
+          const card = createTodoCard(todo, now);
 
-          const text = document.createElement('div');
-          text.className = 'todo-text';
-          text.textContent = todo.text || '';
-
-          card.appendChild(title);
-          card.appendChild(text);
-
-          if (dueDate) {
-            const dueEl = document.createElement('div');
-            dueEl.className = 'todo-due';
-            const diffMs = dueDate - now;
-            const diffDays = diffMs / (1000 * 60 * 60 * 24);
-            dueEl.textContent = `Due: ${dueDate.toLocaleString()}`;
-            if (diffDays <= 1) {
-              dueEl.classList.add('near');
-            }
-            card.appendChild(dueEl);
-          }
-          listEl.appendChild(card);
+          if (isOverdue)     overdueList.appendChild(card);
+          else if (isActive)    activeList.appendChild(card);
+          else if (isComplete) completedList.appendChild(card);
         });
+
+        // Add empty‑state placeholders if needed
+        [
+          { list: overdueList,   text: 'No overdue todos!'       },
+          { list: activeList,    text: 'No active todos! 😌'     },
+          { list: completedList, text: 'No completed todos yet.' }
+        ].forEach(({ list, text }) => {
+          if (list.children.length === 0) {
+            list.appendChild(createEmptyMsg(text));
+          }
+        });
+
       } catch (err) {
         console.error('Error fetching todos:', err);
-        listEl.textContent = 'Failed to load todos.';
+        activeList.textContent = 'Failed to load todos.';
       }
     }
 
-    // Expose fetchTodos to global scope for auth logic to call
+    // Helper: “empty” placeholder
+    function createEmptyMsg(text) {
+      const div = document.createElement('div');
+      div.textContent     = text;
+      div.style.cursor    = 'pointer';
+      div.style.textAlign = 'center';
+      div.style.padding   = '24px 0';
+      div.style.color     = '#bbb';
+      div.addEventListener('click', () => openModal('add'));
+      return div;
+    }
+
+    // Build a single todo card element
+    function createTodoCard(todo, now) {
+      const dueDate = todo.due_date ? new Date(todo.due_date) : null;
+
+      // Card container
+      const card = document.createElement('div');
+      card.className = 'todo-card';
+      card.dataset.id          = todo.id;
+      card.dataset.title       = todo.title;
+      card.dataset.due         = todo.due_date || '';
+      card.dataset.text        = todo.text    || '';    // <— ensure data-text for prefill!
+      card.dataset.description = todo.text    || '';
+      if (todo.note_id)        card.dataset.noteId = todo.note_id;
+      if (todo.appointment_id) card.dataset.apptId = todo.appointment_id;
+
+      // Checkbox wrapper
+      const checkboxWrapper = document.createElement('label');
+      checkboxWrapper.style.display       = "flex";
+      checkboxWrapper.style.alignItems    = "center";
+      checkboxWrapper.style.gap           = "8px";
+      checkboxWrapper.style.cursor        = "pointer";
+      checkboxWrapper.style.marginBottom  = "8px";
+      checkboxWrapper.style.position      = "relative";
+      checkboxWrapper.style.width         = "50px";
+      checkboxWrapper.style.maxWidth      = "50px";
+      checkboxWrapper.style.minWidth      = "24px";
+      checkboxWrapper.style.flex          = "0 0 24px";
+      checkboxWrapper.style.justifyContent= "flex-start";
+
+      // Native checkbox (hidden)
+      const checkbox = document.createElement('input');
+      checkbox.type    = 'checkbox';
+      checkbox.checked = !!todo.completed;
+      checkbox.style.width       = "20px";
+      checkbox.style.height      = "20px";
+      checkbox.style.accentColor = "#4caf50";
+      checkbox.title  = checkbox.checked
+        ? "Mark as not completed"
+        : "Mark as completed";
+      checkbox.style.opacity   = "0";
+      checkbox.style.position  = "absolute";
+
+      // Custom checkmark
+      const customCheck = document.createElement('span');
+      customCheck.style.display       = "inline-block";
+      customCheck.style.width         = "20px";
+      customCheck.style.height        = "20px";
+      customCheck.style.border        = "2px solid #bbb";
+      customCheck.style.borderRadius  = "5px";
+      customCheck.style.background    = checkbox.checked ? "#4caf50" : "transparent";
+      customCheck.style.position      = "relative";
+      customCheck.style.transition    = "background 0.2s";
+      customCheck.style.marginRight   = "4px";
+      customCheck.style.pointerEvents = "none";
+      if (checkbox.checked) {
+        customCheck.innerHTML = `
+          <svg width="16" height="16" style="position:absolute;top:2px;left:2px;" viewBox="0 0 16 16">
+        <polyline points="3,8 7,12 13,4"
+          style="fill:none;stroke:white;stroke-width:2"/>
+          </svg>`;
+      }
+
+      // Prevent clicks on checkbox from bubbling to card
+      checkbox.addEventListener('click', e => {
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      });
+      checkboxWrapper.addEventListener('click', e => {
+        e.stopPropagation();
+      });
+
+      // Toggle completed state
+      checkbox.addEventListener('change', async e => {
+        e.stopPropagation();
+        checkbox.disabled = true;
+        try {
+          await toggleTodoCompleted(todo.id);
+          await fetchTodos();
+        } catch (err) {
+          console.error('Failed to toggle todo completed', err);
+        }
+        checkbox.disabled = false;
+      });
+
+      // Sync custom checkmark on input
+      checkbox.addEventListener('input', () => {
+        if (checkbox.checked) {
+          customCheck.style.background = "#4caf50";
+          customCheck.innerHTML = `
+            <svg width="16" height="16" style="position:absolute;top:2px;left:2px;" viewBox="0 0 16 16">
+              <polyline points="3,8 7,12 13,4"
+                style="fill:none;stroke:white;stroke-width:2"/>
+            </svg>`;
+        } else {
+          customCheck.style.background = "transparent";
+          customCheck.innerHTML = "";
+        }
+      });
+
+      checkboxWrapper.appendChild(checkbox);
+      checkboxWrapper.appendChild(customCheck);
+
+      // Title and text
+      const title = document.createElement('div');
+      title.className   = 'todo-title';
+      title.textContent = todo.title;
+
+      const text = document.createElement('div');
+      text.className    = 'todo-text';
+      text.textContent  = todo.text || '';
+
+      // Due date display
+      if (dueDate) {
+        const dueEl = document.createElement('div');
+        dueEl.className = 'todo-due';
+        dueEl.textContent = `Due: ${dueDate.toLocaleString()}`;
+        const diffMs = dueDate - now;
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+        let statusText = '';
+        if (todo.completed) {
+          statusText = 'On time!';
+        } else if (dueDate < now) {
+          statusText = 'Overdue!';
+        } else if (diffDays <= 1) {
+          dueEl.classList.add('near');
+          statusText = 'Almost due!';
+        } else {
+          statusText = 'Plenty of time left :)';
+        }
+
+        // Add status text
+        const statusEl = document.createElement('span');
+        statusEl.style.marginLeft = '10px';
+        statusEl.style.fontWeight = 'bold';
+        statusEl.style.fontSize = '13px';
+        statusEl.textContent = statusText;
+        dueEl.appendChild(statusEl);
+
+        card.appendChild(dueEl);
+      }
+
+      // Highlight overdue
+      if (!todo.completed && dueDate && dueDate < now) {
+        // Red gradient for overdue (similar to completed's green)
+        card.style.background = "linear-gradient(90deg, #e5393540 0%, #e5393515 100%)";
+        card.style.borderLeft = '4px solid #e53935';
+      }
+
+      // Style completed
+      if (todo.completed) {
+        card.style.background = "linear-gradient(90deg, #4caf5040 0%, #4caf5015 100%)";
+        card.style.opacity    = "0.85";
+      }
+
+      // Assemble card
+      card.appendChild(checkboxWrapper);
+      card.appendChild(title);
+      card.appendChild(text);
+
+      // Open edit modal on card click (unless click was on checkbox)
+      card.addEventListener('click', e => {
+        if (e.target.closest('input[type="checkbox"]')) return;
+        openModal('edit', card.dataset.id);
+      });
+
+      return card;
+    }
+
+    // Toggle completed state on server
+    async function toggleTodoCompleted(todoId) {
+      const sessionKey = sessionStorage.getItem("session_key");
+      const res = await fetch(`/todos/${todoId}/toggle-completed`, {
+        method: "POST",
+        headers: { 'Authorization': `Bearer ${sessionKey}` }
+      });
+      if (!res.ok) throw new Error("Failed to toggle todo completed");
+      return res.json();
+    }
+
+    function startAutoRefreshTodos() {
+      setInterval(fetchTodos, 1000000); // 1 minute; because were calling fetchTodos and not reloading the page, modals will not be closed
+    }
+    startAutoRefreshTodos();
+
+    // Expose fetchTodos globally
     window.fetchTodos = fetchTodos;
 </script>

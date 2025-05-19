@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#2c2c2c">
-    <title>Future Notes</title>
+    <title>Future Notes - Notes</title>
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
@@ -674,6 +674,7 @@
           <a href="/index" class="nav-link active">Personal notes</a>
           <a href="/group-notes" class="nav-link">Group notes</a>
           <a href="/scheduler-page" class="nav-link">Calendar</a>
+          <a href="/todo_page" class="nav-link">Todo</a>
         </nav>
         <div id="profile-pic" class="profile-pic no-picture"></div>
       </header>
@@ -683,6 +684,7 @@
         <a href="/index" class="nav-link active">Personal notes</a>
         <a href="/group-notes" class="nav-link">Group notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
+        <a href="/todo_page" class="nav-link">Todo</a>
       </nav>      
 
     <main>
@@ -1321,6 +1323,11 @@
         document.getElementById("floating-add-button").addEventListener("click", () => {
             document.getElementById("mobile-add-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
+        });
+
+        document.getElementById("overlay").addEventListener("click", () => {
+            document.getElementById("mobile-add-menu").style.display = "none";
+            document.getElementById("overlay").style.display = "none";
         });
 
         document.getElementById("mobile-cancel-button").addEventListener("click", () => {
