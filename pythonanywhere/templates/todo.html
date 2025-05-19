@@ -467,51 +467,6 @@
       }
     }
 
-    /* The switch - the box around the slider */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 50px;
-      height: 24px;
-    }
-
-    /* Hide the default checkbox */
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    /* The slider */
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: var(--btn-color);
-      border-radius: 24px;
-      transition: background-color 0.2s;
-    }
-
-    /* The circle inside the slider */
-    .slider::before {
-      position: absolute;
-      content: "";
-      height: 18px;
-      width: 18px;
-      left: 3px;
-      bottom: 3px;
-      background-color: white;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-
-    /* When checked, move circle & change bg */
-    .switch input:checked + .slider {
-      background-color: #4c74af;
-    }
-    .switch input:checked + .slider::before {
-      transform: translateX(26px);
-    }
 
   </style>
   <script src="static/admin.js"></script>
@@ -562,12 +517,6 @@
   <div id="overlay"></div>
 
   <div id="todo-overview-container">
-    <!-- Toggle switch wrapper -->
-    <label class="switch">
-      <input type="checkbox" id="auto-refresh-toggle" checked>
-      <span class="slider"></span>
-    </label>
-    <span id="auto-refresh-label">Auto‑refresh: On</span>
     <h2>Your Todos</h2>
 
     <section class="todo-section" id="overdue-section">
@@ -1301,53 +1250,10 @@
       return res.json();
     }
 
-    let autoRefreshIntervalId = null;
-
-    // Start the interval and store its ID
     function startAutoRefreshTodos() {
-      // if already running, do nothing
-      if (autoRefreshIntervalId !== null) return;
-      autoRefreshIntervalId = setInterval(fetchTodos, 10000);
+      setInterval(fetchTodos, 1000000); // 1 minute; because were calling fetchTodos and not reloading the page, modals will not be closed
     }
-
-    // Stop (clear) the interval
-    function stopAutoRefreshTodos() {
-      if (autoRefreshIntervalId === null) return;
-      clearInterval(autoRefreshIntervalId);
-      autoRefreshIntervalId = null;
-    }
-
-    // Initialize toggle based on its default state
-    function initAutoRefreshToggle() {
-      const toggle = document.getElementById('auto-refresh-toggle');
-      const label  = document.getElementById('auto-refresh-label');
-
-      // helper to update label text
-      function updateLabel(checked) {
-        label.textContent = `Auto‑refresh: ${checked ? 'On' : 'Off'}`;
-      }
-
-      // on page load, decide whether to start or not
-      if (toggle.checked) {
-        startAutoRefreshTodos();
-      } else {
-        stopAutoRefreshTodos();
-      }
-      updateLabel(toggle.checked);
-
-      // listen for user changes
-      toggle.addEventListener('change', (e) => {
-        if (e.target.checked) startAutoRefreshTodos();
-        else               stopAutoRefreshTodos();
-        updateLabel(e.target.checked);
-      });
-    }
-
-    // call this once after your DOM is ready
-    document.addEventListener('DOMContentLoaded', () => {
-      initAutoRefreshToggle();
-    });
-
+    startAutoRefreshTodos();
 
     // Expose fetchTodos globally
     window.fetchTodos = fetchTodos;
