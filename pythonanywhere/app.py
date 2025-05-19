@@ -10,7 +10,6 @@ from sqlalchemy.orm.attributes import get_history
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
-import datetime as dt_module
 import secrets
 from werkzeug.utils import secure_filename
 from git import Repo, GitCommandError
@@ -28,7 +27,6 @@ import re
 import traceback
 import subprocess
 import shutil
-import enum
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -1816,6 +1814,29 @@ def get_all_notes():
 def get_todos():
     user_id = g.user_id
     todos = Todo.query.filter_by(user_id=user_id).all()
+    changed = False
+
+    for todo in todos:
+        # Clean up broken note links
+        if todo.note_id is not None:
+            note = Note.query.get(todo.note_id)
+            if note is None:
+                print(f"Todo {todo.id} has a broken note link. Removing it.")
+                todo.note_id = None
+                todo.note = None
+                changed = True
+        # Clean up broken appointment links
+        if todo.appointment_id is not None:
+            appt = Appointment.query.get(todo.appointment_id)
+            if appt is None:
+                print(f"Todo {todo.id} has a broken appointment link. Removing it.")
+                todo.appointment_id = None
+                todo.appointment = None
+                changed = True
+
+    if changed:
+        db.session.commit()
+
     todos_data = [todo.to_dict() for todo in todos]
     return jsonify({"todos": todos_data}), 200
 
@@ -1960,8 +1981,9 @@ def update_todo(todo_id):
                 due_date = dt.datetime.fromisoformat(due_str)
             except ValueError:
                 return jsonify(error="Invalid due date format; use ISO 8601"), 400
-            if due_date < dt.datetime.now():
-                return jsonify(error="Due date cannot be in the past"), 400
+            if check("todo_due_date_allow_past", "Ja") == "Nee":
+                if due_date < dt.datetime.now():
+                    return jsonify(error="Due date cannot be in the past"), 400
             todo.due_date = due_date
 
     # — Validate & apply completed flag
@@ -1999,8 +2021,24 @@ def update_todo(todo_id):
     except Exception as e:
         db.session.rollback()
         return jsonify(error=f"Error updating todo: {str(e)}"), 500
+    
+# 4. mark a todo as completed
+@app.route('/todos/<int:todo_id>/toggle-completed', methods=['POST'])
+@require_session_key
+def toggle_todo_completed(todo_id):
+    user_id = g.user_id
+    todo = Todo.query.get(todo_id)
+    if not todo or todo.user_id != user_id:
+        return jsonify({"error": "Todo not found"}), 404
 
-# 4. delete a todo
+    todo.completed = not todo.completed
+    db.session.commit()
+    return jsonify({
+        "message": f"Todo marked as {'completed' if todo.completed else 'uncompleted'}!",
+        "completed": todo.completed
+    }), 200
+
+# 5. delete a todo
 @app.route('/todos/<int:todo_id>', methods=['DELETE'])
 @require_session_key
 def delete_todo(todo_id):
