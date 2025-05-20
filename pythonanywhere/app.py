@@ -1400,6 +1400,10 @@ def mutations_page():
 def checks_page():
     return render_template('checks.html')
 
+@app.route('/guide_page')
+def guide_page():
+    return render_template('guide.html')
+
 #---------------------------------API routes--------------------------------
 
 # Only expose in non-production or over localhost for safety
@@ -1445,10 +1449,54 @@ def mark_notification_seen(notif_id):
     """
     Mark a single notification as seen.
     """
-    notif = Notification.query.filter_by(id=notif_id, user_id=g.user_id).first_or_404()
+    notif = Notification.query.filter_by(
+        id=notif_id,
+        user_id=g.user_id
+    ).first_or_404()
+
     notif.seen = True
     db.session.commit()
+
     return jsonify({'success': True, 'id': notif_id})
+
+
+@app.route('/notifications/seen', methods=['POST'])
+@require_session_key
+def mark_notifications_seen_bulk():
+    """
+    Mark multiple notifications as seen (expects JSON body {"ids": [1,2,3]}).
+    Optionally, accept {"all": true} to mark every unseen for the user.
+    """
+    payload = request.get_json(force=True)
+
+    # Determine which IDs to mark
+    if payload.get('all'):
+        # Mark *all* unseen notifications for this user
+        query = Notification.query.filter_by(
+            user_id=g.user_id,
+            seen=False
+        )
+    else:
+        ids = payload.get('ids')
+        if not isinstance(ids, list) or not ids:
+            return jsonify({'success': False, 'error': 'Provide non-empty list of ids or {"all": true}'}), 400
+
+        query = Notification.query.filter(
+            Notification.user_id == g.user_id,
+            Notification.id.in_(ids),
+            Notification.seen == False
+        )
+
+    # Bulk update: set seen=True in one SQL statement
+    updated_count = query.update({'seen': True}, synchronize_session=False)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'updated': updated_count,
+        # optionally echo back the IDs you just marked
+        'ids': payload.get('all') and 'all_unseen' or ids
+    })
 
 # Homepage
 
@@ -1935,9 +1983,10 @@ def create_todo():
     except ValueError:
         current_app.logger.warning(f"[create_todo] Invalid due date format: {due_str}")
         return jsonify(error="Invalid due date format; use ISO 8601"), 400
-    if due_date < datetime.now():
-        current_app.logger.warning(f"[create_todo] Due date is in the past: {due_date}")
-        return jsonify(error="Due date cannot be in the past"), 400
+    if check("todo_due_date_allow_past", "Ja") == "Nee":
+        if due_date < datetime.now():
+            current_app.logger.warning(f"[create_todo] Due date is in the past: {due_date}")
+            return jsonify(error="Due date cannot be in the past"), 400
 
     # --- Attachments lookup & ownership check ---
     note        = None
@@ -3254,6 +3303,8 @@ def signup():
         create_default_calendar(user.id)
 
         ensure_user_colors(user.id)
+
+        send_notification(user.id, "Welcome!", "Thank you for creating an account on Future Notes! Click on this notification for a quick guide on how to use the app.", "/guide_page")
         
         return jsonify({
             "message": "User created and logged in successfully!",
