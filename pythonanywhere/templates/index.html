@@ -10,6 +10,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
+    <script src="/static/js/loader.js"></script>
     
     <!-- 
 
@@ -644,22 +645,47 @@
 
     <style>
         :root {
-          --bg-color:  #2c2c2c;  /* defaults */
-          --hdr-color: #3a3a3a;
-          --ctr-color: #1e1e1e;
-          --btn-color: #424242;
+            --bg-color:  #2c2c2c;  /* defaults */
+            --hdr-color: #3a3a3a;
+            --ctr-color: #1e1e1e;
+            --btn-color: #424242;
         }
-      </style>
-    
-      <script>
-        // one‑time injection of all four colors
-        window.appConfig = {
-          backgroundColor: "{{ bg_color }}",
-          headerColor:     "{{ hdr_color }}",
-          contrastingColor:"{{ ctr_color }}",
-          buttonColor:     "{{ btn_color }}"
-        };
-      </script>
+        </style>
+
+        <script>
+        // pull session_key out of sessionStorage
+        const token = sessionStorage.getItem("session_key");
+        if (token) {
+            fetch("/user-colors", {
+            headers: {
+                "Authorization": "Bearer " + token
+            }
+            })
+            .then(res => {
+            if (!res.ok) throw new Error("Could not load colors");
+            return res.json();
+            })
+            .then(cfg => {
+            // apply them as CSS variables
+            document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
+            document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
+            document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
+            document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+
+            // keep the config globally if you still need it in JS
+            window.appConfig = {
+                backgroundColor:  cfg.background_color,
+                headerColor:      cfg.header_color,
+                contrastingColor: cfg.contrasting_color,
+                buttonColor:      cfg.button_color
+            };
+            })
+            .catch(err => console.error(err));
+        } else {
+            console.warn("No session_key in sessionStorage; using default colors");
+        }
+        </script>
+
 </head>
 <body>
     <header>
