@@ -2201,6 +2201,11 @@ def group_invite():
     
     if user.suspended:
         return jsonify({"error": "This user is suspended from Future Notes!"}), 403
+    if user.id == g.user_id:
+        return jsonify({"error": "You cannot invite yourself!"}), 403
+    existing_invites = Invite.query.filter_by(user_id=user.id, group_id=group_id).all()
+    if existing_invites:
+        return jsonify({"error": "User already invited to this group"}), 400
 
     group = Group.query.get(group_id)
     if not group:

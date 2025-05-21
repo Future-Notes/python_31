@@ -149,7 +149,7 @@
         toNotify.forEach(n => {
           const notif = new Notification(n.title, {
             body: n.text,
-            icon: '/path/to/bell-icon.png',  // replace with your icon
+            icon: '/static/notification-icon.jpg',  // replace with your icon
             tag: `notif-${n.id}`,
             renotify: true
           });
