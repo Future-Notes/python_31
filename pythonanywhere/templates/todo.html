@@ -486,7 +486,6 @@
       <script>
         // pull session_key out of sessionStorage
         const token = sessionStorage.getItem("session_key");
-        console.log("Session key: " + token);
         if (token) {
           fetch("/user-colors", {
             headers: {

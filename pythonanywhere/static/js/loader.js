@@ -5,7 +5,7 @@
       position: fixed;
       inset: 0;
       /* stronger black so the white‑flash is truly hidden */
-      background: rgba(0,0,0,0.85);
+      background: #2c2c2c;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -42,7 +42,7 @@
     window.addEventListener('DOMContentLoaded', insertOverlay);
   }
 
-  // 3) Track pending fetches
+  // 3) Track pending fetches and log them in the console
   window.__pendingFetches = [];
   const _origFetch = window.fetch;
   window.fetch = function(...args) {
@@ -51,6 +51,7 @@
     p.finally(() => {
       window.__pendingFetches =
         window.__pendingFetches.filter(x => x !== p);
+        console.log('Pending fetches:', window.__pendingFetches.length);
     });
     return p;
   };
