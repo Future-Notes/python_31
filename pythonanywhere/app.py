@@ -646,41 +646,6 @@ def after_commit(session):
             )
 
 
-def require_login_for_templates(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        key = request.cookies.get("session_key")
-        if not key:
-            # no key → send to your login page
-            return redirect(url_for("login_page", redirect=request.path))
-
-        # reuse your existing validator, but pretend it came in as a header:
-        # you could refactor validate_session_key to take an optional key argument;
-        # for now we’ll monkey‑patch the header:
-        request.headers.environ["HTTP_AUTHORIZATION"] = f"Bearer {key}"
-        valid, session_or_msg = validate_session_key()
-        if not valid:
-            return redirect(url_for("login_page", redirect=request.path))
-
-        # success → stash user_id for route & templates
-        g.user_id = session_or_msg["user_id"]
-        return func(*args, **kwargs)
-    return wrapper
-
-@app.context_processor
-def inject_user_colors():
-    if getattr(g, "user_id", None):
-        user = User.query.get(g.user_id)
-        # if they somehow have no row yet, fall back to defaults
-        cols = ensure_user_colors(user.id)
-        return {
-            "bg_color":  cols.background_color,
-            "hdr_color": cols.header_color,
-            "ctr_color": cols.contrasting_color,
-            "btn_color": cols.button_color,
-        }
-    return {}
-
 def ensure_user_colors(user_id):
     """
     Guarantee there is a UserColor row for this user_id.
@@ -1311,12 +1276,10 @@ def send_favicon():
     return send_from_directory('static', 'favicon.ico')
 
 @app.route('/index')
-@require_login_for_templates
 def index():
     return render_template('index.html')
 
 @app.route('/todo_page')
-@require_login_for_templates
 def todo_page():
     if check("todo", "Nee") == "Ja":
         return render_template('todo.html')
@@ -1334,7 +1297,6 @@ def signup_page():
     return render_template('signup.html', **args)
 
 @app.route('/account_page')
-@require_login_for_templates
 def account_page():
     return render_template('account.html')
 
@@ -1351,7 +1313,6 @@ def database_viewer():
     return render_template('database_viewer.html')
 
 @app.route('/group-notes')
-@require_login_for_templates
 def group_notes():
     return render_template("group_index.html")
 
@@ -1384,7 +1345,6 @@ def leaderboard():
     return render_template('leaderboard.html')
 
 @app.route('/scheduler-page')
-@require_login_for_templates
 def scheduler_page():
     return render_template('scheduler.html')
 
@@ -1399,6 +1359,10 @@ def mutations_page():
 @app.route('/checks_page')
 def checks_page():
     return render_template('checks.html')
+
+@app.route('/guide_page')
+def guide_page():
+    return render_template('guide.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -1417,6 +1381,24 @@ def manager_list_routes():
             "methods": sorted(rule.methods - {'HEAD', 'OPTIONS'})  # filter out boilerplate
         })
     return jsonify(routes)
+
+@app.route('/user-colors', methods=['GET'])
+@require_session_key
+def get_user_colors_fetch():
+    """
+    Returns the color settings for the currently authenticated user.
+    Expects require_session_key to have set g.user_id.
+    """
+    # Fetch the user’s color row
+    colors = UserColor.query.filter_by(user_id=g.user_id).first()
+    if not colors:
+        ensure_user_colors(g.user_id)
+    return jsonify({
+        "background_color":  colors.background_color,
+        "header_color":      colors.header_color,
+        "contrasting_color": colors.contrasting_color,
+        "button_color":      colors.button_color,
+    }), 200
 
 @app.route('/notifications', methods=['GET'])
 @require_session_key
@@ -1445,10 +1427,54 @@ def mark_notification_seen(notif_id):
     """
     Mark a single notification as seen.
     """
-    notif = Notification.query.filter_by(id=notif_id, user_id=g.user_id).first_or_404()
+    notif = Notification.query.filter_by(
+        id=notif_id,
+        user_id=g.user_id
+    ).first_or_404()
+
     notif.seen = True
     db.session.commit()
+
     return jsonify({'success': True, 'id': notif_id})
+
+
+@app.route('/notifications/seen', methods=['POST'])
+@require_session_key
+def mark_notifications_seen_bulk():
+    """
+    Mark multiple notifications as seen (expects JSON body {"ids": [1,2,3]}).
+    Optionally, accept {"all": true} to mark every unseen for the user.
+    """
+    payload = request.get_json(force=True)
+
+    # Determine which IDs to mark
+    if payload.get('all'):
+        # Mark *all* unseen notifications for this user
+        query = Notification.query.filter_by(
+            user_id=g.user_id,
+            seen=False
+        )
+    else:
+        ids = payload.get('ids')
+        if not isinstance(ids, list) or not ids:
+            return jsonify({'success': False, 'error': 'Provide non-empty list of ids or {"all": true}'}), 400
+
+        query = Notification.query.filter(
+            Notification.user_id == g.user_id,
+            Notification.id.in_(ids),
+            Notification.seen == False
+        )
+
+    # Bulk update: set seen=True in one SQL statement
+    updated_count = query.update({'seen': True}, synchronize_session=False)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'updated': updated_count,
+        # optionally echo back the IDs you just marked
+        'ids': payload.get('all') and 'all_unseen' or ids
+    })
 
 # Homepage
 
@@ -1935,9 +1961,10 @@ def create_todo():
     except ValueError:
         current_app.logger.warning(f"[create_todo] Invalid due date format: {due_str}")
         return jsonify(error="Invalid due date format; use ISO 8601"), 400
-    if due_date < datetime.now():
-        current_app.logger.warning(f"[create_todo] Due date is in the past: {due_date}")
-        return jsonify(error="Due date cannot be in the past"), 400
+    if check("todo_due_date_allow_past", "Ja") == "Nee":
+        if due_date < datetime.now():
+            current_app.logger.warning(f"[create_todo] Due date is in the past: {due_date}")
+            return jsonify(error="Due date cannot be in the past"), 400
 
     # --- Attachments lookup & ownership check ---
     note        = None
@@ -2152,6 +2179,11 @@ def group_invite():
     
     if user.suspended:
         return jsonify({"error": "This user is suspended from Future Notes!"}), 403
+    if user.id == g.user_id:
+        return jsonify({"error": "You cannot invite yourself!"}), 403
+    existing_invites = Invite.query.filter_by(user_id=user.id, group_id=group_id).all()
+    if existing_invites:
+        return jsonify({"error": "User already invited to this group"}), 400
 
     group = Group.query.get(group_id)
     if not group:
@@ -3254,6 +3286,8 @@ def signup():
         create_default_calendar(user.id)
 
         ensure_user_colors(user.id)
+
+        send_notification(user.id, "Welcome!", "Thank you for creating an account on Future Notes! Click on this notification for a quick guide on how to use the app.", "/guide_page")
         
         return jsonify({
             "message": "User created and logged in successfully!",
@@ -3273,19 +3307,7 @@ def login():
         if not data:
             return jsonify({"error": "Invalid request data"}), 400
 
-        # helper to wrap JSON + Set‑Cookie
-        def success(payload, status=200):
-            resp = make_response(jsonify(payload), status)
-            resp.set_cookie(
-                "session_key",
-                payload["session_key"],
-                httponly=True,
-                samesite="Lax",
-                # secure=True    # enable in production
-            )
-            return resp
-
-        # 1) Auto‑login via lasting_key
+        # 1) Auto-login via lasting_key
         lasting_key = data.get('lasting_key')
         if lasting_key:
             user = User.query.filter_by(lasting_key=lasting_key).first()
@@ -3303,13 +3325,14 @@ def login():
                     db.session.add(ip_entry)
                     db.session.commit()
 
-                return success({
+                payload = {
                     "message":     "Login successful!",
                     "session_key": key,
                     "user_id":     user.id,
                     "lasting_key": user.lasting_key,
                     "startpage":   user.startpage
-                })
+                }
+                return jsonify(payload), 200
 
             return jsonify({"error": "Invalid lasting key"}), 400
 
@@ -3352,7 +3375,7 @@ def login():
                 db.session.commit()
             payload["lasting_key"] = user.lasting_key
 
-        return success(payload)
+        return jsonify(payload), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

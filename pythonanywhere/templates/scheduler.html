@@ -10,6 +10,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png" />
   <link rel="favicon" type="image/x-icon" href="static/favicon.ico" />
   <link rel="manifest" href="static/site.webmanifest">
+  <script src="/static/js/loader.js"></script>
   <style>
     /* ========= Existing Styles ========= */
     body {
@@ -1065,25 +1066,51 @@
 
   <script src="/static/admin.js"></script>
   <script src="/static/custom-alert.js"></script>
+  <script src="/static/js/notifications.js"></script>
 
-  <style>
-    :root {
-      --bg-color:  #2c2c2c;  /* defaults */
-      --hdr-color: #3a3a3a;
-      --ctr-color: #1e1e1e;
-      --btn-color: #424242;
-    }
-  </style>
+ <style>
+  :root {
+    --bg-color:  #2c2c2c;  /* defaults */
+    --hdr-color: #3a3a3a;
+    --ctr-color: #1e1e1e;
+    --btn-color: #424242;
+  }
+</style>
 
-  <script>
-    // one‑time injection of all four colors
-    window.appConfig = {
-      backgroundColor: "{{ bg_color }}",
-      headerColor:     "{{ hdr_color }}",
-      contrastingColor:"{{ ctr_color }}",
-      buttonColor:     "{{ btn_color }}"
-    };
-  </script>
+<script>
+  // pull session_key out of sessionStorage
+  const token = sessionStorage.getItem("session_key");
+  if (token) {
+    fetch("/user-colors", {
+      headers: {
+        "Authorization": "Bearer " + token
+      }
+    })
+    .then(res => {
+      if (!res.ok) throw new Error("Could not load colors");
+      return res.json();
+    })
+    .then(cfg => {
+      // apply them as CSS variables
+      document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
+      document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
+      document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
+      document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+
+      // keep the config globally if you still need it in JS
+      window.appConfig = {
+        backgroundColor:  cfg.background_color,
+        headerColor:      cfg.header_color,
+        contrastingColor: cfg.contrasting_color,
+        buttonColor:      cfg.button_color
+      };
+    })
+    .catch(err => console.error(err));
+  } else {
+    console.warn("No session_key in sessionStorage; using default colors");
+  }
+</script>
+
 </head>
 <body>
   <header>
@@ -1370,31 +1397,26 @@
     // Global variable to track the current active calendar id
     let currentCalendarId = null;
 
-    // Declare userColors in the global scope
-    let userColors = {
-      bg:  "#ffffff",
-      hdr: "#eeeeee",
-      ctr: "#616161", // Fallback default
-      btn: "#cccccc"
-    };
-
     document.addEventListener("DOMContentLoaded", () => {
-      const cfg = window.appConfig || {};
+        const cfg = window.appConfig || {};
 
-      // Update global userColors with actual values
-      userColors = {
-        bg:  cfg.backgroundColor || userColors.bg,
-        hdr: cfg.headerColor     || userColors.hdr,
-        ctr: cfg.contrastingColor || userColors.ctr,
-        btn: cfg.buttonColor     || userColors.btn
-      };
+        // store in a JS var if you need it elsewhere
+        const userColors = {
+            bg:  cfg.backgroundColor,
+            hdr: cfg.headerColor,
+            ctr: cfg.contrastingColor,
+            btn: cfg.buttonColor
+        };
 
-      const root = document.documentElement;
-      root.style.setProperty("--bg-color",  userColors.bg);
-      root.style.setProperty("--hdr-color", userColors.hdr);
-      root.style.setProperty("--ctr-color", userColors.ctr);
-      root.style.setProperty("--btn-color", userColors.btn);
-    });
+        // apply each to the CSS custom properties
+        const root = document.documentElement;
+        root.style.setProperty("--bg-color",  userColors.bg);
+        root.style.setProperty("--hdr-color", userColors.hdr);
+        root.style.setProperty("--ctr-color", userColors.ctr);
+        root.style.setProperty("--btn-color", userColors.btn);
+
+        // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
+        });
 
 
 

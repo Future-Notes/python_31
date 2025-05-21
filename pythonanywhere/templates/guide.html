@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quick Start Guide - Future Notes</title>
+  <style>
+    :root {
+      --bg: #2c2c2c;
+      --card: #3a3a3a;
+      --text: #f1f1f1;
+      --accent: #4a90e2;
+    }
+    body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      display: flex; justify-content: center; align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 90%; max-width: 800px;
+    }
+    #overviewBack {
+      background: var(--accent);
+      border: none; border-radius: 5px;
+      color: var(--text); cursor: pointer;
+      font-size: 1rem; padding: 8px 16px;
+      margin-bottom: 20px;
+      transition: background .2s;
+    }
+    #overviewBack:hover {
+      background: #6baae5;
+    }
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+    .module-card {
+      background: var(--card);
+      border-radius: 8px; padding: 20px;
+      text-align: center; cursor: pointer;
+      transition: transform .2s, box-shadow .2s;
+      position: relative;
+    }
+    .module-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+    }
+    .module-card img {
+      max-width: 100%; border-radius: 4px; margin-bottom: 10px;
+    }
+    .module-card h3 { margin: 0; font-size: 1.2rem; }
+    .wizard {
+      display: none;
+      background: var(--card);
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      position: relative;
+    }
+    .wizard.active { display: block; }
+    .wizard h2 { margin-top: 0; font-size: 1.8rem; }
+    .step-img-container { position: relative; text-align: center; }
+    .step-img {
+      max-width: 100%; border-radius: 4px; margin: 15px 0;
+    }
+    .make-bigger {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      background: var(--accent);
+      border: none;
+      border-radius: 4px;
+      color: var(--text);
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .step-desc { font-size: 1rem; }
+    .progress-bar { width: 100%; background: #555; height: 6px; border-radius: 3px; overflow: hidden; margin: 20px 0; }
+    .progress { height: 100%; background: var(--accent); width: 0%; transition: width .3s; }
+    .controls { display: flex; justify-content: space-between; margin-top: 20px; }
+    .btn {
+      background: var(--accent);
+      border: none; border-radius: 5px;
+      color: var(--text); cursor: pointer;
+      font-size: 1rem; padding: 10px 20px;
+      transition: background .2s;
+    }
+    .btn:disabled { background: #666; cursor: default; }
+    .btn:hover:not(:disabled) { background: #6baae5; }
+    .back-btn { position: absolute; top: 15px; left: 15px; background: transparent; border: none; color: var(--text); font-size: 1.2rem; cursor: pointer; }
+    #gotoBtn { display: none; margin-top: 20px; }
+    #imageModal {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.9); justify-content: center; align-items: center;
+      z-index: 1000;
+    }
+    #imageModal img {
+      max-width: 90vw; max-height: 90vh;
+    }
+    #closeModal {
+      position: absolute; top: 20px; right: 30px;
+      background: var(--accent); color: var(--text);
+      border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="imageModal">
+    <img id="modalImg" src="" alt="Expanded">
+    <button id="closeModal">Close</button>
+  </div>
+  <div class="container">
+    <h1>Welcome to Future Notes!</h1>
+    <div id="overview">
+      <button id="overviewBack">← Home</button>
+      <p>Select a module to get a quick guide:</p>
+      <div class="modules-grid" id="modulesGrid"></div>
+    </div>
+    <div class="wizard" id="wizard">
+      <button class="back-btn" id="backBtn">← Modules</button>
+      <h2 id="moduleTitle"></h2>
+      <div class="progress-bar"><div class="progress" id="progress"></div></div>
+      <div class="step-img-container" id="stepImgContainer">
+        <img src="" alt="Step image" id="stepImg" class="step-img">
+        <button class="make-bigger" onclick="expandImage('stepImg')">⛶</button>
+      </div>
+      <p id="stepDesc" class="step-desc"></p>
+      <div class="controls">
+        <button class="btn" id="prevBtn">Previous</button>
+        <button class="btn" id="nextBtn">Next</button>
+      </div>
+      <button class="btn" id="gotoBtn">Go to Module</button>
+    </div>
+  </div>
+  <script>
+    const modules = {
+      "General Guide": {
+        intro: { desc: "Welcome to Future Notes! Future Notes is a productivity application that helps you do your work faster. This guide is designed to quickly get you started with Future Notes.", img: "/static/quickstart/modules/General Guide.png" }, 
+        steps: [
+          { title: "Header", desc: "With the header you can navigate around Future Notes. It includes all the modules available, your notifications, and your profile picture. Clicking on the profile picture brings you to the account page.", img: "/static/quickstart/tutorials/header.png" },
+          { title: "Notifications", desc: "Clicking on the bell icon opens your notifications. You can mark them all as read, or click on 1 to mark it as read and go to the related page.", img: "/static/quickstart/tutorials/notifications.png" }
+      ], url: "/index" },
+      "Notes": {
+        intro: { desc: "This is the Notes page. You can yot down things you need to remember here, and easily find them back using the search feature or by using tags.", img: "/static/quickstart/modules/Notes.png" },
+         steps: [
+          { title: "Create a Note", desc: "At the top, there are a few inputs to add a new note. (or a + button for mobile) You can give your note a title, a description, and a tag. ", img: "/static/quickstart/tutorials/new_note.png" },
+          { title: "Tag Your Note", desc: "If you want to, you can add a tag to your note. This will create a little label on your note to categorize it, and find it back easily.", img: "/static/quickstart/tutorials/tags.png" },
+          { title: "Search Notes", desc: "If tagging your note wasnt enough, you can use the search button. This will open a search bar to search through your notes. You can search by title, tag, or just the note itself.", img: "/static/quickstart/tutorials/searching.png" },
+          { title: "Share Notes", desc: "If you want to share your note with someone else, (who also has a Future Notes account) you can press the 'Share' button, wich will open a menu where you can enter the other persons username to send the note to. You can toggle if you want people to share notes with you on the Account page", img: "/static/quickstart/tutorials/sharing.png" }
+      ], url: "/notes" },
+      "Group Notes": {
+        intro: { desc: "This is the Group Notes page. Group Notes work exactly like normal notes, except they are shared between multiple people, with one person being the group admin.", img: "/static/quickstart/modules/Group Notes.png" },
+        steps: [
+          { title: "Joining and creating a group", desc: "If you are not in a group, this is the screen you will see. There are 3 ways to get in a group. \n 1. You create a group by clicking the 'Create New Group' button and entering the name of the group\n 2. Someone shared the Group UUID with you, wich is a unique code generated for each group, wich you can enter to join.\n 3. You got invited by the group admin. An invite will appear in the Invites section, wich you can accept or decline. You can have multiple invites, but you can only be in 1 group at a time.\n Other invites are not deleted after you join a group, so you can always leave the group you joined and join the other group.", img: "/static/quickstart/tutorials/joininggroup.png" },
+          { title: "Group admin", desc: "If you created a group, (or joined a group that had no members) you are the group admin. Group admins can remove other members from the group, delete the group, (and all of its notes, so be carefull!) copy the Group UUID, (the unique code) and send invites. While only the group admin can delete the group, members can always leave the group. Note: Because you can join any group if you have the Group UUID, only the group admin can copy the Group UUID", img: "/static/quickstart/tutorials/group_admin.png" }
+      ], url: "/group-notes" },
+      "Scheduler": {
+        intro: { desc: "Get started with the basics of Future Notes.", img: "/static/quickstart/modules/Scheduler.png" },
+        steps: [
+          { title: "Add an Event", desc: "Click on a date to add an event.", img: "https://via.placeholder.com/600x300?text=Add+Event" },
+          { title: "Set Reminders", desc: "Toggle reminders to never miss a date.", img: "https://via.placeholder.com/600x300?text=Reminders" }
+      ], url: "/scheduler" },
+      "ToDo": {
+        intro: { desc: "Get started with the basics of Future Notes.", img: "/static/quickstart/modules/ToDo.png" },
+        steps: [
+          { title: "New Task", desc: "Click 'Add Task' to create a to‑do.", img: "https://via.placeholder.com/600x300?text=Add+Task" },
+          { title: "Mark Done", desc: "Check off tasks as you complete them.", img: "https://via.placeholder.com/600x300?text=Done" }
+      ], url: "/todo" },
+      "Account": {
+        intro: { desc: "Get started with the basics of Future Notes.", img: "/static/quickstart/modules/Account.png" },
+        steps: [
+          { title: "Profile Settings", desc: "Update your name and avatar.", img: "https://via.placeholder.com/600x300?text=Profile" },
+          { title: "Security", desc: "Change password and enable 2FA.", img: "https://via.placeholder.com/600x300?text=Security" }
+      ], url: "/account" }
+    };
+
+    const modulesGrid = document.getElementById('modulesGrid');
+    const overview = document.getElementById('overview');
+    const wizard = document.getElementById('wizard');
+    const moduleTitle = document.getElementById('moduleTitle');
+    const stepImg = document.getElementById('stepImg');
+    const stepDesc = document.getElementById('stepDesc');
+    const progress = document.getElementById('progress');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const backBtn = document.getElementById('backBtn');
+    const overviewBack = document.getElementById('overviewBack');
+    const gotoBtn = document.getElementById('gotoBtn');
+    const stepImgContainer = document.getElementById('stepImgContainer');
+    const imageModal = document.getElementById('imageModal');
+    const modalImg = document.getElementById('modalImg');
+    const closeModal = document.getElementById('closeModal');
+
+    let currentKey = null;
+    let currentModule = null;
+    let currentStep = 0;
+
+    Object.keys(modules).forEach(name => {
+      const card = document.createElement('div');
+      card.className = 'module-card';
+      card.innerHTML = `<img src='/static/quickstart/modules/${encodeURIComponent(name)}.png' alt='${name}'><h3>${name}</h3><button class="make-bigger" onclick="expandImageFromCard('/static/quickstart/modules/${encodeURIComponent(name)}.png', event)">⛶</button>`;
+      card.addEventListener('click', () => startModule(name));
+      modulesGrid.appendChild(card);
+    });
+
+    overviewBack.addEventListener('click', () => {
+      window.location.href = '/index';
+    });
+
+    function startModule(name) {
+      currentKey = name;
+      currentModule = modules[name].steps;
+      currentStep = 0;
+      moduleTitle.textContent = name;
+      overview.style.display = 'none';
+      wizard.classList.add('active');
+      updateStep();
+    }
+
+    function updateStep() {
+      const step = currentModule[currentStep];
+      stepImg.src = step.img || '';
+      stepImg.style.display = step.img ? '' : 'none';
+      stepDesc.textContent = `${step.title}: ${step.desc}`;
+      const pct = ((currentStep + 1) / currentModule.length) * 100;
+      progress.style.width = `${pct}%`;
+      prevBtn.disabled = currentStep === 0;
+      nextBtn.disabled = currentStep === currentModule.length - 1;
+      gotoBtn.style.display = (currentStep === currentModule.length - 1) ? 'block' : 'none';
+    }
+
+    prevBtn.addEventListener('click', () => {
+      if (currentStep > 0) {
+        currentStep--;
+        updateStep();
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentStep < currentModule.length - 1) {
+        currentStep++;
+        updateStep();
+      }
+    });
+
+    backBtn.addEventListener('click', () => {
+      wizard.classList.remove('active');
+      overview.style.display = '';
+    });
+
+    gotoBtn.addEventListener('click', () => {
+      if (currentKey && modules[currentKey]) {
+        window.location.href = modules[currentKey].url;
+      }
+    });
+
+    function expandImage(imgId) {
+      const img = document.getElementById(imgId);
+      modalImg.src = img.src;
+      imageModal.style.display = 'flex';
+    }
+
+    function expandImageFromCard(src, event) {
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      modalImg.src = src;
+      imageModal.style.display = 'flex';
+    }
+
+
+    closeModal.addEventListener('click', () => {
+      imageModal.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
