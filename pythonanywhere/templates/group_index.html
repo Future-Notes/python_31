@@ -768,6 +768,64 @@
             transition: background-color 0.3s ease;
         }
 
+        /* Sidebar container */
+        .group-list-sidebar {
+        width: 250px;
+        float: left;
+        margin-top: 1rem;
+        padding: 1rem;
+        background: var(--bg-color);
+        border-right: 1px solid #444;
+        box-sizing: border-box;
+        }
+
+        /* Container for the group buttons */
+        .group-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        }
+
+        /* Each group as a button */
+        .group-item {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: 0.5rem 1rem;
+        background: var(--btn-color);
+        color: #e0e0e0;
+        border: none;
+        border-radius: 6px;
+        text-align: left;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: background 0.2s ease;
+        }
+
+        /* Hover/focus states */
+        .group-item:hover,
+        .group-item:focus {
+        background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Placeholder for avatar + label */
+        .group-item img {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        margin-right: 0.75rem;
+        object-fit: cover;
+        }
+
+        .group-item-label {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        }
+
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -975,7 +1033,7 @@
                         // Save session_key and redirect if needed
                         sessionStorage.setItem("session_key", data.session_key);
                         console.log("Auto-login successful!");
-                        checkIfGroup();
+                        initGroupsUI(); // Initialize the groups UI
                     } else {
                         console.error("Auto-login failed:", data.error || "Unknown error");
                         localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
@@ -1023,7 +1081,7 @@
                     showModal();
                 }
             }
-            checkIfGroup(); // Move fetchNotes() here to ensure it's only called once
+            initGroupsUI(); // Initialize the groups UI
         });
 
         document.addEventListener("DOMContentLoaded", () => {
@@ -1172,7 +1230,7 @@
                     const data = await response.json();
                     sessionStorage.setItem("session_key", data.session_key);
                     hideModal();
-                    checkIfGroup(); // Refresh notes
+                    initGroupsUI(); // Initialize the groups UI
                 } else {
                     alert("Invalid username or password. Please try again.");
                 }
@@ -1182,62 +1240,175 @@
             }
         });
 
-        async function checkIfGroup() {
-            console.log("Checking if user is part of a group...");
-            const sessionKey = sessionStorage.getItem("session_key");
+        async function initGroupsUI() {
+        const sessionKey = sessionStorage.getItem("session_key");
+        if (!sessionKey) {
+            showModal();
+            return;
+        }
 
-            if (!sessionKey) {
-                console.log("No session key found. Showing re-login modal...");
-                showModal();
-                return;
+        let resp;
+        try {
+            resp = await fetch("/groups", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${sessionKey}` }
+            });
+        } catch (err) {
+            console.error("Network error fetching groups:", err);
+            return;
+        }
+
+        // Try to parse JSON
+        let data;
+        try {
+            data = await resp.json();
+        } catch (err) {
+            console.error("Failed to parse /groups JSON:", err);
+            return;
+        }
+
+        // Normalize `groups` to always be an array
+        let groups = [];
+        if (Array.isArray(data)) {
+            groups = data;
+        } else if (Array.isArray(data.groups)) {
+            groups = data.groups;
+        } else {
+            console.warn("Unexpected /groups payload:", data);
+        }
+
+        if (!resp.ok) {
+            if (resp.status === 404 || groups.length === 0) {
+            renderNoGroups();
+            } else {
+            console.error("Error fetching groups:", resp.status, data);
             }
+            return;
+        }
 
-            try {
-                const response = await fetch("/check-group", {
-                    method: "GET",
-                    headers: { Authorization: `Bearer ${sessionKey}` },
-                });
+        if (groups.length === 0) {
+            renderNoGroups();
+            return;
+        }
 
-                const responseData = await response.json();
-                const mobileSearchBar = document.getElementById("mobile-search-input");
+        // We have ≥1 group: build the sidebar and select the current one
+        buildGroupSidebar(groups);
 
-                if (response.status === 200) {
-                    console.log("User is in a group:", responseData.group_id);
-                    sessionStorage.setItem("group_id", responseData.group_id); // Save for future use
-                    fetchNotes(responseData.group_id); // Fetch notes for the group
-                    fetchGroupInfo(responseData.group_id) // Fetch group name and members
-                    mobileSearchBar.style.display = "block"; // Show mobile search bar
-                } else if (response.status === 404) {
-                    console.log("User not part of any group. Showing group creation/join options...");
-                    console.log("Calling fetch invites functions");
-                    mobileSearchBar.style.display = "none"; // Hide mobile search bar
-                    // Call the separate function to fetch and display invites
-                    fetchInvites();
-                    document.getElementById("floating-add-button").style.display = 'none';
-                    document.getElementById("group-members-sidebar").style.display = 'none';
-                    const mainContent = document.querySelector("main");
-                    mainContent.innerHTML = `
-                        <div style="text-align: center; margin-top: 50px;">
-                            <h1>Welcome to groups!</h1>
-                            <h5>Sharing notes has never been so easy. Enter a group UUID to join a group, or click Create New Group to create a new group.</h5>
-                            <button id="create-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: var(--btn-color); color: #e0e0e0; border: none; cursor: pointer;">Create New Group</button>
-                            <div style="margin-top: 20px;">
-                                <input type="text" id="group-uuid" placeholder="Enter Group UUID" style="padding: 10px; font-size: 16px; border-radius: 8px; width: 80%; max-width: 300px; margin-bottom: 10px;">
-                                <button id="join-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: var(--btn-color); color: #e0e0e0; border: none; cursor: pointer;">Join Group</button>
-                            </div>
-                            <h3>Invites</h3>
-                            <div id="invites-container" style="margin-top: 20px;"></div>
-                        </div>
-                    `;
+        // Pick the last-selected group from sessionStorage, or default to the first
+        const saved = sessionStorage.getItem("group_id");
+        const current = groups.find(g => g.group_id === saved)
+                        ? saved
+                        : groups[0].group_id;
 
-                    document.getElementById("create-group-button").addEventListener("click", showCreateGroupModal);
-                    document.getElementById("join-group-button").addEventListener("click", joinGroup);
-                } else {
-                    throw new Error(`Unexpected response: ${response.status}`);
-                }
-            } catch (error) {
-                console.error("Error checking group:", error);
-            }
+        switchToGroup(current);
+        }
+
+
+        function renderNoGroups() {
+            console.log("Rendering ‘no groups’ UI…");
+
+            // Remove existing group list sidebar if present
+            const groupListSidebar = document.getElementById("group-list-sidebar");
+            if (groupListSidebar) groupListSidebar.remove();
+
+            // Hide mobile search bar
+            const mobileSearchBar = document.getElementById("mobile-search-input");
+            if (mobileSearchBar) mobileSearchBar.style.display = "none";
+
+            // Hide floating add button and group-info sidebar
+            const fab = document.getElementById("floating-add-button");
+            if (fab) fab.style.display = "none";
+            const infoSidebar = document.getElementById("group-members-sidebar");
+            if (infoSidebar) infoSidebar.style.display = "none";
+
+            // Render the “no groups” welcome screen in <main>
+            const mainContent = document.querySelector("main");
+            mainContent.innerHTML = `
+                <div style="text-align: center; margin-top: 50px;">
+                <h1>Welcome to groups!</h1>
+                <h5>Sharing notes has never been so easy. Enter a group UUID to join a group, or click Create New Group to create a new group.</h5>
+                <button id="create-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: var(--btn-color); color: #e0e0e0; border: none; cursor: pointer;">Create New Group</button>
+                <div style="margin-top: 20px;">
+                    <input type="text" id="group-uuid" placeholder="Enter Group UUID" style="padding: 10px; font-size: 16px; border-radius: 8px; width: 80%; max-width: 300px; margin-bottom: 10px;">
+                    <button id="join-group-button" style="padding: 10px 20px; font-size: 16px; border-radius: 8px; background-color: var(--btn-color); color: #e0e0e0; border: none; cursor: pointer;">Join Group</button>
+                </div>
+                <h3>Invites</h3>
+                <div id="invites-container" style="margin-top: 20px;"></div>
+                </div>
+            `;
+
+            // Wire up the buttons and invites
+            document.getElementById("create-group-button")
+                    .addEventListener("click", showCreateGroupModal);
+            document.getElementById("join-group-button")
+                    .addEventListener("click", joinGroup);
+
+            // Populate invites in the #invites-container
+            fetchInvites();
+        }
+
+        function buildGroupSidebar(groups) {
+            // Remove old sidebar
+            const old = document.getElementById("group-list-sidebar");
+            if (old) old.remove();
+
+            // Create new sidebar element
+            const sidebar = document.createElement("aside");
+            sidebar.id = "group-list-sidebar";
+            sidebar.classList.add("group-list-sidebar");
+
+            // Set up inner HTML scaffold (using a div#group-list instead of <ul>)
+            sidebar.innerHTML = `
+                <h3>Your Groups</h3>
+                <div id="group-list" class="group-list"></div>
+                <hr>
+                <button id="create-group-btn">+ Create New Group</button>
+                <div style="margin:1em 0">
+                <input id="join-uuid-input" placeholder="Enter Group UUID">
+                <button id="join-group-btn">Join</button>
+                </div>
+                <h4>Invites</h4>
+                <div id="invites-container"></div>
+            `;
+
+            // Insert after the header
+            const header = document.querySelector("header");
+            header.insertAdjacentElement("afterend", sidebar);
+
+            // Populate each group as a button
+            const listEl = sidebar.querySelector("#group-list");
+            groups.forEach(g => {
+                const btn = document.createElement("button");
+                btn.classList.add("group-item");
+                btn.dataset.groupId = g.group_id;
+                btn.innerHTML = `
+                <!-- later you can replace this with <img src="..."> -->
+                <span class="group-item-label">${g.group_name}</span>
+                `;
+                btn.addEventListener("click", () => switchToGroup(g.group_id));
+                listEl.appendChild(btn);
+            });
+
+            // Wire up create/join/invites
+            sidebar.querySelector("#create-group-btn")
+                    .addEventListener("click", showCreateGroupModal);
+            sidebar.querySelector("#join-group-btn")
+                    .addEventListener("click", joinGroup);
+            fetchInvites();
+        }
+
+        function switchToGroup(groupId) {
+            console.log("Switching to group", groupId);
+            sessionStorage.setItem("group_id", groupId);
+
+            // highlight the selected group in the sidebar
+            document.querySelectorAll("#group-list li").forEach(li => {
+                li.style.fontWeight = li.dataset.groupId === groupId ? "bold" : "normal";
+            });
+
+            // fetch the notes & info for this group
+            fetchNotes(groupId);
+            fetchGroupInfo(groupId);
         }
 
         async function fetchGroupInfo(groupId) {
@@ -1519,44 +1690,68 @@
             // Create modal overlay
             const modalOverlay = document.createElement("div");
             modalOverlay.id = "group-modal-overlay";
-            modalOverlay.style.display = "flex";
-            modalOverlay.style.position = "fixed";
-            modalOverlay.style.top = "0";
-            modalOverlay.style.left = "0";
-            modalOverlay.style.width = "100%";
-            modalOverlay.style.height = "100%";
-            modalOverlay.style.backgroundColor = "rgba(0, 0, 0, 0.6)";
-            modalOverlay.style.justifyContent = "center";
-            modalOverlay.style.alignItems = "center";
-            modalOverlay.style.zIndex = "1000";
+            Object.assign(modalOverlay.style, {
+                display: "flex",
+                position: "fixed",
+                top: "0",
+                left: "0",
+                width: "100%",
+                height: "100%",
+                backgroundColor: "rgba(0, 0, 0, 0.6)",
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: "1000",
+            });
 
+            // Create modal box
             const modal = document.createElement("div");
-            modal.style.backgroundColor = "var(--ctr-color)";
-            modal.style.padding = "20px 30px";
-            modal.style.borderRadius = "12px";
-            modal.style.textAlign = "center";
-            modal.style.width = "100%";
-            modal.style.maxWidth = "400px";
-            modal.style.boxShadow = "0 4px 10px rgba(0, 0, 0, 0.6)";
+            Object.assign(modal.style, {
+                backgroundColor: "var(--ctr-color)",
+                padding: "20px 30px",
+                borderRadius: "12px",
+                textAlign: "center",
+                width: "100%",
+                maxWidth: "400px",
+                boxShadow: "0 4px 10px rgba(0, 0, 0, 0.6)",
+            });
 
             modalOverlay.appendChild(modal);
             document.body.appendChild(modalOverlay);
 
+            // Note the new input ID: "new-group-name"
             modal.innerHTML = `
                 <h2>Create New Group</h2>
-                <input id="group-name" type="text" placeholder="Group Name" style="width: calc(100% - 24px); margin: 10px 0; background-color: var(--btn-color); border: 1px solid #424242; color: #E0E0E0; padding: 10px; border-radius: 8px;">
-                <button id="confirm-create-group-button" style="background-color: var(--btn-color); color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px;">Create Group</button>
-                <button id="cancel-create-group-button" style="background-color: var(--btn-color); color: #E0E0E0; border: none; cursor: pointer; transition: background-color 0.3s ease; padding: 10px 20px; font-size: 16px; border-radius: 8px; margin-left: 10px;">Cancel</button>
+                <input id="new-group-name" type="text" placeholder="Group Name"
+                style="width: calc(100% - 24px); margin: 10px 0;
+                        background-color: var(--btn-color);
+                        border: 1px solid #424242; color: #E0E0E0;
+                        padding: 10px; border-radius: 8px;">
+                <button id="confirm-create-group-button"
+                style="background-color: var(--btn-color); color: #E0E0E0;
+                        border: none; cursor: pointer; transition: background-color 0.3s ease;
+                        padding: 10px 20px; font-size: 16px; border-radius: 8px;">
+                Create Group
+                </button>
+                <button id="cancel-create-group-button"
+                style="background-color: var(--btn-color); color: #E0E0E0;
+                        border: none; cursor: pointer; transition: background-color 0.3s ease;
+                        padding: 10px 20px; font-size: 16px; border-radius: 8px;
+                        margin-left: 10px;">
+                Cancel
+                </button>
             `;
 
-            // Set up cancel button functionality
-            document.getElementById("cancel-create-group-button").addEventListener("click", () => {
-                document.body.removeChild(modalOverlay); // Remove modal
-            });
+            // Cancel just removes the modal
+            document.getElementById("cancel-create-group-button")
+                .addEventListener("click", () => {
+                document.body.removeChild(modalOverlay);
+                });
 
-            // Set up create group button functionality
-            document.getElementById("confirm-create-group-button").addEventListener("click", async () => {
-                const groupName = document.getElementById("group-name").value.trim();
+            // Confirm uses the new input ID
+            document.getElementById("confirm-create-group-button")
+                .addEventListener("click", async () => {
+                const input = document.getElementById("new-group-name");
+                const groupName = input ? input.value.trim() : "";
                 if (!groupName) {
                     alert("Please enter a valid Group Name.");
                     return;
@@ -1566,90 +1761,122 @@
 
                 try {
                     const createResponse = await fetch("/groups", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
-                        },
-                        body: JSON.stringify({ name: groupName }),
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${sessionKey}`,
+                    },
+                    body: JSON.stringify({ name: groupName }),
                     });
 
                     if (createResponse.ok) {
-                        console.log("Group created successfully.");
-                        document.body.removeChild(modalOverlay); // Remove modal
-                        location.reload();
+                    console.log("Group created successfully.");
+                    document.body.removeChild(modalOverlay);
+                    // Rebuild the sidebar so the new group appears immediately
+                    await initGroupsUI();
                     } else {
-                        console.error("Failed to create group.");
-                        alert("There was an error creating the group. Please try again.");
+                    console.error("Failed to create group:", createResponse.status);
+                    alert("There was an error creating the group. Please try again.");
                     }
                 } catch (error) {
                     console.error("Error creating group:", error);
                     alert("There was an error creating the group. Please try again.");
                 }
-            });
-        }
+                });
+            }
+
 
         async function fetchInvites() {
-            try {
-                console.log("About to fetch invites...");
-                const sessionKey = sessionStorage.getItem("session_key");
-                const response = await fetch("/check-invite", {
-                    method: "GET",
-                    headers: {
-                        Authorization: `Bearer ${sessionKey}`,
-                    },
-                });
-                console.log("Fetch invites response:", response);
+        try {
+            console.log("About to fetch invites...");
+            const sessionKey = sessionStorage.getItem("session_key");
+            const response = await fetch("/check-invite", {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${sessionKey}`,
+            },
+            });
 
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log("Invites data:", data);
-
-                    const invitesContainer = document.getElementById("invites-container");
-
-                    if (data.invites && data.invites.length > 0) {
-                        data.invites.forEach(invite => {
-                            const inviteElement = document.createElement("div");
-                            inviteElement.style.marginBottom = "10px";
-                            inviteElement.innerHTML = `
-                                <div style="background-color: var(--ctr-color); padding: 10px; border-radius: 8px;">
-                                    <p style="margin: 0; font-size: 16px;">${invite.group_name}</p>
-                                    <p style="margin: 0; font-size: 12px; color: #B0B0B0;">Invited by: ${invite.invited_by}</p>
-                                    <button class="accept-invite-button" data-group-id="${invite.group_id}" style="background-color: #4CAF50; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin-top: 5px;">Accept</button>
-                                    <button class="decline-invite-button" data-group-id="${invite.group_id}" style="background-color: #F44336; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; margin-top: 5px; margin-left: 5px;">Decline</button>
-                                </div>
-                            `;
-                            invitesContainer.appendChild(inviteElement);
-                        });
-
-                        document.querySelectorAll(".accept-invite-button").forEach(button => {
-                            button.addEventListener("click", async (event) => {
-                                const groupId = event.target.getAttribute("data-group-id");
-                                document.getElementById("group-uuid").value = groupId;
-                                await joinGroup();
-                                await sendInviteResult(groupId, "accepted");
-                            });
-                        });
-
-                        document.querySelectorAll(".decline-invite-button").forEach(button => {
-                            button.addEventListener("click", async (event) => {
-                                const groupId = event.target.getAttribute("data-group-id");
-                                await sendInviteResult(groupId, "declined");
-                                event.target.parentElement.remove();
-                            });
-                        });
-                    } else {
-                        invitesContainer.innerHTML = "<p>You have no invites!</p>";
-                    }
-                } else {
-                    console.error("Failed to fetch invites. Status:", response.status);
-                }
-            } catch (error) {
-                console.error("Error fetching invites:", error);
+            if (!response.ok) {
+            console.error("Failed to fetch invites. Status:", response.status);
+            return;
             }
+
+            const data = await response.json();
+            console.log("Invites data:", data);
+
+            // Find the correct invites container (sidebar or no-groups screen)
+            const invitesContainer =
+            document.getElementById("invites-container") ||
+            (() => {
+                console.error("No #invites-container found in DOM");
+                return null;
+            })();
+            if (!invitesContainer) return;
+
+            invitesContainer.innerHTML = ""; // clear old invites
+
+            if (data.invites && data.invites.length > 0) {
+            data.invites.forEach(invite => {
+                const inviteElement = document.createElement("div");
+                inviteElement.style.marginBottom = "10px";
+                inviteElement.innerHTML = `
+                <div style="background-color: var(--ctr-color); padding: 10px; border-radius: 8px;">
+                    <p style="margin: 0; font-size: 16px;">${invite.group_name}</p>
+                    <p style="margin: 0; font-size: 12px; color: #B0B0B0;">
+                    Invited by: ${invite.invited_by}
+                    </p>
+                    <button class="accept-invite-button" data-group-id="${invite.group_id}"
+                    style="background-color: #4CAF50; color: white; border: none;
+                            padding: 5px 10px; border-radius: 5px; cursor: pointer;
+                            margin-top: 5px;">
+                    Accept
+                    </button>
+                    <button class="decline-invite-button" data-group-id="${invite.group_id}"
+                    style="background-color: #F44336; color: white; border: none;
+                            padding: 5px 10px; border-radius: 5px; cursor: pointer;
+                            margin-top: 5px; margin-left: 5px;">
+                    Decline
+                    </button>
+                </div>
+                `;
+                invitesContainer.appendChild(inviteElement);
+
+                // Accept handler
+                inviteElement
+                .querySelector(".accept-invite-button")
+                .addEventListener("click", async (event) => {
+                    const groupId = event.target.getAttribute("data-group-id");
+                    // Choose the correct input field
+                    const uuidInput =
+                    document.getElementById("join-uuid-input") ||
+                    document.getElementById("group-uuid");
+                    if (!uuidInput) {
+                    console.error("No join-group input found!");
+                    return;
+                    }
+                    uuidInput.value = groupId;
+                    await joinGroup();
+                    await sendInviteResult(groupId, "accepted");
+                });
+
+                // Decline handler
+                inviteElement
+                .querySelector(".decline-invite-button")
+                .addEventListener("click", async (event) => {
+                    const groupId = event.target.getAttribute("data-group-id");
+                    await sendInviteResult(groupId, "declined");
+                    // remove this invite from the UI
+                    inviteElement.remove();
+                });
+            });
+            } else {
+            invitesContainer.innerHTML = "<p>You have no invites!</p>";
+            }
+        } catch (error) {
+            console.error("Error fetching invites:", error);
         }
-
-
+        }
 
         async function sendInviteResult(groupId, result) {
             const sessionKey = sessionStorage.getItem("session_key");
@@ -1673,39 +1900,46 @@
         }
 
         async function joinGroup() {
-            const groupId = document.getElementById("group-uuid").value.trim();
+            // Grab whichever input is in the DOM right now:
+            const inputEl = document.getElementById("join-uuid-input")
+                        || document.getElementById("group-uuid");
+            if (!inputEl) {
+                console.error("No group-UUID input found!");
+                return;
+            }
+
+            const groupId = inputEl.value.trim();
             if (!groupId) {
                 alert("Please enter a valid Group ID.");
                 return;
             }
 
             const sessionKey = sessionStorage.getItem("session_key");
-
             try {
                 const joinResponse = await fetch("/groups/join", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
-                    },
-                    body: JSON.stringify({ group_id: groupId }), 
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${sessionKey}`,
+                },
+                body: JSON.stringify({ group_id: groupId }),
                 });
 
                 const responseData = await joinResponse.json();
-
                 if (joinResponse.ok) {
-                    console.log(responseData.message);
-                    sessionStorage.setItem("group_id", groupId); // Save group ID
-                    location.reload();
+                console.log(responseData.message);
+                // Update the sidebar (instead of full page reload)
+                location.reload();
                 } else {
-                    console.error(responseData.error || "Failed to join group.");
-                    alert(responseData.error || "There was an error joining the group. Please try again.");
+                console.error(responseData.error || "Failed to join group.");
+                alert(responseData.error || "Error joining group. Please try again.");
                 }
             } catch (error) {
                 console.error("Error joining group:", error);
                 alert("There was an error joining the group. Please try again.");
             }
         }
+
 
         document.addEventListener("DOMContentLoaded", function () {
             const leaveGroupButton = document.getElementById("leave-group-button");
