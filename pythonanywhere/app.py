@@ -2371,6 +2371,21 @@ def join_group():
     print(f"Is first member (admin): {is_admin}")
 
     membership = GroupMember(user_id=g.user_id, group_id=group_id, admin=is_admin)
+
+    # Notify other users in the group that a new member has joined
+    if check("notify_users_join_group", "Nee") == "Ja":
+        other_members = GroupMember.query.filter(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id != g.user_id
+        ).all()
+
+        for member in other_members:
+            send_notification(
+                member.user_id,
+                "New member joined",
+                f"{g.username} has joined the group '{group.name}'",
+                "/group-notes"
+            )
     db.session.add(membership)
     db.session.commit()
     print(f"Joined group successfully: {membership}")
@@ -2380,31 +2395,76 @@ def join_group():
 @app.route('/groups/leave', methods=['POST'])
 @require_session_key
 def leave_group():
-    print("Entering leave_group route")
     data = request.json
-    print(f"Received data: {data}")
     group_id = data.get('group_id')
-    print(f"Group ID: {group_id}")
 
     group = Group.query.get(group_id)
-    print(f"Queried group: {group}")
+    user = User.query.get(g.user_id)
     if not group:
-        print("Group not found")
         return jsonify({"error": "Group not found"}), 404
 
-    # Check if user is already in the group
     existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    print(f"Queried existing_member: {existing_member}")
-    
     if not existing_member:
-        print("Not a member of this group")
         return jsonify({"message": "Not a member of this group!"}), 403
 
-    # Delete the existing membership from the database
-    db.session.delete(existing_member)
-    db.session.commit()  # Commit the transaction
+    is_admin_leaving = existing_member.admin
+    member_count = GroupMember.query.filter_by(group_id=group_id).count()
 
-    print("Left group successfully: Membership deleted")
+    # Remove user from group first to avoid FK constraint errors
+    db.session.delete(existing_member)
+    db.session.commit()
+
+    if member_count == 1:
+        # Last member left: delete notes and group
+        Note.query.filter_by(group_id=group_id).delete()
+        db.session.delete(group)
+        db.session.commit()
+
+        send_notification(
+            g.user_id,
+            "Group deleted",
+            "You were the last member, so the group and all its notes were deleted.",
+            "/group-notes"
+        )
+        return jsonify({"message": "Group deleted since you were the last member."}), 200
+
+    # If the leaving user was the admin, transfer admin rights
+    if is_admin_leaving:
+        next_admin = GroupMember.query.filter_by(group_id=group_id).first()
+        if next_admin:
+            next_admin.admin = True
+            db.session.commit()
+
+            # Notify new admin
+            send_notification(
+                next_admin.user_id,
+                "You are now the admin",
+                f"You are now the admin of '{group.name}' because {user.username} left.",
+                "/group-notes"
+            )
+            # Notify the leaving user
+            send_notification(
+                g.user_id,
+                "Admin transfer",
+                f"{next_admin.user.username} is now the admin of '{group.name}' after you left.",
+                "/group-notes"
+            )
+
+            # Optionally notify other members about admin change
+            if check("notify_users_admin_transfer", "Nee") == "Ja":
+                other_members = GroupMember.query.filter(
+                    GroupMember.group_id == group_id,
+                    GroupMember.user_id.notin_([g.user_id, next_admin.user_id])
+                ).all()
+
+                for member in other_members:
+                    send_notification(
+                        member.user_id,
+                        "Admin changed",
+                        f"{next_admin.user.username} is now the admin of the group: '{group.name}' after {user.username} left.",
+                        "/group-notes"
+                    )
+
     return jsonify({"message": "Left group successfully!"}), 200
 
 @app.route('/groups/remove-user', methods=['POST'])
@@ -2423,6 +2483,16 @@ def remove_user_from_group():
     member_to_remove = GroupMember.query.filter_by(group_id=group_id, user_id=user_id_to_remove).first()
     if not member_to_remove:
         return jsonify({"error": "User not found in the group."}), 404
+    
+    # Notify the user being removed
+    user_to_remove = User.query.get(user_id_to_remove)
+    if user_to_remove:
+        send_notification(
+            user_id_to_remove,
+            "Removed from group",
+            f"You have been removed from the group '{member_to_remove.group.name}' by {g.username}.",
+            "/group-notes"
+        )
 
     db.session.delete(member_to_remove)
     db.session.commit()
@@ -2434,19 +2504,36 @@ def delete_group():
     data = request.get_json()
     group_id = data.get("group_id")
 
+    user = User.query.get(g.user_id)
+
     # Verify that the current user is an admin of the group
     admin_membership = GroupMember.query.filter_by(group_id=group_id, user_id=g.user_id).first()
     if not admin_membership or not admin_membership.admin:
         return jsonify({"error": "Unauthorized: only admins can delete the group."}), 403
+
+    # Get the group early to access its name
+    group = Group.query.get(group_id)
+    if not group:
+        return jsonify({"error": "Group not found."}), 404
+
+    # Notify all members
+    memberships = GroupMember.query.filter_by(group_id=group_id).all()
+    for membership in memberships:
+        user = User.query.get(membership.user_id)
+        if user:
+            send_notification(
+                user.id,
+                "Group deleted",
+                f"The group '{group.name}' has been deleted by {user.username}. Notes cannot be recovered, so I hope {user.username} let y'all know he was going to delete the group :)",
+                "/group-notes"
+            )
 
     # Remove all group memberships
     GroupMember.query.filter_by(group_id=group_id).delete()
     # Remove all notes belonging to the group
     Note.query.filter_by(group_id=group_id).delete()
     # Remove the group itself
-    group = Group.query.get(group_id)
-    if group:
-        db.session.delete(group)
+    db.session.delete(group)
 
     db.session.commit()
     return jsonify({"message": "Group deleted successfully."}), 200
