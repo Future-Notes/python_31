@@ -2380,31 +2380,76 @@ def join_group():
 @app.route('/groups/leave', methods=['POST'])
 @require_session_key
 def leave_group():
-    print("Entering leave_group route")
     data = request.json
-    print(f"Received data: {data}")
     group_id = data.get('group_id')
-    print(f"Group ID: {group_id}")
 
     group = Group.query.get(group_id)
-    print(f"Queried group: {group}")
+    user = User.query.get(g.user_id)
     if not group:
-        print("Group not found")
         return jsonify({"error": "Group not found"}), 404
 
-    # Check if user is already in the group
     existing_member = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    print(f"Queried existing_member: {existing_member}")
-    
     if not existing_member:
-        print("Not a member of this group")
         return jsonify({"message": "Not a member of this group!"}), 403
 
-    # Delete the existing membership from the database
-    db.session.delete(existing_member)
-    db.session.commit()  # Commit the transaction
+    is_admin_leaving = existing_member.admin
+    member_count = GroupMember.query.filter_by(group_id=group_id).count()
 
-    print("Left group successfully: Membership deleted")
+    # Remove user from group first to avoid FK constraint errors
+    db.session.delete(existing_member)
+    db.session.commit()
+
+    if member_count == 1:
+        # Last member left: delete notes and group
+        Note.query.filter_by(group_id=group_id).delete()
+        db.session.delete(group)
+        db.session.commit()
+
+        send_notification(
+            g.user_id,
+            "Group deleted",
+            "You were the last member, so the group and all its notes were deleted.",
+            "/group-notes"
+        )
+        return jsonify({"message": "Group deleted since you were the last member."}), 200
+
+    # If the leaving user was the admin, transfer admin rights
+    if is_admin_leaving:
+        next_admin = GroupMember.query.filter_by(group_id=group_id).first()
+        if next_admin:
+            next_admin.admin = True
+            db.session.commit()
+
+            # Notify new admin
+            send_notification(
+                next_admin.user_id,
+                "You are now the admin",
+                f"You are now the admin of '{group.name}' because {user.username} left.",
+                "/group-notes"
+            )
+            # Notify the leaving user
+            send_notification(
+                g.user_id,
+                "Admin transfer",
+                f"{next_admin.user.username} is now the admin of '{group.name}' after you left.",
+                "/group-notes"
+            )
+
+            # Optionally notify other members about admin change
+            if check("notify_users_admin_transfer", "Nee") == "Ja":
+                other_members = GroupMember.query.filter(
+                    GroupMember.group_id == group_id,
+                    GroupMember.user_id.notin_([g.user_id, next_admin.user_id])
+                ).all()
+
+                for member in other_members:
+                    send_notification(
+                        member.user_id,
+                        "Admin changed",
+                        f"{next_admin.user.username} is now the admin of the group: '{group.name}' after {user.username} left.",
+                        "/group-notes"
+                    )
+
     return jsonify({"message": "Left group successfully!"}), 200
 
 @app.route('/groups/remove-user', methods=['POST'])
