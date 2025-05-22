@@ -606,6 +606,8 @@
             font-size: 16px;
             border-radius: 8px;
             padding: 10px;
+            background-color: var(--btn-color);
+            margin: 5px;
         }
 
         #username, #password {
@@ -633,6 +635,22 @@
             position: fixed;
             top: 150px; /* Adjust if needed so it appears below the header */
             right: 20px; /* Spacing from the right edge */
+            width: 250px;
+            min-height: 700px;
+            background-color: var(--ctr-color);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            color: #e0e0e0;
+            max-height: calc(100% - 120px);
+            overflow-y: auto;
+            transition: width 0.3s ease, border-radius 0.3s ease, padding 0.3s ease;
+        }
+
+        #group-list-sidebar {
+            position: fixed;
+            top: 150px; /* Adjust if needed so it appears below the header */
+            left: 20px; 
             width: 250px;
             min-height: 700px;
             background-color: var(--ctr-color);
@@ -729,12 +747,6 @@
             background-color: #cc4a4a;
         }
 
-        /* Responsive: hide sidebar on small screens if desired */
-        @media (max-width: 600px) {
-            #group-members-sidebar {
-                display: none;
-            }
-        }
 
         /* === Collapsed state styles === */
         #group-members-sidebar.collapsed {
@@ -768,16 +780,6 @@
             transition: background-color 0.3s ease;
         }
 
-        /* Sidebar container */
-        .group-list-sidebar {
-        width: 250px;
-        float: left;
-        margin-top: 1rem;
-        padding: 1rem;
-        background: var(--bg-color);
-        border-right: 1px solid #444;
-        box-sizing: border-box;
-        }
 
         /* Container for the group buttons */
         .group-list {
@@ -882,6 +884,167 @@
     }
     </script>
 
+    <script>
+        // 1. Inject shared CSS (slide, buttons, overlay)
+        ;(function injectCSS() {
+            const style = document.createElement('style');
+            style.textContent = `
+            /* Slide animations */
+            #group-members-sidebar,
+            #group-list-sidebar {
+                transition: transform 0.3s ease;
+            }
+            #group-members-sidebar.collapsed { transform: translateX(100%); }
+            #group-list-sidebar.collapsed   { transform: translateX(-100%); }
+
+            /* Common toggle-button styling */
+            .sidebar-toggle-btn {
+                position: absolute;
+                top: 10px;
+                width: 30px;
+                height: 30px;
+                background-color: var(--ctr-color);
+                border: 1px solid rgba(0,0,0,0.2);
+                border-radius: 4px;
+                color: #e0e0e0;
+                font-weight: bold;
+                cursor: pointer;
+                line-height: 30px;
+                text-align: center;
+                z-index: 1001;
+            }
+            /* Collapse (inside) */
+            #group-members-sidebar .sidebar-toggle-btn.collapse { right: 10px; }
+            #group-list-sidebar   .sidebar-toggle-btn.collapse { left: 10px; }
+
+            /* Expand (edge) */
+            .sidebar-toggle-btn.expand {
+                position: fixed;
+                top: 150px;
+                width: 30px;
+                height: 30px;
+                line-height: 30px;
+                z-index: 1000;
+            }
+            .sidebar-toggle-btn.expand.members { right: 0; }
+            .sidebar-toggle-btn.expand.list    { left: 0; }
+
+            /* MOBILE OVERLAY MODE */
+            body.mobile-overlay #group-members-sidebar,
+            body.mobile-overlay #group-list-sidebar {
+                z-index: 2000;
+            }
+            `;
+            document.head.appendChild(style);
+        })();
+
+        function setupSidebar(id, side) {
+            const sb = document.getElementById(id);
+            if (!sb || sb.dataset.setupDone) return;
+            sb.dataset.setupDone = 'true';
+
+            // Create collapse button
+            const btnC = document.createElement('div');
+            btnC.className = 'sidebar-toggle-btn collapse';
+            btnC.textContent = side === 'right' ? '›' : '‹';
+            sb.appendChild(btnC);
+
+            // Create expand button
+            const btnE = document.createElement('div');
+            btnE.className = `sidebar-toggle-btn expand ${id.includes('members') ? 'members' : 'list'}`;
+            btnE.textContent = side === 'right' ? '‹' : '›';
+            btnE.style.display = 'none';
+            document.body.appendChild(btnE);
+
+            // Collapse logic (unchanged)
+            const doCollapse = () => {
+                sb.classList.add('collapsed');
+                btnC.style.display = 'none';
+                sb.addEventListener('transitionend', function onEnd(e) {
+                if (e.propertyName === 'transform') {
+                    sb.hidden = true;
+                    btnE.style.display = 'block';
+                    sb.removeEventListener('transitionend', onEnd);
+                }
+                });
+            };
+
+            // Expanded logic (now shows collapse button immediately)
+            const doExpand = () => {
+                sb.hidden = false;
+                sb.classList.remove('collapsed');
+                btnE.style.display = 'none';
+                // Immediately show collapse button instead of waiting for transitionend
+                btnC.style.display = 'block';
+            };
+
+            btnC.addEventListener('click', doCollapse);
+            btnE.addEventListener('click', doExpand);
+
+            // Immediately apply current mobile/desktop mode
+            if (document.body.classList.contains('mobile-overlay')) {
+                sb.classList.add('collapsed');
+                sb.hidden = true;
+                btnC.style.display = 'none';
+                btnE.style.display = 'block';
+            } else {
+                sb.hidden = false;
+                sb.classList.remove('collapsed');
+                btnE.style.display = 'none';
+                btnC.style.display = 'block';
+            }
+        }
+
+
+        // 3. Mobile/desktop mode toggleers
+        function enableMobileMode() {
+            document.body.classList.add('mobile-overlay');
+            ['group-members-sidebar','group-list-sidebar'].forEach(id => {
+            const sb = document.getElementById(id);
+            if (!sb) return;
+            const btnC = sb.querySelector('.sidebar-toggle-btn.collapse');
+            const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members')?'members':'list'}`);
+            sb.classList.add('collapsed');
+            sb.hidden = true;
+            btnC && (btnC.style.display = 'none');
+            btnE && (btnE.style.display = 'block');
+            });
+        }
+        function disableMobileMode() {
+            document.body.classList.remove('mobile-overlay');
+            ['group-members-sidebar','group-list-sidebar'].forEach(id => {
+            const sb = document.getElementById(id);
+            if (!sb) return;
+            const btnC = sb.querySelector('.sidebar-toggle-btn.collapse');
+            const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members')?'members':'list'}`);
+            sb.hidden = false;
+            sb.classList.remove('collapsed');
+            btnE && (btnE.style.display = 'none');
+            btnC && (btnC.style.display = 'block');
+            });
+        }
+
+        // 4. DOM ready: set up media query first, then sidebars, then observer
+        document.addEventListener('DOMContentLoaded', () => {
+            // 4a. MediaQueryListener & initial mode
+            const mq = window.matchMedia('(max-width:600px)');
+            const handleMQ = e => e.matches ? enableMobileMode() : disableMobileMode();
+            mq.addListener(handleMQ);
+            handleMQ(mq); // ← Apply mobile/desktop mode before anything else
+
+            // 4b. Initialize any existing sidebars
+            setupSidebar('group-members-sidebar', 'right');
+            setupSidebar('group-list-sidebar', 'left');
+
+            // 4c. Watch for dynamically added sidebars
+            const obs = new MutationObserver(() => {
+            setupSidebar('group-members-sidebar', 'right');
+            setupSidebar('group-list-sidebar', 'left');
+            });
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+        });
+        </script>
+
 </head>
 <body>
     <header>
@@ -932,12 +1095,6 @@
     <aside id="group-members-sidebar">
         <div class="sidebar-header">
           <h2>Group Members</h2>
-          <button aria-label="Toggle sidebar" id="toggle-sidebar">
-            <!-- An inline SVG arrow with no shaft. Initially pointing up. -->
-            <svg width="24" height="24" viewBox="0 0 24 24">
-              <path d="M12 8L8 12h8L12 8z" fill="currentColor"></path>
-            </svg>
-          </button>
         </div>
         <table id="group-members-table">
           <tbody>
@@ -997,22 +1154,6 @@
 
         let groupId = null;
 
-        document.addEventListener("DOMContentLoaded", function() {
-            const toggleSidebarButton = document.getElementById("toggle-sidebar");
-            const expandMemberSidebarButton = document.getElementById("expand-member-sidebar");
-            const groupMembersSidebar = document.getElementById("group-members-table");
-
-            toggleSidebarButton.addEventListener("click", () => {
-                groupMembersSidebar.classList.toggle("hidden");
-                const wholeBar = document.getElementById("group-members-sidebar");
-                if (wholeBar.style.minHeight === '700px' || wholeBar.style.minHeight === '') {
-                    wholeBar.style.minHeight = '0';
-                } else {
-                    wholeBar.style.minHeight = '700px';
-                }
-            });
-
-        });
 
         document.addEventListener("DOMContentLoaded", async () => {
             const sessionKey = sessionStorage.getItem("session_key");
@@ -1357,7 +1498,7 @@
             sidebar.id = "group-list-sidebar";
             sidebar.classList.add("group-list-sidebar");
 
-            // Set up inner HTML scaffold (using a div#group-list instead of <ul>)
+            // Set up inner HTML scaffold
             sidebar.innerHTML = `
                 <h3>Your Groups</h3>
                 <div id="group-list" class="group-list"></div>
@@ -1382,7 +1523,6 @@
                 btn.classList.add("group-item");
                 btn.dataset.groupId = g.group_id;
                 btn.innerHTML = `
-                <!-- later you can replace this with <img src="..."> -->
                 <span class="group-item-label">${g.group_name}</span>
                 `;
                 btn.addEventListener("click", () => switchToGroup(g.group_id));
@@ -1391,11 +1531,16 @@
 
             // Wire up create/join/invites
             sidebar.querySelector("#create-group-btn")
-                    .addEventListener("click", showCreateGroupModal);
+                .addEventListener("click", showCreateGroupModal);
             sidebar.querySelector("#join-group-btn")
-                    .addEventListener("click", joinGroup);
+                .addEventListener("click", joinGroup);
             fetchInvites();
+
+            // === NEW: initialize collapse/expand for this sidebar ===
+            // assuming setupSidebar(id, side) is defined globally
+            setupSidebar("group-list-sidebar", "left");
         }
+
 
         function switchToGroup(groupId) {
             console.log("Switching to group", groupId);
