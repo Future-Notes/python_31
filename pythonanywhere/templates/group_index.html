@@ -1918,7 +1918,7 @@
                     console.log("Group created successfully.");
                     document.body.removeChild(modalOverlay);
                     // Rebuild the sidebar so the new group appears immediately
-                    await initGroupsUI();
+                    location.reload();
                     } else {
                     console.error("Failed to create group:", createResponse.status);
                     alert("There was an error creating the group. Please try again.");
