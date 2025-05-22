@@ -2200,6 +2200,20 @@ def group_invite():
 
     return jsonify({"message": "Invite sent successfully"}), 201
 
+@app.route('/groups', methods=['GET'])
+@require_session_key
+def list_user_groups():
+    # fetch all memberships for the current user
+    memberships = GroupMember.query.filter_by(user_id=g.user_id).all()
+    # pull in the Group object for each membership
+    groups = [{
+        "group_id": m.group.id,
+        "group_name": m.group.name,
+        "joined_at": m.joined_at.isoformat(),
+        "is_admin": m.admin
+    } for m in memberships]
+    return jsonify(groups), 200
+
 @app.route('/check-invite', methods=['GET'])
 @require_session_key
 def check_invites():

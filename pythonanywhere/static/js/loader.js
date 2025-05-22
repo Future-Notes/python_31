@@ -51,7 +51,6 @@
     p.finally(() => {
       window.__pendingFetches =
         window.__pendingFetches.filter(x => x !== p);
-        console.log('Pending fetches:', window.__pendingFetches.length);
     });
     return p;
   };

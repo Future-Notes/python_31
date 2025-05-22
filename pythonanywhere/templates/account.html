@@ -1297,7 +1297,7 @@
 
                 if (response.status === 200) {
                     sessionStorage.clear();
-                    localStorage.clear();
+                    localStorage.removeItem("lasting_key");
                     window.location.href = "/login_page";
                 } else if (response.status === 401) {
                     sessionStorage.clear();
@@ -1314,7 +1314,7 @@
 
         document.getElementById("logout").addEventListener("click", () => {
             sessionStorage.clear();
-            localStorage.clear();
+            localStorage.removeItem("lasting_key");
             window.location.href = "/login_page";
         });
 
