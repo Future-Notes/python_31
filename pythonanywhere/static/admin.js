@@ -147,11 +147,5 @@ document.addEventListener('DOMContentLoaded', () => {
     const liveUrl = `${window.location.protocol}//${liveHost}${window.location.pathname}${window.location.search}${window.location.hash}`;
     bar.innerHTML = `Testing Environment.   <a href="${liveUrl}" style="color:#2a7ae2;text-decoration:underline !important; cursor:pointer;"> Click here to go to the live environment</a>`;
     document.body.insertBefore(bar, document.body.firstChild);
-
-    // Calculate and apply push to page content
-    const barHeight = bar.offsetHeight + 'px';
-    // Apply padding-top on html and body to prevent content hiding
-    document.documentElement.style.setProperty('padding-top', barHeight, 'important');
-    document.body.style.setProperty('padding-top', barHeight, 'important');
   }
 });
