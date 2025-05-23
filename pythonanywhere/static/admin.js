@@ -127,7 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
         width: 100% !important;
         height: 24px !important;
         background-color: rgba(104, 196, 43, 0.2) !important;
-        color: rgb(255, 255, 255) !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -145,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Build the live server URL with the same path and query
     const liveHost = "bosbes.eu.pythonanywhere.com"; // Replace with your live domain
     const liveUrl = `${window.location.protocol}//${liveHost}${window.location.pathname}${window.location.search}${window.location.hash}`;
-    bar.innerHTML = `Testing Environment.   <a href="${liveUrl}" style="color:#2a7ae2;text-decoration:underline !important; cursor:pointer;"> Click here to go to the live environment</a>`;
+    bar.innerHTML = `Testing Environment.   <a href="${liveUrl}"> Click here to go to the live environment</a>`;
     document.body.insertBefore(bar, document.body.firstChild);
   }
 });
