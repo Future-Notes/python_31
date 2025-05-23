@@ -1398,25 +1398,26 @@
     let currentCalendarId = null;
 
     document.addEventListener("DOMContentLoaded", () => {
-        const cfg = window.appConfig || {};
+      const cfg = window.appConfig || {};
+    
+      const userColors = {
+        bg:  cfg.backgroundColor,
+        hdr: cfg.headerColor,
+        ctr: cfg.contrastingColor,
+        btn: cfg.buttonColor
+      };
+    
+      // make it global
+      window.userColors = userColors;
+    
+      // apply CSS custom properties
+      const root = document.documentElement;
+      root.style.setProperty("--bg-color",  userColors.bg);
+      root.style.setProperty("--hdr-color", userColors.hdr);
+      root.style.setProperty("--ctr-color", userColors.ctr);
+      root.style.setProperty("--btn-color", userColors.btn);
+    });
 
-        // store in a JS var if you need it elsewhere
-        const userColors = {
-            bg:  cfg.backgroundColor,
-            hdr: cfg.headerColor,
-            ctr: cfg.contrastingColor,
-            btn: cfg.buttonColor
-        };
-
-        // apply each to the CSS custom properties
-        const root = document.documentElement;
-        root.style.setProperty("--bg-color",  userColors.bg);
-        root.style.setProperty("--hdr-color", userColors.hdr);
-        root.style.setProperty("--ctr-color", userColors.ctr);
-        root.style.setProperty("--btn-color", userColors.btn);
-
-        // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
-        });
 
 
 
