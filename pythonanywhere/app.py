@@ -490,37 +490,40 @@ def capture_utm_params():
         db.session.add(tracking)
         db.session.commit()
 
-def validate_session_key():
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+def validate_session_key(key=None):
+    # 1) if no key passed, pull from cookie
+    if key is None:
+        key = request.cookies.get("session_key")
+
+    # 2) missing or not in our store?
+    if not key or key not in session_keys:
         return False, "Invalid or missing session API key"
 
-    key = auth_header.split("Bearer ")[1]
-    if key not in session_keys:
-        return False, "Invalid or missing session API key"
+    sess = session_keys[key]
+    now = datetime.utcnow()
 
-    session = session_keys[key]
-    now = datetime.now()
-
-    # Check if key is expired
-    if session["expires_at"] < now:
+    # 3) expired?
+    if sess["expires_at"] < now:
+        # auto‑clean up
         del session_keys[key]
         return False, "Session expired. Please log in again."
 
-    # Check if user exists in the database
-    user = User.query.get(session["user_id"])
+    # 4) user still exists?
+    user = User.query.get(sess["user_id"])
     if not user:
         del session_keys[key]
         return False, "Invalid or missing session API key"
 
-    # Check if user is suspended
+    # 5) suspended?
     if user.suspended:
         del session_keys[key]
         return False, "Account is suspended and cannot log in."
 
-    # Update last active time
-    session["last_active"] = now
-    return True, session
+    # 6) update last‑active timestamp
+    sess["last_active"] = now
+
+    # 7) success → return payload dict just like before
+    return True, sess
 
 def create_default_calendar(user_id):
     default_calendar = Calendar(name="My calendar", user_id=user_id, is_default=True)
@@ -539,13 +542,16 @@ def allowed_file(filename):
 
 # Decorator for protected routes
 def require_session_key(func):
+    @wraps(func)
     def wrapper(*args, **kwargs):
-        valid, response = validate_session_key()
+        # if they still sent an Authorization header, ignore it
+        valid, resp = validate_session_key()
         if not valid:
-            return jsonify({"error": response}), 403 if "suspended" in response else 401
-        g.user_id = response["user_id"]  # Store user ID for the route
+            # exactly the same error behavior as before
+            code = 403 if "suspended" in resp else 401
+            return jsonify({"error": resp}), code
+        g.user_id = resp["user_id"]
         return func(*args, **kwargs)
-    wrapper.__name__ = func.__name__
     return wrapper
 
 @event.listens_for(db.session.__class__, "before_flush")
@@ -1389,16 +1395,22 @@ def get_user_colors_fetch():
     Returns the color settings for the currently authenticated user.
     Expects require_session_key to have set g.user_id.
     """
-    # Fetch the user’s color row
+    # 1) Try to fetch existing row
     colors = UserColor.query.filter_by(user_id=g.user_id).first()
+
+    # 2) If missing, create defaults and re‑fetch
     if not colors:
         ensure_user_colors(g.user_id)
+        colors = UserColor.query.filter_by(user_id=g.user_id).first()
+
+    # 3) Now colors is guaranteed to exist
     return jsonify({
         "background_color":  colors.background_color,
         "header_color":      colors.header_color,
         "contrasting_color": colors.contrasting_color,
         "button_color":      colors.button_color,
     }), 200
+
 
 @app.route('/notifications', methods=['GET'])
 @require_session_key
@@ -3306,7 +3318,7 @@ def login_as_user():
     if not admin_user or admin_user.role != "admin":
         return jsonify({"error": "Unauthorized: only admins can log in as another user."}), 403
 
-    data = request.json
+    data = request.get_json() or {}
     target_user_id = data.get("user_id")
     if not target_user_id:
         return jsonify({"error": "User ID is required"}), 400
@@ -3314,20 +3326,26 @@ def login_as_user():
     target_user = User.query.get(target_user_id)
     if not target_user:
         return jsonify({"error": "Target user not found"}), 404
-
     if target_user.suspended:
         return jsonify({"error": "Cannot log in as a suspended user"}), 403
 
-    # Generate a session key for the target user
-    key = generate_session_key(target_user.id)
+    # Generate a fresh session_key for the impersonated user
+    new_key = generate_session_key(target_user.id)
 
-    return jsonify({
-        "message": f"{target_user.username}",
-        "session_key": key,
-        "user_id": target_user.id,
+    payload = {
+        "message":   target_user.username,
+        "user_id":   target_user.id,
         "startpage": target_user.startpage,
-        "lasting_key": target_user.lasting_key if target_user.lasting_key else ""
-    }), 200
+        # lasting_key remains unchanged in the cookie, so no need to reissue here
+    }
+    resp = make_response(jsonify(payload), 200)
+    # set the new session_key cookie
+    resp.set_cookie(
+        "session_key", new_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24
+    )
+    return resp
 
 @app.route('/api/source-tracking', methods=['GET'])
 @require_session_key
@@ -3360,134 +3378,162 @@ def get_username(user_id):
 
 @app.route('/signup', methods=['POST'])
 def signup():
-    data = request.json
+    data = request.get_json()
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-    user_ip = request.remote_addr  # Get the user's IP address
+    user_ip = request.remote_addr
 
-    # Check if the IP address is linked to a banned user
-    banned_ip = IpAddres.query.join(User).filter(IpAddres.ip == user_ip, User.suspended.is_(True)).first()
+    # IP‐ban check remains unchanged
+    banned_ip = IpAddres.query.join(User)\
+        .filter(IpAddres.ip == user_ip, User.suspended.is_(True))\
+        .first()
     if banned_ip:
         return jsonify({"error": "Cannot sign up from this IP address. It is linked to a banned account."}), 403
 
     try:
-        # Create the user and automatically generate a lasting key for "remember me"
         user = User(username=data['username'], password=hashed_password)
-        user.lasting_key = secrets.token_hex(32)  # Always set a lasting key
+        # always generate lasting_key up front
+        user.lasting_key = secrets.token_hex(32)
         db.session.add(user)
         db.session.commit()
 
-        # Add the IP address to the IpAddres table
-        ip_entry = IpAddres(user_id=user.id, ip=user_ip)
-        db.session.add(ip_entry)
+        IpAddres.query.add(IpAddres(user_id=user.id, ip=user_ip))
         db.session.commit()
 
-        # Generate a session key for immediate login
-        key = generate_session_key(user.id)
-
+        session_key = generate_session_key(user.id)
         create_default_calendar(user.id)
-
         ensure_user_colors(user.id)
+        send_notification(
+            user.id, "Welcome!",
+            "Thank you for creating an account on Future Notes! Click on this notification for a quick guide on how to use the app.",
+            "/guide_page"
+        )
 
-        send_notification(user.id, "Welcome!", "Thank you for creating an account on Future Notes! Click on this notification for a quick guide on how to use the app.", "/guide_page")
-        
-        return jsonify({
+        # build JSON payload
+        payload = {
             "message": "User created and logged in successfully!",
-            "session_key": key,
+            "session_key": session_key,
             "user_id": user.id,
             "lasting_key": user.lasting_key
-        }), 201
+        }
 
-    except Exception as e:
+        resp = make_response(jsonify(payload), 201)
+        # set cookies
+        resp.set_cookie(
+            "session_key", session_key,
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24  # e.g. 1 day
+        )
+        resp.set_cookie(
+            "lasting_key", user.lasting_key,
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24*30  # e.g. 30 days
+        )
+        return resp
+
+    except IntegrityError:
+        db.session.rollback()
         return jsonify({"error": "Username already exists"}), 400
 
 
 @app.route('/login', methods=['POST'])
 def login():
-    try:
-        data = request.json
-        if not data:
-            return jsonify({"error": "Invalid request data"}), 400
-
-        # 1) Auto-login via lasting_key
-        lasting_key = data.get('lasting_key')
-        if lasting_key:
-            user = User.query.filter_by(lasting_key=lasting_key).first()
-            if user:
-                if user.suspended:
-                    return jsonify({"error": "Account is suspended"}), 403
-
-                key = generate_session_key(user.id)
-
-                # Add or verify the IP address
-                user_ip = request.remote_addr
-                ip_entry = IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first()
-                if not ip_entry:
-                    ip_entry = IpAddres(user_id=user.id, ip=user_ip)
-                    db.session.add(ip_entry)
-                    db.session.commit()
-
-                payload = {
-                    "message":     "Login successful!",
-                    "session_key": key,
-                    "user_id":     user.id,
-                    "lasting_key": user.lasting_key,
-                    "startpage":   user.startpage
-                }
-                return jsonify(payload), 200
-
+    data = request.get_json(silent=True) or {}
+    # 1) lasting_key: either in JSON body or in cookie
+    lk = data.get('lasting_key') or request.cookies.get('lasting_key')
+    if lk:
+        user = User.query.filter_by(lasting_key=lk).first()
+        if not user:
             return jsonify({"error": "Invalid lasting key"}), 400
-
-        # 2) Username/password
-        username = data.get('username')
-        password = data.get('password')
-        if not username or not password:
-            return jsonify({"error": "Missing username or password"}), 400
-
-        user = User.query.filter_by(username=username).first()
-        if not user or not bcrypt.check_password_hash(user.password, password):
-            return jsonify({"error": "Invalid credentials"}), 400
-
         if user.suspended:
             return jsonify({"error": "Account is suspended"}), 403
 
-        # Generate a new session key for this login
-        key = generate_session_key(user.id)
-
-        # Add or verify the IP address
+        # OK, issue new session_key
+        session_key = generate_session_key(user.id)
+        # persist any new IP
         user_ip = request.remote_addr
-        ip_entry = IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first()
-        if not ip_entry:
-            ip_entry = IpAddres(user_id=user.id, ip=user_ip)
-            db.session.add(ip_entry)
+        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+            db.session.add(IpAddres(user_id=user.id, ip=user_ip))
             db.session.commit()
 
-        # Build standard payload
         payload = {
-            "message":     "Login successful!",
-            "session_key": key,
+            "message":   "Login successful!",
+            "session_key": session_key,
             "user_id":     user.id,
+            "lasting_key": user.lasting_key,
             "startpage":   user.startpage
         }
+        resp = make_response(jsonify(payload), 200)
+        resp.set_cookie(
+            "session_key", session_key,
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24
+        )
+        # already have lasting_key cookie set on signup; refresh its expiration
+        resp.set_cookie(
+            "lasting_key", user.lasting_key,
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24*30
+        )
+        return resp
 
-        # 3) If the user wants to stay logged in, include lasting_key
-        if data.get('keep_login'):
-            if not user.lasting_key:
-                user.lasting_key = secrets.token_hex(32)
-                db.session.commit()
-            payload["lasting_key"] = user.lasting_key
+    # 2) username/password
+    username = data.get('username')
+    password = data.get('password')
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
 
-        return jsonify(payload), 200
+    user = User.query.filter_by(username=username).first()
+    if not user or not bcrypt.check_password_hash(user.password, password):
+        return jsonify({"error": "Invalid credentials"}), 400
+    if user.suspended:
+        return jsonify({"error": "Account is suspended"}), 403
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    session_key = generate_session_key(user.id)
+    # record IP
+    user_ip = request.remote_addr
+    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
+        db.session.commit()
+
+    payload = {
+        "message":     "Login successful!",
+        "session_key": session_key,
+        "user_id":     user.id,
+        "startpage":   user.startpage
+    }
+    # only include lasting_key in JSON if they asked to keep me logged in
+    if data.get('keep_login'):
+        if not user.lasting_key:
+            user.lasting_key = secrets.token_hex(32)
+            db.session.commit()
+        payload["lasting_key"] = user.lasting_key
+
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie(
+        "session_key", session_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24
+    )
+    if data.get('keep_login'):
+        resp.set_cookie(
+            "lasting_key", user.lasting_key,
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24*30
+        )
+    return resp
+
 
 @app.route('/logout', methods=['POST'])
 @require_session_key
 def logout():
-    auth_header = request.headers.get("Authorization")
-    key = auth_header.split("Bearer ")[1]
-    del session_keys[key]
-    return jsonify({"message": "Logged out successfully!"}), 200
+    # delete from server‐side session_keys store
+    auth_key = request.cookies.get("session_key")
+    session_keys.pop(auth_key, None)
+
+    resp = make_response(jsonify({"message": "Logged out successfully!"}), 200)
+    resp.delete_cookie("session_key")
+    resp.delete_cookie("lasting_key")
+    return resp
 
 @app.route('/test-session', methods=['GET'])
 @require_session_key

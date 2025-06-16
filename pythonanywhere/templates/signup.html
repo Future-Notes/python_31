@@ -238,12 +238,22 @@
   <script>
     // Update login link with query parameters on load
     document.addEventListener("DOMContentLoaded", () => {
-      const queryParams = window.location.search;
-      const loginLink = document.getElementById("login-link");
-      if (queryParams && loginLink) {
-        loginLink.href = "/login_page" + queryParams;
+      // Patch fetch once (if not already done)
+      if (!window.__fetchPatched) {
+        const _f = window.fetch;
+        window.fetch = (url, opts = {}) => {
+          opts.credentials = 'include';
+          return _f(url, opts);
+        };
+        window.__fetchPatched = true;
       }
-    });
+
+      // Carry over query params to login link
+      const query = window.location.search;
+      if (query) {
+        const link = document.getElementById("login-link");
+        if (link) link.href = "/login_page" + query;
+      }
 
     const substitutions = {
         a: '[a@4]+?',
@@ -439,38 +449,38 @@
     passwordInput.addEventListener("input", checkPassword);
     usernameInput.addEventListener("input", checkUsername);
 
-    // Handle signup form submission.
-    document.getElementById("signup-form").addEventListener("submit", async (e) => {
-      // Prevent submission if password requirements are not met, and shake the tip.
-      if (!checkPassword() || !checkUsername()) {
-        e.preventDefault();
-        passwordTip.classList.remove("shake"); // Reset if already applied.
-        void passwordTip.offsetWidth; // Force reflow for restart.
-        passwordTip.classList.add("shake");
-        return;
-      }
-      
+    // On submit, POST to /signup
+  document.getElementById("signup-form").addEventListener("submit", async e => {
+    // run your existing checkPassword() & checkUsername(); if fail, shake + return
+    if (!checkPassword() || !checkUsername()) {
       e.preventDefault();
-      const username = document.getElementById("username").value;
-      const password = passwordInput.value;
-      
-      const response = await fetch("/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await response.json();
-      
-      if (response.ok) {
-        // Save session details and redirect.
-        localStorage.setItem("session_key", data.session_key);
-        localStorage.setItem("user_id", data.user_id);
-        localStorage.setItem("lasting_key", data.lasting_key);
-        window.location.href = "/index"; 
-      } else {
-        alert(data.error || "Signup failed");
-      }
+      const tip = document.getElementById("password-tip");
+      tip.classList.remove("shake");
+      void tip.offsetWidth;
+      tip.classList.add("shake");
+      return;
+    }
+
+    e.preventDefault();
+    const uname = document.getElementById("username").value.trim();
+    const pwd   = document.getElementById("password").value;
+
+    const res = await fetch("/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: uname, password: pwd })
     });
+    const data = await res.json();
+
+    if (res.ok) {
+      // cookies are set by the response; just redirect
+      window.location.href = "/index";
+    } else {
+      alert(data.error || "Signup failed");
+    }
+  });
+  
+  });
   </script>
 </body>
 </html>

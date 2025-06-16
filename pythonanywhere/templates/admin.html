@@ -367,7 +367,6 @@
     </div>
 
     <script>
-        const sessionKey = sessionStorage.getItem("session_key");
 
         function showModal() {
             window.location.href = '/login_page?redirect=/admin_page&warning=true';
@@ -379,35 +378,6 @@
             location.reload();
         }
 
-        document.getElementById("submit-credentials").addEventListener("click", async () => {
-            const username = document.getElementById("username").value.trim();
-            const password = document.getElementById("password").value.trim();
-
-            if (!username || !password) {
-                alert("Both fields are required.");
-                return;
-            }
-
-            try {
-                const response = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password }),
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    sessionStorage.setItem("session_key", data.session_key);
-                    sessionStorage.setItem("user_id", data.user_id);
-                    hideModal();
-                } else {
-                    alert("Invalid username or password. Please try again.");
-                }
-            } catch (error) {
-                console.error("Error during re-login:", error);
-                alert("There was an error. Please try again.");
-            }
-        });
 
         document.getElementById('create-backup-btn').addEventListener('click', async () => {
             try {
@@ -415,7 +385,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${sessionKey}`
+                    
                 }
                 });
 
@@ -440,7 +410,7 @@
             try {
                 const response = await fetch("/admin", {
                     method: "GET",
-                    headers: { Authorization: `Bearer ${sessionKey}` },
+                    
                 });
 
                 if (response.ok) {
@@ -467,7 +437,7 @@
             try {
                 const response = await fetch("/admin/user-status", {
                     method: "GET",
-                    headers: { Authorization: `Bearer ${sessionKey}` },
+                    
                 });
 
                 if (response.ok) {
@@ -562,7 +532,7 @@
                     method: "DELETE",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        
                     },
                     body: JSON.stringify({ target: id, type: "message" }),
                 });
@@ -584,7 +554,7 @@
                         method: "DELETE",
                         headers: {
                             "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
+                            
                         },
                         body: JSON.stringify({ target: id, type: "user" }),
                     });
@@ -608,7 +578,7 @@
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
+                            
                         },
                         body: JSON.stringify({ user_id: userId }),
                     });
@@ -626,45 +596,42 @@
         }
 
         async function loginUser(userId) {
-            if (confirm("You will be logged out of your own account and logged in as the selected user. Do you want to proceed?")) {
-                try {
-                    // Save admin's credentials if they haven't been saved yet.
-                    if (!localStorage.getItem("admin_session_key")) {
-                        const adminSession = sessionStorage.getItem("session_key");
-                        if (adminSession) {
-                            localStorage.setItem("admin_session_key", adminSession);
-                        }
-                        const adminLasting = localStorage.getItem("lasting_key");
-                        if (adminLasting) {
-                            localStorage.setItem("admin_lasting_key", adminLasting);
-                        }
-                    }
-                    
-                    const response = await fetch("/admin/login-as-user", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
-                        },
-                        body: JSON.stringify({ user_id: userId }),
-                    });
+            if (!confirm("You will be logged out of your own account and logged in as the selected user. Proceed?")) {
+                return;
+            }
 
-                    if (response.ok) {
-                        const data = await response.json();
-                        sessionStorage.clear(); // Clear the current session
-                        sessionStorage.setItem("session_key", data.session_key);
-                        sessionStorage.setItem("current_user_id", data.user_id);
-                        alert(`Logged in as ${data.message}`);
-                        window.location.href = data.startpage;
-                    } else {
-                        const error = await response.json();
-                        alert(error.error || "Failed to log in as the user.");
-                    }
-                } catch (error) {
-                    console.error("Error logging in as user:", error);
-                    alert("An unexpected error occurred.");
+            // 1) if this is the first impersonation, back up admin_lasting_key in localStorage
+            if (!localStorage.getItem("admin_lasting_key")) {
+                // since we can’t read HttpOnly lasting_key cookie, trigger the backend:
+                // we call login with keep_login=false so it will echo the existing lasting_key in JSON
+                const resp = await fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({})  
+                });
+                if (resp.ok) {
+                const data = await resp.json();
+                localStorage.setItem("admin_lasting_key", data.lasting_key);
                 }
             }
+
+            // 2) tell the server to impersonate
+            const response = await fetch("/admin/login-as-user", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: userId })
+            });
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                return alert(err.error || "Failed to log in as the user.");
+            }
+            const data = await response.json();
+            // 3) mark which user we’re now impersonating
+            sessionStorage.setItem("impersonated_user_id", userId);
+            alert("Now impersonating user");
+            window.location.href = data.startpage;  // or the returned startpage if you prefer
         }
 
 
@@ -674,7 +641,7 @@
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        
                     },
                     body: JSON.stringify({ user_id: userId, new_role: newRole }),
                 });
@@ -701,7 +668,7 @@
                 method: "GET",
                 headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${sessionKey}`,
+                
                 },
             });
             if (response.ok) {
@@ -727,7 +694,7 @@
                 method: "POST",
                 headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${sessionKey}`,
+                
                 },
             });
             if (response.ok) {
@@ -752,7 +719,7 @@
                 method: "GET",
                 headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${sessionKey}`,
+                
                 },
             });
 
@@ -784,7 +751,7 @@
                 method: "POST",
                 headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${sessionKey}`,
+                
                 },
             });
 
@@ -816,7 +783,7 @@
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        
                     },
                     body: JSON.stringify({ password }),
                 });

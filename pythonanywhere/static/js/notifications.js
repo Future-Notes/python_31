@@ -26,15 +26,9 @@
     }
   }
 
-  // ——— UTILITIES ———
-  function getSessionKey() {
-    return sessionStorage.getItem("session_key");
-  }
-
   async function fetchUnseen() {
-    const token = getSessionKey();
+    
     const res = await fetch('/notifications', {
-      headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) throw new Error('Failed to fetch notifications');
     const data = await res.json();
@@ -42,10 +36,9 @@
   }
 
   async function markSeen(id) {
-    const token = getSessionKey();
+    
     const res = await fetch(`/notifications/${id}`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
     });
     if (!res.ok) throw new Error('Failed to mark notification seen');
     return res.json();
@@ -53,11 +46,10 @@
 
   async function markSeenBulk(ids) {
     if (!ids.length) return;
-    const token = getSessionKey();
+    
     const res = await fetch('/notifications/seen', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ ids })

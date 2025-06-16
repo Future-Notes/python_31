@@ -851,37 +851,25 @@
     </style>
 
     <script>
-    // pull session_key out of sessionStorage
-    const token = sessionStorage.getItem("session_key");
-    if (token) {
-        fetch("/user-colors", {
-        headers: {
-            "Authorization": "Bearer " + token
-        }
-        })
-        .then(res => {
-        if (!res.ok) throw new Error("Could not load colors");
-        return res.json();
-        })
-        .then(cfg => {
-        // apply them as CSS variables
-        document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
-        document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
-        document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
-        document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+    fetch("/user-colors")
+            .then(res => {
+                if (!res.ok) throw new Error("Could not load colors");
+                return res.json();
+            })
+            .then(cfg => {
+                document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
+                document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
+                document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
+                document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
 
-        // keep the config globally if you still need it in JS
-        window.appConfig = {
-            backgroundColor:  cfg.background_color,
-            headerColor:      cfg.header_color,
-            contrastingColor: cfg.contrasting_color,
-            buttonColor:      cfg.button_color
-        };
-        })
-        .catch(err => console.error(err));
-    } else {
-        console.warn("No session_key in sessionStorage; using default colors");
-    }
+                window.appConfig = {
+                    backgroundColor:  cfg.background_color,
+                    headerColor:      cfg.header_color,
+                    contrastingColor: cfg.contrasting_color,
+                    buttonColor:      cfg.button_color
+                };
+            })
+            .catch(err => console.error(err));
     </script>
 
     <script>
@@ -1156,73 +1144,64 @@
 
 
         document.addEventListener("DOMContentLoaded", async () => {
-            const sessionKey = sessionStorage.getItem("session_key");
-            const lastingKey = localStorage.getItem("lasting_key");
+            // ensure fetch sends cookies
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
+            }
 
-            // Function to attempt auto-login using lasting_key
+            // ping a lightweight endpoint to check session
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    hideModal();  // user’s good
+                    initGroupsUI();
+                    return true;
+                }
+                if (res.status === 403) {
+                    // banned
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                // 401 or anything else → try auto-login
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            // try auto-login via lasting_key cookie on the backend
             async function attemptAutoLogin() {
                 try {
-                    const response = await fetch("/login", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ lasting_key: lastingKey }),
-                    });
-
-                    const data = await response.json();
-
-                    if (response.ok) {
-                        // Save session_key and redirect if needed
-                        sessionStorage.setItem("session_key", data.session_key);
-                        console.log("Auto-login successful!");
-                        initGroupsUI(); // Initialize the groups UI
-                    } else {
-                        console.error("Auto-login failed:", data.error || "Unknown error");
-                        localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
-                        showModal(); // Show modal if auto-login fails
-                    }
-                } catch (error) {
-                    console.error("Error during auto-login:", error);
-                    showModal(); // Show modal if auto-login fails
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    hideModal();
+                    initGroupsUI();
+                    return true;
                 }
-            }
-
-            // If session_key is missing but lasting_key is present, attempt auto-login
-            if (!sessionKey && lastingKey) {
-                await attemptAutoLogin();
-            } else if (!sessionKey && !lastingKey) {
-                // No session_key or lasting_key: show modal
+                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
                 showModal();
-            } else {
-                console.log("Session key is present, validating...");
-                // Check if the session key is valid
-                try {
-                    const response = await fetch("/test-session", {
-                        method: "GET",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
-                        },
-                    });
-
-                    if (response.status === 401) {
-                        console.log("Session key invalid. Attempting auto-login...");
-                        if (lastingKey) {
-                            await attemptAutoLogin();
-                        } else {
-                            showModal();
-                        }
-                    } else if (response.status === 403) {
-                        window.location.href = '/login_page?suspended=true';
-                    } else {
-                        console.log("Session key is valid, user is logged in.");
-                        hideModal();
-                    }
-                } catch (error) {
-                    console.error("Error during session validation:", error);
-                    showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
                 }
             }
-            initGroupsUI(); // Initialize the groups UI
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
+        }
         });
 
         document.addEventListener("DOMContentLoaded", () => {
@@ -1369,7 +1348,6 @@
 
                 if (response.ok) {
                     const data = await response.json();
-                    sessionStorage.setItem("session_key", data.session_key);
                     hideModal();
                     initGroupsUI(); // Initialize the groups UI
                 } else {
@@ -1382,17 +1360,12 @@
         });
 
         async function initGroupsUI() {
-        const sessionKey = sessionStorage.getItem("session_key");
-        if (!sessionKey) {
-            showModal();
-            return;
-        }
 
         let resp;
         try {
             resp = await fetch("/groups", {
             method: "GET",
-            headers: { Authorization: `Bearer ${sessionKey}` }
+            
             });
         } catch (err) {
             console.error("Network error fetching groups:", err);
@@ -1558,18 +1531,11 @@
 
         async function fetchGroupInfo(groupId) {
             try {
-                const sessionKey = sessionStorage.getItem("session_key");
-                if (!sessionKey) {
-                    console.error("Session key is missing.");
-                    document.getElementById("group-name").textContent = "Unknown group name";
-                    return;
-                }
+                
 
                 const response = await fetch(`/group-info/${groupId}`, {
                     method: 'GET',
-                    headers: {
-                        Authorization: `Bearer ${sessionKey}`
-                    }
+                    
                 });
 
                 if (response.ok) {
@@ -1587,16 +1553,13 @@
         }
 
         async function removeGroupMember(userId) {
-            const sessionKey = sessionStorage.getItem("session_key");
+            
             const groupId = sessionStorage.getItem("group_id");
 
             try {
                 const response = await fetch('/groups/remove-user', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionKey}`
-                    },
+                    
                     body: JSON.stringify({ group_id: groupId, user_id: userId })
                 });
 
@@ -1617,16 +1580,13 @@
         async function deleteGroup() {
             if (!confirm('Are you sure you want to delete the entire group? This action cannot be undone.')) return;
 
-            const sessionKey = sessionStorage.getItem("session_key");
+            
             const groupId = sessionStorage.getItem("group_id");
 
             try {
                 const response = await fetch('/groups/delete', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionKey}`
-                    },
+                    
                     body: JSON.stringify({ group_id: groupId })
                 });
 
@@ -1802,7 +1762,7 @@
                     return;
                 }
 
-                const sessionKey = sessionStorage.getItem("session_key");
+                
                 const groupId = sessionStorage.getItem("group_id");
 
                 try {
@@ -1810,7 +1770,6 @@
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
                         },
                         body: JSON.stringify({ username, group_id: groupId }),
                     });
@@ -1902,14 +1861,13 @@
                     return;
                 }
 
-                const sessionKey = sessionStorage.getItem("session_key");
+                
 
                 try {
                     const createResponse = await fetch("/groups", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
                     },
                     body: JSON.stringify({ name: groupName }),
                     });
@@ -1934,12 +1892,10 @@
         async function fetchInvites() {
         try {
             console.log("About to fetch invites...");
-            const sessionKey = sessionStorage.getItem("session_key");
+            
             const response = await fetch("/check-invite", {
             method: "GET",
-            headers: {
-                Authorization: `Bearer ${sessionKey}`,
-            },
+            
             });
 
             if (!response.ok) {
@@ -2025,14 +1981,13 @@
         }
 
         async function sendInviteResult(groupId, result) {
-            const sessionKey = sessionStorage.getItem("session_key");
+            
 
             try {
             const response = await fetch("/group-invite-result", {
                 method: "POST",
                 headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${sessionKey}`,
                 },
                 body: JSON.stringify({ group_id: groupId, result: result }),
             });
@@ -2060,13 +2015,12 @@
                 return;
             }
 
-            const sessionKey = sessionStorage.getItem("session_key");
+            
             try {
                 const joinResponse = await fetch("/groups/join", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${sessionKey}`,
                 },
                 body: JSON.stringify({ group_id: groupId }),
                 });
@@ -2134,12 +2088,6 @@
         }
 
         async function leaveGroup() {
-            const sessionKey = sessionStorage.getItem("session_key");
-            if (!sessionKey) {
-                console.error("No session key found in sessionStorage.");
-                alert("You must be logged in to leave a group.");
-                return;
-            }
 
             const leaveGroupButton = document.getElementById("leave-group-button");
             const groupId = sessionStorage.getItem("group_id"); //Get the groupId from session storage
@@ -2152,10 +2100,7 @@
             try {
                 const response = await fetch("/groups/leave", {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${sessionKey}`
-                    },
+                    
                     body: JSON.stringify({ group_id: groupId })
                 });
 
@@ -2183,20 +2128,11 @@
 
         async function fetchNotes(groupId) {
             console.log(`Fetching notes for group: ${groupId}...`);
-            const sessionKey = sessionStorage.getItem("session_key");
-
-            if (!sessionKey) {
-                console.log("No session key found. Showing re-login modal...");
-                showModal();
-                return;
-            }
 
             try {
                 const response = await fetch(`/groups/${groupId}/notes`, {
                     method: "GET",
-                    headers: {
-                        Authorization: `Bearer ${sessionKey}`
-                    }
+                    
                 });
 
                 if (!response.ok) {
@@ -2240,14 +2176,6 @@
             const noteText = document.getElementById("note-text").value;
             const noteTag = document.getElementById("note-tag").value;
 
-            const sessionKey = sessionStorage.getItem("session_key");
-
-            if (!sessionKey) {
-                console.log("No session key found. Showing re-login modal...");
-                showModal();
-                return;
-            }
-
             if (!noteText.trim()) {
                 alert("Note cannot be empty.");
                 return;
@@ -2258,7 +2186,6 @@
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization : `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
                     body: JSON.stringify({
                         title: noteTitle || null,
@@ -2300,7 +2227,6 @@
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
                     body: JSON.stringify({
                         title: updatedTitle || null,
@@ -2331,7 +2257,6 @@
                 try {
                     const response = await fetch(`/groups/${groupId}/notes`, {
                         method: "DELETE",
-                        headers: { Authorization: `Bearer ${sessionStorage.getItem("session_key")}` },
                     });
 
                     if (!response.ok) {
@@ -2419,18 +2344,12 @@
         document.getElementById("overlay").addEventListener("click", closeUpdateMenu);
 
         window.onload = async () => {
-            const sessionKey = sessionStorage.getItem("session_key");
-            if (!sessionKey) {
-                showModal();
-                return;
-            }
 
             try {
                 const response = await fetch("/test-session", {
                     method: "GET",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
                     },
                 });
 
@@ -2441,7 +2360,6 @@
                         method: "GET",
                         headers: {
                             "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
                         },
                     });
 
@@ -2518,7 +2436,6 @@
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
                     },
                     body: JSON.stringify({ title: noteTitle || null, note: noteText, tag: noteTag || null }),
                 });

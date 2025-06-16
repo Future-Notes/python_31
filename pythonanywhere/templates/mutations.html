@@ -96,64 +96,66 @@
   </div>
 
   <script>
-    // ==== AUTH SETUP (unchanged) ====
-    let sessionKey = sessionStorage.getItem("session_key");
-    const lastingKey = localStorage.getItem("lasting_key");
-
     document.addEventListener("DOMContentLoaded", async () => {
-      // Auto‑login helper
-      async function attemptAutoLogin() {
-        try {
-          const response = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lasting_key: lastingKey }),
-          });
-          const data = await response.json();
-          if (response.ok) {
-            sessionKey = data.session_key;
-            sessionStorage.setItem("session_key", sessionKey);
-            console.log("Auto‑login successful!");
-          } else {
-            console.error("Auto‑login failed:", data.error || "Unknown error");
-            localStorage.removeItem("lasting_key");
-            showModalLogin();
-          }
-        } catch (err) {
-          console.error("Error during auto‑login:", err);
-          showModalLogin();
-        }
-      }
+            // ensure fetch sends cookies
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
+            }
 
-      // Validate or auto‑login
-      if (!sessionKey && lastingKey) {
-        await attemptAutoLogin();
-      } else if (!sessionKey) {
-        showModalLogin();
-      } else {
-        try {
-          const resp = await fetch("/test-session", {
-            method: "GET",
-            headers: { Authorization: `Bearer ${sessionKey}` },
-          });
-          if (resp.status === 401 && lastingKey) {
+            // ping a lightweight endpoint to check session
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    loadLogs();
+                    setupModal();
+                    return true;
+                }
+                if (res.status === 403) {
+                    // banned
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                // 401 or anything else → try auto-login
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            // try auto-login via lasting_key cookie on the backend
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    loadLogs();
+                    setupModal();
+                    return true;
+                }
+                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
+                showModalLogin();
+                return false;
+                } catch (err) {
+                showModalLogin();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
             await attemptAutoLogin();
-          } else if (resp.status === 401) {
-            showModalLogin();
-          } else if (resp.status === 403) {
-            return window.location.href = "/login_page?suspended=true";
-          }
-          console.log("Session key is valid.");
-        } catch (err) {
-          console.error("Session validation error:", err);
-          showModalLogin();
         }
-      }
-
-      // After auth, load mutations
-      loadLogs();
-      setupModal();
-    });
+        });
 
     function showModalLogin() {
       window.location.href = '/login_page?redirect=/mutations_page&warning=true';
@@ -163,13 +165,8 @@
     // ==== MAIN LOGIC ====
 
     async function loadLogs() {
-      // Re‑fetch sessionKey in case it was just set
-      sessionKey = sessionStorage.getItem("session_key");
 
       const res = await fetch('/logs', {
-        headers: sessionKey
-          ? { 'Authorization': `Bearer ${sessionKey}` }
-          : {}
       });
       if (!res.ok) {
         console.error('Failed to fetch logs:', res.status);
@@ -242,9 +239,6 @@
 
           const resp = await fetch(`/mutations/${txid}/rollback`, {
             method: 'POST',
-            headers: sessionKey
-              ? { 'Authorization': `Bearer ${sessionKey}` }
-              : {}
           });
           const result = await resp.json();
           alert(

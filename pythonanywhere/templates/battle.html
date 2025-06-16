@@ -361,68 +361,66 @@
   </div>
 
   <script>
-    // --- Authentication Functions ---
-    async function authenticateUser() {
-      let sessionKey = sessionStorage.getItem("session_key");
-      const lastingKey = localStorage.getItem("lasting_key");
-
-      async function attemptAutoLogin() {
-        try {
-          console.log("Attempting auto-login...");
-          const response = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lasting_key: lastingKey }),
-          });
-          if (!response.ok) {
-            console.error("Auto-login failed");
-            localStorage.removeItem("lasting_key");
-            return null;
-          }
-          const data = await response.json();
-          sessionStorage.setItem("session_key", data.session_key);
-          console.log("Auto-login successful!");
-          return data.session_key;
-        } catch (error) {
-          console.error("Error during auto-login:", error);
-          return null;
+    document.addEventListener("DOMContentLoaded", async () => {
+        // ensure fetch sends cookies
+        if (!window.__fetchPatched) {
+            const _f = window.fetch;
+            window.fetch = (url, opts = {}) => {
+            opts.credentials = 'include';
+            return _f(url, opts);
+            };
+            window.__fetchPatched = true;
         }
-      }
 
-      if (!sessionKey && lastingKey) {
-        console.log("No session key found, attempting auto-login...");
-        sessionKey = await attemptAutoLogin();
-      }
-
-      if (sessionKey) {
-        try {
-          console.log("Validating session key...");
-          const response = await fetch("/test-session", {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${sessionKey}` },
-          });
-          if (response.status === 401) {
-            console.log("Session key invalid, attempting auto-login...");
-            sessionKey = lastingKey ? await attemptAutoLogin() : null;
-          }
-        } catch (error) {
-          console.error("Error during session validation:", error);
+        // ping a lightweight endpoint to check session
+        async function validateSession() {
+            try {
+            const res = await fetch("/test-session", { method: "GET" });
+            if (res.status === 200) {
+                return true;
+            }
+            if (res.status === 403) {
+                // banned
+                window.location.href = '/login_page?suspended=true';
+                return false;
+            }
+            // 401 or anything else → try auto-login
+            return false;
+            } catch (err) {
+            return false;
+            }
         }
-      }
-      return sessionKey;
+
+        // try auto-login via lasting_key cookie on the backend
+        async function attemptAutoLogin() {
+            try {
+            const res = await fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({})  // backend reads HTTP‐only cookie
+            });
+            if (res.ok) {
+                console.log("Auto-login successful");
+                return true;
+            }
+            // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
+            return false;
+            } catch (err) {
+            return false;
+            }
+        }
+        
+    const ok = await validateSession();
+    if (!ok) {
+        await attemptAutoLogin();
     }
+    });
 
     async function sendGameStats(stats) {
-      const sessionKey = await authenticateUser();
-      if (!sessionKey) {
-        console.error("No valid session key. Cannot send game stats.");
-        return;
-      }
       fetch('/game-stats', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
         },
         body: JSON.stringify(stats)
       })
