@@ -482,21 +482,15 @@
 
     const logoutButton = document.getElementById("logout");
     logoutButton.addEventListener("click", async () => {
-      const sessionKey = sessionStorage.getItem("session_key");
-      if (!sessionKey) {
-        return;
-      }
       try {
         const response = await fetch("/logout", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${sessionKey}`
+            
           }
         });
         if (response.ok) {
-          sessionStorage.removeItem("session_key");
-          localStorage.removeItem("lasting_key");
           window.location.reload();
         } else {
           console.error("Failed to log out");
@@ -511,12 +505,11 @@
       const trophyList = document.getElementById("trophy-list");
 
       try {
-        const sessionKey = await authenticateUser();
         let response = await fetch("/game-stats-return", {
           method: "GET",
           headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${sessionKey}`
+        
           }
         });
 
@@ -525,7 +518,7 @@
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${sessionKey}`
+          
         }
           });
           if (response.status === 500) {
@@ -533,7 +526,7 @@
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${sessionKey}`
+            
           }
         });
           }
@@ -587,54 +580,51 @@
 
 
     async function authenticateUser() {
-      let sessionKey = sessionStorage.getItem("session_key");
-      const lastingKey = localStorage.getItem("lasting_key");
+      // 1) ensure all fetch() calls send cookies
+      if (!window.__fetchPatched) {
+        const _f = window.fetch;
+        window.fetch = (url, opts = {}) => {
+          opts.credentials = 'include';
+          return _f(url, opts);
+        };
+        window.__fetchPatched = true;
+      }
 
-      async function attemptAutoLogin() {
-        try {
-          console.log("Attempting auto-login...");
-          const response = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lasting_key: lastingKey }),
-          });
-          if (!response.ok) {
-            console.error("Auto-login failed");
-            localStorage.removeItem("lasting_key");
-            return null;
-          }
-          const data = await response.json();
-          sessionStorage.setItem("session_key", data.session_key);
-          console.log("Auto-login successful!");
-          return data.session_key;
-        } catch (error) {
-          console.error("Error during auto-login:", error);
-          return null;
+      // 2) try the session_key cookie
+      try {
+        const res = await fetch("/test-session", { method: "GET" });
+        if (res.status === 200) {
+          return true;           // valid session
         }
-      }
-
-      if (!sessionKey && lastingKey) {
-        console.log("No session key found, attempting auto-login...");
-        sessionKey = await attemptAutoLogin();
-      }
-
-      if (sessionKey) {
-        try {
-          console.log("Validating session key...");
-          const response = await fetch("/test-session", {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${sessionKey}` },
-          });
-          if (response.status === 401) {
-            console.log("Session key invalid, attempting auto-login...");
-            sessionStorage.removeItem("session_key")
-            sessionKey = lastingKey ? await attemptAutoLogin() : null;
-          }
-        } catch (error) {
-          console.error("Error during session validation:", error);
+        if (res.status === 403) {
+          // suspended account
+          window.location.href = "/login_page?suspended=true";
+          return false;
         }
+        // 401 or anything else → fall through to auto‑login
+      } catch (err) {
+        console.error("Session validation failed:", err);
+        // network error or similar → try auto-login anyway
       }
-      return sessionKey;
+
+      // 3) attempt auto‑login via lasting_key cookie
+      try {
+        console.log("Attempting auto-login via lasting_key cookie…");
+        const res2 = await fetch("/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})  // backend reads your lasting_key cookie
+        });
+        if (res2.ok) {
+          console.log("Auto-login succeeded");
+          return true;
+        }
+        console.warn("Auto-login failed");
+        return false;
+      } catch (err) {
+        console.error("Error during auto-login:", err);
+        return false;
+      }
     }
 
     function leaveGame() {
@@ -767,25 +757,32 @@
     let player = null;
 
     document.addEventListener("DOMContentLoaded", async () => {
-      const sessionKey = await authenticateUser();
-      const isAuthenticated = !!sessionKey;
+      // 1) Make sure fetch() sends cookies
+      if (!window.__fetchPatched) {
+        const _f = window.fetch;
+        window.fetch = (url, opts = {}) => {
+          opts.credentials = 'include';
+          return _f(url, opts);
+        };
+        window.__fetchPatched = true;
+      }
 
+      // 2) Check login (will try test-session → login via lasting_key if needed)
+      const isAuthenticated = await authenticateUser();
+
+      // 3) If logged in, pull user-info via cookie
       if (isAuthenticated) {
         try {
-          const userInfoResponse = await fetch("/user-info", {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${sessionKey}`,
-            },
-          });
+          const userInfoResponse = await fetch("/user-info", { method: "GET" });
           if (userInfoResponse.ok) {
             const userInfo = await userInfoResponse.json();
+
+            // store player name for game logic
             localStorage.setItem("playerName", userInfo.username);
+
+            // update create/join inputs if present
             const createInput = document.getElementById("createPlayerName");
-            const joinInput = document.getElementById("joinPlayerName");
-            const advertizeDiv = document.getElementById("advertize-div");
-            const advertizeButton = document.getElementById("advertize-button");
+            const joinInput   = document.getElementById("joinPlayerName");
             if (createInput) {
               createInput.value = userInfo.username;
               createInput.disabled = true;
@@ -796,33 +793,38 @@
               joinInput.disabled = true;
               joinInput.classList.add("hidden");
             }
-            if (advertizeDiv) {
-              advertizeDiv.classList.add("hidden");
-            }
-            if (advertizeButton) {
-              advertizeButton.classList.add("hidden");
-            }
+
+            // hide advertise controls
+            const advertizeDiv    = document.getElementById("advertize-div");
+            const advertizeButton = document.getElementById("advertize-button");
+            if (advertizeDiv)    advertizeDiv.classList.add("hidden");
+            if (advertizeButton) advertizeButton.classList.add("hidden");
+
+            // profile panel
             document.getElementById("profile-username").textContent = userInfo.username;
             const profilePicElement = document.getElementById("profile-pic");
             if (userInfo.profile_picture) {
-              const correctedProfilePic = userInfo.profile_picture.replace(/\\/g, "/");
-              profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+              const url = userInfo.profile_picture.replace(/\\/g, "/");
+              profilePicElement.style.backgroundImage = `url(${url})`;
               profilePicElement.textContent = "";
             } else {
               profilePicElement.textContent = userInfo.username[0].toUpperCase();
               profilePicElement.classList.add("no-picture");
             }
             document.getElementById("user-panel").style.display = "block";
-            // Wrap the lobby and user panel in a flex container
-            const contentContainer = document.getElementById("content-container");
-            contentContainer.classList.add("auth-container");
+
+            // wrap in auth‐container
+            document.getElementById("content-container")
+                    .classList.add("auth-container");
           } else {
-            console.error("Failed to fetch user info");
+            console.error("Failed to fetch user info:", userInfoResponse.status);
           }
-        } catch (error) {
-          console.error("Error during fetching user info:", error);
+        } catch (err) {
+          console.error("Error fetching user info:", err);
         }
       }
+
+      // 4) finally, kick off the rest of your game logic
       setupGameEvents(isAuthenticated);
 
       document.getElementById('botInfo').addEventListener('click', () => {

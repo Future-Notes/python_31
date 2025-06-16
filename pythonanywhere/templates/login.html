@@ -260,87 +260,96 @@
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
-            // Append query parameters to the signup link if they exist
-            const queryParams = window.location.search;
-            if (queryParams) {
-                const signupLink = document.getElementById("signup-link");
-                signupLink.href = "/signup_page" + queryParams;
+        // 1) Patch fetch once (if not already done globally)
+        if (!window.__fetchPatched) {
+            const _f = window.fetch;
+            window.fetch = (url, opts = {}) => {
+            opts.credentials = 'include';
+            return _f(url, opts);
+            };
+            window.__fetchPatched = true;
+        }
+
+        // 2) Propagate any ?redirect, ?warning or ?suspended flags to the signup link
+        const query = window.location.search;
+        if (query) {
+            const link = document.getElementById("signup-link");
+            if (link) link.href = "/signup_page" + query;
+        }
+
+        // 3) Show any warning/suspended banners
+        const params = new URLSearchParams(query);
+        if (params.get("warning") === "true") {
+            document.getElementById("warning-message").classList.add("visible");
+        }
+        if (params.get("suspended") === "true") {
+            document.getElementById("ban-message").classList.add("visible");
+        }
+
+        const redirectUrl = params.get("redirect") || "/index";
+
+        // 4) If already authenticated (session_key cookie) or auto‑login via lasting_key → go
+        async function fastPath() {
+            // a) try session
+            let r = await fetch("/test-session", { method: "GET" });
+            if (r.status === 200) {
+            const info = await r.json().catch(()=>({ startpage: redirectUrl }));
+            window.location.href = params.get("redirect") || info.startpage || "/index";
+            return true;
             }
-        
-            const lastingKey = localStorage.getItem("lasting_key");
-            const urlParams = new URLSearchParams(window.location.search);
-            const showWarning = urlParams.get("warning") === "true";
-            const showSuspended = urlParams.get("suspended") === "true";
-            const redirectUrl = urlParams.get("redirect");
-        
-            // Show warning message if parameter is set
-            if (showWarning) {
-                document.getElementById("warning-message").classList.add("visible");
+            if (r.status === 403) {
+            window.location.href = "/login_page?suspended=true";
+            return true;
             }
-        
-            // Show suspended message if parameter is set
-            if (showSuspended) {
-                document.getElementById("ban-message").classList.add("visible");
-            }
-        
-            if (lastingKey) {
-                const response = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ lasting_key: lastingKey }),
-                });
-                const data = await response.json();
-        
-                if (response.ok) {
-                    // session_key cookie is now stored; still stash user_id client‑side
-                    sessionStorage.setItem("user_id", data.user_id);
-                    sessionStorage.setItem("session_key", data.session_key);
-                    // Redirect as before
-                    window.location.href = redirectUrl || data.startpage || "/index";
-                } else if (response.status === 403 && data.error === "Account is suspended") {
-                    document.getElementById("ban-message").classList.add("visible");
-                } else {
-                    console.log(data);
-                }
-            }
-        });
-        
-        document.getElementById("login-form").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const username = document.getElementById("username").value;
-            const password = document.getElementById("password").value;
-            const rememberMe = document.getElementById("remember-me").checked;
-            const urlParams = new URLSearchParams(window.location.search);
-            const redirectUrl = urlParams.get("redirect");
-        
-            if (!username || !password) {
-                alert("Please enter both username and password.", "error");
-                return;
-            }
-        
-            const response = await fetch("/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password, keep_login: rememberMe }),
+            // b) try lasting_key cookie
+            r = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}) // backend reads lasting_key cookie
             });
-        
-            const data = await response.json();
-        
-            if (response.ok) {
-                // since last update we removed the cookie and now use session_key in sessionStorage
-                sessionStorage.setItem("session_key", data.session_key);
-                sessionStorage.setItem("user_id", data.user_id);
-                if (rememberMe && data.lasting_key) {
-                    localStorage.setItem("lasting_key", data.lasting_key);
-                }
-                // Redirect as before
-                window.location.href = redirectUrl || data.startpage || "/index";
-            } else if (response.status === 403 && data.error === "Account is suspended") {
-                document.getElementById("ban-message").classList.add("visible");
-            } else {
-                alert(data.error || "Login failed", "error");
+            if (r.ok) {
+            const data = await r.json();
+            window.location.href = redirectUrl || data.startpage || "/index";
+            return true;
             }
+            return false;
+        }
+
+        await fastPath(); // fire-and-forget: if it succeeds you’ll be redirected
+
+        // 5) Otherwise show the login form as-is
+        });
+
+        // 6) Form submission
+        document.getElementById("login-form").addEventListener("submit", async e => {
+        e.preventDefault();
+        const user = document.getElementById("username").value.trim();
+        const pass = document.getElementById("password").value;
+        const keep = document.getElementById("remember-me").checked;
+        if (!user || !pass) {
+            alert("Please enter both username and password.", "error");
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const redirectUrl = params.get("redirect") || "/index";
+
+        const res = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: user, password: pass, keep_login: keep })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            window.location.href = redirectUrl || data.startpage || "/index";
+        } else if (res.status === 403 && data.error === "Account is suspended") {
+            document.getElementById("ban-message").classList.add("visible");
+        } else {
+            alert(data.error || "Login failed", "error");
+        }
         });
         </script>
+
 </body>
 </html>

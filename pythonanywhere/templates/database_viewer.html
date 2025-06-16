@@ -137,10 +137,69 @@
   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
   
   <script>
-    const sessionKey = sessionStorage.getItem('session_key');
-    if (!sessionKey) {
-      window.location.href = '/login_page?redirect=/database&warning=true';
-    }
+    document.addEventListener("DOMContentLoaded", async () => {
+            // ensure fetch sends cookies
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
+            }
+
+            // ping a lightweight endpoint to check session
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    hideModal();  // user’s good
+                    fetchNotes();
+                    return true;
+                }
+                if (res.status === 403) {
+                    // banned
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                // 401 or anything else → try auto-login
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            // try auto-login via lasting_key cookie on the backend
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    fetchTables();
+                    return true;
+                }
+                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
+                showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
+        }
+        });
+
+        function showModal() {
+            window.location.href = '/login_page?redirect=/database&warning=true';
+        }
     const apiUrl = '/admin/database';
     let currentTable = '';
     let currentColumns = []; // Store schema for current table (list of column names)
@@ -150,7 +209,6 @@
     async function fetchTables() {
       const response = await fetch(apiUrl, {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${sessionKey}` }
       });
       const data = await response.json();
       if (response.ok) {
@@ -233,8 +291,7 @@
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ table_name: tableName, columns })
       });
@@ -256,7 +313,6 @@
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
         },
         body: JSON.stringify({ table_name: tableName })
       });
@@ -288,7 +344,6 @@
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
         },
         body: JSON.stringify({ table_name: currentTable, action: 'add', column: { name: columnName, type: columnType } })
       });
@@ -314,7 +369,6 @@
     async function fetchTableData() {
       const response = await fetch(apiUrl + `?table=${currentTable}`, {
         method: 'GET',
-        headers: { 'Authorization': `Bearer ${sessionKey}` }
       });
       const data = await response.json();
       if (response.ok) {
@@ -407,8 +461,7 @@
         const response = await fetch(url, {
             method: method,
             headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sessionKey}`
+            'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
         });
@@ -431,8 +484,7 @@
       const response = await fetch(apiUrl, {
         method: 'DELETE',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({ table_name: currentTable, data_operation: 'delete', row_id: rowId })
       });
@@ -446,8 +498,6 @@
         alert(data.error);
       }
     }
-
-    fetchTables();
   </script>
 </body>
 </html>
