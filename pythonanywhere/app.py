@@ -360,7 +360,6 @@ def generate_session_key(user_id):
         "expires_at": datetime.now() + timedelta(minutes=120),
         "last_active": datetime.now()
     }
-    seed_trophies()
     return key
 
 def check(key: str, default: str) -> str:
