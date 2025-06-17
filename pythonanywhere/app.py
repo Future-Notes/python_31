@@ -109,16 +109,19 @@ error_template = '''
  
 # --------------------------------Models--------------------------------------
 class User(db.Model):
+    __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     lasting_key = db.Column(db.String(200), nullable=True)
-    profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
+    profile_picture = db.Column(db.String(200), nullable=True)
     allows_sharing = db.Column(db.Boolean, default=True)
-    role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
+    role = db.Column(db.String(20), nullable=False, default="user")
     suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # existing relationships
     colors = db.relationship(
         "UserColor",
         uselist=False,
@@ -127,9 +130,38 @@ class User(db.Model):
     )
     notifications = db.relationship('Notification', back_populates='user')
     
-    __table_args__ = (
-        CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
+    # new relationship to FingerPrint
+    fingerprints = db.relationship(
+        "FingerPrint",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="dynamic"
     )
+
+    __table_args__ = (
+        CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
+    )
+
+
+class FingerPrint(db.Model):
+    __tablename__ = 'fingerprint'
+    # surrogate PK
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # the browser‑generated visitor ID (e.g. from FingerprintJS)
+    visitor_id = db.Column(db.String(128), unique=True, nullable=False)
+    
+    # metadata for security/tracking
+    first_seen = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_seen  = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_ip    = db.Column(db.String(45), nullable=True)  # IPv4 or IPv6
+    
+    # link back to the user
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=True)
+    user    = db.relationship("User", back_populates="fingerprints")
+
+    def __repr__(self):
+        return f'<FingerPrint visitor_id={self.visitor_id!r} user_id={self.user_id}>'
 
 class UserColor(db.Model):
     __tablename__ = "user_colors"
@@ -2865,6 +2897,30 @@ def allow_sharing():
         return jsonify({"error": "Failed to update sharing preference"}), 500
     
 # Admin
+
+@app.route('/api/identify', methods=['POST'])
+def identify():
+    data = request.get_json() or {}
+    visitor_id = data.get('visitorId')
+    if not visitor_id:
+        return jsonify({'error': 'visitorId missing'}), 400
+
+    # Save in session for later linking
+    session['visitor_id'] = visitor_id
+
+    # Upsert fingerprint record
+    fp = FingerPrint.query.filter_by(visitor_id=visitor_id).first()
+    if not fp:
+        fp = FingerPrint(
+            visitor_id=visitor_id,
+            last_ip=request.remote_addr
+        )
+        db.session.add(fp)
+    else:
+        fp.last_ip = request.remote_addr
+    db.session.commit()
+
+    return jsonify({'status': 'ok'})
 
 @app.route('/admin', methods=['GET', 'DELETE', 'PUT'])
 @require_session_key
