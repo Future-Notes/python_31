@@ -484,38 +484,26 @@
       </style>
 
       <script>
-        // pull session_key out of sessionStorage
-        const token = sessionStorage.getItem("session_key");
-        if (token) {
-          fetch("/user-colors", {
-            headers: {
-              "Authorization": "Bearer " + token
-            }
-          })
-          .then(res => {
-            if (!res.ok) throw new Error("Could not load colors");
-            return res.json();
-          })
-          .then(cfg => {
-            // apply them as CSS variables
-            document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
-            document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
-            document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
-            document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+        fetch("/user-colors")
+            .then(res => {
+                if (!res.ok) throw new Error("Could not load colors");
+                return res.json();
+            })
+            .then(cfg => {
+                document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
+                document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
+                document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
+                document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
 
-            // keep the config globally if you still need it in JS
-            window.appConfig = {
-              backgroundColor:  cfg.background_color,
-              headerColor:      cfg.header_color,
-              contrastingColor: cfg.contrasting_color,
-              buttonColor:      cfg.button_color
-            };
-          })
-          .catch(err => console.error(err));
-        } else {
-          console.warn("No session_key in sessionStorage; using default colors");
-        }
-      </script>
+                window.appConfig = {
+                    backgroundColor:  cfg.background_color,
+                    headerColor:      cfg.header_color,
+                    contrastingColor: cfg.contrasting_color,
+                    buttonColor:      cfg.button_color
+                };
+            })
+            .catch(err => console.error(err));
+        </script>
 
 
 <header>
@@ -612,63 +600,64 @@
   </div>
 
 <script>
-// ======== Authentication & Existing Logic =========
-    // globaly define sessionKey
-    document.addEventListener("DOMContentLoaded", async () => {
-      const sessionKey = sessionStorage.getItem("session_key");
-      const lastingKey = localStorage.getItem("lasting_key");
-
-      async function attemptAutoLogin() {
-        try {
-          const response = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lasting_key: lastingKey }),
-          });
-          const data = await response.json();
-          if (response.ok) {
-            sessionStorage.setItem("session_key", data.session_key);
-            console.log("Auto-login successful!");
-          } else {
-            console.error("Auto-login failed:", data.error || "Unknown error");
-            localStorage.removeItem("lasting_key");
-            showModal();
-          }
-        } catch (error) {
-          console.error("Error during auto-login:", error);
-          showModal();
-        }
-      }
-
-      if (!sessionStorage.getItem("session_key") && lastingKey) {
-        await attemptAutoLogin();
-      } else if (!sessionStorage.getItem("session_key") && !lastingKey) {
-        showModal();
-      } else {
-        try {
-          const response = await fetch("/test-session", {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
-            },
-          });
-          if (response.status === 401) {
-            if (lastingKey) {
-              await attemptAutoLogin();
-            } else {
-              showModal();
+document.addEventListener("DOMContentLoaded", async () => {
+            // ensure fetch sends cookies
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
             }
-          } else {
-            hideModal();
-          }
-        } catch (error) {
-          console.error("Error during session validation:", error);
-          showModal();
+
+            // ping a lightweight endpoint to check session
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    fetchTodos();
+                    return true;
+                }
+                if (res.status === 403) {
+                    // banned
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                // 401 or anything else → try auto-login
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            // try auto-login via lasting_key cookie on the backend
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    fetchTodos();  // re-fetch todos
+                    return true;
+                }
+                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
+                showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
         }
-      }
-      fetchTodos();
-    });
+        });
 
     // Element refs
     const addBtn        = document.getElementById('floating-add-button');
@@ -766,10 +755,10 @@
       try {
         const [notesRes, apptsRes] = await Promise.all([
           fetch('/notes_fetch', {
-            headers: { 'Authorization': `Bearer ${sessionStorage.getItem("session_key")}` }
+            headers: {  }
           }),
           fetch('/appointments_fetch', {
-            headers: { 'Authorization': `Bearer ${sessionStorage.getItem("session_key")}` }
+            headers: {  }
           })
         ]);
         if (notesRes.ok && apptsRes.ok) {
@@ -829,7 +818,7 @@
             method,
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${sessionStorage.getItem("session_key")}`
+              
             },
             body: JSON.stringify(payload)
           });
@@ -950,7 +939,7 @@
         const res = await fetch(`/todos/${todoId}`, {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${sessionStorage.getItem("session_key")}`
+            
           }
         });
         if (res.ok) {
@@ -987,7 +976,7 @@
 
 
     function showModal() {
-
+      window.location.href = "/login_page?redirect=/todo_page&warning=true";
     }
     function hideModal() {
       // No action needed; placeholder function
@@ -1027,17 +1016,12 @@
         // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
         });
     window.onload = async () => {
-      const sessionKey = sessionStorage.getItem("session_key");
-      if (!sessionKey) {
-        showModal();
-        return;
-      }
       try {
         const response = await fetch("/test-session", {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+            
           },
         });
         if (response.status === 401) {
@@ -1047,7 +1031,7 @@
             method: "GET",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
+              
             },
           });
           if (userInfoResponse.ok) {
@@ -1080,7 +1064,7 @@
 
     // Fetch and render todos into Overdue, Active, and Completed lists
     async function fetchTodos() {
-      const sessionKey = sessionStorage.getItem("session_key");
+      
       const now = new Date();
 
       // List containers
@@ -1093,7 +1077,6 @@
 
       try {
         const res  = await fetch('/todos', {
-          headers: { 'Authorization': `Bearer ${sessionKey}` }
         });
         const data = await res.json();
         const todos = Array.isArray(data.todos) ? data.todos : [];
@@ -1317,10 +1300,9 @@
 
     // Toggle completed state on server
     async function toggleTodoCompleted(todoId) {
-      const sessionKey = sessionStorage.getItem("session_key");
+      
       const res = await fetch(`/todos/${todoId}/toggle-completed`, {
         method: "POST",
-        headers: { 'Authorization': `Bearer ${sessionKey}` }
       });
       if (!res.ok) throw new Error("Failed to toggle todo completed");
       return res.json();

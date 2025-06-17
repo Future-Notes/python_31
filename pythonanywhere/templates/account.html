@@ -434,37 +434,26 @@
     </style>
 
     <script>
-    // pull session_key out of sessionStorage
-    const token = sessionStorage.getItem("session_key");
-    if (token) {
-        fetch("/user-colors", {
-        headers: {
-            "Authorization": "Bearer " + token
-        }
-        })
-        .then(res => {
-        if (!res.ok) throw new Error("Could not load colors");
-        return res.json();
-        })
-        .then(cfg => {
-        // apply them as CSS variables
-        document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
-        document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
-        document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
-        document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+    fetch("/user-colors")
+            .then(res => {
+                if (!res.ok) throw new Error("Could not load colors");
+                return res.json();
+            })
+            .then(cfg => {
+                document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
+                document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
+                document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
+                document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
 
-        // keep the config globally if you still need it in JS
-        window.appConfig = {
-            backgroundColor:  cfg.background_color,
-            headerColor:      cfg.header_color,
-            contrastingColor: cfg.contrasting_color,
-            buttonColor:      cfg.button_color
-        };
-        })
-        .catch(err => console.error(err));
-    } else {
-        console.warn("No session_key in sessionStorage; using default colors");
-    }
+                window.appConfig = {
+                    backgroundColor:  cfg.background_color,
+                    headerColor:      cfg.header_color,
+                    contrastingColor: cfg.contrasting_color,
+                    buttonColor:      cfg.button_color
+                };
+            })
+            .catch(err => console.error(err));
+        </script>
     </script>
 
       
@@ -776,145 +765,119 @@
     </div>
 
     <script>
-        let sessionKey;
         document.addEventListener("DOMContentLoaded", async () => {
-            sessionKey = sessionStorage.getItem("session_key");
-            const lastingKey = localStorage.getItem("lasting_key");
+        // 1) Patch fetch once (if you haven’t globally done this already)
+        if (!window.__fetchPatched) {
+          const _origFetch = window.fetch;
+          window.fetch = (url, opts = {}) => {
+            opts.credentials = 'include';
+            return _origFetch(url, opts);
+          };
+          window.__fetchPatched = true;
+        }
 
-            async function attemptAutoLogin() {
-                try {
-                    console.log("Attempting autologin...")
-                    const response = await fetch("/login", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ lasting_key: lastingKey }),
-                    });
-
-                    const data = await response.json();
-
-                    if (response.ok) {
-                        // Save session_key and redirect if needed
-                        sessionStorage.setItem("session_key", data.session_key);
-                        console.log("Auto-login successful!");
-                        location.reload();
-                    } else {
-                        console.error("Auto-login failed:", data.error || "Unknown error");
-                        localStorage.removeItem("lasting_key"); // Clear invalid lasting_key
-                        if (window.location.pathname !== "/login_page") {
-                            window.location.href = "/login_page?redirect=/account_page&warning=true"; // Redirect to the login page
-                        }
-                    }
-                } catch (error) {
-                    console.error("Error during auto-login:", error);
-                    if (window.location.pathname !== "/login") {
-                        showModal();
-                    }
-                }
+        // 2) Try to validate the session_key cookie
+        async function validateSession() {
+          try {
+            const res = await fetch("/test-session", { method: "GET" });
+            if (res.status === 200) {
+              hideModal();
+              return true;
             }
+            if (res.status === 403) {
+              // suspended
+              window.location.href = "/login_page?suspended=true";
+              return false;
+            }
+            // 401 or anything else means “not authenticated”
+            return false;
+          } catch (err) {
+            console.error("Session validation error:", err);
+            return false;
+          }
+        }
 
-            if (!sessionKey && lastingKey) {
-                await attemptAutoLogin();
-            } else if (!sessionKey && !lastingKey) {
-                // No session_key or lasting_key: redirect to the login page if not already there
-                if (window.location.pathname !== "/login_page") {
-                    showModal();
-                    console.log("No lasting key nor session key, showing re-login modal...")
-                }
+        // 3) If invalid, try to auto‑login via lasting_key cookie
+        async function attemptAutoLogin() {
+          try {
+            console.log("Attempting auto-login via lasting_key cookie…");
+            const res = await fetch("/login", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({})  // no lasting_key in body; backend reads cookie
+            });
+            if (res.ok) {
+              console.log("Auto-login succeeded, reloading page…");
+              // new session_key cookie is set; reload so protected data endpoints work
+              console.log("Reloading page to apply new session…");
+              window.location.reload();
+              return true;
+            }
+            console.warn("Auto-login failed (bad lasting_key).");
+            return false;
+          } catch (err) {
+            console.error("Error during auto-login:", err);
+            return false;
+          }
+        }
+
+        // 4) Kick off: if validateSession fails, try auto‑login
+        const sessionOk = await validateSession();
+        if (!sessionOk) {
+          const gotIt = await attemptAutoLogin();
+          if (!gotIt) {
+            // still not logged in → show modal or redirect
+            if (window.location.pathname !== "/login_page") {
+              window.location.href = "/login_page?redirect=/account_page&warning=true";
             } else {
-                console.log("Session key is present, validating...");
-                // Test if the session key is valid
-                try {
-                    const response = await fetch("/test-session", {
-                        method: "GET",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${sessionKey}`,
-                        },
-                    });
-
-                    if (response.status === 401) {
-                        console.log("Session key is invalid, checking for lasting key...");
-                        if (lastingKey) {
-                            console.log("Lasting key present, validating it...")
-                            await attemptAutoLogin();
-                        } else {
-                            console.log("No lasting key present, showing re-login modal...")
-                            showModal();
-                        }
-                    } else {
-                        console.log("Session key valid, fetching user info...")
-                        const userInfoResponse = await fetch("/user-info", {
-                            method: "GET",
-                            headers: {
-                                "Content-Type": "application/json",
-                                Authorization: `Bearer ${sessionKey}`,
-                            },
-                        });
-
-                        if (userInfoResponse.ok) {
-                            console.log("Fetched user info:")
-                            const userInfo = await userInfoResponse.json();
-                            const username = userInfo.username;
-                            const profilePic = userInfo.profile_picture;
-                            const defaultStartpage = userInfo.startpage;
-                            const sharingToggle = document.getElementById("sharing-toggle");
-                            const role = userInfo.role;
-
-                            sharingToggle.checked = userInfo.allows_sharing === true;
-                            console.log(userInfo);
-
-                            document.getElementById("username-display").textContent = `${username} - Account`;
-                            const profilePicElement = document.getElementById("profile-pic");
-
-                            if (profilePic) {
-                                console.log("Setting profile picture...")
-                                // Replace backslashes with forward slashes to fix path issues
-                                const correctedProfilePic = profilePic.replace(/\\/g, "/");
-
-                                // Use the corrected path directly (no need to prepend "/static/uploads/profile_pictures/").
-                                profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
-                                profilePicElement.classList.remove("no-picture");
-                                profilePicElement.textContent = ""; // Clear the text content
-                            } else {
-                                console.log("User has not set profile picture!")
-                                profilePicElement.textContent = username[0].toUpperCase();
-                                profilePicElement.classList.add("no-picture");
-                            }
-
-                            // Handle admin link access dynamically
-                            const adminLink = document.querySelector(".admin-page-link");
-
-                            if (role === "admin") {
-                                console.log("User is an admin!")
-                                adminLink.classList.remove("disabled");
-                                adminLink.classList.add("enabled");
-                            } else {
-                                console.log("User is not an admin!")
-                                adminLink.classList.remove("enabled");
-                                adminLink.classList.add("disabled");
-
-                                // Add event listener to prevent navigation
-                                adminLink.addEventListener("click", (e) => {
-                                    e.preventDefault();
-                                    console.log("Nope!")
-                                });
-                            }
-                            if (defaultStartpage) {
-                                document.getElementById("default-startpage").value = defaultStartpage;
-                            } else {
-                                console.log("No default startpage set, using personal notes as default.")
-                                document.getElementById("default-startpage").value = "/index";
-                            }
-                            console.log("Default startpage set to: " + defaultStartpage);
-                        } else {
-                            console.error("Failed to fetch user info");
-                        }
-                    }
-                } catch (error) {
-                    console.error("Error during session validation:", error);
-                }
+              showModal();
             }
-        });
+          }
+          // in both cases we stop further init until after reload
+          return;
+        }
+
+        // 5) At this point session_key is good—fetch your user‑info
+        try {
+          const userInfoRes = await fetch("/user-info", { method: "GET" });
+          if (!userInfoRes.ok) {
+            console.error("Failed to load user info");
+            return;
+          }
+          const u = await userInfoRes.json();
+          // your existing DOM updates:
+          document.getElementById("username-display").textContent = `${u.username} - Account`;
+          const picEl = document.getElementById("profile-pic");
+          if (u.profile_picture) {
+            const url = u.profile_picture.replace(/\\/g, "/");
+            picEl.style.backgroundImage = `url(${url})`;
+            picEl.classList.remove("no-picture");
+            picEl.textContent = "";
+          } else {
+            picEl.classList.add("no-picture");
+            picEl.textContent = u.username[0].toUpperCase();
+          }
+          document.getElementById("sharing-toggle").checked = !!u.allows_sharing;
+
+          // admin link logic
+          const adminLink = document.querySelector(".admin-page-link");
+          if (u.role === "admin") {
+            adminLink.classList.add("enabled");
+            adminLink.classList.remove("disabled");
+          } else {
+            adminLink.classList.add("disabled");
+            adminLink.classList.remove("enabled");
+            adminLink.onclick = e => { e.preventDefault(); console.log("Nope!"); };
+          }
+
+          // default startpage
+          document.getElementById("default-startpage").value = u.startpage || "/index";
+          console.log("User info loaded:", u);
+
+        } catch (err) {
+          console.error("Error fetching user info:", err);
+        }
+      });
 
         document.addEventListener("DOMContentLoaded", () => {
         const cfg = window.appConfig || {};
@@ -1032,7 +995,6 @@
           method: "GET",
           headers: {
             "Content-Type":  "application/json",
-            "Authorization": `Bearer ${sessionKey}`
           }
         });
         if (!res.ok) throw new Error(res.status);
@@ -1089,8 +1051,7 @@
           const resp = await fetch("/api/set-colors", {
             method: "POST",
             headers: {
-              "Content-Type":  "application/json",
-              "Authorization": `Bearer ${sessionKey}`
+              "Content-Type":  "application/json"
             },
             body: JSON.stringify(payload)
           });
@@ -1119,7 +1080,6 @@
                 method: "POST",
                 headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${sessionKey}`,
                 },
                 body: JSON.stringify({ startpage: selectedPage }),
             });
@@ -1146,8 +1106,7 @@
         function hideModal() {
             const modalOverlay = document.getElementById("modal-overlay");
             modalOverlay.style.display = "none";
-            console.log("Re-login modal hidden!")
-            location.reload();
+            console.log("Re-login modal hidden!");
         }
 
         const lastActivePage = sessionStorage.getItem("last_page") || "/index";
@@ -1158,35 +1117,6 @@
             document.getElementById('file-label').textContent = fileName;
         });
 
-        document.getElementById("submit-credentials").addEventListener("click", async () => {
-            const username = document.getElementById("username").value.trim();
-            const password = document.getElementById("password").value.trim();
-
-            if (!username || !password) {
-                alert("Both fields are required.");
-                return;
-            }
-
-            try {
-                const response = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password }),
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    sessionStorage.setItem("session_key", data.session_key);
-                    console.log("Username and password valid, hiding modal...")
-                    hideModal();
-                } else {
-                    alert("Invalid username or password. Please try again.");
-                }
-            } catch (error) {
-                console.error("Error during re-login:", error);
-                alert("There was an error. Please try again.");
-            }
-        });
 
         document.getElementById("sharing-toggle").addEventListener("change", async (e) => {
             const allowsSharing = e.target.checked;
@@ -1196,8 +1126,7 @@
                 const response = await fetch("/allow-sharing", {
                     method: "PUT",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({ allows_sharing: allowsSharing }),
                 });
@@ -1224,8 +1153,7 @@
                 const response = await fetch("/update-username", {
                     method: "PUT",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({ new_username: newUsername }),
                 });
@@ -1253,8 +1181,7 @@
                 const response = await fetch("/update-password", {
                     method: "PUT",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
                         current_password: currentPassword,
@@ -1289,8 +1216,7 @@
                 const response = await fetch("/delete-account", {
                     method: "DELETE",
                     headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${sessionKey}`,
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({ password }),
                 });
@@ -1335,9 +1261,6 @@
             try {
                 const response = await fetch("/update-profile-picture", {
                     method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${sessionKey}`
-                    },
                     body: formData,
                 });
 
@@ -1361,9 +1284,6 @@
             try {
                 const response = await fetch("/update-profile-picture", {
                     method: "DELETE",
-                    headers: {
-                        Authorization: `Bearer ${sessionKey}`
-                    },
                 });
 
                 if (response.ok) {

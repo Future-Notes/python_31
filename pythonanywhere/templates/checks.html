@@ -179,65 +179,65 @@
 
 
   <script>
-    let sessionKey = null;
     document.addEventListener("DOMContentLoaded", async () => {
-      sessionKey = sessionStorage.getItem("session_key");
-      const lastingKey = localStorage.getItem("lasting_key");
-
-      async function attemptAutoLogin() {
-        try {
-          const response = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lasting_key: lastingKey }),
-          });
-          const data = await response.json();
-          if (response.ok) {
-            sessionStorage.setItem("session_key", data.session_key);
-            console.log("Auto-login successful!");
-          } else {
-            console.error("Auto-login failed:", data.error || "Unknown error");
-            localStorage.removeItem("lasting_key");
-            showModal();
-          }
-        } catch (error) {
-          console.error("Error during auto-login:", error);
-          showModal();
-        }
-      }
-
-      if (!sessionStorage.getItem("session_key") && lastingKey) {
-        await attemptAutoLogin();
-      } else if (!sessionStorage.getItem("session_key") && !lastingKey) {
-        showModal();
-      } else {
-        try {
-          const response = await fetch("/test-session", {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${sessionStorage.getItem("session_key")}`,
-            },
-          });
-          if (response.status === 401) {
-            if (lastingKey) {
-              await attemptAutoLogin();
-            } else {
-              showModal();
+            // ensure fetch sends cookies
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
             }
-          } else {
-            hideModal();
-          }
-        } catch (error) {
-          console.error("Error during session validation:", error);
-          showModal();
+
+            // ping a lightweight endpoint to check session
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    return true;
+                }
+                if (res.status === 403) {
+                    // banned
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                // 401 or anything else → try auto-login
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            // try auto-login via lasting_key cookie on the backend
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    return true;
+                }
+                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
+                showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
         }
-      }
-      fetchSettings();
-    });
+        });
 
     function showModal() {
-
+      window.location.href = '/login_page?redirect=/checks_page&warning=true';
     }
     function hideModal() {
       // No action needed; placeholder function
@@ -247,9 +247,6 @@
 
     async function fetchSettings() {
       const res = await fetch('/checks', {
-        headers: {
-          'Authorization': `Bearer ${sessionKey}`
-        }
       });
       const settings = await res.json();
       tableBody.innerHTML = '';
@@ -276,7 +273,6 @@
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
         },
         body: JSON.stringify({ value })
       });
@@ -287,9 +283,6 @@
       if (!confirm(`Delete setting "${key}"?`)) return;
       await fetch(`/checks/${key}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${sessionKey}`
-        }
       });
       fetchSettings();
     }
@@ -304,8 +297,7 @@
       const res = await fetch('/checks', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionKey}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(data)
       });
