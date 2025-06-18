@@ -98,3 +98,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.insertBefore(bar, document.body.firstChild);
   }
 });
+
+function escapeHTML(str) {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}

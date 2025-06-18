@@ -149,14 +149,65 @@
         background-color: #5a5a5a;
         transform: scale(1.1);
     }
+
+    /* The switch wrapper */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 24px;
+    }
+
+    /* Hide native checkbox */
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    /* The track */
+    .switch .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0;
+      right: 0; bottom: 0;
+      background-color: var(--border);
+      transition: background-color 0.2s;
+      border-radius: 12px;
+      box-shadow: inset 0 0 2px rgba(0,0,0,0.5);
+    }
+
+    /* The knob */
+    .switch .slider:before {
+      content: "";
+      position: absolute;
+      height: 20px;
+      width: 20px;
+      left: 2px;
+      top: 2px;
+      border-radius: 50%;
+      background-color: var(--surface);
+      transition: transform 0.2s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    /* Checked state */
+    .switch input:checked + .slider {
+      background-color: var(--accent);
+    }
+
+    .switch input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+
   </style>
 </head>
 <script src="/static/custom-alert.js"></script>
 <script src="static/admin.js"></script>
 <body>
   <header>
-      <a href="/admin_page" class="back-button" aria-label="Go back to web app">←</a>
-    </header>
+    <a href="/admin_page" class="back-button" aria-label="Go back to web app">←</a>
+  </header>
   <h1>Supermode</h1>
   <table id="settingsTable">
     <thead>
@@ -175,95 +226,108 @@
     <input type="text" name="value" placeholder="Value" required>
     <button type="submit">Create</button>
   </form>
-</body>
-
 
   <script>
     document.addEventListener("DOMContentLoaded", async () => {
-            // ensure fetch sends cookies
-            if (!window.__fetchPatched) {
-                const _f = window.fetch;
-                window.fetch = (url, opts = {}) => {
-                opts.credentials = 'include';
-                return _f(url, opts);
-                };
-                window.__fetchPatched = true;
-            }
+      // patch fetch to include credentials
+      if (!window.__fetchPatched) {
+        const _f = window.fetch;
+        window.fetch = (url, opts = {}) => {
+          opts.credentials = 'include';
+          return _f(url, opts);
+        };
+        window.__fetchPatched = true;
+      }
 
-            // ping a lightweight endpoint to check session
-            async function validateSession() {
-                try {
-                const res = await fetch("/test-session", { method: "GET" });
-                if (res.status === 200) {
-                    return true;
-                }
-                if (res.status === 403) {
-                    // banned
-                    window.location.href = '/login_page?suspended=true';
-                    return false;
-                }
-                // 401 or anything else → try auto-login
-                return false;
-                } catch (err) {
-                return false;
-                }
-            }
+      // session / auto‐login dance
+      async function validateSession() {
+        try {
+          const res = await fetch("/test-session");
+          if (res.status === 200) { fetchSettings(); return true; }
+          if (res.status === 403) { window.location.href = '/login_page?suspended=true'; }
+        } catch {}
+        return false;
+      }
+      async function attemptAutoLogin() {
+        try {
+          const res = await fetch("/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+          });
+          if (res.ok) { fetchSettings(); return true; }
+        } catch {}
+        // fallback
+        window.location.href = '/login_page?redirect=/checks_page&warning=true';
+        return false;
+      }
 
-            // try auto-login via lasting_key cookie on the backend
-            async function attemptAutoLogin() {
-                try {
-                const res = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
-                });
-                if (res.ok) {
-                    console.log("Auto-login successful");
-                    return true;
-                }
-                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
-                showModal();
-                return false;
-                } catch (err) {
-                showModal();
-                return false;
-                }
-            }
-            
-        const ok = await validateSession();
-        if (!ok) {
-            await attemptAutoLogin();
-        }
-        });
+      if (!await validateSession()) {
+        await attemptAutoLogin();
+      }
+    });
 
-    function showModal() {
-      window.location.href = '/login_page?redirect=/checks_page&warning=true';
-    }
-    function hideModal() {
-      // No action needed; placeholder function
-    }
     const tableBody = document.querySelector('#settingsTable tbody');
     const createForm = document.getElementById('createForm');
 
     async function fetchSettings() {
-      const res = await fetch('/checks', {
-      });
+      const res = await fetch('/checks');
       const settings = await res.json();
       tableBody.innerHTML = '';
 
       settings.forEach(setting => {
+        const isToggle = setting.value === "Ja" || setting.value === "Nee";
         const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${setting.key}</td>
-          <td>
+        // Key cell
+        const tdKey = document.createElement('td');
+        tdKey.textContent = setting.key;
+
+        // Value cell
+        const tdValue = document.createElement('td');
+        if (isToggle) {
+          // render switch
+          tdValue.innerHTML = `
+            <label class="switch">
+              <input type="checkbox" id="toggle-${setting.key}" ${setting.value === "Ja" ? 'checked' : ''}>
+              <span class="slider"></span>
+            </label>
+          `;
+        } else {
+          // default text input
+          tdValue.innerHTML = `
             <input type="text" value="${setting.value}" id="val-${setting.key}">
-          </td>
-          <td>
-            <button onclick="updateSetting('${setting.key}')">Update</button>
-            <button onclick="deleteSetting('${setting.key}')">Delete</button>
-          </td>
+          `;
+        }
+
+        // Actions cell
+        const tdActions = document.createElement('td');
+        tdActions.innerHTML = `
+          ${!isToggle ? `<button onclick="updateSetting('${setting.key}')">Update</button>` : ''}
+          <button onclick="deleteSetting('${setting.key}')">Delete</button>
         `;
+
+        row.append(tdKey, tdValue, tdActions);
         tableBody.appendChild(row);
+
+        // Attach toggle listener if needed
+        if (isToggle) {
+          const chk = document.getElementById(`toggle-${setting.key}`);
+          chk.addEventListener('change', () => {
+            const newVal = chk.checked ? "Ja" : "Nee";
+            // fire-and-forget toggle
+            fetch(`/checks/${setting.key}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ value: newVal })
+            })
+            .then(() => fetchSettings())
+            .catch(err => {
+              console.error(err);
+              // revert UI on error
+              chk.checked = !chk.checked;
+            });
+          });
+        }
       });
     }
 
@@ -271,9 +335,7 @@
       const value = document.getElementById(`val-${key}`).value;
       await fetch(`/checks/${key}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value })
       });
       fetchSettings();
@@ -281,24 +343,17 @@
 
     async function deleteSetting(key) {
       if (!confirm(`Delete setting "${key}"?`)) return;
-      await fetch(`/checks/${key}`, {
-        method: 'DELETE',
-      });
+      await fetch(`/checks/${key}`, { method: 'DELETE' });
       fetchSettings();
     }
 
-    createForm.addEventListener('submit', async (e) => {
+    createForm.addEventListener('submit', async e => {
       e.preventDefault();
       const formData = new FormData(createForm);
-      const data = {
-        key: formData.get('key'),
-        value: formData.get('value')
-      };
+      const data = { key: formData.get('key'), value: formData.get('value') };
       const res = await fetch('/checks', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
       if (res.ok) {

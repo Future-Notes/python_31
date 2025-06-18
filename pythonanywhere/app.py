@@ -5,8 +5,9 @@ from functools import wraps
 from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
+from sqlalchemy.pool import NullPool
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -39,6 +40,9 @@ app = Flask(__name__)
 CORS(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'poolclass': NullPool
+}
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -59,6 +63,7 @@ excluded_tables = {
 REPO_PATH = "/home/Bosbes/mysite/python_31"
 PYANYWHERE_RE = re.compile(r"^[^.]+\.(pythonanywhere\.com)$$", re.IGNORECASE)
 BACKUP_DIR = os.path.join(os.getcwd(), 'backups')
+DB_PATH = os.path.join(os.getcwd(), 'instance', 'data.db')
 if not os.path.isdir(BACKUP_DIR):
     os.makedirs(BACKUP_DIR, exist_ok=True)
 ERROR_MESSAGES = {
@@ -109,16 +114,19 @@ error_template = '''
  
 # --------------------------------Models--------------------------------------
 class User(db.Model):
+    __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     lasting_key = db.Column(db.String(200), nullable=True)
-    profile_picture = db.Column(db.String(200), nullable=True)  # Allow profile picture to be None
+    profile_picture = db.Column(db.String(200), nullable=True)
     allows_sharing = db.Column(db.Boolean, default=True)
-    role = db.Column(db.String(20), nullable=False, default="user")  # Default role is "user"
+    role = db.Column(db.String(20), nullable=False, default="user")
     suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # existing relationships
     colors = db.relationship(
         "UserColor",
         uselist=False,
@@ -127,9 +135,38 @@ class User(db.Model):
     )
     notifications = db.relationship('Notification', back_populates='user')
     
-    __table_args__ = (
-        CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),  # Restrict values
+    # new relationship to FingerPrint
+    fingerprints = db.relationship(
+        "FingerPrint",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="dynamic"
     )
+
+    __table_args__ = (
+        CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
+    )
+
+
+class FingerPrint(db.Model):
+    __tablename__ = 'fingerprint'
+    # surrogate PK
+    id = db.Column(db.Integer, primary_key=True)
+    
+    # the browser‑generated visitor ID (e.g. from FingerprintJS)
+    visitor_id = db.Column(db.String(128), unique=True, nullable=False)
+    
+    # metadata for security/tracking
+    first_seen = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_seen  = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_ip    = db.Column(db.String(45), nullable=True)  # IPv4 or IPv6
+    
+    # link back to the user
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=True)
+    user    = db.relationship("User", back_populates="fingerprints")
+
+    def __repr__(self):
+        return f'<FingerPrint visitor_id={self.visitor_id!r} user_id={self.user_id}>'
 
 class UserColor(db.Model):
     __tablename__ = "user_colors"
@@ -2495,13 +2532,14 @@ def remove_user_from_group():
     if not member_to_remove:
         return jsonify({"error": "User not found in the group."}), 404
     
+    current_user = User.query.get(g.user_id)
     # Notify the user being removed
     user_to_remove = User.query.get(user_id_to_remove)
     if user_to_remove:
         send_notification(
             user_id_to_remove,
             "Removed from group",
-            f"You have been removed from the group '{member_to_remove.group.name}' by {g.username}.",
+            f"You have been removed from the group '{member_to_remove.group.name}' by {current_user.username}.",
             "/group-notes"
         )
 
@@ -2866,6 +2904,30 @@ def allow_sharing():
     
 # Admin
 
+@app.route('/api/identify', methods=['POST'])
+def identify():
+    data = request.get_json() or {}
+    visitor_id = data.get('visitorId')
+    if not visitor_id:
+        return jsonify({'error': 'visitorId missing'}), 400
+
+    # Save in session for later linking
+    session['visitor_id'] = visitor_id
+
+    # Upsert fingerprint record
+    fp = FingerPrint.query.filter_by(visitor_id=visitor_id).first()
+    if not fp:
+        fp = FingerPrint(
+            visitor_id=visitor_id,
+            last_ip=request.remote_addr
+        )
+        db.session.add(fp)
+    else:
+        fp.last_ip = request.remote_addr
+    db.session.commit()
+
+    return jsonify({'status': 'ok'})
+
 @app.route('/admin', methods=['GET', 'DELETE', 'PUT'])
 @require_session_key
 def admin():
@@ -2958,6 +3020,29 @@ def admin_dump():
     response.headers["Content-Type"] = "application/json"
     return response
 
+@app.route('/admin/notification', methods=['POST'])
+@require_session_key
+@require_admin
+def send_notification_to_all():
+    data = request.json
+    title = data.get("title")
+    message = data.get("message")
+    module = data.get("module")
+
+    if not message or not title or not module:
+        return jsonify({"error": "All fields are required."}), 400
+    
+    if not module.startswith("/"):
+        return jsonify({"error": "Module must start with a slash (/)"}), 400
+
+    # Fetch all users
+    users = User.query.all()
+    for user in users:
+        # Send notification to each user
+        send_notification(user.id, title, message, module)
+
+    return jsonify({"message": "Notification sent to all users."}), 200
+
 @app.route('/create_backup', methods=['POST'])
 @require_session_key
 @require_admin
@@ -2965,16 +3050,14 @@ def create_backup():
     """
     Create a timestamped copy of the live database file in the backups directory.
     """
-    # Path to the live database configured in Flask app
-    db_path = current_app.config.get('SQLALCHEMY_DATABASE_URI')
-    # Assuming SQLite: URI like 'sqlite:////absolute/path/to/db.sqlite'
-    if not db_path.startswith('sqlite:///'):
+    # Get the path to the current active SQLite database file
+    engine = db.get_engine()
+    if not hasattr(engine, 'url') or engine.url.drivername != 'sqlite':
         return jsonify({'error': 'Backup creation only implemented for SQLite databases.'}), 400
 
-    # Extract local path
-    # strip prefix 'sqlite:///'
-    local_path = "/home/Bosbes/mysite/python_31/pythonanywhere/instance/data.db"
-    if not os.path.exists(local_path):
+    # Get the actual file path from the SQLAlchemy engine
+    db_path = engine.url.database
+    if not db_path or not os.path.exists(db_path):
         return jsonify({'error': 'Live database file not found'}), 404
 
     # Create timestamped filename
@@ -2983,8 +3066,7 @@ def create_backup():
     dest_path = os.path.join(BACKUP_DIR, filename)
 
     try:
-        # Copy the database file
-        shutil.copy(local_path, dest_path)
+        shutil.copy(db_path, dest_path)
     except Exception as e:
         current_app.logger.error(f"Backup failed: {e}")
         return jsonify({'error': 'Backup creation failed'}), 500
@@ -2996,10 +3078,100 @@ def create_backup():
 @require_admin
 def list_backups():
     """
-    List available backup files in the backups directory.
+    List available backup files in the backups directory,
+    returning both filename and creation time.
     """
     files = sorted(os.listdir(BACKUP_DIR))
-    return jsonify({'backups': files}), 200
+    backups = []
+
+    for fname in files:
+        full_path = os.path.join(BACKUP_DIR, fname)
+        # you can use getctime or getmtime here
+        ts = os.path.getctime(full_path)
+        backups.append({
+            'filename': fname,
+            # Send an ISO‑8601 string so JS new Date(...) will parse it reliably
+            'created_at': datetime.fromtimestamp(ts).isoformat()
+        })
+
+    return jsonify({'backups': backups}), 200
+
+@app.route('/restore', methods=['POST'])
+@require_session_key
+@require_admin
+def restore_backup():
+    """
+    Restore a given backup file to become the new data.db,
+    with rollback on failure. Uses SQLAlchemy under the hood,
+    and disposes all connections before touching the file.
+    Expects JSON: { "filename": "mybackup-2025-06-15.db" }
+    """
+    data = request.get_json() or {}
+    fname = data.get('filename')
+    if not fname:
+        return jsonify({"error": "Missing filename"}), 400
+
+    src = os.path.join(BACKUP_DIR, fname)
+    if not os.path.isfile(src):
+        return jsonify({"error": f"Backup {fname} not found"}), 404
+
+    # ── STEP 0 ──
+    # Close all active sessions/connections so the file is no longer locked.
+    try:
+        db.session.remove()
+        db.engine.dispose()
+    except Exception as e:
+        # usually non‑fatal, but log or return if you want stricter guarantees
+        app.logger.warning(f"Failed to fully dispose engine before archive: {e}")
+
+    # ── STEP 1 ── Archive current DB ──
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    old_db = DB_PATH + f".old-{timestamp}"
+    try:
+        if os.path.exists(DB_PATH):
+            os.rename(DB_PATH, old_db)
+    except Exception as e:
+        return jsonify({"error": f"Failed to archive old DB: {e}"}), 500
+
+    # ── STEP 2 ── Copy the chosen backup into place ──
+    try:
+        shutil.copy(src, DB_PATH)
+    except Exception as e:
+        # rollback archive
+        if os.path.exists(old_db):
+            os.rename(old_db, DB_PATH)
+        return jsonify({"error": f"Failed to install backup: {e}"}), 500
+
+    # ── STEP 3 ── Refresh SQLAlchemy again ──
+    try:
+        db.session.remove()
+        db.engine.dispose()
+    except:
+        pass
+
+    # ── STEP 4 ── Sanity‑check via SQLAlchemy ──
+    try:
+        res = db.session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1;")
+            )
+        if res.first() is None:
+            raise RuntimeError("No tables found in DB")
+    except (SQLAlchemyError, RuntimeError) as e:
+        # rollback to original DB
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+        if os.path.exists(old_db):
+            os.rename(old_db, DB_PATH)
+        return jsonify({"error": f"Backup test query failed: {e}"}), 500
+
+    # ── STEP 5 ── Clean up archive ──
+    try:
+        if os.path.exists(old_db):
+            os.remove(old_db)
+    except Exception:
+        app.logger.warning("Could not delete old DB archive; manual cleanup may be required.")
+
+    return jsonify({"status": f"Successfully restored {fname}"}), 200
 
 @app.route('/download/<filename>', methods=['GET'])
 @require_session_key
