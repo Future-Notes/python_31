@@ -3,7 +3,7 @@
   // ——— CONFIG ———
   const FETCH_INTERVAL_MS = 30_000;
   const BELL_ROUTES = [
-    '/index', '/group-notes', '/scheduler-page', '/todo-page' 
+    '/index', '/group-notes', '/scheduler-page', '/todo_page' 
     // ... other routes
   ];
 
@@ -146,35 +146,46 @@
   }
 
   // ——— PUSH SUBSCRIPTION ———
-  async function initPush() {
+  async function initPush(force = false) {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push not supported');
       return;
     }
     try {
-      const reg = await navigator.serviceWorker.register('/static/sw.js');
+      const reg  = await navigator.serviceWorker.register('/static/sw.js');
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') return;
 
-      const existing = await reg.pushManager.getSubscription();
-      if (existing) return;
+      let existing = await reg.pushManager.getSubscription();
+      if (existing && !force) {
+        // nothing to do
+        return;
+      }
+      if (existing && force) {
+        await existing.unsubscribe();
+      }
 
       const keyB64 = await fetchVapidKey();
       const keyBuf = urlBase64ToUint8Array(keyB64);
 
       const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
+        userVisibleOnly:      true,
         applicationServerKey: keyBuf
       });
 
       await authenticatedFetch('/api/save-subscription', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify(sub)
+        method:  'POST',
+        headers: {'Content-Type':'application/json'},
+        body:    JSON.stringify(sub)
       });
     } catch (e) {
       console.error('Push init failed', e);
     }
+  }
+
+    // ─── call this to forcibly unsubscribe + re‑subscribe ───
+  function forceReinitPush() {
+    initPush(true).catch(console.error);
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -297,6 +308,19 @@
       }
     });
   }
+
+  // ─── handle renewed subscription from the SW ───
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data.type === 'push-subscription-updated') {
+      const newSub = event.data.subscription;
+      console.log('[App] New push subscription from SW:', newSub);
+      authenticatedFetch('/api/save-subscription', {
+        method:  'POST',
+        headers: {'Content-Type':'application/json'},
+        body:    JSON.stringify(newSub)
+      }).catch(console.error);
+    }
+  });
 
   // ——— BELL+MENU INIT ———
   function initBellUI() {
@@ -430,4 +454,9 @@
 
     initHeadless();
   });
+  // ─── expose to console for manual triggering ───
+  window.pushSubscription = {
+    init:        initPush,          // run the normal init
+    forceRenew:  () => initPush(true)  // force‑unsubscribe + re‑subscribe
+  };
 })();

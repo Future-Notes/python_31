@@ -1,19 +1,22 @@
 {
-    "name": "Future notes note application",
-    "short_name": "Future notes",
-    "icons": [
-       {
-          "src": "/android-chrome-192x192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-       },
-       {
-        "src": "/android-chrome-512x512.png",
-        "sizes": "512x512",
-        "type": "image/png"
-        }
-    ],
-    "theme_color": "#FFFFFF",
-    "background_color": "#FFFFFF",
-    "display": "standalone"
- }
+  "name": "Future notes note application",
+  "short_name": "Future notes",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
