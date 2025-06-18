@@ -320,6 +320,7 @@
             <div id="dev-status"></div>
             <button id="merge-dev-master">Merge Dev into Master</button>
             <button id="create-backup-btn">Create Backup</button>
+            <button id="send-notification-all">Send Notification to All Users</button>
         </div>
 
         <!-- Password Confirmation Modal -->
@@ -343,6 +344,16 @@
                     <th>Email</th>
                     <th>Message</th>
                     <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <h2 class="section-title">Backups</h2>
+        <table id="backups-table">
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Created At</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -399,11 +410,188 @@
                 const data = await response.json();
                 console.log('Backup created:', data.file);
                 alert(`Backup created successfully: ${data.file}`);
+                fetchBackups();  // Refresh the backups list
             } catch (err) {
                 console.error('Network or server error:', err);
                 alert('Could not create backup. Check console for details.');
             }
         });
+
+        // when the DOM is loaded, attach our click handler
+        document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('send-notification-all');
+        if (!btn) {
+            console.warn('No #send-notification-all button found');
+            return;
+        }
+        btn.addEventListener('click', () => {
+            showNotificationModal();
+        });
+        });
+
+
+        (function() {
+        // Inject styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .notif-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex;
+            align-items: center; justify-content: center; z-index: 1000;
+            }
+            .notif-modal {
+            background: #2c2c2c; /* dark gray */
+            padding: 20px; border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            width: 90%; max-width: 400px;
+            font-family: sans-serif;
+            }
+            .notif-modal h2 {
+            margin-top: 0; font-size: 1.25em; color: white;
+            }
+            .notif-modal label {
+            display: block; margin: 10px 0 5px; color: white;
+            }
+            .notif-modal input[type="text"],
+            .notif-modal textarea,
+            .notif-modal select {
+            width: 100%; padding: 8px; border: 1px solid #ccc;
+            border-radius: 3px; box-sizing: border-box;
+            font-size: 1em; color: #2c2c2c; background: #f0f0f0; /* light gray */
+            background-color: #2c2c2c; /* dark gray */
+            }
+            .notif-modal textarea {
+            resize: vertical; min-height: 60px; color: #2c2c2c;
+            }
+            .notif-modal select {
+            background: #f0f0f0; /* light gray */
+            background-color: #2c2c2c; /* dark gray */
+            color: white;
+            }
+            .notif-modal .actions {
+            text-align: right; margin-top: 15px;
+            }
+            .notif-modal button {
+            padding: 8px 12px; font-size: 0.9em;
+            border: none; border-radius: 3px;
+            cursor: pointer;
+            }
+            .notif-modal .btn-cancel {
+            margin-right: 8px;
+            }
+            .notif-modal .btn-send {
+            background: #666; color: #fff;
+            }
+            .notif-modal .custom-url {
+            display: none;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Build modal HTML
+        function buildModal() {
+            const overlay = document.createElement('div');
+            overlay.className = 'notif-overlay';
+
+            const modal = document.createElement('div');
+            modal.className = 'notif-modal';
+
+            modal.innerHTML = `
+            <h2>Send Notification</h2>
+            <label for="notif-title">Title</label>
+            <input type="text" id="notif-title" placeholder="Notification title">
+
+            <label for="notif-message">Message</label>
+            <textarea id="notif-message" placeholder="Your message here"></textarea>
+
+            <label for="notif-module">Module / URL</label>
+            <select id="notif-module">
+                <option value="">-- select --</option>
+                <option value="/index">Notes</option>
+                <option value="/group-notes">Group notes</option>
+                <option value="/scheduler-page">Scheduler</option>
+                <option value="/todo-page">To‑Do</option>
+                <option value="custom">Custom…</option>
+            </select>
+
+            <div class="custom-url">
+                <label for="notif-custom-url">Custom URL</label>
+                <input type="text" id="notif-custom-url" placeholder="/your‑path">
+            </div>
+
+            <div class="actions">
+                <button class="btn-cancel">Cancel</button>
+                <button class="btn-send">Send</button>
+            </div>
+            `;
+
+            overlay.appendChild(modal);
+            return overlay;
+        }
+
+        // Show modal and wire up events
+        window.showNotificationModal = function() {
+            const overlay = buildModal();
+            document.body.appendChild(overlay);
+
+            const sel = overlay.querySelector('#notif-module');
+            const customDiv = overlay.querySelector('.custom-url');
+            const customInput = overlay.querySelector('#notif-custom-url');
+
+            sel.addEventListener('change', () => {
+            if (sel.value === 'custom') {
+                customDiv.style.display = 'block';
+            } else {
+                customDiv.style.display = 'none';
+            }
+            });
+
+            // Cancel button
+            overlay.querySelector('.btn-cancel').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            });
+
+            // Send button
+            overlay.querySelector('.btn-send').addEventListener('click', () => {
+            const title = overlay.querySelector('#notif-title').value.trim();
+            const message = overlay.querySelector('#notif-message').value.trim();
+            let module = sel.value;
+
+            if (module === 'custom') {
+                module = customInput.value.trim();
+            }
+
+            // Basic client‑side validation
+            if (!title || !message || !module) {
+                alert('All fields are required.');
+                return;
+            }
+            if (!module.startsWith('/')) {
+                alert('Module must start with a slash (/).');
+                return;
+            }
+
+            // Send it off
+            fetch('/admin/notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, message, module })
+            })
+            .then(res => {
+                if (!res.ok) return res.json().then(j => Promise.reject(j.error || res.statusText));
+                return res.json();
+            })
+            .then(json => {
+                alert(json.message || 'Notification sent!');
+                document.body.removeChild(overlay);
+            })
+            .catch(err => {
+                alert('Error: ' + err);
+            });
+            });
+        };
+        })();
+
 
 
         async function fetchAdminData() {
@@ -418,6 +606,7 @@
                     populateMessagesTable(data.messages);
                     populateUsersTable(data.users);
                     fetchUserStatus();
+                    fetchBackups();
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
@@ -432,6 +621,83 @@
                     "An unexpected error occurred. Please try again later.";
             }
         }
+
+        async function fetchBackups() {
+            try {
+                const response = await fetch("/list", {
+                    method: "GET",
+                    
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const tableBody = document.querySelector("#backups-table tbody");
+                    tableBody.innerHTML = "";
+
+                    // Sort backups from newest to oldest by parsing timestamp from filename
+                    data.backups
+                        .sort((a, b) => {
+                            // Extract timestamp from filename, e.g., backup_20250617_172832.db
+                            function parseTimestamp(filename) {
+                                const match = filename.match(/backup_(\d{8})_(\d{6})\.db/);
+                                if (!match) return 0;
+                                const [_, date, time] = match;
+                                // date: YYYYMMDD, time: HHMMSS
+                                return new Date(
+                                    date.slice(0, 4) + '-' +
+                                    date.slice(4, 6) + '-' +
+                                    date.slice(6, 8) + 'T' +
+                                    time.slice(0, 2) + ':' +
+                                    time.slice(2, 4) + ':' +
+                                    time.slice(4, 6)
+                                ).getTime();
+                            }
+                            return parseTimestamp(b.filename) - parseTimestamp(a.filename);
+                        })
+                        .forEach((backup) => {
+                            const row = document.createElement("tr");
+                            // Show the parsed date for user-friendliness
+                            const match = backup.filename.match(/backup_(\d{8})_(\d{6})\.db/);
+                            let displayDate = backup.created_at;
+                            if (match) {
+                                const [_, date, time] = match;
+                                displayDate = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)} ${time.slice(0,2)}:${time.slice(2,4)}:${time.slice(4,6)}`;
+                            }
+                            row.innerHTML = `
+                                <td>${backup.filename}</td>
+                                <td>${displayDate}</td>
+                                <td><button onclick="restoreBackup('${backup.filename}')">Restore</button></td>
+                            `;
+                            tableBody.appendChild(row);
+                        });
+                } else {
+                    console.error("Failed to fetch backups.");
+                }
+            } catch (error) {
+                console.error("Error fetching backups:", error);
+            }
+        }
+
+        async function restoreBackup(filename) {
+            if (!confirm(`Are you absolutely sure you want to restore "${filename}"? This will overwrite the live database.`)) {
+                return;
+            }
+
+            const resp = await fetch('/restore', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({filename})
+            });
+
+            const result = await resp.json();
+            if (resp.ok) {
+                alert(result.status);
+                fetchBackups();  // Refresh the backups list
+            } else {
+                alert(`Restore failed: ${result.error}`);
+            }
+        }
+
 
         async function fetchUserStatus() {
             try {

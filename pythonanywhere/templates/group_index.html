@@ -1559,7 +1559,9 @@
             try {
                 const response = await fetch('/groups/remove-user', {
                     method: 'POST',
-                    
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({ group_id: groupId, user_id: userId })
                 });
 
@@ -1586,7 +1588,9 @@
             try {
                 const response = await fetch('/groups/delete', {
                     method: 'POST',
-                    
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({ group_id: groupId })
                 });
 
@@ -2100,7 +2104,7 @@
             try {
                 const response = await fetch("/groups/leave", {
                     method: "POST",
-                    
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ group_id: groupId })
                 });
 
