@@ -1,44 +1,134 @@
 // notifications.js
 (function() {
   // ——— CONFIG ———
-  const FETCH_INTERVAL_MS = 30_000;  // poll every 30s
-  const STORAGE_KEY = 'seenDesktopNotifs'; // localStorage key
+  const FETCH_INTERVAL_MS = 30_000;
+  const BELL_ROUTES = [
+    '/index', '/group-notes', '/scheduler-page', '/todo-page' 
+    // ... other routes
+  ];
+
+  // ——— INDEXEDDB CONFIG ———
+  const DB_NAME = 'NotificationDB';
+  const STORE_NAME = 'seenNotifications';
+  const ITEM_KEY = 'seenSet';
 
   // ——— STATE ———
   let notifications = [];
+  let seenSet = new Set();
+  let autoLoginPromise = null; // Track login attempts
 
-  // Retrieve set of IDs we've already notified on
-  function loadNotifiedSet() {
+  // ——— AUTO-LOGIN HELPERS ———
+  async function attemptAutoLoginSilently() {
+    if (autoLoginPromise) return autoLoginPromise; // Dedupe requests
+    
+    autoLoginPromise = (async () => {
+      try {
+        const res = await fetch("/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+          credentials: 'include'
+        });
+        return res.ok;
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    // Reset after completion
+    autoLoginPromise.finally(() => {
+      autoLoginPromise = null;
+    });
+
+    return autoLoginPromise;
+  }
+
+  async function authenticatedFetch(url, options = {}) {
+    let response = await fetch(url, {
+      ...options,
+      credentials: 'include'
+    });
+
+    // Handle 401 with single auto-login retry
+    if (response.status === 401 && !options._retried) {
+      const loggedIn = await attemptAutoLoginSilently();
+      if (loggedIn) {
+        return fetch(url, {
+          ...options,
+          _retried: true // Prevent infinite loops
+        });
+      }
+    }
+    return response;
+  }
+
+  // ——— INDEXEDDB HELPERS ———
+  async function initDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 2);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+    });
+  }
+
+  async function loadNotifiedSet() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch {
-      return new Set();
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(ITEM_KEY);
+      return new Promise((resolve) => {
+        request.onsuccess = () => {
+          const data = request.result || [];
+          seenSet = new Set(data);
+          resolve(seenSet);
+        };
+        request.onerror = () => resolve(seenSet);
+      });
+    } catch (e) {
+      console.error('IDB load error', e);
+      return seenSet;
     }
   }
 
-  // Persist updated set back to storage
-  function saveNotifiedSet(set) {
+  async function saveNotifiedSet() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...set]));
-    } catch {
-      // silently fail
+      const db = await initDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(Array.from(seenSet), ITEM_KEY);
+      return new Promise((resolve) => {
+        tx.oncomplete = resolve;
+      });
+    } catch (e) {
+      console.error('IDB save error', e);
     }
+  }
+
+  // ——— API CALLS ———
+  async function fetchVapidKey() {
+    const res = await authenticatedFetch('/api/vapid_public_key');
+    if (!res.ok) throw new Error('Could not load VAPID key');
+    const { publicKey } = await res.json();
+    return publicKey;
   }
 
   async function fetchUnseen() {
-    
-    const res = await fetch('/notifications', {
-    });
+    const res = await authenticatedFetch('/notifications');
     if (!res.ok) throw new Error('Failed to fetch notifications');
-    const data = await res.json();
-    return data.notifications || [];
+    const { notifications: list = [] } = await res.json();
+    return list;
   }
 
   async function markSeen(id) {
-    
-    const res = await fetch(`/notifications/${id}`, {
-      method: 'POST',
+    const res = await authenticatedFetch(`/notifications/${id}`, { 
+      method: 'POST' 
     });
     if (!res.ok) throw new Error('Failed to mark notification seen');
     return res.json();
@@ -46,45 +136,75 @@
 
   async function markSeenBulk(ids) {
     if (!ids.length) return;
-    
-    const res = await fetch('/notifications/seen', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ ids })
+    const res = await authenticatedFetch('/notifications/seen', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ ids })
     });
-    if (!res.ok) throw new Error('Failed to mark notifications seen');
+    if (!res.ok) throw new Error('Failed to bulk‐mark notifications seen');
     return res.json();
   }
 
-  // ——— UI RENDERING ———
-  function renderNotifications(menu, items) {
-    menu.innerHTML = ''; // clear existing
+  // ——— PUSH SUBSCRIPTION ———
+  async function initPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('Push not supported');
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.register('/static/sw.js');
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return;
 
-    if (items.length > 0) {
-      // Bulk "Mark all as read"
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) return;
+
+      const keyB64 = await fetchVapidKey();
+      const keyBuf = urlBase64ToUint8Array(keyB64);
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBuf
+      });
+
+      await authenticatedFetch('/api/save-subscription', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(sub)
+      });
+    } catch (e) {
+      console.error('Push init failed', e);
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const b64 = (base64String + padding)
+      .replace(/\-/g, '+').replace(/_/g, '/');
+    const raw = window.atob(b64);
+    return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  // ——— RENDERER ———
+  function renderNotifications(menu, items) {
+    menu.innerHTML = '';
+    if (items.length) {
       const bulkBtn = document.createElement('button');
       bulkBtn.id = 'mark-all-btn';
       bulkBtn.textContent = `Mark all as read (${items.length})`;
       Object.assign(bulkBtn.style, {
-        display: 'block',
-        width: '100%',
-        padding: '8px',
-        border: 'none',
-        background: 'var(--btn-color)',
-        cursor: 'pointer',
-        textAlign: 'center',
-        fontWeight: 'bold',
-        marginBottom: '4px'
+        display: 'block', width: '100%', padding: '8px', border: 'none',
+        background: 'var(--btn-color)', cursor: 'pointer',
+        textAlign: 'center', fontWeight: 'bold', marginBottom: '4px'
       });
       bulkBtn.addEventListener('click', async () => {
         bulkBtn.disabled = true;
         try {
           const ids = items.map(n => n.id);
           await markSeenBulk(ids);
-          const refreshed = await fetchUnseen();
-          renderNotifications(menu, refreshed);
+          const fresh = await fetchUnseen();
+          notifications = fresh;
+          renderNotifications(menu, fresh);
         } catch (err) {
           console.error(err);
         } finally {
@@ -94,13 +214,11 @@
       menu.appendChild(bulkBtn);
     }
 
-    if (items.length === 0) {
+    if (!items.length) {
       const empty = document.createElement('div');
       empty.textContent = 'No new notifications';
       Object.assign(empty.style, {
-        padding: '8px 16px',
-        color: '#666',
-        textAlign: 'center'
+        padding: '8px 16px', color: '#666', textAlign: 'center'
       });
       menu.appendChild(empty);
       return;
@@ -110,74 +228,84 @@
       const row = document.createElement('div');
       row.className = 'notif-item';
       Object.assign(row.style, {
-        padding: '8px 16px',
-        cursor: 'pointer',
-        borderBottom: '1px solid #eee'
+        padding: '8px 16px', cursor: 'pointer', borderBottom: '1px solid #eee'
       });
-      row.innerHTML = `
-        <strong>${n.title}</strong><br>
-        <small>${n.text}</small>
-      `;
+      row.innerHTML = `<strong>${n.title}</strong><br><small>${n.text}</small>`;
       row.addEventListener('click', async () => {
-        try { await markSeen(n.id); }
-        catch (err) { console.error(err); }
+        try {
+          await markSeen(n.id);
+          notifications = notifications.filter(x => x.id !== n.id);
+        } catch (err) {
+          console.error(err);
+        }
         window.location.href = n.module;
       });
       menu.appendChild(row);
     });
   }
 
-  // ——— NOTIFICATION & POLLING ———
+  // ——— CORE UPDATER ———
   async function updateNotifications() {
     try {
       const unseen = await fetchUnseen();
       notifications = unseen;
 
-      // Desktop notifications only for IDs not yet notified
-      if (window.Notification && Notification.permission === 'granted') {
-        const notifiedSet = loadNotifiedSet();
-        const toNotify = unseen.filter(n => !notifiedSet.has(n.id));
-
-        toNotify.forEach(n => {
-          const notif = new Notification(n.title, {
+      const toShow = unseen.filter(n => !seenSet.has(n.id));
+      
+      if (toShow.length && window.Notification && Notification.permission === 'granted') {
+        toShow.forEach(n => {
+          const toast = new Notification(n.title, {
             body: n.text,
-            icon: '/static/notification-icon.jpg',  // replace with your icon
+            icon: '/static/notification-icon.jpg',
             tag: `notif-${n.id}`,
             renotify: true
           });
-          notif.onclick = () => {
+          toast.onclick = () => {
             window.focus();
             window.location.href = n.module;
           };
-          // mark as sent
-          notifiedSet.add(n.id);
+          seenSet.add(n.id);
         });
-
-        // persist updates
-        saveNotifiedSet(notifiedSet);
+        await saveNotifiedSet();
       }
 
-      // update red dot and menu
-      document.getElementById('notif-dot').style.display =
-        unseen.length > 0 ? 'block' : 'none';
-
+      const dot = document.getElementById('notif-dot');
+      if (dot) dot.style.display = unseen.length ? 'block' : 'none';
     } catch (err) {
-      console.error('Error fetching notifications:', err);
+      console.error('Notification update error:', err);
     }
   }
 
-  // ——— INITIALIZATION ———
-  document.addEventListener('DOMContentLoaded', () => {
-    // 1) Ask for desktop-notification permission up front
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-        .then(perm => console.log('Notification permission:', perm))
-        .catch(console.error);
-    }
+  // ——— MESSAGE HANDLER FOR SERVICE WORKER UPDATES ———
+  function setupServiceWorkerMessaging() {
+    navigator.serviceWorker.addEventListener('message', event => {
+      if (event.data.type === 'notification-seen') {
+        const id = event.data.id;
+        if (!seenSet.has(id)) {
+          seenSet.add(id);
+          saveNotifiedSet();
+          
+          notifications = notifications.filter(n => n.id !== id);
+          const dot = document.getElementById('notif-dot');
+          if (dot) dot.style.display = notifications.length ? 'block' : 'none';
+          
+          const menu = document.getElementById('notif-menu');
+          if (menu && menu.style.display === 'block') {
+            renderNotifications(menu, notifications);
+          }
+        }
+      }
+    });
+  }
 
-    // 2) Prepare header container
+  // ——— BELL+MENU INIT ———
+  function initBellUI() {
     const header = document.querySelector('header');
-    header.style.position = header.style.position || 'relative';
+    if (!header) return;
+
+    if (!['relative','absolute','fixed'].includes(getComputedStyle(header).position)) {
+      header.style.position = 'relative';
+    }
 
     let iconsContainer = document.getElementById('header-icons');
     if (!iconsContainer) {
@@ -185,30 +313,28 @@
       iconsContainer.id = 'header-icons';
       Object.assign(iconsContainer.style, {
         position: 'absolute',
-        top: '50%',
-        right: '0.5rem',
-        transform: 'translateY(-50%)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '1rem',
-        zIndex: 1000
+        top:      '50%',
+        right:    '0.5rem',
+        transform:'translateY(-50%)',
+        display:  'flex',
+        alignItems:'center',
+        gap:      '1rem',
+        zIndex:   1000
       });
       header.appendChild(iconsContainer);
     }
 
-    // 3) Move profile picture into iconsContainer
     const pic = document.getElementById('profile-pic');
     if (pic) {
       Object.assign(pic.style, {
         position: 'static',
-        transform: 'none',
-        margin: 0,
-        zIndex: 'auto'
+        transform:'none',
+        margin:   0,
+        zIndex:   'auto'
       });
       iconsContainer.appendChild(pic);
     }
 
-    // 4) Create the bell button + red dot
     const btn = document.createElement('button');
     btn.id = 'notif-bell';
     btn.innerHTML = '🔔<span id="notif-dot"></span>';
@@ -216,67 +342,92 @@
       position: 'relative',
       fontSize: '1.5rem',
       background: 'none',
-      border: 'none',
-      cursor: 'pointer',
-      padding: 0,
-      margin: 0,
-      zIndex: 1001
+      border:    'none',
+      cursor:    'pointer',
+      padding:   0,
+      margin:    0,
+      zIndex:    1001
     });
     iconsContainer.insertBefore(btn, iconsContainer.firstChild);
 
     const dot = document.getElementById('notif-dot');
     Object.assign(dot.style, {
-      position: 'absolute',
-      top: '4px',
-      right: '0',
-      width: '8px',
-      height: '8px',
-      borderRadius: '50%',
+      position:   'absolute',
+      top:        '4px',
+      right:      '0',
+      width:      '8px',
+      height:     '8px',
+      borderRadius:'50%',
       background: 'red',
-      display: 'none'
+      display:    'none'
     });
 
-    // 5) Create dropdown menu container
     const menu = document.createElement('div');
     menu.id = 'notif-menu';
     Object.assign(menu.style, {
-      position: 'absolute',
-      top: '2.5rem',
-      right: '1rem',
-      width: '280px',
-      maxHeight: '320px',
-      overflowY: 'auto',
-      background: 'var(--bg-color)',
-      border: '1px solid #ccc',
-      borderRadius: '4px',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-      zIndex: 1002,
-      display: 'none',
-      padding: '8px 0'
+      position:    'absolute',
+      top:         '2.5rem',
+      right:       '1rem',
+      width:       '280px',
+      maxHeight:   '320px',
+      overflowY:   'auto',
+      background:  'var(--bg-color)',
+      border:      '1px solid #ccc',
+      borderRadius:'4px',
+      boxShadow:   '0 2px 8px rgba(0,0,0,0.15)',
+      zIndex:      1002,
+      display:     'none',
+      padding:     '8px 0'
     });
     document.body.appendChild(menu);
 
-    // 6) Bell click toggles dropdown
-    btn.addEventListener('click', () => {
-      const isOpen = menu.style.display === 'block';
-      if (isOpen) {
-        menu.style.display = 'none';
-      } else {
-        renderNotifications(menu, notifications);
-        menu.style.display = 'block';
+    btn.addEventListener('click', async () => {
+      try {
+        const fresh = await fetchUnseen();
+        notifications = fresh;
+        renderNotifications(menu, fresh);
         dot.style.display = 'none';
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+      } catch (err) {
+        console.error(err);
       }
     });
 
-    // 7) Click outside to close menu
     document.addEventListener('click', e => {
       if (!btn.contains(e.target) && !menu.contains(e.target)) {
         menu.style.display = 'none';
       }
     });
+  }
 
-    // 8) Start polling
+  // ——— HEADLESS POLLING INIT ———
+  function initHeadless() {
     updateNotifications();
     setInterval(updateNotifications, FETCH_INTERVAL_MS);
+  }
+
+  // ——— BOOTSTRAP ———
+  document.addEventListener('DOMContentLoaded', async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(console.error);
+    }
+
+    await loadNotifiedSet();
+
+    if ('serviceWorker' in navigator) {
+      setupServiceWorkerMessaging();
+    }
+
+    initPush();
+
+    const path = window.location.pathname;
+    const showBell = BELL_ROUTES.some(route =>
+      path === route || path.startsWith(route + '/')
+    );
+    if (showBell) {
+      initBellUI();
+    }
+
+    initHeadless();
   });
 })();

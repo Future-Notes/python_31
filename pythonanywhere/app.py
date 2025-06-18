@@ -8,6 +8,8 @@ from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
+from sqlalchemy import JSON
+from pywebpush import webpush, WebPushException
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
 from datetime import datetime, timedelta
@@ -42,6 +44,11 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'poolclass': NullPool
+}
+app.config['VAPID_PRIVATE_KEY'] = '9AJRZillMA-nZfyUdM2SrldUrXp8eGEDteL_yvbJGjk'
+app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk'
+app.config['VAPID_CLAIMS'] = {
+    'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
@@ -134,6 +141,7 @@ class User(db.Model):
         cascade="all, delete-orphan",
     )
     notifications = db.relationship('Notification', back_populates='user')
+    push_subscriptions = db.relationship('PushSubscription', back_populates='user', lazy='dynamic')
     
     # new relationship to FingerPrint
     fingerprints = db.relationship(
@@ -146,6 +154,17 @@ class User(db.Model):
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
+
+class PushSubscription(db.Model):
+    __tablename__ = 'push_subscriptions'
+
+    id        = db.Column(db.Integer, primary_key=True)
+    user_id   = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    endpoint  = db.Column(db.Text,   nullable=False, unique=True)
+    keys      = db.Column(JSON,      nullable=False)  # <- generic JSON
+    created   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', back_populates='push_subscriptions')
 
 
 class FingerPrint(db.Model):
@@ -425,17 +444,38 @@ def check(key: str, default: str) -> str:
         return setting.value
 
 def send_notification(user_id, title, text, module):
-    """
-    Create and store a notification for a user.
-    """
-    notif = Notification(
-        user_id=user_id,
-        title=title,
-        text=text,
-        module=module,
-    )
+    # 1) in-app notification
+    notif = Notification(user_id=user_id, title=title, text=text, module=module)
     db.session.add(notif)
     db.session.commit()
+    
+    # 2) web-push to all active subscriptions
+    subs = PushSubscription.query.filter_by(user_id=user_id).all()
+    # Include notification ID in payload
+    payload = json.dumps({
+        'id': notif.id,
+        'title': title,
+        'body': text,
+        'url': module
+    })
+    
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info={'endpoint': sub.endpoint, 'keys': sub.keys},
+                data=payload,
+                vapid_private_key=current_app.config['VAPID_PRIVATE_KEY'],
+                vapid_claims=current_app.config['VAPID_CLAIMS']
+            )
+        except WebPushException as e:
+            code = getattr(e.response, 'status_code', None)
+            if code in (404, 410):
+                # subscription is gone—remove it
+                db.session.delete(sub)
+                db.session.commit()
+            else:
+                current_app.logger.error('Push error: %s', e)
+
     return notif
 
 
@@ -1317,6 +1357,14 @@ def home():
 def send_favicon():
     return send_from_directory('static', 'favicon.ico')
 
+@app.route('/android-chrome-512x512.png')
+def send_android_chrome_512():
+    return send_from_directory('static', 'android-chrome-512x512.png')
+
+@app.route('/android-chrome-192x192.png')
+def send_android_chrome_192():
+    return send_from_directory('static', 'android-chrome-192x192.png')
+
 @app.route('/index')
 def index():
     return render_template('index.html')
@@ -1468,6 +1516,33 @@ def get_unseen_notifications():
         'timestamp': n.timestamp.isoformat()
     } for n in notifs]
     return jsonify({'notifications': result})
+
+@app.route('/api/save-subscription', methods=['POST'])
+@require_session_key
+def save_subscription():
+    sub_data = request.get_json()
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({'error':'unauthorized'}), 401
+
+    # upsert by endpoint
+    sub = PushSubscription.query.filter_by(endpoint=sub_data['endpoint']).first()
+    if not sub:
+        sub = PushSubscription(
+            user_id = user.id,
+            endpoint = sub_data['endpoint'],
+            keys     = sub_data['keys']
+        )
+        db.session.add(sub)
+        db.session.commit()
+
+    return jsonify({'success': True}), 201
+
+@app.route('/api/vapid_public_key')
+def get_vapid_key():
+    # assume you store public key in your DB or env
+    public_key = app.config.get('VAPID_PUBLIC_KEY')
+    return jsonify({ "publicKey": public_key })
 
 @app.route('/notifications/<int:notif_id>', methods=['POST'])
 @require_session_key
@@ -4272,4 +4347,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')
