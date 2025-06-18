@@ -84,3 +84,45 @@ self.addEventListener('notificationclick', event => {
       })
   );
 });
+
+// 🔄 handle subscription expiration/rotation
+self.addEventListener('pushsubscriptionchange', event => {
+  console.warn('[SW] pushsubscriptionchange');
+  // ← replace this with the same VAPID key you fetch in the client:
+  const VAPID_KEY_B64 = '<YOUR_VAPID_PUBLIC_KEY>';
+
+  // helper (you can hoist this above if you like)
+  function urlB64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const b64     = (base64String + padding)
+      .replace(/-/g, '+').replace(/_/g, '/');
+    const raw     = atob(b64);
+    return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+  }
+
+  event.waitUntil(
+    // try to clean up old sub if it exists
+    (event.subscription
+      ? event.subscription.unsubscribe().catch(() => {})
+      : Promise.resolve()
+    )
+    .then(() => {
+      // re‑subscribe with your VAPID key
+      return self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(VAPID_KEY_B64)
+      });
+    })
+    .then(newSub => {
+      // tell all open pages about the new subscription
+      return self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type:         'push-subscription-updated',
+            subscription: newSub
+          });
+        });
+      });
+    })
+  );
+});
