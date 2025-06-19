@@ -2,6 +2,9 @@
 const DB_NAME = 'NotificationDB';
 const STORE_NAME = 'seenNotifications';
 const ITEM_KEY = 'seenSet';
+// at top of sw.js, before any listeners:
+const VAPID_KEY_B64 = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk';
+
 
 // IDB Helper with Transaction Completion Wait
 async function idbOperation(operation) {
@@ -89,7 +92,7 @@ self.addEventListener('notificationclick', event => {
 self.addEventListener('pushsubscriptionchange', event => {
   console.warn('[SW] pushsubscriptionchange');
   // ← replace this with the same VAPID key you fetch in the client:
-  const VAPID_KEY_B64 = '<YOUR_VAPID_PUBLIC_KEY>';
+  const VAPID_KEY_B64 = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk';
 
   // helper (you can hoist this above if you like)
   function urlB64ToUint8Array(base64String) {

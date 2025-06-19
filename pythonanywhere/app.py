@@ -1365,6 +1365,10 @@ def send_android_chrome_512():
 def send_android_chrome_192():
     return send_from_directory('static', 'android-chrome-192x192.png')
 
+@app.route('/sw.js')
+def serve_sw():
+    return send_from_directory('static', 'sw.js')
+
 @app.route('/index')
 def index():
     return render_template('index.html')

@@ -152,7 +152,7 @@
       return;
     }
     try {
-      const reg  = await navigator.serviceWorker.register('/static/sw.js');
+      const reg  = await navigator.serviceWorker.register('/sw.js');
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') return;
 
