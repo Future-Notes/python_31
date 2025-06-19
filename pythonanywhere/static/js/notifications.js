@@ -168,6 +168,8 @@
       const keyB64 = await fetchVapidKey();
       const keyBuf = urlBase64ToUint8Array(keyB64);
 
+      console.log('VAPID key length:', keyBuf.byteLength);
+
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly:      true,
         applicationServerKey: keyBuf
