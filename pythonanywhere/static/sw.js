@@ -1,10 +1,7 @@
-// static/sw.js
 const DB_NAME = 'NotificationDB';
 const STORE_NAME = 'seenNotifications';
 const ITEM_KEY = 'seenSet';
-// at top of sw.js, before any listeners:
 const VAPID_KEY_B64 = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk';
-
 
 // IDB Helper with Transaction Completion Wait
 async function idbOperation(operation) {
@@ -36,18 +33,16 @@ async function addToSeenSet(id) {
         const newSet = [...currentSet, id];
         store.put(newSet, ITEM_KEY);
         
-        // Notify all clients about the update
         self.clients.matchAll().then(clients => {
-          clients.forEach(client => {
-            client.postMessage({ type: 'notification-seen', id });
-          });
+          clients.forEach(c =>
+            c.postMessage({ type: 'notification-seen', id: data.id })
+          );
         });
       }
       tx.oncomplete = resolve;
     };
   });
 }
-
 
 self.addEventListener('push', event => {
   let data = { id: null, title: 'Notification', body: '', url: '/' };
@@ -56,19 +51,39 @@ self.addEventListener('push', event => {
     catch {/* ignore malformed */}
   }
 
-  const options = {
-    body: data.body,
-    icon: '/static/notification-icon.jpg',
-    data: data.url
-  };
-
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
-      .then(() => {
-        if (data.id) {
-          return addToSeenSet(data.id);
-        }
-      })
+    (async () => {
+      // Check if any client page is visible
+      const clients = await self.clients.matchAll({ type: 'window' });
+      const isAppVisible = clients.some(client => 
+        client.visibilityState === 'visible'
+      );
+
+      // Skip notification if app is visible
+      if (isAppVisible) return;
+
+      // Show notification if app isn't visible
+      await self.registration.showNotification(data.title, {
+        body: data.body,
+        icon: '/static/notification-icon.jpg',
+        data: data.url
+      });
+
+      // Mark as notified in backend
+      if (data.id) {
+        // Add timeout to prevent hung requests
+        await Promise.race([
+          fetch(`/notifications/notified/${data.id}`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {'Content-Type':'application/json'}
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 5000)
+          )
+        ]).catch(() => {});
+      }
+    })()
   );
 });
 
@@ -90,42 +105,39 @@ self.addEventListener('notificationclick', event => {
 
 // 🔄 handle subscription expiration/rotation
 self.addEventListener('pushsubscriptionchange', event => {
-  console.warn('[SW] pushsubscriptionchange');
-  // ← replace this with the same VAPID key you fetch in the client:
-  const VAPID_KEY_B64 = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk';
-
-  // helper (you can hoist this above if you like)
-  function urlB64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const b64     = (base64String + padding)
-      .replace(/-/g, '+').replace(/_/g, '/');
-    const raw     = atob(b64);
-    return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
-  }
-
   event.waitUntil(
-    // try to clean up old sub if it exists
-    (event.subscription
-      ? event.subscription.unsubscribe().catch(() => {})
-      : Promise.resolve()
-    )
-    .then(() => {
-      // re‑subscribe with your VAPID key
-      return self.registration.pushManager.subscribe({
+    (async () => {
+      const oldSubscription = event.oldSubscription;
+      const newSubscription = await self.registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlB64ToUint8Array(VAPID_KEY_B64)
       });
-    })
-    .then(newSub => {
-      // tell all open pages about the new subscription
-      return self.clients.matchAll().then(clients => {
-        clients.forEach(client => {
-          client.postMessage({
-            type:         'push-subscription-updated',
-            subscription: newSub
-          });
+
+      // Notify clients to update backend
+      const clients = await self.clients.matchAll();
+      clients.forEach(client => {
+        client.postMessage({
+          type: 'push-subscription-updated',
+          subscription: newSubscription
         });
       });
-    })
+
+      // Optional: Direct update from SW
+      try {
+        await fetch('/api/update-subscription', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Id': 'direct-from-sw' // Special header for SW requests
+          },
+          body: JSON.stringify({
+            old: oldSubscription.toJSON(),
+            new: newSubscription.toJSON()
+          })
+        });
+      } catch (e) {
+        console.error('SW direct update failed', e);
+      }
+    })()
   );
 });

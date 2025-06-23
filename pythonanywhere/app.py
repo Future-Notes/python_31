@@ -30,6 +30,7 @@ import re
 import traceback
 import subprocess
 import shutil
+import hashlib
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -67,7 +68,7 @@ _pending_mutations = {}
 excluded_tables = {
     'trophy',
 }
-REPO_PATH = "/home/Bosbes/mysite/python_31"
+REPO_PATH = "/home/Bosbes/mysite/python_31" 
 PYANYWHERE_RE = re.compile(r"^[^.]+\.(pythonanywhere\.com)$$", re.IGNORECASE)
 BACKUP_DIR = os.path.join(os.getcwd(), 'backups')
 DB_PATH = os.path.join(os.getcwd(), 'instance', 'data.db')
@@ -158,13 +159,19 @@ class User(db.Model):
 class PushSubscription(db.Model):
     __tablename__ = 'push_subscriptions'
 
-    id        = db.Column(db.Integer, primary_key=True)
-    user_id   = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
-    endpoint  = db.Column(db.Text,   nullable=False, unique=True)
-    keys      = db.Column(JSON,      nullable=False)  # <- generic JSON
-    created   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    endpoint = db.Column(db.Text, nullable=False)
+    keys = db.Column(JSON, nullable=False)
+    device_id = db.Column(db.String(64), nullable=False, index=True)  # New device ID field
+    created = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', back_populates='push_subscriptions')
+    
+    # Add unique constraint per user-device
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'device_id', name='uix_user_device'),
+    )
 
 
 class FingerPrint(db.Model):
@@ -394,19 +401,21 @@ class MutationLog(db.Model):
     action          = db.Column(db.String)  # 'insert', 'update', 'delete'
     timestamp       = db.Column(db.DateTime, default=db.func.now())
 
-# --- 1) Notification model ---
 class Notification(db.Model):
     __tablename__ = 'notifications'
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    title = db.Column(db.String(120), nullable=False)
-    text = db.Column(db.Text, nullable=False)
-    module = db.Column(db.String(50), nullable=False)
-    seen = db.Column(db.Boolean, default=False, nullable=False)
+    id        = db.Column(db.Integer, primary_key=True)
+    user_id   = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title     = db.Column(db.String(120), nullable=False)
+    text      = db.Column(db.Text, nullable=False)
+    module    = db.Column(db.String(50), nullable=False)
+    seen      = db.Column(db.Boolean, default=False, nullable=False)
+    # NEW: track whether we've delivered the toast/push
+    notified  = db.Column(db.Boolean, default=False, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', back_populates='notifications')
+
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -443,15 +452,14 @@ def check(key: str, default: str) -> str:
             return default
         return setting.value
 
+
+# Generate device ID in frontend
 def send_notification(user_id, title, text, module):
-    # 1) in-app notification
     notif = Notification(user_id=user_id, title=title, text=text, module=module)
     db.session.add(notif)
     db.session.commit()
     
-    # 2) web-push to all active subscriptions
     subs = PushSubscription.query.filter_by(user_id=user_id).all()
-    # Include notification ID in payload
     payload = json.dumps({
         'id': notif.id,
         'title': title,
@@ -470,12 +478,10 @@ def send_notification(user_id, title, text, module):
         except WebPushException as e:
             code = getattr(e.response, 'status_code', None)
             if code in (404, 410):
-                # subscription is gone—remove it
                 db.session.delete(sub)
                 db.session.commit()
             else:
                 current_app.logger.error('Push error: %s', e)
-
     return notif
 
 
@@ -1504,7 +1510,8 @@ def get_user_colors_fetch():
 @require_session_key
 def get_unseen_notifications():
     """
-    Fetch all unseen notifications for the current user.
+    Fetch all unseen notifications for the current user,
+    including whether we've already notified them.
     """
     notifs = (
         Notification.query
@@ -1517,9 +1524,12 @@ def get_unseen_notifications():
         'title':     n.title,
         'text':      n.text,
         'module':    n.module,
+        'seen':      n.seen,
+        'notified':  n.notified,
         'timestamp': n.timestamp.isoformat()
     } for n in notifs]
     return jsonify({'notifications': result})
+
 
 @app.route('/api/save-subscription', methods=['POST'])
 @require_session_key
@@ -1527,20 +1537,81 @@ def save_subscription():
     sub_data = request.get_json()
     user = User.query.get(g.user_id)
     if not user:
-        return jsonify({'error':'unauthorized'}), 401
+        return jsonify({'error': 'unauthorized'}), 401
 
-    # upsert by endpoint
-    sub = PushSubscription.query.filter_by(endpoint=sub_data['endpoint']).first()
-    if not sub:
+    # Generate device ID from browser fingerprint
+    device_id = generate_device_id(request)
+    
+    # Upsert by user+device instead of endpoint
+    sub = PushSubscription.query.filter_by(
+        user_id=user.id,
+        device_id=device_id
+    ).first()
+
+    if sub:
+        # Update existing subscription
+        sub.endpoint = sub_data['endpoint']
+        sub.keys = sub_data['keys']
+    else:
+        # Create new subscription
         sub = PushSubscription(
-            user_id = user.id,
-            endpoint = sub_data['endpoint'],
-            keys     = sub_data['keys']
+            user_id=user.id,
+            endpoint=sub_data['endpoint'],
+            keys=sub_data['keys'],
+            device_id=device_id
         )
         db.session.add(sub)
-        db.session.commit()
-
+    
+    db.session.commit()
     return jsonify({'success': True}), 201
+
+@app.route('/api/update-subscription', methods=['POST'])
+@require_session_key
+def update_subscription():
+    data = request.get_json()
+    
+    # Handle service worker direct updates
+    if request.headers.get('X-Device-Id') == 'direct-from-sw':
+        old_sub = data['old']
+        new_sub = data['new']
+        
+        # Find by endpoint
+        subscription = PushSubscription.query.filter_by(
+            endpoint=old_sub['endpoint']
+        ).first()
+        
+        if subscription:
+            subscription.endpoint = new_sub['endpoint']
+            subscription.keys = new_sub['keys']
+            db.session.commit()
+        
+        return jsonify({'success': True}), 200
+    
+    # Normal client updates
+    sub_data = request.get_json()
+    user = User.query.get(g.user_id)
+    device_id = generate_device_id(request)
+    
+    sub = PushSubscription.query.filter_by(
+        user_id=user.id,
+        device_id=device_id
+    ).first()
+    
+    if sub:
+        sub.endpoint = sub_data.endpoint
+        sub.keys = sub_data.keys
+        db.session.commit()
+    
+    return jsonify({'success': True}), 200
+
+def generate_device_id(request):
+    """Generate persistent device ID using browser fingerprint"""
+    fingerprint = ''.join([
+        request.headers.get('User-Agent', ''),
+        request.headers.get('Accept-Language', ''),
+        request.remote_addr
+    ])
+    return hashlib.sha256(fingerprint.encode()).hexdigest()
 
 @app.route('/api/vapid_public_key')
 def get_vapid_key():
@@ -1602,6 +1673,25 @@ def mark_notifications_seen_bulk():
         # optionally echo back the IDs you just marked
         'ids': payload.get('all') and 'all_unseen' or ids
     })
+
+@app.route('/notifications/notified/<int:notif_id>', methods=['POST'])
+@require_session_key
+def mark_notification_notified(notif_id):
+    """
+    Mark a single notification as having been delivered (toast/push).
+    """
+    notif = Notification.query.filter_by(
+        id=notif_id,
+        user_id=g.user_id
+    ).first_or_404()
+
+    # only toggle if unseen and un‑notified
+    if not notif.notified:
+        notif.notified = True
+        db.session.commit()
+
+    return jsonify({'success': True, 'id': notif_id})
+
 
 # Homepage
 
