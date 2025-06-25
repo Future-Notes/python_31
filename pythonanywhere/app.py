@@ -30,6 +30,8 @@ import traceback
 import subprocess
 import shutil
 import hashlib
+import smtplib
+from email.mime.text import MIMEText
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -50,6 +52,9 @@ app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfD
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+
+app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
+app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -745,6 +750,28 @@ def ensure_user_colors(user_id):
         db.session.add(uc)
         db.session.commit()
     return uc
+
+def send_email(to_address, subject, body):
+    """
+    Send a simple email via Gmail. Make sure GMAIL_USER and GMAIL_APP_PASSWORD
+    are set in your environment (app password from Google).
+    """
+    gmail_user = app.config.get('GMAIL_USER')
+    gmail_pass = app.config.get('GMAIL_APP_PASSWORD')
+    if not gmail_user or not gmail_pass:
+        raise ValueError("GMAIL_USER and GMAIL_APP_PASSWORD must be set")
+
+    # Create the email message
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = gmail_user
+    msg['To'] = to_address
+
+    # Connect to Gmail's SMTP server (allowed on PythonAnywhere free tier)
+    with smtplib.SMTP('smtp.gmail.com', 587) as server:
+        server.starttls()           # upgrade to secure connection
+        server.login(gmail_user, gmail_pass)
+        server.send_message(msg)
 
 def run_update_script():
     # This function runs the update script in a separate thread
