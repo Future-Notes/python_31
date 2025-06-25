@@ -1,14 +1,13 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, redirect, url_for, abort
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
-from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
-from sqlalchemy import JSON
+from sqlalchemy import JSON, create_engine, inspect
 from pywebpush import webpush, WebPushException
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
@@ -1314,6 +1313,47 @@ def seed_trophies():
         db.session.add(new_trophy)
     db.session.commit()
     print("Trophies seeded successfully.")
+
+def get_schema_fingerprint_via_sqlalchemy(db_path):
+    """
+    Uses SQLAlchemy alone to:
+      1. Connect (read-only) to the SQLite file at db_path
+      2. SELECT type, name, sql FROM sqlite_master WHERE … ORDER BY type,name
+      3. Serialize into JSON and MD5-hash it
+    Returns an MD5 hex digest.
+    """
+    # Build a one-off engine for the file
+    url = f"sqlite:///{db_path}"
+    engine = create_engine(url)
+
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT type, name, sql
+                  FROM sqlite_master
+                 WHERE type IN ('table','index','view','trigger')
+                   AND sql IS NOT NULL
+                 ORDER BY type, name;
+            """)).fetchall()
+    except SQLAlchemyError as e:
+        engine.dispose()
+        raise
+    finally:
+        engine.dispose()
+
+    # Turn rows into a JSON blob
+    definitions = [
+        {'type': r[0], 'name': r[1], 'sql': r[2]}
+        for r in rows
+    ]
+    blob = json.dumps(definitions, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.md5(blob.encode("utf-8")).hexdigest()
+
+def reflect_metadata(db_path):
+    md = MetaData()
+    eng = create_engine(f"sqlite:///{db_path}")
+    md.reflect(bind=eng)
+    return md, eng
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -3212,6 +3252,34 @@ def send_notification_to_all():
 
     return jsonify({"message": "Notification sent to all users."}), 200
 
+@app.route('/admin/notification/user', methods=['POST'])
+@require_session_key
+@require_admin
+def send_notification_to_user():
+    data = request.json
+    user_id = data.user_id
+
+    
+    title = data.get("title")
+    message = data.get("message")
+    module = data.get("module")
+
+    user = User.query.get(user_id)
+
+    if not user_id or not message or not title or not module:
+        return jsonify({"error": "All fields are required."}), 400
+    
+    if not module.startswith("/"):
+        return jsonify({"error": "Module must start with a slash (/)"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found!"}), 404
+    
+    send_notification(user_id, title, message, module)
+
+    return jsonify({"message": f"Notification sent to {user.username} ({user_id})"}), 200
+
 @app.route('/create_backup', methods=['POST'])
 @require_session_key
 @require_admin
@@ -3246,24 +3314,38 @@ def create_backup():
 @require_session_key
 @require_admin
 def list_backups():
-    """
-    List available backup files in the backups directory,
-    returning both filename and creation time.
-    """
-    files = sorted(os.listdir(BACKUP_DIR))
-    backups = []
+    engine = db.get_engine()
+    live_path = engine.url.database
+    if not live_path or not os.path.exists(live_path):
+        return jsonify({'error': 'Live database file not found'}), 404
 
-    for fname in files:
-        full_path = os.path.join(BACKUP_DIR, fname)
-        # you can use getctime or getmtime here
-        ts = os.path.getctime(full_path)
-        backups.append({
+    # fingerprint live
+    try:
+        live_fp = get_schema_fingerprint_via_sqlalchemy(live_path)
+    except Exception as e:
+        current_app.logger.error(f"Live-DB schema read failed: {e}")
+        return jsonify({'error': 'Could not inspect live schema'}), 500
+
+    backups = []
+    for fname in sorted(os.listdir(BACKUP_DIR)):
+        full = os.path.join(BACKUP_DIR, fname)
+        ts = os.path.getctime(full)
+        entry = {
             'filename': fname,
-            # Send an ISO‑8601 string so JS new Date(...) will parse it reliably
             'created_at': datetime.fromtimestamp(ts).isoformat()
-        })
+        }
+
+        try:
+            fp = get_schema_fingerprint_via_sqlalchemy(full)
+            entry['outdated_schema'] = (fp != live_fp)
+        except Exception as e:
+            current_app.logger.warning(f"Schema read failed for {fname}: {e}")
+            entry['outdated_schema'] = True
+
+        backups.append(entry)
 
     return jsonify({'backups': backups}), 200
+
 
 @app.route('/restore', methods=['POST'])
 @require_session_key
@@ -3340,7 +3422,75 @@ def restore_backup():
     except Exception:
         app.logger.warning("Could not delete old DB archive; manual cleanup may be required.")
 
+    # -- STEP 6 -- Clean up the restored backup from the backup directory --
+    try:
+        if os.path.exists(src):
+            os.remove(src)
+    except Exception as e:
+        app.logger.warning(f"Could not delete restored backup file {src}: {e}")
+
     return jsonify({"status": f"Successfully restored {fname}"}), 200
+
+@app.route('/restore/repair', methods=['POST'])
+@require_session_key
+@require_admin
+def repair_backup():
+    data = request.get_json() or {}
+    fname = data.get('filename')
+    if not fname:
+        return jsonify({"error": "Missing filename"}), 400
+
+    src = os.path.join(BACKUP_DIR, fname)
+    if not os.path.isfile(src):
+        return jsonify({"error": f"Backup {fname} not found"}), 404
+
+    live_path = db.get_engine().url.database
+
+    # 1. Reflect both schemas
+    live_md, live_eng = reflect_metadata(live_path)
+    old_md,  old_eng  = reflect_metadata(src)
+
+    # 2. Open a real Connection + Transaction on the backup DB
+    try:
+        with old_eng.connect() as conn:
+            trans = conn.begin()
+            try:
+                # 2a. Create missing tables in the backup
+                missing_tables = set(live_md.tables) - set(old_md.tables)
+                for tblname in missing_tables:
+                    live_tbl = live_md.tables[tblname]
+                    # attach a copy of the Table to old_md
+                    live_tbl.to_metadata(old_md)
+                    old_tbl = old_md.tables[tblname]
+                    old_tbl.create(bind=conn)
+
+                # 2b. Add missing columns in existing tables
+                common_tables = set(live_md.tables) & set(old_md.tables)
+                inspector = inspect(conn)
+                for tblname in common_tables:
+                    live_tbl = live_md.tables[tblname]
+                    existing_cols = {c["name"] for c in inspector.get_columns(tblname)}
+
+                    for col in live_tbl.columns:
+                        if col.name not in existing_cols:
+                            colname = col.name
+                            coltype = col.type.compile(dialect=live_eng.dialect)
+                            ddl = f'ALTER TABLE "{tblname}" ADD COLUMN "{colname}" {coltype}'
+                            conn.execute(text(ddl))
+
+                # commit just the schema changes on the backup file
+                trans.commit()
+
+            except Exception:
+                trans.rollback()
+                raise
+
+    except Exception as e:
+        app.logger.error(f"Schema repair failed for {src}: {e}")
+        return jsonify({"error": f"Schema repair failed: {e}"}), 500
+
+    return jsonify({"status": f"Repaired schema of backup {fname}"}), 200
+
 
 @app.route('/download/<filename>', methods=['GET'])
 @require_session_key
@@ -3355,6 +3505,33 @@ def download_backup(filename):
         return jsonify({'error': 'Backup file not found'}), 404
 
     return send_from_directory(BACKUP_DIR, filename, as_attachment=True)
+
+@app.route('/backup/delete', methods=['DELETE'])
+@require_session_key
+@require_admin
+def delete_backup():
+    data = request.get_json() or {}
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({'error': 'Missing filename'}), 400
+
+    # Sanitize: remove path traversal risk
+    if '/' in filename or '\\' in filename:
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    full_path = os.path.join(BACKUP_DIR, filename)
+
+    if not os.path.isfile(full_path):
+        return jsonify({'error': 'Backup file not found'}), 404
+
+    try:
+        os.remove(full_path)
+    except Exception as e:
+        return jsonify({'error': f'Failed to delete file: {e}'}), 500
+
+    return jsonify({'message': 'Backup deleted successfully'}), 200
+
 
 @app.route('/admin/ban', methods=['POST'])
 @require_session_key
@@ -3878,7 +4055,7 @@ def logout():
 @app.route('/test-session', methods=['GET'])
 @require_session_key
 def test_session():
-    return jsonify({"message": "Session is valid!"}), 200
+    return jsonify({"message": "Session is valid!", "user_id": g.user_id}), 200
 
 # Personal notes
 

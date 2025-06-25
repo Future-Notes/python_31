@@ -1240,8 +1240,8 @@
         });
 
         document.getElementById("logout").addEventListener("click", () => {
+            fetch("/logout", { method: "POST" });
             sessionStorage.clear();
-            localStorage.removeItem("lasting_key");
             window.location.href = "/login_page";
         });
 
