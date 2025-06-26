@@ -294,6 +294,7 @@
             let r = await fetch("/test-session", { method: "GET" });
             if (r.status === 200) {
             const info = await r.json().catch(()=>({ startpage: redirectUrl }));
+            sessionStorage.setItem("current_user_id", info.user_id);
             window.location.href = params.get("redirect") || info.startpage || "/index";
             return true;
             }
@@ -309,6 +310,7 @@
             });
             if (r.ok) {
             const data = await r.json();
+            sessionStorage.setItem("current_user_id", data.user_id)
             window.location.href = redirectUrl || data.startpage || "/index";
             return true;
             }
@@ -342,6 +344,7 @@
         const data = await res.json();
 
         if (res.ok) {
+            sessionStorage.setItem("current_user_id", data.user_id)
             window.location.href = redirectUrl || data.startpage || "/index";
         } else if (res.status === 403 && data.error === "Account is suspended") {
             document.getElementById("ban-message").classList.add("visible");

@@ -1,14 +1,13 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, redirect, url_for, abort
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
-from werkzeug.exceptions import HTTPException
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
-from sqlalchemy import JSON
+from sqlalchemy import JSON, create_engine, inspect
 from pywebpush import webpush, WebPushException
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
@@ -30,6 +29,9 @@ import re
 import traceback
 import subprocess
 import shutil
+import hashlib
+import smtplib
+from email.mime.text import MIMEText
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -50,6 +52,9 @@ app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfD
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+
+app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
+app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -67,7 +72,7 @@ _pending_mutations = {}
 excluded_tables = {
     'trophy',
 }
-REPO_PATH = "/home/Bosbes/mysite/python_31"
+REPO_PATH = "/home/Bosbes/mysite/python_31" 
 PYANYWHERE_RE = re.compile(r"^[^.]+\.(pythonanywhere\.com)$$", re.IGNORECASE)
 BACKUP_DIR = os.path.join(os.getcwd(), 'backups')
 DB_PATH = os.path.join(os.getcwd(), 'instance', 'data.db')
@@ -158,13 +163,19 @@ class User(db.Model):
 class PushSubscription(db.Model):
     __tablename__ = 'push_subscriptions'
 
-    id        = db.Column(db.Integer, primary_key=True)
-    user_id   = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
-    endpoint  = db.Column(db.Text,   nullable=False, unique=True)
-    keys      = db.Column(JSON,      nullable=False)  # <- generic JSON
-    created   = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    endpoint = db.Column(db.Text, nullable=False)
+    keys = db.Column(JSON, nullable=False)
+    device_id = db.Column(db.String(64), nullable=False, index=True)  # New device ID field
+    created = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', back_populates='push_subscriptions')
+    
+    # Add unique constraint per user-device
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'device_id', name='uix_user_device'),
+    )
 
 
 class FingerPrint(db.Model):
@@ -394,19 +405,21 @@ class MutationLog(db.Model):
     action          = db.Column(db.String)  # 'insert', 'update', 'delete'
     timestamp       = db.Column(db.DateTime, default=db.func.now())
 
-# --- 1) Notification model ---
 class Notification(db.Model):
     __tablename__ = 'notifications'
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    title = db.Column(db.String(120), nullable=False)
-    text = db.Column(db.Text, nullable=False)
-    module = db.Column(db.String(50), nullable=False)
-    seen = db.Column(db.Boolean, default=False, nullable=False)
+    id        = db.Column(db.Integer, primary_key=True)
+    user_id   = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title     = db.Column(db.String(120), nullable=False)
+    text      = db.Column(db.Text, nullable=False)
+    module    = db.Column(db.String(50), nullable=False)
+    seen      = db.Column(db.Boolean, default=False, nullable=False)
+    # NEW: track whether we've delivered the toast/push
+    notified  = db.Column(db.Boolean, default=False, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', back_populates='notifications')
+
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -443,15 +456,14 @@ def check(key: str, default: str) -> str:
             return default
         return setting.value
 
+
+# Generate device ID in frontend
 def send_notification(user_id, title, text, module):
-    # 1) in-app notification
     notif = Notification(user_id=user_id, title=title, text=text, module=module)
     db.session.add(notif)
     db.session.commit()
     
-    # 2) web-push to all active subscriptions
     subs = PushSubscription.query.filter_by(user_id=user_id).all()
-    # Include notification ID in payload
     payload = json.dumps({
         'id': notif.id,
         'title': title,
@@ -470,12 +482,10 @@ def send_notification(user_id, title, text, module):
         except WebPushException as e:
             code = getattr(e.response, 'status_code', None)
             if code in (404, 410):
-                # subscription is gone—remove it
                 db.session.delete(sub)
                 db.session.commit()
             else:
                 current_app.logger.error('Push error: %s', e)
-
     return notif
 
 
@@ -740,6 +750,28 @@ def ensure_user_colors(user_id):
         db.session.add(uc)
         db.session.commit()
     return uc
+
+def send_email(to_address, subject, body):
+    """
+    Send a simple email via Gmail. Make sure GMAIL_USER and GMAIL_APP_PASSWORD
+    are set in your environment (app password from Google).
+    """
+    gmail_user = app.config.get('GMAIL_USER')
+    gmail_pass = app.config.get('GMAIL_APP_PASSWORD')
+    if not gmail_user or not gmail_pass:
+        raise ValueError("GMAIL_USER and GMAIL_APP_PASSWORD must be set")
+
+    # Create the email message
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = gmail_user
+    msg['To'] = to_address
+
+    # Connect to Gmail's SMTP server (allowed on PythonAnywhere free tier)
+    with smtplib.SMTP('smtp.gmail.com', 587) as server:
+        server.starttls()           # upgrade to secure connection
+        server.login(gmail_user, gmail_pass)
+        server.send_message(msg)
 
 def run_update_script():
     # This function runs the update script in a separate thread
@@ -1308,6 +1340,47 @@ def seed_trophies():
         db.session.add(new_trophy)
     db.session.commit()
     print("Trophies seeded successfully.")
+
+def get_schema_fingerprint_via_sqlalchemy(db_path):
+    """
+    Uses SQLAlchemy alone to:
+      1. Connect (read-only) to the SQLite file at db_path
+      2. SELECT type, name, sql FROM sqlite_master WHERE … ORDER BY type,name
+      3. Serialize into JSON and MD5-hash it
+    Returns an MD5 hex digest.
+    """
+    # Build a one-off engine for the file
+    url = f"sqlite:///{db_path}"
+    engine = create_engine(url)
+
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT type, name, sql
+                  FROM sqlite_master
+                 WHERE type IN ('table','index','view','trigger')
+                   AND sql IS NOT NULL
+                 ORDER BY type, name;
+            """)).fetchall()
+    except SQLAlchemyError as e:
+        engine.dispose()
+        raise
+    finally:
+        engine.dispose()
+
+    # Turn rows into a JSON blob
+    definitions = [
+        {'type': r[0], 'name': r[1], 'sql': r[2]}
+        for r in rows
+    ]
+    blob = json.dumps(definitions, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.md5(blob.encode("utf-8")).hexdigest()
+
+def reflect_metadata(db_path):
+    md = MetaData()
+    eng = create_engine(f"sqlite:///{db_path}")
+    md.reflect(bind=eng)
+    return md, eng
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -1504,7 +1577,8 @@ def get_user_colors_fetch():
 @require_session_key
 def get_unseen_notifications():
     """
-    Fetch all unseen notifications for the current user.
+    Fetch all unseen notifications for the current user,
+    including whether we've already notified them.
     """
     notifs = (
         Notification.query
@@ -1517,9 +1591,12 @@ def get_unseen_notifications():
         'title':     n.title,
         'text':      n.text,
         'module':    n.module,
+        'seen':      n.seen,
+        'notified':  n.notified,
         'timestamp': n.timestamp.isoformat()
     } for n in notifs]
     return jsonify({'notifications': result})
+
 
 @app.route('/api/save-subscription', methods=['POST'])
 @require_session_key
@@ -1527,20 +1604,81 @@ def save_subscription():
     sub_data = request.get_json()
     user = User.query.get(g.user_id)
     if not user:
-        return jsonify({'error':'unauthorized'}), 401
+        return jsonify({'error': 'unauthorized'}), 401
 
-    # upsert by endpoint
-    sub = PushSubscription.query.filter_by(endpoint=sub_data['endpoint']).first()
-    if not sub:
+    # Generate device ID from browser fingerprint
+    device_id = generate_device_id(request)
+    
+    # Upsert by user+device instead of endpoint
+    sub = PushSubscription.query.filter_by(
+        user_id=user.id,
+        device_id=device_id
+    ).first()
+
+    if sub:
+        # Update existing subscription
+        sub.endpoint = sub_data['endpoint']
+        sub.keys = sub_data['keys']
+    else:
+        # Create new subscription
         sub = PushSubscription(
-            user_id = user.id,
-            endpoint = sub_data['endpoint'],
-            keys     = sub_data['keys']
+            user_id=user.id,
+            endpoint=sub_data['endpoint'],
+            keys=sub_data['keys'],
+            device_id=device_id
         )
         db.session.add(sub)
-        db.session.commit()
-
+    
+    db.session.commit()
     return jsonify({'success': True}), 201
+
+@app.route('/api/update-subscription', methods=['POST'])
+@require_session_key
+def update_subscription():
+    data = request.get_json()
+    
+    # Handle service worker direct updates
+    if request.headers.get('X-Device-Id') == 'direct-from-sw':
+        old_sub = data['old']
+        new_sub = data['new']
+        
+        # Find by endpoint
+        subscription = PushSubscription.query.filter_by(
+            endpoint=old_sub['endpoint']
+        ).first()
+        
+        if subscription:
+            subscription.endpoint = new_sub['endpoint']
+            subscription.keys = new_sub['keys']
+            db.session.commit()
+        
+        return jsonify({'success': True}), 200
+    
+    # Normal client updates
+    sub_data = request.get_json()
+    user = User.query.get(g.user_id)
+    device_id = generate_device_id(request)
+    
+    sub = PushSubscription.query.filter_by(
+        user_id=user.id,
+        device_id=device_id
+    ).first()
+    
+    if sub:
+        sub.endpoint = sub_data.endpoint
+        sub.keys = sub_data.keys
+        db.session.commit()
+    
+    return jsonify({'success': True}), 200
+
+def generate_device_id(request):
+    """Generate persistent device ID using browser fingerprint"""
+    fingerprint = ''.join([
+        request.headers.get('User-Agent', ''),
+        request.headers.get('Accept-Language', ''),
+        request.remote_addr
+    ])
+    return hashlib.sha256(fingerprint.encode()).hexdigest()
 
 @app.route('/api/vapid_public_key')
 def get_vapid_key():
@@ -1602,6 +1740,25 @@ def mark_notifications_seen_bulk():
         # optionally echo back the IDs you just marked
         'ids': payload.get('all') and 'all_unseen' or ids
     })
+
+@app.route('/notifications/notified/<int:notif_id>', methods=['POST'])
+@require_session_key
+def mark_notification_notified(notif_id):
+    """
+    Mark a single notification as having been delivered (toast/push).
+    """
+    notif = Notification.query.filter_by(
+        id=notif_id,
+        user_id=g.user_id
+    ).first_or_404()
+
+    # only toggle if unseen and un‑notified
+    if not notif.notified:
+        notif.notified = True
+        db.session.commit()
+
+    return jsonify({'success': True, 'id': notif_id})
+
 
 # Homepage
 
@@ -3122,6 +3279,34 @@ def send_notification_to_all():
 
     return jsonify({"message": "Notification sent to all users."}), 200
 
+@app.route('/admin/notification/user', methods=['POST'])
+@require_session_key
+@require_admin
+def send_notification_to_user():
+    data = request.json
+    user_id = data.user_id
+
+    
+    title = data.get("title")
+    message = data.get("message")
+    module = data.get("module")
+
+    user = User.query.get(user_id)
+
+    if not user_id or not message or not title or not module:
+        return jsonify({"error": "All fields are required."}), 400
+    
+    if not module.startswith("/"):
+        return jsonify({"error": "Module must start with a slash (/)"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found!"}), 404
+    
+    send_notification(user_id, title, message, module)
+
+    return jsonify({"message": f"Notification sent to {user.username} ({user_id})"}), 200
+
 @app.route('/create_backup', methods=['POST'])
 @require_session_key
 @require_admin
@@ -3156,24 +3341,38 @@ def create_backup():
 @require_session_key
 @require_admin
 def list_backups():
-    """
-    List available backup files in the backups directory,
-    returning both filename and creation time.
-    """
-    files = sorted(os.listdir(BACKUP_DIR))
-    backups = []
+    engine = db.get_engine()
+    live_path = engine.url.database
+    if not live_path or not os.path.exists(live_path):
+        return jsonify({'error': 'Live database file not found'}), 404
 
-    for fname in files:
-        full_path = os.path.join(BACKUP_DIR, fname)
-        # you can use getctime or getmtime here
-        ts = os.path.getctime(full_path)
-        backups.append({
+    # fingerprint live
+    try:
+        live_fp = get_schema_fingerprint_via_sqlalchemy(live_path)
+    except Exception as e:
+        current_app.logger.error(f"Live-DB schema read failed: {e}")
+        return jsonify({'error': 'Could not inspect live schema'}), 500
+
+    backups = []
+    for fname in sorted(os.listdir(BACKUP_DIR)):
+        full = os.path.join(BACKUP_DIR, fname)
+        ts = os.path.getctime(full)
+        entry = {
             'filename': fname,
-            # Send an ISO‑8601 string so JS new Date(...) will parse it reliably
             'created_at': datetime.fromtimestamp(ts).isoformat()
-        })
+        }
+
+        try:
+            fp = get_schema_fingerprint_via_sqlalchemy(full)
+            entry['outdated_schema'] = (fp != live_fp)
+        except Exception as e:
+            current_app.logger.warning(f"Schema read failed for {fname}: {e}")
+            entry['outdated_schema'] = True
+
+        backups.append(entry)
 
     return jsonify({'backups': backups}), 200
+
 
 @app.route('/restore', methods=['POST'])
 @require_session_key
@@ -3250,7 +3449,75 @@ def restore_backup():
     except Exception:
         app.logger.warning("Could not delete old DB archive; manual cleanup may be required.")
 
+    # -- STEP 6 -- Clean up the restored backup from the backup directory --
+    try:
+        if os.path.exists(src):
+            os.remove(src)
+    except Exception as e:
+        app.logger.warning(f"Could not delete restored backup file {src}: {e}")
+
     return jsonify({"status": f"Successfully restored {fname}"}), 200
+
+@app.route('/restore/repair', methods=['POST'])
+@require_session_key
+@require_admin
+def repair_backup():
+    data = request.get_json() or {}
+    fname = data.get('filename')
+    if not fname:
+        return jsonify({"error": "Missing filename"}), 400
+
+    src = os.path.join(BACKUP_DIR, fname)
+    if not os.path.isfile(src):
+        return jsonify({"error": f"Backup {fname} not found"}), 404
+
+    live_path = db.get_engine().url.database
+
+    # 1. Reflect both schemas
+    live_md, live_eng = reflect_metadata(live_path)
+    old_md,  old_eng  = reflect_metadata(src)
+
+    # 2. Open a real Connection + Transaction on the backup DB
+    try:
+        with old_eng.connect() as conn:
+            trans = conn.begin()
+            try:
+                # 2a. Create missing tables in the backup
+                missing_tables = set(live_md.tables) - set(old_md.tables)
+                for tblname in missing_tables:
+                    live_tbl = live_md.tables[tblname]
+                    # attach a copy of the Table to old_md
+                    live_tbl.to_metadata(old_md)
+                    old_tbl = old_md.tables[tblname]
+                    old_tbl.create(bind=conn)
+
+                # 2b. Add missing columns in existing tables
+                common_tables = set(live_md.tables) & set(old_md.tables)
+                inspector = inspect(conn)
+                for tblname in common_tables:
+                    live_tbl = live_md.tables[tblname]
+                    existing_cols = {c["name"] for c in inspector.get_columns(tblname)}
+
+                    for col in live_tbl.columns:
+                        if col.name not in existing_cols:
+                            colname = col.name
+                            coltype = col.type.compile(dialect=live_eng.dialect)
+                            ddl = f'ALTER TABLE "{tblname}" ADD COLUMN "{colname}" {coltype}'
+                            conn.execute(text(ddl))
+
+                # commit just the schema changes on the backup file
+                trans.commit()
+
+            except Exception:
+                trans.rollback()
+                raise
+
+    except Exception as e:
+        app.logger.error(f"Schema repair failed for {src}: {e}")
+        return jsonify({"error": f"Schema repair failed: {e}"}), 500
+
+    return jsonify({"status": f"Repaired schema of backup {fname}"}), 200
+
 
 @app.route('/download/<filename>', methods=['GET'])
 @require_session_key
@@ -3265,6 +3532,33 @@ def download_backup(filename):
         return jsonify({'error': 'Backup file not found'}), 404
 
     return send_from_directory(BACKUP_DIR, filename, as_attachment=True)
+
+@app.route('/backup/delete', methods=['DELETE'])
+@require_session_key
+@require_admin
+def delete_backup():
+    data = request.get_json() or {}
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({'error': 'Missing filename'}), 400
+
+    # Sanitize: remove path traversal risk
+    if '/' in filename or '\\' in filename:
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    full_path = os.path.join(BACKUP_DIR, filename)
+
+    if not os.path.isfile(full_path):
+        return jsonify({'error': 'Backup file not found'}), 404
+
+    try:
+        os.remove(full_path)
+    except Exception as e:
+        return jsonify({'error': f'Failed to delete file: {e}'}), 500
+
+    return jsonify({'message': 'Backup deleted successfully'}), 200
+
 
 @app.route('/admin/ban', methods=['POST'])
 @require_session_key
@@ -3788,7 +4082,7 @@ def logout():
 @app.route('/test-session', methods=['GET'])
 @require_session_key
 def test_session():
-    return jsonify({"message": "Session is valid!"}), 200
+    return jsonify({"message": "Session is valid!", "user_id": g.user_id}), 200
 
 # Personal notes
 

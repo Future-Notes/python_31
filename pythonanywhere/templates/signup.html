@@ -474,6 +474,7 @@
 
     if (res.ok) {
       // cookies are set by the response; just redirect
+      sessionStorage.setItem("current_user_id", data.user_id)
       window.location.href = "/index";
     } else {
       alert(data.error || "Signup failed");
