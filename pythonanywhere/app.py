@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
@@ -32,6 +32,13 @@ import shutil
 import hashlib
 import smtplib
 from email.mime.text import MIMEText
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from email.mime.image import MIMEImage
+import mimetypes
+import urllib
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -52,7 +59,13 @@ app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfD
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
-
+# Jinja setup (point at your templates/)
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
+jinja_env = Environment(
+    loader=FileSystemLoader(TEMPLATE_PATH),
+    autoescape=select_autoescape(['html', 'xml'])
+)
+app.config['LOGO_URL'] = 'https://bosbes.eu.pythonanywhere.com/static/android-chrome-512x512.png'
 app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
 app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
 app.json_provider_class = CustomJSONProvider
@@ -130,6 +143,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200), nullable=True)
     lasting_key = db.Column(db.String(200), nullable=True)
     profile_picture = db.Column(db.String(200), nullable=True)
     allows_sharing = db.Column(db.Boolean, default=True)
@@ -159,6 +173,16 @@ class User(db.Model):
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
+
+# models.py
+class SignupSession(db.Model):
+    id = db.Column(db.String(36), primary_key=True)
+    username = db.Column(db.String(80), nullable=False)
+    hashed_password = db.Column(db.String(120), nullable=False)
+    user_ip = db.Column(db.String(45), nullable=False)
+    email = db.Column(db.String(120))
+    verification_code = db.Column(db.String(6))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 class PushSubscription(db.Model):
     __tablename__ = 'push_subscriptions'
@@ -751,27 +775,96 @@ def ensure_user_colors(user_id):
         db.session.commit()
     return uc
 
-def send_email(to_address, subject, body):
+def send_email(
+    to_address,
+    subject,
+    *,
+    title=None,
+    content_html,
+    content_text=None,
+    buttons=None,
+    logo_url,
+    unsubscribe_url,
+    cc=None,
+    bcc=None,
+    reply_to=None,
+    attachments=None,     # list of filepaths
+    inline_images=None,   # list of (cid, filepath)
+    headers=None          # dict of additional headers
+):
     """
-    Send a simple email via Gmail. Make sure GMAIL_USER and GMAIL_APP_PASSWORD
-    are set in your environment (app password from Google).
+    Send a multi-part email via Gmail SMTP.
+    - content_html: HTML snippet
+    - content_text: plain-text fallback (auto-generated if None)
+    - buttons: list of {'text','href','color'}
+    - attachments: paths to attach
+    - inline_images: [(cid, path)] for embedding images
+    - cc, bcc: lists of addresses
+    - reply_to: single address
+    - headers: extra headers dict
     """
-    gmail_user = app.config.get('GMAIL_USER')
-    gmail_pass = app.config.get('GMAIL_APP_PASSWORD')
+    gmail_user = app.config['GMAIL_USER']
+    gmail_pass = app.config['GMAIL_APP_PASSWORD']
     if not gmail_user or not gmail_pass:
         raise ValueError("GMAIL_USER and GMAIL_APP_PASSWORD must be set")
 
-    # Create the email message
-    msg = MIMEText(body)
+    # Render HTML
+    tpl = jinja_env.get_template('email_templates/base.html')
+    html_body = tpl.render(
+        title=title or subject,
+        content=content_html,
+        buttons=buttons or [],
+        logo_url=logo_url,
+        unsubscribe_url=unsubscribe_url
+    )
+
+    # Build message
+    msg = MIMEMultipart('related')
     msg['Subject'] = subject
     msg['From'] = gmail_user
     msg['To'] = to_address
+    if cc:
+        msg['Cc'] = ', '.join(cc)
+    if bcc:
+        # BCC isn’t in headers—passed to sendmail only
+        pass
+    if reply_to:
+        msg.add_header('Reply-To', reply_to)
+    if headers:
+        for k, v in headers.items():
+            msg.add_header(k, v)
 
-    # Connect to Gmail's SMTP server (allowed on PythonAnywhere free tier)
+    # Alternative part (text + HTML)
+    alt = MIMEMultipart('alternative')
+    text = content_text or "Please view this email in an HTML-capable client."
+    alt.attach(MIMEText(text, 'plain'))
+    alt.attach(MIMEText(html_body, 'html'))
+    msg.attach(alt)
+
+    # Inline images
+    for cid, path in inline_images or []:
+        with open(path, 'rb') as f:
+            img = MIMEImage(f.read())
+            img.add_header('Content-ID', f'<{cid}>')
+            msg.attach(img)
+
+    # Attachments
+    for fp in attachments or []:
+        ctype, encoding = mimetypes.guess_type(fp)
+        maintype, subtype = (ctype or 'application/octet-stream').split('/', 1)
+        with open(fp, 'rb') as f:
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(fp))
+            msg.attach(part)
+
+    # Send
+    all_recipients = [to_address] + (cc or []) + (bcc or [])
     with smtplib.SMTP('smtp.gmail.com', 587) as server:
-        server.starttls()           # upgrade to secure connection
+        server.starttls()
         server.login(gmail_user, gmail_pass)
-        server.send_message(msg)
+        server.sendmail(gmail_user, all_recipients, msg.as_string())
 
 def run_update_script():
     # This function runs the update script in a separate thread
@@ -921,9 +1014,74 @@ def delete_group_and_notes(group_id):
     Group.query.filter_by(id=group_id).delete()
 
 def delete_user_and_data(user):
-    """ Deletes all notes and the user itself. """
-    Note.query.filter_by(user_id=user.id).delete()
-    db.session.delete(user)
+    """ Deletes all user-related data and the user itself. """
+    user_to_delete = user if isinstance(user, User) else User.query.get(user)
+    if not user_to_delete:
+        return False
+
+    try:
+        # Delete push subscriptions
+        PushSubscription.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete fingerprints
+        FingerPrint.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete IP addresses
+        IpAddres.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete group memberships
+        GroupMember.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete invites (both sent and received)
+        Invite.query.filter(
+            (Invite.user_id == user_to_delete.id) | 
+            (Invite.invited_by == user_to_delete.id)
+        ).delete()
+        
+        # Delete todos
+        Todo.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete XP records
+        PlayerXp.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete notifications
+        Notification.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete notes and their associations
+        note_ids = [n.id for n in Note.query.filter_by(user_id=user_to_delete.id).all()]
+        if note_ids:
+            # Remove note-appointment associations
+            stmt = appointment_note.delete().where(
+                appointment_note.c.note_id.in_(note_ids)
+            )
+            db.session.execute(stmt)
+        Note.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete appointments and their associations
+        appointment_ids = [a.id for a in Appointment.query.filter_by(user_id=user_to_delete.id).all()]
+        if appointment_ids:
+            # Remove appointment-note associations
+            stmt = appointment_note.delete().where(
+                appointment_note.c.appointment_id.in_(appointment_ids)
+            )
+            db.session.execute(stmt)
+        Appointment.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete calendars
+        Calendar.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Delete user colors
+        UserColor.query.filter_by(user_id=user_to_delete.id).delete()
+        
+        # Finally, delete the user
+        db.session.delete(user_to_delete)
+        return True
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting user data: {str(e)}")
+        return False
+    
 
 def generate_game_code(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -1381,6 +1539,22 @@ def reflect_metadata(db_path):
     eng = create_engine(f"sqlite:///{db_path}")
     md.reflect(bind=eng)
     return md, eng
+
+def cleanup_expired_signup_sessions():
+    """Clean up expired sessions during request processing"""
+    try:
+        # Delete sessions older than 1 hour using efficient bulk operation
+        deleted_count = SignupSession.query.filter(
+            SignupSession.created_at < datetime.utcnow() - timedelta(hours=1)
+        ).delete()
+        
+        db.session.commit()
+        app.logger.info(f"Cleaned up {deleted_count} expired signup sessions")
+        return deleted_count
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Cleanup failed: {str(e)}")
+        return 0
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -1530,6 +1704,13 @@ def checks_page():
 @app.route('/guide_page')
 def guide_page():
     return render_template('guide.html')
+
+# app.py
+@app.route('/signup/email')
+def signup_email_page():
+    
+    # Render the email verification page
+    return render_template('signup_email.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -2994,10 +3175,11 @@ def delete_account():
     try:
         delete_profile_pictures(user.username)
         handle_group_membership(user.id)
-        delete_user_and_data(user)
-        
-        db.session.commit()
-        return jsonify({"message": "Account and all related data deleted successfully!"}), 200
+        if delete_user_and_data(user):  # Pass the User object
+            db.session.commit()  # Single commit point
+            return jsonify({"message": "Account deleted successfully!"}), 200
+        else:
+            return jsonify({"error": "Failed to delete account"}), 500
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
@@ -3200,9 +3382,12 @@ def admin():
             user_to_delete = User.query.get(target)
             if not user_to_delete:
                 return jsonify({"error": "User not found"}), 404
-            db.session.delete(user_to_delete)
-            db.session.commit()
-            return jsonify({"message": "User deleted successfully"}), 200
+            
+            if delete_user_and_data(user_to_delete):  # Pass the User object
+                db.session.commit()  # Explicit commit
+                return jsonify({"message": "User deleted successfully"}), 200
+            else:
+                return jsonify({"error": "Failed to delete user"}), 500
 
         return jsonify({"error": "Invalid target type"}), 400
 
@@ -3920,76 +4105,328 @@ def get_username(user_id):
 
 # Authentication
 
+# app.py
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     user_ip = request.remote_addr
 
-    # IP‐ban check remains unchanged
+    # IP-ban check remains unchanged
     banned_ip = IpAddres.query.join(User)\
         .filter(IpAddres.ip == user_ip, User.suspended.is_(True))\
         .first()
     if banned_ip:
-        return jsonify({"error": "Cannot sign up from this IP address. It is linked to a banned account."}), 403
+        return jsonify({"error": "Please get unbanned first!"}), 403
 
+    # Check username availability
+    if User.query.filter_by(username=data['username']).first():
+        return jsonify({"error": "Username already exists"}), 400
+
+    # Create signup session
+    session_id = str(uuid.uuid4())
+    signup_session = SignupSession(
+        id=session_id,
+        username=data['username'],
+        hashed_password=hashed_password,
+        user_ip=user_ip
+    )
+    db.session.add(signup_session)
+    db.session.commit()
+
+    resp = jsonify({"redirect": "/signup/email"})
+    resp.set_cookie(
+        "signup_session", session_id,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60  # 1 hour expiration
+    )
+    return resp
+
+# Helper function to create user from signup session
+def create_user_from_signup_session(signup_session, skip_email=False):
+    """Core logic to create user from signup session"""
     try:
-        user = User(username=data['username'], password=hashed_password)
-        # always generate lasting_key up front
+        # Create user
+        user = User(
+            username=signup_session.username,
+            password=signup_session.hashed_password,
+            email=None if skip_email else signup_session.email
+        )
         user.lasting_key = secrets.token_hex(32)
         db.session.add(user)
         db.session.commit()
 
-        IpAddres.query.add(IpAddres(user_id=user.id, ip=user_ip))
+        # Record IP
+        ip_record = IpAddres(user_id=user.id, ip=signup_session.user_ip)
+        db.session.add(ip_record)
         db.session.commit()
 
+        # Create session key
         session_key = generate_session_key(user.id)
+        
+        # Initialize user resources
         create_default_calendar(user.id)
         ensure_user_colors(user.id)
+        
+        # Send welcome notification
         send_notification(
             user.id, "Welcome!",
-            "Thank you for creating an account on Future Notes! Click on this notification for a quick guide on how to use the app.",
+            "Thank you for creating an account on Future Notes! Click for a quick guide.",
             "/guide_page"
         )
-
-        # build JSON payload
-        payload = {
-            "message": "User created and logged in successfully!",
+        
+        return {
             "session_key": session_key,
-            "user_id": user.id,
-            "lasting_key": user.lasting_key
+            "lasting_key": user.lasting_key,
+            "user_id": user.id
         }
-
-        resp = make_response(jsonify(payload), 201)
-        # set cookies
-        resp.set_cookie(
-            "session_key", session_key,
-            httponly=True, secure=True, samesite="Strict",
-            max_age=60*60*24  # e.g. 1 day
-        )
-        resp.set_cookie(
-            "lasting_key", user.lasting_key,
-            httponly=True, secure=True, samesite="Strict",
-            max_age=60*60*24*30  # e.g. 30 days
-        )
-        return resp
-
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"error": "Username already exists"}), 400
+        raise Exception("Account creation failed (username might be taken)")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Signup error: {str(e)}")
+        raise Exception("Account creation failed")
+
+# Email verification endpoint
+@app.route('/signup/verify_email')
+def verify_email_via_link():
+    """Endpoint for email verification link"""
+    code = request.args.get('code')
+    email = request.args.get('email')
+    
+    if not code or not email:
+        return "Missing verification parameters", 400
+
+    # Find matching signup session
+    signup_session = SignupSession.query.filter_by(
+        email=email,
+        verification_code=code
+    ).first()
+
+    if not signup_session:
+        return "Invalid verification link", 400
+
+    # Render success page with auto-redirect
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Email Verified</title>
+        <meta http-equiv="refresh" content="5;url=/signup/complete_verification?code={code}">
+        <style>
+            body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
+            .success {{ color: #2ecc71; font-size: 24px; }}
+            .loader {{ 
+                width: 50px; 
+                height: 50px;
+                border: 5px solid #f3f3f3;
+                border-top: 5px solid #3498db;
+                border-radius: 50%;
+                margin: 20px auto;
+                animation: spin 1s linear infinite;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="success">✓ Email verified successfully!</div>
+        <div class="loader"></div>
+        <p>Redirecting to your account...</p>
+        <p><a href="/signup/complete_verification?code={code}">Click here if not redirected</a></p>
+    </body>
+    </html>
+    """
+
+# Verification completion endpoint
+@app.route('/signup/complete_verification')
+def complete_email_verification():
+    """Finalize verification from link click"""
+    code = request.args.get('code')
+    
+    if not code:
+        return "Missing verification code", 400
+
+    # Find session by code
+    signup_session = SignupSession.query.filter_by(
+        verification_code=code
+    ).first()
+
+    if not signup_session:
+        return "Invalid verification code", 400
+
+    # Complete the signup process
+    return complete_signup_internal(signup_session)
+
+# Shared signup completion logic
+def complete_signup_internal(signup_session):
+    """Shared signup completion logic"""
+    try:
+        # Create user and get session data
+        skip_email = False if signup_session.email else True
+        user_data = create_user_from_signup_session(signup_session, skip_email)
+        
+        # Clean up session
+        db.session.delete(signup_session)
+        db.session.commit()
+        
+        # Prepare response
+        resp = redirect("/index")
+        resp.set_cookie(
+            "session_key", user_data['session_key'],
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24  # 1 day
+        )
+        resp.set_cookie(
+            "lasting_key", user_data['lasting_key'],
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24*30  # 30 days
+        )
+        resp.delete_cookie("signup_session")
+        return resp
+        
+    except Exception as e:
+        app.logger.error(f"Signup completion failed: {str(e)}")
+        return "Account creation failed. Please try signing up again.", 500
+
+# Updated email sending endpoint
+@app.route('/signup/send_verification', methods=['POST'])
+def send_verification_email():
+    data = request.get_json()
+    session_id = request.cookies.get('signup_session')
+    if not session_id:
+        return jsonify({"error": "Session expired"}), 400
+        
+    signup_session = SignupSession.query.get(session_id)
+    if not signup_session:
+        return jsonify({"error": "Invalid session"}), 400
+
+    # Validate email
+    email = data.get('email', '').strip()
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({"error": "Invalid email format"}), 400
+
+    # Generate and store verification code
+    code = ''.join(random.choices('0123456789', k=6))
+    signup_session.email = email
+    signup_session.verification_code = code
+    db.session.commit()
+
+    # Build verification URL
+    # Dynamically determine the site URL based on the request
+    site_url = f"{request.scheme}://{request.host}"
+    verify_url = f"{site_url}/signup/verify_email?code={code}&email={urllib.parse.quote(email)}"
+    
+    # Send email with button
+    try:
+        send_email(
+            to_address=email,
+            subject="Future Notes - Email Verification",
+            content_html=f"""
+                <p>Please verify your email address to complete your registration.</p>
+                <p>Click the button below or use this code: <strong>{code}</strong></p>
+                <p><small>Can't see the button? <a href="{verify_url}">Click here</a></small></p>
+            """,
+            buttons=[{
+                'text': 'Verify Email',
+                'href': verify_url,
+                'color': '#3498db'
+            }],
+            logo_url=app.config['LOGO_URL'],
+            unsubscribe_url="#"
+        )
+        return jsonify({"message": "Verification email sent"}), 200
+    except Exception as e:
+        app.logger.error(f"Email send failed: {str(e)}")
+        return jsonify({"error": "Failed to send verification email"}), 500
+
+# Updated signup completion endpoint
+@app.route('/signup/complete', methods=['POST'])
+def complete_signup():
+    """Original form-based signup completion"""
+    session_id = request.cookies.get('signup_session')
+    if not session_id:
+        # Try to find by verification code
+        verification_code = request.json.get('verification_code')
+        if verification_code:
+            signup_session = SignupSession.query.filter_by(
+                verification_code=verification_code
+            ).first()
+            if signup_session:
+                return complete_signup_internal(signup_session)
+        return jsonify({"error": "Session expired"}), 400
+        
+    signup_session = SignupSession.query.get(session_id)
+    if not signup_session:
+        return jsonify({"error": "Invalid session"}), 400
+
+    data = request.get_json()
+    skip_email = data.get('skip_email', False)
+    verification_code = data.get('verification_code', '')
+
+    # Verify code if email was added
+    if not skip_email:
+        if not verification_code:
+            return jsonify({"error": "Verification code required"}), 400
+        if verification_code != signup_session.verification_code:
+            return jsonify({"error": "Invalid verification code"}), 400
+
+    try:
+        # Create user and get session data
+        user_data = create_user_from_signup_session(signup_session, skip_email)
+        
+        # Clean up session
+        db.session.delete(signup_session)
+        db.session.commit()
+        
+        # Prepare response
+        payload = {
+            "message": "Account created successfully!",
+            "session_key": user_data['session_key'],
+            "user_id": user_data['user_id'],
+            "lasting_key": user_data['lasting_key']
+        }
+        resp = jsonify(payload)
+        
+        # Set cookies
+        resp.set_cookie(
+            "session_key", user_data['session_key'],
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24  # 1 day
+        )
+        resp.set_cookie(
+            "lasting_key", user_data['lasting_key'],
+            httponly=True, secure=True, samesite="Strict",
+            max_age=60*60*24*30  # 30 days
+        )
+        resp.delete_cookie("signup_session")
+        return resp
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Signup completion failed: {str(e)}")
+        return jsonify({"error": "Account creation failed"}), 500
 
 
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(silent=True) or {}
     # 1) lasting_key: either in JSON body or in cookie
-    lk = data.get('lasting_key') or request.cookies.get('lasting_key')
+    lk = request.cookies.get('lasting_key')
     if lk:
         user = User.query.filter_by(lasting_key=lk).first()
         if not user:
-            return jsonify({"error": "Invalid lasting key"}), 400
+            resp = make_response(jsonify({"error": "Invalid lasting key!"}), 401)
+            resp.delete_cookie("lasting_key")
+            return resp
         if user.suspended:
-            return jsonify({"error": "Account is suspended"}), 403
+            resp = make_response(jsonify({"error": "You are suspended!"}), 403)
+            resp.delete_cookie("lasting_key")
+            resp.delete_cookie("session_key")
+            return resp
 
         # OK, issue new session_key
         session_key = generate_session_key(user.id)
@@ -4083,6 +4520,13 @@ def logout():
 @require_session_key
 def test_session():
     return jsonify({"message": "Session is valid!", "user_id": g.user_id}), 200
+
+@app.route('/password-eisen', methods=['GET'])
+def password_eisen():
+    if check("wachtwoord_eisen", "Ja") == "Ja":
+        return jsonify({"enabled": True})  # Return as JSON
+    else:
+        return jsonify({"enabled": False})  # Return as JSON
 
 # Personal notes
 
