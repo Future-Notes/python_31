@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>{{ title }}</title>
+  </head>
+  <body style="Margin:0;padding:0;background-color:#2c2c2c;">
+    <!-- center everything -->
+    <center style="width:100%;background-color:#2c2c2c;">
+      <!-- outer spacer table -->
+      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:600px;margin:0 auto;">
+        <tr>
+          <td style="padding:20px 0;text-align:center;">
+            <!-- container table -->
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#2c2c2c;border:1px solid #3a3a3a;border-radius:4px;overflow:hidden;">
+              
+              <!-- HEADER -->
+              <tr>
+                <td align="center" style="background-color:#3a3a3a;padding:20px;">
+                  <img src="{{ logo_url }}" alt="Logo" width="120" style="display:block;border:none;outline:none;text-decoration:none;"/>
+                  <h1 style="font-family:sans-serif;color:#ffffff;font-size:24px;line-height:28px;Margin:10px 0 0 0;">{{ title }}</h1>
+                </td>
+              </tr>
+              
+              <!-- BODY -->
+              <tr>
+                <td style="background-color:#1e1e1e;padding:20px;font-family:sans-serif;color:#ffffff;line-height:1.5;">
+                  {{ content | safe }}
+                </td>
+              </tr>
+              
+              <!-- ACTIONS / BUTTONS -->
+              {% if buttons %}
+              <tr>
+                <td align="center" style="background-color:#1e1e1e;padding:20px;">
+                  {% for btn in buttons %}
+                  <!-- Table-wrapped button for Outlook -->
+                  <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;">
+                    <tr>
+                      <td align="center" bgcolor="{{ btn.color or '#424242' }}" style="border-radius:4px;">
+                        <a href="{{ btn.href }}" target="_blank"
+                           style="display:inline-block;padding:12px 24px;font-family:sans-serif;color:#ffffff;text-decoration:none;font-size:16px;line-height:20px;">
+                          {{ btn.text }}
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  {% endfor %}
+                </td>
+              </tr>
+              {% endif %}
+              
+              <!-- FOOTER -->
+              <tr>
+                <td style="background-color:#2c2c2c;padding:20px;font-family:sans-serif;color:#aaaaaa;font-size:12px;text-align:center;">
+                  You’re receiving this because you signed up at <strong>Future Notes</strong>.<br/>
+                  If you’d rather not, <a href="{{ unsubscribe_url }}" style="color:#cccccc;text-decoration:underline;">unsubscribe</a>.
+                </td>
+              </tr>
+              
+            </table>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
