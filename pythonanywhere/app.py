@@ -460,6 +460,14 @@ class PasswordResetToken(db.Model):
         self.token = secrets.token_urlsafe(64)
         self.expires_at = datetime.utcnow() + timedelta(minutes=30)  # 30-minute expiration
 
+class ResetUndoToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(128), unique=True, nullable=False)
+    old_password_hash = db.Column(db.String(128), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -1587,6 +1595,27 @@ def cleanup_reset_tokens():
         app.logger.info(f"Cleaned up {len(expired)} expired reset tokens")
     except Exception as e:
         app.logger.error(f"Reset token cleanup failed: {str(e)}")
+
+# Step 5: Add token cleanup function (run periodically)
+def cleanup_expired_tokens():
+    """Delete expired tokens (run daily via cron or scheduler)"""
+    try:
+        # Delete expired password reset tokens
+        PasswordResetToken.query.filter(
+            PasswordResetToken.expires_at < datetime.utcnow()
+        ).delete()
+        
+        # Delete expired undo tokens
+        ResetUndoToken.query.filter(
+            ResetUndoToken.expires_at < datetime.utcnow()
+        ).delete()
+        
+        # Commit changes
+        db.session.commit()
+        app.logger.info("Expired tokens cleaned up successfully")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Token cleanup failed: {str(e)}")
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -4442,7 +4471,7 @@ def send_verification_email():
             buttons=[{
                 'text': 'Verify Email',
                 'href': verify_url,
-                'color': '#3498db'
+                'color': '#424242'
             }],
             logo_url=app.config['LOGO_URL'],
             unsubscribe_url="#"
@@ -4550,7 +4579,8 @@ def reset_password_request():
     db.session.commit()
     
     # Build reset URL
-    site_url = app.config['SITE_URL']
+    site_url = f"{request.scheme}://{request.host}"
+    # Updated email sending (in reset_password_request)
     reset_url = f"{site_url}/reset_password?token={reset_token.token}"
     
     # Send password reset email
@@ -4561,12 +4591,12 @@ def reset_password_request():
             content_html=f"""
                 <p>We received a password reset request for your Future Notes account.</p>
                 <p>Click the button below to reset your password:</p>
-                <p><small>If you didn't request this, please ignore this email.</small></p>
+                <p><small>If you didn't request this, your account may be at risk. We strongly suggest changing your password</small></p>
             """,
             buttons=[{
                 'text': 'Reset Password',
                 'href': reset_url,
-                'color': '#3498db'
+                'color': '#424242'
             }],
             logo_url=app.config['LOGO_URL'],
             unsubscribe_url="#"
@@ -4577,25 +4607,27 @@ def reset_password_request():
         return jsonify({'error': 'Failed to send reset email'}), 500
 
 # Password reset validation endpoint
-@app.route('/reset_password/validate_token', methods=['GET'])
-def validate_reset_token():
+# New endpoint: Token validation and redirection
+@app.route('/reset_password', methods=['GET'])
+def reset_password_redirect():
     token = request.args.get('token')
     if not token:
-        return jsonify({'valid': False, 'error': 'Token is required'}), 400
+        return jsonify({'error': 'Token is required'}), 400
     
+    # Validate token
     reset_token = PasswordResetToken.query.filter_by(token=token).first()
     if not reset_token:
-        return jsonify({'valid': False, 'error': 'Invalid token'}), 200
-    
+        return jsonify({'error': 'Invalid token'}), 400
     if reset_token.used:
-        return jsonify({'valid': False, 'error': 'Token already used'}), 200
-    
+        return jsonify({'error': 'Token already used'}), 400
     if datetime.utcnow() > reset_token.expires_at:
-        return jsonify({'valid': False, 'error': 'Token expired'}), 200
+        return jsonify({'error': 'Token expired'}), 400
     
-    return jsonify({'valid': True, 'user_id': reset_token.user_id}), 200
+    # Redirect to form with token
+    return render_template("reset_password.html")
 
-# Password reset execution endpoint
+
+# Step 2: Modify the reset_password endpoint
 @app.route('/reset_password', methods=['POST'])
 def reset_password():
     data = request.get_json()
@@ -4605,33 +4637,149 @@ def reset_password():
     if not token or not new_password:
         return jsonify({'error': 'Token and new password are required'}), 400
     
-    # Validate password strength
     if len(new_password) < 8:
         return jsonify({'error': 'Password must be at least 8 characters'}), 400
     
     reset_token = PasswordResetToken.query.filter_by(token=token).first()
     if not reset_token:
         return jsonify({'error': 'Invalid token'}), 400
-    
     if reset_token.used:
         return jsonify({'error': 'Token already used'}), 400
-    
     if datetime.utcnow() > reset_token.expires_at:
         return jsonify({'error': 'Token expired'}), 400
     
-    # Update user password
     user = User.query.get(reset_token.user_id)
+    
+    # Save old password before resetting
+    old_password_hash = user.password
+    
+    # Set new password
     user.password = bcrypt.generate_password_hash(new_password).decode('utf-8')
     
-    # Invalidate all existing sessions
-    user.lasting_key = secrets.token_hex(32)
+    # Generate new tokens for session
+    user.lasting_key = secrets.token_hex(32)  # Invalidate old sessions
+    session_key = generate_session_key(user.id)  # Generate new session key
     
-    # Mark token as used
+    # Record IP address if new
+    user_ip = request.remote_addr
+    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
+    
+    # Mark reset token as used
     reset_token.used = True
+    
+    # Create undo token (valid for 3 days)
+    undo_token = ResetUndoToken(
+        user_id=user.id,
+        token=secrets.token_urlsafe(32),
+        old_password_hash=old_password_hash,
+        expires_at=datetime.utcnow() + timedelta(days=3)
+    )
+    db.session.add(undo_token)
     
     db.session.commit()
     
-    return jsonify({'message': 'Password reset successfully'}), 200
+    # Build undo URL
+    site_url = f"{request.scheme}://{request.host}"
+    undo_url = f"{site_url}/undo_reset?token={undo_token.token}"
+    
+    # Send confirmation email with undo link
+    try:
+        send_email(
+            to_address=user.email,
+            subject="Future Notes - Password Reset Confirmation",
+            content_html=f"""
+                <p>Your password was successfully reset.</p>
+                <p>If you didn't request this change, you can undo it within 3 days:</p>
+            """,
+            buttons=[{
+                'text': 'Undo Password Reset',
+                'href': undo_url,
+                'color': '#ff0000'
+            }],
+            logo_url=app.config['LOGO_URL'],
+            unsubscribe_url="#"
+        )
+    except Exception as e:
+        app.logger.error(f"Password reset confirmation email failed: {str(e)}")
+    
+    # Prepare login response
+    payload = {
+        "message": "Password reset successfully and logged in",
+        "session_key": session_key,
+        "user_id": user.id,
+        "startpage": user.startpage,
+        "lasting_key": user.lasting_key
+    }
+    
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie(
+        "session_key", session_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24
+    )
+    resp.set_cookie(
+        "lasting_key", user.lasting_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24*30
+    )
+    return resp
+
+# Step 3: Add undo reset endpoint
+@app.route('/undo_reset', methods=['POST'])
+def undo_reset():
+    token = request.json.get('token')
+    if not token:
+        return jsonify({'error': 'Token is required'}), 400
+    
+    undo_token = ResetUndoToken.query.filter_by(token=token, used=False).first()
+    if not undo_token:
+        return jsonify({'error': 'Invalid token'}), 400
+    if undo_token.used:
+        return jsonify({'error': 'Token already used'}), 400
+    if datetime.utcnow() > undo_token.expires_at:
+        return jsonify({'error': 'Token expired'}), 400
+    
+    user = User.query.get(undo_token.user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Save current password for potential redo (optional)
+    current_password = user.password
+    
+    # Restore old password
+    user.password = undo_token.old_password_hash
+    
+    # Generate new tokens to invalidate sessions
+    user.lasting_key = secrets.token_hex(32)
+    session_key = generate_session_key(user.id)
+    
+    # Mark undo token as used
+    undo_token.used = True
+    
+    db.session.commit()
+    
+    # Prepare login response
+    payload = {
+        "message": "Password reset undone and logged in",
+        "session_key": session_key,
+        "user_id": user.id,
+        "startpage": user.startpage,
+        "lasting_key": user.lasting_key
+    }
+    
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie(
+        "session_key", session_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24
+    )
+    resp.set_cookie(
+        "lasting_key", user.lasting_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24*30
+    )
+    return resp
 
 
 @app.route('/login', methods=['POST'])
