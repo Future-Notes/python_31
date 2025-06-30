@@ -8,6 +8,7 @@ test.html
 **/__pycache__
 init_db.py
 key.txt
+keys.txt
 autopyexeconfigv1.json
 **/output
 wsgi.py

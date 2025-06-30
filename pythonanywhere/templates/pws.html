@@ -51,7 +51,6 @@
       margin: 0 auto;
       background-size: cover;
       background-position: center;
-      background-color: #cc4f4f;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -810,6 +809,7 @@
             } else {
               profilePicElement.textContent = userInfo.username[0].toUpperCase();
               profilePicElement.classList.add("no-picture");
+              profilePicElement.style.backgroundColor = "#cc4f4f";
             }
             document.getElementById("user-panel").style.display = "block";
 

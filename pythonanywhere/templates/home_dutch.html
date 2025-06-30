@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Future Notes - Personal Productivity Suite</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #8a4fff;
+            --primary-light: #a67cff;
+            --secondary: #00d4c7;
+            --dark-bg: #121212;
+            --dark-surface: #1e1e1e;
+            --dark-card: #252525;
+            --text-primary: #ffffff;
+            --text-secondary: #b3b3b3;
+            --success: #66bb6a;
+            --error: #f44336;
+            --transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--dark-bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(138, 79, 255, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(0, 212, 199, 0.1) 0%, transparent 20%);
+        }
+
+        /* Header Styles */
+        header {
+            background-color: rgba(18, 18, 18, 0.95);
+            backdrop-filter: blur(10px);
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            padding: 1rem 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+
+        .logo i {
+            color: var(--primary);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: var(--transition);
+            padding: 0.5rem 0;
+            position: relative;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background-color: var(--primary);
+            transition: var(--transition);
+        }
+
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+
+        .nav-links .btn {
+            background: var(--primary);
+            color: white;
+            padding: 0.5rem 1.2rem;
+            border-radius: 4px;
+            transition: var(--transition);
+            margin: 5px;
+        }
+
+        .nav-links .btn:hover {
+            background: var(--primary-light);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(138, 79, 255, 0.4);
+        }
+
+        .nav-links .btn:hover::after {
+            width: 0;
+        }
+
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            padding: 5rem 5% 3rem;
+        }
+
+        .hero-content {
+            max-width: 650px;
+            z-index: 2;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            line-height: 1.2;
+        }
+
+        .tagline {
+            font-size: 1.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            position: relative;
+            display: inline-block;
+        }
+
+        .tagline::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 0;
+            width: 80px;
+            height: 4px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            max-width: 90%;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .cta-btn {
+            padding: 0.8rem 2rem;
+            border-radius: 4px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: var(--transition);
+            display: inline-block;
+        }
+
+        .cta-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 15px rgba(138, 79, 255, 0.4);
+        }
+
+        .cta-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(138, 79, 255, 0.6);
+        }
+
+        .cta-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 1px solid var(--primary);
+        }
+
+        .cta-secondary:hover {
+            background: rgba(138, 79, 255, 0.1);
+            transform: translateY(-3px);
+        }
+
+        .hero-image {
+            position: absolute;
+            right: 5%;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40%;
+            max-width: 500px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: var(--dark-card);
+        }
+
+        .app-preview {
+            flex: 1 1 45%;
+            height: 180px;
+            background: var(--dark-surface);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .app-preview:hover {
+            transform: translateY(-5px);
+            background: rgba(138, 79, 255, 0.1);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .app-preview i {
+            font-size: 2.5rem;
+            margin-bottom: 0.8rem;
+            transition: var(--transition);
+        }
+
+        .app-preview:hover i {
+            transform: scale(1.2);
+        }
+
+        .app-preview::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--primary);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: var(--transition);
+        }
+
+        .app-preview:hover::after {
+            transform: scaleX(1);
+        }
+
+        .notes-preview i { color: #8a4fff; }
+        .todos-preview i { color: #66bb6a; }
+        .calendar-preview i { color: #ff7043; }
+        .groups-preview i { color: #29b6f6; }
+
+        /* Project Story */
+        .story {
+            padding: 6rem 5%;
+            background: var(--dark-surface);
+            position: relative;
+        }
+
+        .story-content {
+            max-width: 900px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 2;
+        }
+
+        .story-card {
+            background: var(--dark-card);
+            border-radius: 12px;
+            padding: 3rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .dev-info {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dev-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+        }
+
+        .dev-details h3 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .dev-details p {
+            color: var(--text-secondary);
+        }
+
+        .tech-stack {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .tech-item {
+            background: rgba(138, 79, 255, 0.1);
+            color: var(--primary);
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .story-text p {
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+
+        .highlight {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* Features Section */
+        .features {
+            padding: 6rem 5%;
+            background: var(--dark-bg);
+        }
+
+        .section-title {
+            text-align: center;
+            margin-bottom: 4rem;
+        }
+
+        .section-title h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            position: relative;
+            display: inline-block;
+        }
+
+        .section-title h2::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 4px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2.5rem;
+        }
+
+        .feature-card {
+            background: var(--dark-card);
+            border-radius: 10px;
+            overflow: hidden;
+            transition: var(--transition);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+            border-color: rgba(138, 79, 255, 0.3);
+        }
+
+        .feature-icon {
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-icon::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(138, 79, 255, 0.2), transparent);
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .feature-card:hover .feature-icon::before {
+            opacity: 1;
+        }
+
+        .notes-icon { background: linear-gradient(45deg, #311b92, #8a4fff); }
+        .todos-icon { background: linear-gradient(45deg, #1b5e20, #66bb6a); }
+        .calendar-icon { background: linear-gradient(45deg, #bf360c, #ff7043); }
+        .groups-icon { background: linear-gradient(45deg, #006064, #29b6f6); }
+
+        .feature-content {
+            padding: 2rem;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .feature-content h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-content p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            flex: 1;
+        }
+
+        .feature-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: var(--transition);
+            align-self: flex-start;
+            padding: 0.5rem 0;
+        }
+
+        .feature-btn:hover {
+            color: var(--primary-light);
+            gap: 0.8rem;
+        }
+
+        .feature-btn i {
+            transition: var(--transition);
+        }
+
+        .feature-btn:hover i {
+            transform: translateX(5px);
+        }
+
+        /* Feature Details Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            opacity: 0;
+            visibility: hidden;
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+        }
+
+        .modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: var(--dark-card);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            transform: translateY(50px);
+            transition: var(--transition);
+            border: 1px solid rgba(138, 79, 255, 0.3);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal.active .modal-content {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .modal-header h3 i {
+            color: var(--primary);
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .close-modal:hover {
+            color: var(--text-primary);
+            transform: rotate(90deg);
+        }
+
+        .modal-body {
+            padding: 2rem;
+        }
+
+        .feature-details p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+        }
+
+        .feature-benefits {
+            margin-top: 2rem;
+        }
+
+        .feature-benefits h4 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .benefits-list {
+            list-style: none;
+            padding-left: 1.5rem;
+        }
+
+        .benefits-list li {
+            margin-bottom: 0.8rem;
+            position: relative;
+            padding-left: 1.5rem;
+        }
+
+        .benefits-list li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        /* Contact Section */
+        .contact {
+            padding: 6rem 5%;
+            position: relative;
+            background: var(--dark-surface);
+        }
+
+        .contact-container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: var(--dark-card);
+            border-radius: 12px;
+            padding: 3rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .contact-form .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .contact-form label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .contact-form input,
+        .contact-form textarea {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border-radius: 4px;
+            background: var(--dark-surface);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            font-size: 1rem;
+            transition: var(--transition);
+        }
+
+        .contact-form input:focus,
+        .contact-form textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(138, 79, 255, 0.3);
+        }
+
+        .contact-form textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        .submit-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-block;
+            width: auto;
+        }
+
+        .submit-btn:hover {
+            background: var(--primary-light);
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(138, 79, 255, 0.4);
+        }
+
+        .form-message {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success-message {
+            background: rgba(102, 187, 106, 0.2);
+            border: 1px solid var(--success);
+            color: var(--success);
+        }
+
+        .error-message {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid var(--error);
+            color: var(--error);
+        }
+
+        /* Footer */
+        footer {
+            background: var(--dark-card);
+            padding: 3rem 5% 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .footer-content {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .footer-column {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .footer-column h3 {
+            font-size: 1.2rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+            display: inline-block;
+        }
+
+        .footer-column h3::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 40px;
+            height: 3px;
+            background: var(--primary);
+        }
+
+        .footer-links {
+            list-style: none;
+        }
+
+        .footer-links li {
+            margin-bottom: 0.8rem;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .footer-links a:hover {
+            color: var(--text-primary);
+            padding-left: 5px;
+        }
+
+        .footer-links a i {
+            color: var(--primary);
+        }
+
+        .copyright {
+            text-align: center;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Responsive Styles */
+        @media (max-width: 992px) {
+            .hero h1 {
+                font-size: 3rem;
+            }
+            
+            .hero-image {
+                width: 45%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                width: 100%;
+                background: var(--dark-bg);
+                flex-direction: column;
+                padding: 1rem 5%;
+                gap: 0;
+                box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            }
+            
+            .nav-links.active {
+                display: flex;
+            }
+            
+            .nav-links a {
+                padding: 1rem 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            
+            .mobile-menu-btn {
+                display: block;
+            }
+            
+            .hero {
+                flex-direction: column;
+                text-align: center;
+                padding-top: 7rem;
+            }
+            
+            .hero-content {
+                max-width: 100%;
+                margin-bottom: 3rem;
+            }
+            
+            .hero p {
+                max-width: 100%;
+            }
+            
+            .cta-buttons {
+                justify-content: center;
+            }
+            
+            .hero-image {
+                position: relative;
+                top: auto;
+                right: auto;
+                transform: none;
+                width: 100%;
+                max-width: 400px;
+                margin: 0 auto;
+            }
+            
+            .app-preview {
+                height: 150px;
+            }
+
+            .dev-info {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .tagline {
+                font-size: 1.5rem;
+            }
+            
+            .hero p {
+                font-size: 1.1rem;
+            }
+            
+            .cta-buttons {
+                flex-direction: column;
+            }
+            
+            .section-title h2 {
+                font-size: 2rem;
+            }
+            
+            .contact-container {
+                padding: 2rem;
+            }
+            
+            .footer-content {
+                flex-direction: column;
+                gap: 3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <a href="#" class="logo">
+            <img src="/static/android-chrome-512x512.png" alt="Future Notes Logo" style="height: 2rem; width: 2rem; border-radius: 6px; vertical-align: middle;">
+            Future Notes
+        </a>
+        <nav class="nav-links">
+            <a href="#">Home</a>
+            <a href="#features">Functies</a>
+            <a href="#story">Over</a>
+            <a href="#contact">Contact</a>
+            <a href="/login_page" class="btn">Inloggen</a>
+            <a href="/signup_page" class="btn">Registreren</a>
+        </nav>
+        <button class="mobile-menu-btn">
+            <i class="fas fa-bars"></i>
+        </button>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <h1>Organiseer Je Wereld op Één Plek</h1>
+            <div class="tagline">Een Persoonlijk Productiviteitsproject</div>
+            <p>Future Notes combineert notities, taken, agenda's en notitiegroepen in een prachtig geïntegreerde, mobielvriendelijke applicatie die meebeweegt met jouw workflow.</p>
+            <div class="cta-buttons">
+                <a href="/signup_page" class="cta-btn cta-primary">Aan de Slag</a>
+                <a href="#features" class="cta-btn cta-secondary">Ontdek Functies</a>
+            </div>
+        </div>
+        <div class="hero-image">
+            <div class="app-preview notes-preview">
+                <i class="fas fa-sticky-note"></i>
+                <span>Notities</span>
+            </div>
+            <div class="app-preview todos-preview">
+                <i class="fas fa-tasks"></i>
+                <span>Taken</span>
+            </div>
+            <div class="app-preview calendar-preview">
+                <i class="fas fa-calendar-alt"></i>
+                <span>Agenda</span>
+            </div>
+            <div class="app-preview groups-preview">
+                <i class="fas fa-users"></i>
+                <span>Groepen</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="section-title">
+            <h2>Geïntegreerde Productiviteit App</h2>
+            <p>Al je tools op één plek, naadloos samenwerkend</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card" data-feature="notes">
+                <div class="feature-icon notes-icon">
+                    <i class="fas fa-sticky-note"></i>
+                </div>
+                <div class="feature-content">
+                    <h3>Slimme Notities</h3>
+                    <p>Maak snel notities in ons overzichtelijke interface. Momenteel ondersteuning voor normale tekst, met opmaakfuncties in ontwikkeling. Deel notities met één klik en vind wat je zoekt via de krachtige zoekfunctie.</p>
+                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="feature-card" data-feature="todos">
+                <div class="feature-icon todos-icon">
+                    <i class="fas fa-tasks"></i>
+                </div>
+                <div class="feature-content">
+                    <h3>Taakbeheer</h3>
+                    <p>Volg je taken met kleurgecodeerde statussen (actief, voltooid, verlopen). Creëer taken met deadlines en prioriteiten die geïntegreerd zijn met je agenda en notities voor een complete workflow.</p>
+                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="feature-card" data-feature="calendar">
+                <div class="feature-icon calendar-icon">
+                    <i class="fas fa-calendar-alt"></i>
+                </div>
+                <div class="feature-content">
+                    <h3>Geïntegreerde Agenda</h3>
+                    <p>Een volledig responsieve agenda die perfect werkt op desktop en mobiel. Naadloos geïntegreerd met je taken en notities, waardoor het een krachtig alternatief is voor standalone agenda-apps.</p>
+                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="feature-card" data-feature="groups">
+                <div class="feature-icon groups-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="feature-content">
+                    <h3>Notitie-groepen</h3>
+                    <p>Maak groepen aan met unieke, privé-UUID's. Alle leden kunnen notities bewerken en verwijderen. De groepsbeheerder regelt lidmaatschappen en instellingen. Neem deel aan zoveel groepen als je wilt.</p>
+                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Project Story -->
+    <section class="story" id="story">
+        <div class="story-content">
+            <div class="story-card">
+                <div class="dev-info">
+                    <div class="dev-avatar" style="width: 80px; height: 80px; overflow: hidden; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(45deg, var(--primary), var(--secondary));">
+                        <img src="/static/Bosbes_PXL_20240914_1555337522.jpg" alt="Bosbes (Nathan)" style="width: 76px; height: 76px; object-fit: cover; border-radius: 50%;">
+                    </div>
+                    <div class="dev-details">
+                        <h3>Nathan (Bosbes)</h3>
+                        <p>Ontwikkelaar & Uitvinder van Future Notes</p>
+                        <div class="tech-stack">
+                            <div class="tech-item">PythonAnywhere</div>
+                            <div class="tech-item">Flask</div>
+                            <div class="tech-item">Web dev</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="story-text">
+                    <p><span class="highlight">Future Notes</span> begon als een persoonlijk hobbyproject - een simpele notitie-app zoals er zoveel zijn. Maar gedurende enkele maanden breidde ik het geleidelijk uit met nieuwe functies terwijl ik steeds meer kennis opdeed van web development.</p>
+                    <p><span class="highlight">PythonAnywhere</span> bood een betrouwbare hostingoplossing die Future Notes sinds het begin ondersteunt. Wat begon als een eenvoudige notitie-app is uitgegroeid tot een complete productiviteitsapplicatie met geïntegreerde modules voor taken, agenda's en samenwerkingsgroepen.</p>
+                    <p>Elke functie is zorgvuldig ontworpen om naadloos met de anderen samen te werken, voor een soepele ervaring die gebruikers helpt hun digitale leven te organiseren zonder te schakelen tussen meerdere applicaties.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Feature Modals -->
+    <div class="modal" id="notes-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-sticky-note"></i> Slimme Notities</h3>
+                <button class="close-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="feature-details">
+                    <p>De notitiemodule is waar Future Notes begon. Wat startte als een simpele tekstverwerker is uitgegroeid tot een krachtige notitieoplossing die de basis vormt van de hele applicatie.</p>
+                    <p>Belangrijke mogelijkheden zijn:</p>
+                    <div class="feature-benefits">
+                        <h4>Kernfuncties:</h4>
+                        <ul class="benefits-list">
+                            <li>Afleidingsvrije schrijfomgeving door een minimalistisch ontwerp</li>
+                            <li>Direct en razendsnel opslaan</li>
+                            <li>Krachtige zoekfunctie door al je notities</li>
+                            <li>Delen met één klik</li>
+                            <li>Organiseren met tags en categorieën</li>
+                        </ul>
+                    </div>
+                    <div class="feature-benefits">
+                        <h4>Binnenkort beschikbaar:</h4>
+                        <ul class="benefits-list">
+                            <li>Tekstopmaak (vet, cursief, lijsten)</li>
+                            <li>Ondersteuning voor afbeeldingen en bestanden</li>
+                            <li>Versiegeschiedenis van notities</li>
+                            <li>Offline toegang op mobiel</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="todos-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-tasks"></i> Taakbeheer</h3>
+                <button class="close-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="feature-details">
+                    <p>De takenmodule helpt je je werk bij te houden met een eenvoudig maar krachtig systeem dat geïntegreerd is met je notities en agenda.</p>
+                    <p>Elke taak is kleurgecodeerd op basis van status, zodat je in één oogopslag ziet wat aandacht nodig heeft.</p>
+                    <div class="feature-benefits">
+                        <h4>Belangrijke functies:</h4>
+                        <ul class="benefits-list">
+                            <li>Kleurgecodeerde statussen: actief (grijs), voltooid (groen), verlopen (rood)</li>
+                            <li>Deadlines en prioriteitsniveaus</li>
+                            <li>Naadloze integratie met agenda-items</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="calendar-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-calendar-alt"></i> Geïntegreerde Agenda</h3>
+                <button class="close-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="feature-details">
+                    <p>De agendamodule is niet zomaar een losse functie - het is de centrale hub die je notities, taken en groepsactiviteiten verbindt in één visuele interface.</p>
+                    <p>Volledig responsief ontworpen voor optimaal gebruik op desktop en mobiel.</p>
+                    <div class="feature-benefits">
+                        <h4>Belangrijke functies:</h4>
+                        <ul class="benefits-list">
+                            <li>Week- en dagweergave</li>
+                            <li>Kleurcodering op basis van type (persoonlijk, groep, taak)</li>
+                            <li>E-mail- en pushmeldingen</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="groups-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-users"></i> Notitie-groepen</h3>
+                <button class="close-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="feature-details">
+                    <p>Groepsnotities tillen samenwerking naar een hoger niveau door meerdere gebruikers te laten werken in gedeelde ruimtes met gecontroleerde toegang.</p>
+                    <p>Elke groep heeft een unieke UUID voor privacy en flexibele deelname.</p>
+                    <div class="feature-benefits">
+                        <h4>Belangrijke functies:</h4>
+                        <ul class="benefits-list">
+                            <li>Unieke, privé groep-UUID's</li>
+                            <li>Beheerderscontrole voor groepinstellingen</li>
+                            <li>Onbeperkte groepen per gebruiker</li>
+                            <li>Makkelijk gebruikers uitnodigen</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contact Section -->
+    <section class="contact" id="contact">
+        <div class="section-title">
+            <h2>Neem Contact Op</h2>
+            <p>Heb je vragen? Ik hoor graag van je :)</p>
+        </div>
+        <div class="contact-container">
+            <form class="contact-form" id="contact-form">
+                <div class="form-group">
+                    <label for="email">E-mailadres</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="message">Jouw Bericht</label>
+                    <textarea id="message" name="message" required placeholder="Je feedback en vragen zijn altijd welkom..."></textarea>
+                </div>
+                <button type="submit" class="submit-btn">Verstuur Bericht</button>
+                <div class="form-message success-message" id="success-message">
+                    <i class="fas fa-check-circle"></i> Bericht succesvol ontvangen!
+                </div>
+                <div class="form-message error-message" id="error-message">
+                    <i class="fas fa-exclamation-circle"></i> Er is een fout opgetreden. Probeer het opnieuw.
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-column">
+                <h3>Future Notes</h3>
+                <p>Een persoonlijk productiviteitsproject. Organiseer notities, taken, agenda en groepen in één (gratis) applicatie.</p>
+            </div>
+            <div class="footer-column">
+                <h3>Functies</h3>
+                <ul class="footer-links">
+                    <li><a href="#"><i class="fas fa-sticky-note"></i> Notities</a></li>
+                    <li><a href="#"><i class="fas fa-tasks"></i> Taken</a></li>
+                    <li><a href="#"><i class="fas fa-calendar-alt"></i> Agenda</a></li>
+                    <li><a href="#"><i class="fas fa-users"></i> Groepen</a></li>
+                </ul>
+            </div>
+            <div class="footer-column">
+                <h3>Bronnen</h3>
+                <ul class="footer-links">
+                    <li><a href="/guide_page"><i class="fas fa-book"></i> Gebruikershandleiding</a></li>
+                    <li><a href="#contact"><i class="fas fa-envelope"></i> Contact</a></li>
+                    <li><a href="https://www.pythonanywhere.com/" target="_blank"><i class="fas fa-server"></i> Gehost op PythonAnywhere</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="copyright">
+            <p>&copy; 2025 Future Notes</p>
+        </div>
+    </footer>
+
+    <script>
+        // Mobile menu toggle
+        const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
+        const navLinks = document.querySelector('.nav-links');
+        
+        mobileMenuBtn.addEventListener('click', () => {
+            navLinks.classList.toggle('active');
+        });
+        
+        // Contact form submission
+        const contactForm = document.getElementById('contact-form');
+        const successMessage = document.getElementById('success-message');
+        const errorMessage = document.getElementById('error-message');
+        
+        contactForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const message = document.getElementById('message').value;
+            
+            try {
+                const response = await fetch('/contact', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, message })
+                });
+                
+                if (response.ok) {
+                    successMessage.style.display = 'block';
+                    errorMessage.style.display = 'none';
+                    contactForm.reset();
+                    
+                    // Hide success message after 5 seconds
+                    setTimeout(() => {
+                        successMessage.style.display = 'none';
+                    }, 5000);
+                } else {
+                    throw new Error('Server responded with an error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                successMessage.style.display = 'none';
+                errorMessage.style.display = 'block';
+                
+                // Hide error message after 5 seconds
+                setTimeout(() => {
+                    errorMessage.style.display = 'none';
+                }, 5000);
+            }
+        });
+        
+        // Feature modals functionality
+        const featureCards = document.querySelectorAll('.feature-card');
+        const modals = document.querySelectorAll('.modal');
+        const closeButtons = document.querySelectorAll('.close-modal');
+        
+        featureCards.forEach(card => {
+            card.addEventListener('click', () => {
+                const feature = card.getAttribute('data-feature');
+                const modal = document.getElementById(`${feature}-modal`);
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            });
+        });
+        
+        closeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const modal = button.closest('.modal');
+                modal.classList.remove('active');
+                document.body.style.overflow = 'auto';
+            });
+        });
+        
+        modals.forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('active');
+                    document.body.style.overflow = 'auto';
+                }
+            });
+        });
+        
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                const targetId = this.getAttribute('href');
+                if(targetId === '#') return;
+                
+                const targetElement = document.querySelector(targetId);
+                if(targetElement) {
+                    window.scrollTo({
+                        top: targetElement.offsetTop - 80,
+                        behavior: 'smooth'
+                    });
+                    
+                    // Close mobile menu if open
+                    if(navLinks.classList.contains('active')) {
+                        navLinks.classList.remove('active');
+                    }
+                }
+            });
+        });
+        
+        // Animation on scroll
+        const observerOptions = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.1
+        };
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, observerOptions);
+        
+        // Observe elements to animate
+        document.querySelectorAll('.hero-content, .story-card, .feature-card, .contact-container').forEach(el => {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(20px)';
+            el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+            observer.observe(el);
+            
+            el.classList.add('visible');
+        });
+        
+        // Apply visible class with delay for staggered animation
+        setTimeout(() => {
+            document.querySelectorAll('.visible').forEach((el, index) => {
+                setTimeout(() => {
+                    el.style.opacity = '1';
+                    el.style.transform = 'translateY(0)';
+                }, index * 200);
+            });
+        }, 100);
+    </script>
+</body>
+</html>

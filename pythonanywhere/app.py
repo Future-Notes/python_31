@@ -1661,6 +1661,10 @@ def generate_error_code():
 
 @app.route('/')
 def home():
+    # Try to detect language from Accept-Language header
+    lang = request.accept_languages.best_match(['nl', 'en'])
+    if lang == 'nl':
+        return render_template('home_dutch.html')
     return render_template('home.html')
 
 @app.route('/favicon.ico')
@@ -2186,7 +2190,7 @@ def verify_email_update():
     <html>
     <head>
         <title>Email Verified</title>
-        <meta http-equiv="refresh" content="3;url=/signup/complete_verification?code={code}">
+        <meta http-equiv="refresh" content="3;url=/account_page">
         <style>
             body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}}
             .success {{ color: #2ecc71; font-size: 24px; }}
@@ -2212,7 +2216,7 @@ def verify_email_update():
         <div class="success">✓ Email verified successfully!</div>
         <div class="loader"></div>
         <p>Redirecting to your account...</p>
-        <p><a href="/signup/complete_verification?code={code}">Click here if not redirected</a></p>
+        <p><a href="/account_page">Click here if not redirected</a></p>
     </body>
     </html>
     """
@@ -3390,6 +3394,13 @@ def update_profile_picture():
             return jsonify({"error": "No file selected"}), 400
 
         if file and allowed_file(file.filename):
+            # Delete old profile picture if it exists
+            if user.profile_picture and os.path.isfile(user.profile_picture):
+                try:
+                    os.remove(user.profile_picture)
+                except Exception as e:
+                    app.logger.warning(f"Failed to delete old profile picture: {e}")
+
             # Sanitize the filename for security
             filename = secure_filename(f"{user.username}_{file.filename}")
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
