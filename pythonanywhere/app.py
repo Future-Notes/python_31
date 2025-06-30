@@ -1,4 +1,5 @@
 # ------------------------------Imports--------------------------------
+from operator import is_not
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
@@ -177,9 +178,10 @@ class User(db.Model):
 # models.py
 class SignupSession(db.Model):
     id = db.Column(db.String(36), primary_key=True)
-    username = db.Column(db.String(80), nullable=False)
-    hashed_password = db.Column(db.String(120), nullable=False)
-    user_ip = db.Column(db.String(45), nullable=False)
+    username = db.Column(db.String(80), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    hashed_password = db.Column(db.String(120), nullable=True)
+    user_ip = db.Column(db.String(45), nullable=True)
     email = db.Column(db.String(120))
     verification_code = db.Column(db.String(6))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -2036,7 +2038,8 @@ def get_user_info():
         "profile_picture": user.profile_picture,
         "allows_sharing": user.allows_sharing,
         "role": user.role,
-        "startpage": user.startpage
+        "startpage": user.startpage,
+        "email": user.email if user.email else None
     }), 200
 
 # Routes for managing settings
@@ -2091,6 +2094,128 @@ def delete_setting(key):
     db.session.delete(setting)
     db.session.commit()
     return jsonify({'status': 'deleted'})
+
+@app.route('/account/update_email', methods=['POST'])
+@require_session_key
+def update_email_request():
+    user = User.query.get(g.user_id)
+    new_email = request.json.get('email', '').strip()
+
+    if new_email == "":
+        user.email = None
+        db.session.commit()
+        return jsonify({"message": "Email removed successfully"}), 200
+
+    # Validate email
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", new_email):
+        return jsonify({"error": "Invalid email format"}), 400
+    
+    # Check if email exists
+    if User.query.filter(User.email == new_email, User.id != user.id).first():
+        return jsonify({"error": "Email already in use"}), 400
+
+    # Create verification session (reuse SignupSession model)
+    session_id = str(uuid.uuid4())
+    update_session = SignupSession(
+        id=session_id,
+        user_id=user.id,  # Link to existing user
+        email=new_email,
+        verification_code=''.join(random.choices('0123456789', k=6))
+    )
+    db.session.add(update_session)
+    db.session.commit()
+
+    # Build verification URL
+    site_url = f"{request.scheme}://{request.host}"
+    verify_url = f"{site_url}/account/verify_email_update?code={update_session.verification_code}&email={urllib.parse.quote(new_email)}"
+    
+    # Send verification email
+    try:
+        send_email(
+            to_address=new_email,
+            subject="Future Notes - Verify Your New Email",
+            content_html=f"""
+                <p>Please verify your new email address.</p>
+                <p><a href="{verify_url}">Click here to verify</a></p>
+            """,
+            buttons=[{
+                'text': 'Verify Email',
+                'href': verify_url,
+                'color': '#424242'
+            }],
+            logo_url=app.config['LOGO_URL'],
+            unsubscribe_url="#"
+        )
+        return jsonify({"message": "Verification email sent"}), 200
+    except Exception as e:
+        app.logger.error(f"Email update failed: {str(e)}")
+        return jsonify({"error": "Failed to send verification email"}), 500
+    
+@app.route('/account/verify_email_update')
+def verify_email_update():
+    code = request.args.get('code')
+    email = request.args.get('email')
+    
+    if not code or not email:
+        return render_template('email_error.html', 
+                              message="Missing verification parameters"), 400
+
+    # Find verification session
+    update_session = SignupSession.query.filter(
+        SignupSession.email == email,
+        SignupSession.verification_code == code,
+        SignupSession.user_id != None  # Ensure it's an update request
+    ).first()
+
+    if not update_session:
+        return render_template('email_error.html',
+                              message="Invalid or expired link"), 400
+
+    # Update user email
+    user = User.query.get(update_session.user_id)
+    if not user:
+        return render_template('email_error.html',
+                              message="User not found"), 404
+
+    user.email = email
+    db.session.delete(update_session)
+    db.session.commit()
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Email Verified</title>
+        <meta http-equiv="refresh" content="3;url=/signup/complete_verification?code={code}">
+        <style>
+            body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}}
+            .success {{ color: #2ecc71; font-size: 24px; }}
+            .loader {{ 
+                width: 50px; 
+                height: 50px;
+                border: 5px solid #f3f3f3;
+                border-top: 5px solid #3498db;
+                border-radius: 50%;
+                margin: 20px auto;
+                animation: spin 1s linear infinite;
+            }}
+            p {{
+                color: white;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="success">✓ Email verified successfully!</div>
+        <div class="loader"></div>
+        <p>Redirecting to your account...</p>
+        <p><a href="/signup/complete_verification?code={code}">Click here if not redirected</a></p>
+    </body>
+    </html>
+    """
 
 
 # Appointments
@@ -4726,9 +4851,9 @@ def reset_password():
     return resp
 
 # Step 3: Add undo reset endpoint
-@app.route('/undo_reset', methods=['POST'])
+@app.route('/undo_reset', methods=['GET'])
 def undo_reset():
-    token = request.json.get('token')
+    token = request.args.get('token')
     if not token:
         return jsonify({'error': 'Token is required'}), 400
     
@@ -4744,41 +4869,55 @@ def undo_reset():
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
-    # Save current password for potential redo (optional)
-    current_password = user.password
-    
     # Restore old password
     user.password = undo_token.old_password_hash
-    
-    # Generate new tokens to invalidate sessions
-    user.lasting_key = secrets.token_hex(32)
-    session_key = generate_session_key(user.id)
     
     # Mark undo token as used
     undo_token.used = True
     
     db.session.commit()
-    
-    # Prepare login response
-    payload = {
-        "message": "Password reset undone and logged in",
-        "session_key": session_key,
-        "user_id": user.id,
-        "startpage": user.startpage,
-        "lasting_key": user.lasting_key
-    }
-    
-    resp = make_response(jsonify(payload), 200)
-    resp.set_cookie(
-        "session_key", session_key,
-        httponly=True, secure=True, samesite="Strict",
-        max_age=60*60*24
-    )
-    resp.set_cookie(
-        "lasting_key", user.lasting_key,
-        httponly=True, secure=True, samesite="Strict",
-        max_age=60*60*24*30
-    )
+
+    # Render success page with auto-redirect
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Password Reset Reverted</title>
+        <meta http-equiv="refresh" content="5;url=/login_page">
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}
+            .success { color: #2ecc71; font-size: 24px; }
+            .loader { 
+                width: 50px; 
+                height: 50px;
+                border: 5px solid #f3f3f3;
+                border-top: 5px solid #3498db;
+                border-radius: 50%;
+                margin: 20px auto;
+                animation: spin 1s linear infinite;
+            }
+            p {
+                color: white;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="success">✓ Password reset reverted successfully!</div>
+        <div class="loader"></div>
+        <p>Redirecting to login...</p>
+        <p><a href="/login_page">Click here if not redirected</a></p>
+    </body>
+    </html>
+    """
+
+    resp = make_response(html)
+
+    resp.delete_cookie("lasting_key")
+    resp.delete_cookie("session_key")
     return resp
 
 
