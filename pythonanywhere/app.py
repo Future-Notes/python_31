@@ -1,4 +1,5 @@
 # ------------------------------Imports--------------------------------
+from operator import is_not
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
@@ -177,9 +178,10 @@ class User(db.Model):
 # models.py
 class SignupSession(db.Model):
     id = db.Column(db.String(36), primary_key=True)
-    username = db.Column(db.String(80), nullable=False)
-    hashed_password = db.Column(db.String(120), nullable=False)
-    user_ip = db.Column(db.String(45), nullable=False)
+    username = db.Column(db.String(80), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    hashed_password = db.Column(db.String(120), nullable=True)
+    user_ip = db.Column(db.String(45), nullable=True)
     email = db.Column(db.String(120))
     verification_code = db.Column(db.String(6))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -444,6 +446,30 @@ class Notification(db.Model):
 
     user = db.relationship('User', back_populates='notifications')
 
+# models.py
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(128), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False, nullable=False)
+    
+    user = db.relationship('User', backref=db.backref('reset_tokens', lazy=True))
+
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.token = secrets.token_urlsafe(64)
+        self.expires_at = datetime.utcnow() + timedelta(minutes=30)  # 30-minute expiration
+
+class ResetUndoToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(128), unique=True, nullable=False)
+    old_password_hash = db.Column(db.String(128), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -1555,6 +1581,43 @@ def cleanup_expired_signup_sessions():
         db.session.rollback()
         app.logger.error(f"Cleanup failed: {str(e)}")
         return 0
+    
+# tasks.py (or in your main app)
+def cleanup_reset_tokens():
+    """Remove expired password reset tokens"""
+    try:
+        expired = PasswordResetToken.query.filter(
+            PasswordResetToken.expires_at < datetime.utcnow()
+        ).all()
+        
+        for token in expired:
+            db.session.delete(token)
+        
+        db.session.commit()
+        app.logger.info(f"Cleaned up {len(expired)} expired reset tokens")
+    except Exception as e:
+        app.logger.error(f"Reset token cleanup failed: {str(e)}")
+
+# Step 5: Add token cleanup function (run periodically)
+def cleanup_expired_tokens():
+    """Delete expired tokens (run daily via cron or scheduler)"""
+    try:
+        # Delete expired password reset tokens
+        PasswordResetToken.query.filter(
+            PasswordResetToken.expires_at < datetime.utcnow()
+        ).delete()
+        
+        # Delete expired undo tokens
+        ResetUndoToken.query.filter(
+            ResetUndoToken.expires_at < datetime.utcnow()
+        ).delete()
+        
+        # Commit changes
+        db.session.commit()
+        app.logger.info("Expired tokens cleaned up successfully")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Token cleanup failed: {str(e)}")
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -1711,6 +1774,10 @@ def signup_email_page():
     
     # Render the email verification page
     return render_template('signup_email.html')
+
+@app.route('/reset-password')
+def reset_password_page():
+    return render_template('passwordreset.html')
 
 #---------------------------------API routes--------------------------------
 
@@ -1971,7 +2038,8 @@ def get_user_info():
         "profile_picture": user.profile_picture,
         "allows_sharing": user.allows_sharing,
         "role": user.role,
-        "startpage": user.startpage
+        "startpage": user.startpage,
+        "email": user.email if user.email else None
     }), 200
 
 # Routes for managing settings
@@ -2026,6 +2094,128 @@ def delete_setting(key):
     db.session.delete(setting)
     db.session.commit()
     return jsonify({'status': 'deleted'})
+
+@app.route('/account/update_email', methods=['POST'])
+@require_session_key
+def update_email_request():
+    user = User.query.get(g.user_id)
+    new_email = request.json.get('email', '').strip()
+
+    if new_email == "":
+        user.email = None
+        db.session.commit()
+        return jsonify({"message": "Email removed successfully"}), 200
+
+    # Validate email
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", new_email):
+        return jsonify({"error": "Invalid email format"}), 400
+    
+    # Check if email exists
+    if User.query.filter(User.email == new_email, User.id != user.id).first():
+        return jsonify({"error": "Email already in use"}), 400
+
+    # Create verification session (reuse SignupSession model)
+    session_id = str(uuid.uuid4())
+    update_session = SignupSession(
+        id=session_id,
+        user_id=user.id,  # Link to existing user
+        email=new_email,
+        verification_code=''.join(random.choices('0123456789', k=6))
+    )
+    db.session.add(update_session)
+    db.session.commit()
+
+    # Build verification URL
+    site_url = f"{request.scheme}://{request.host}"
+    verify_url = f"{site_url}/account/verify_email_update?code={update_session.verification_code}&email={urllib.parse.quote(new_email)}"
+    
+    # Send verification email
+    try:
+        send_email(
+            to_address=new_email,
+            subject="Future Notes - Verify Your New Email",
+            content_html=f"""
+                <p>Please verify your new email address.</p>
+                <p><a href="{verify_url}">Click here to verify</a></p>
+            """,
+            buttons=[{
+                'text': 'Verify Email',
+                'href': verify_url,
+                'color': '#424242'
+            }],
+            logo_url=app.config['LOGO_URL'],
+            unsubscribe_url="#"
+        )
+        return jsonify({"message": "Verification email sent"}), 200
+    except Exception as e:
+        app.logger.error(f"Email update failed: {str(e)}")
+        return jsonify({"error": "Failed to send verification email"}), 500
+    
+@app.route('/account/verify_email_update')
+def verify_email_update():
+    code = request.args.get('code')
+    email = request.args.get('email')
+    
+    if not code or not email:
+        return render_template('email_error.html', 
+                              message="Missing verification parameters"), 400
+
+    # Find verification session
+    update_session = SignupSession.query.filter(
+        SignupSession.email == email,
+        SignupSession.verification_code == code,
+        SignupSession.user_id != None  # Ensure it's an update request
+    ).first()
+
+    if not update_session:
+        return render_template('email_error.html',
+                              message="Invalid or expired link"), 400
+
+    # Update user email
+    user = User.query.get(update_session.user_id)
+    if not user:
+        return render_template('email_error.html',
+                              message="User not found"), 404
+
+    user.email = email
+    db.session.delete(update_session)
+    db.session.commit()
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Email Verified</title>
+        <meta http-equiv="refresh" content="3;url=/signup/complete_verification?code={code}">
+        <style>
+            body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}}
+            .success {{ color: #2ecc71; font-size: 24px; }}
+            .loader {{ 
+                width: 50px; 
+                height: 50px;
+                border: 5px solid #f3f3f3;
+                border-top: 5px solid #3498db;
+                border-radius: 50%;
+                margin: 20px auto;
+                animation: spin 1s linear infinite;
+            }}
+            p {{
+                color: white;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="success">✓ Email verified successfully!</div>
+        <div class="loader"></div>
+        <p>Redirecting to your account...</p>
+        <p><a href="/signup/complete_verification?code={code}">Click here if not redirected</a></p>
+    </body>
+    </html>
+    """
 
 
 # Appointments
@@ -4112,6 +4302,8 @@ def signup():
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     user_ip = request.remote_addr
 
+    cleanup_expired_signup_sessions()
+
     # IP-ban check remains unchanged
     banned_ip = IpAddres.query.join(User)\
         .filter(IpAddres.ip == user_ip, User.suspended.is_(True))\
@@ -4196,7 +4388,41 @@ def verify_email_via_link():
     email = request.args.get('email')
     
     if not code or not email:
-        return "Missing verification parameters", 400
+        # Render error page for missing parameters
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Missing Verification Parameters</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c; }}
+                .error {{ color: #e67e22; font-size: 24px; }}
+                .loader {{
+                    width: 50px;
+                    height: 50px;
+                    border: 5px solid #f3f3f3;
+                    border-top: 5px solid #e67e22;
+                    border-radius: 50%;
+                    margin: 20px auto;
+                    animation: spin 1s linear infinite;
+                }}
+                p {{
+                    color: white;
+                }}
+                @keyframes spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="error">✗ Missing verification parameters.</div>
+            <div class="loader"></div>
+            <p>Please use the verification link sent to your email or try signing up again.</p>
+            <p><a href="/signup_page">Go back to signup</a></p>
+        </body>
+        </html>
+        """, 400
 
     # Find matching signup session
     signup_session = SignupSession.query.filter_by(
@@ -4205,7 +4431,41 @@ def verify_email_via_link():
     ).first()
 
     if not signup_session:
-        return "Invalid verification link", 400
+        # Render error page for invalid/expired link
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Invalid or Expired Link</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color: #2c2c2c; }}
+                .error {{ color: #e74c3c; font-size: 24px; }}
+                .loader {{
+                    width: 50px;
+                    height: 50px;
+                    border: 5px solid #f3f3f3;
+                    border-top: 5px solid #e74c3c;
+                    border-radius: 50%;
+                    margin: 20px auto;
+                    animation: spin 1s linear infinite;
+                }}
+                p {{
+                    color: white;
+                }}
+                @keyframes spin {{
+                    0% {{ transform: rotate(0deg); }}
+                    100% {{ transform: rotate(360deg); }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="error">✗ This verification link is invalid or has expired.</div>
+            <div class="loader"></div>
+            <p>Please request a new verification email or try signing up again.</p>
+            <p><a href="/signup_page">Go back to signup</a></p>
+        </body>
+        </html>
+        """, 400
 
     # Render success page with auto-redirect
     return f"""
@@ -4215,7 +4475,7 @@ def verify_email_via_link():
         <title>Email Verified</title>
         <meta http-equiv="refresh" content="5;url=/signup/complete_verification?code={code}">
         <style>
-            body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
+            body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}}
             .success {{ color: #2ecc71; font-size: 24px; }}
             .loader {{ 
                 width: 50px; 
@@ -4225,6 +4485,9 @@ def verify_email_via_link():
                 border-radius: 50%;
                 margin: 20px auto;
                 animation: spin 1s linear infinite;
+            }}
+            p {{
+                color: white;
             }}
             @keyframes spin {{
                 0% {{ transform: rotate(0deg); }}
@@ -4333,7 +4596,7 @@ def send_verification_email():
             buttons=[{
                 'text': 'Verify Email',
                 'href': verify_url,
-                'color': '#3498db'
+                'color': '#424242'
             }],
             logo_url=app.config['LOGO_URL'],
             unsubscribe_url="#"
@@ -4409,6 +4672,253 @@ def complete_signup():
         db.session.rollback()
         app.logger.error(f"Signup completion failed: {str(e)}")
         return jsonify({"error": "Account creation failed"}), 500
+    
+# Password reset request endpoint
+@app.route('/reset_password_request', methods=['POST'])
+def reset_password_request():
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip().lower()
+    
+    # Validate input
+    if not username or not email:
+        return jsonify({'error': 'Username and email are required'}), 400
+    
+    # Find user
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        # For security, don't reveal if username exists
+        return jsonify({'message': 'If the username exists and email matches, a reset link will be sent'}), 200
+    
+    # Check if user has an email
+    if not user.email:
+        return jsonify({'error': 'This account has no email associated'}), 400
+    
+    # Verify email matches
+    if user.email.lower() != email:
+        return jsonify({'error': 'Email does not match the username'}), 400
+    
+    # Create reset token
+    reset_token = PasswordResetToken(user_id=user.id)
+    db.session.add(reset_token)
+    db.session.commit()
+    
+    # Build reset URL
+    site_url = f"{request.scheme}://{request.host}"
+    # Updated email sending (in reset_password_request)
+    reset_url = f"{site_url}/reset_password?token={reset_token.token}"
+    
+    # Send password reset email
+    try:
+        send_email(
+            to_address=user.email,
+            subject="Future Notes - Password Reset Request",
+            content_html=f"""
+                <p>We received a password reset request for your Future Notes account.</p>
+                <p>Click the button below to reset your password:</p>
+                <p><small>If you didn't request this, your account may be at risk. We strongly suggest changing your password</small></p>
+            """,
+            buttons=[{
+                'text': 'Reset Password',
+                'href': reset_url,
+                'color': '#424242'
+            }],
+            logo_url=app.config['LOGO_URL'],
+            unsubscribe_url="#"
+        )
+        return jsonify({'message': 'Password reset email sent if account exists'}), 200
+    except Exception as e:
+        app.logger.error(f"Password reset email failed: {str(e)}")
+        return jsonify({'error': 'Failed to send reset email'}), 500
+
+# Password reset validation endpoint
+# New endpoint: Token validation and redirection
+@app.route('/reset_password', methods=['GET'])
+def reset_password_redirect():
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'error': 'Token is required'}), 400
+    
+    # Validate token
+    reset_token = PasswordResetToken.query.filter_by(token=token).first()
+    if not reset_token:
+        return jsonify({'error': 'Invalid token'}), 400
+    if reset_token.used:
+        return jsonify({'error': 'Token already used'}), 400
+    if datetime.utcnow() > reset_token.expires_at:
+        return jsonify({'error': 'Token expired'}), 400
+    
+    # Redirect to form with token
+    return render_template("reset_password.html")
+
+
+# Step 2: Modify the reset_password endpoint
+@app.route('/reset_password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    token = data.get('token')
+    new_password = data.get('new_password')
+    
+    if not token or not new_password:
+        return jsonify({'error': 'Token and new password are required'}), 400
+    
+    if len(new_password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    
+    reset_token = PasswordResetToken.query.filter_by(token=token).first()
+    if not reset_token:
+        return jsonify({'error': 'Invalid token'}), 400
+    if reset_token.used:
+        return jsonify({'error': 'Token already used'}), 400
+    if datetime.utcnow() > reset_token.expires_at:
+        return jsonify({'error': 'Token expired'}), 400
+    
+    user = User.query.get(reset_token.user_id)
+    
+    # Save old password before resetting
+    old_password_hash = user.password
+    
+    # Set new password
+    user.password = bcrypt.generate_password_hash(new_password).decode('utf-8')
+    
+    # Generate new tokens for session
+    user.lasting_key = secrets.token_hex(32)  # Invalidate old sessions
+    session_key = generate_session_key(user.id)  # Generate new session key
+    
+    # Record IP address if new
+    user_ip = request.remote_addr
+    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
+    
+    # Mark reset token as used
+    reset_token.used = True
+    
+    # Create undo token (valid for 3 days)
+    undo_token = ResetUndoToken(
+        user_id=user.id,
+        token=secrets.token_urlsafe(32),
+        old_password_hash=old_password_hash,
+        expires_at=datetime.utcnow() + timedelta(days=3)
+    )
+    db.session.add(undo_token)
+    
+    db.session.commit()
+    
+    # Build undo URL
+    site_url = f"{request.scheme}://{request.host}"
+    undo_url = f"{site_url}/undo_reset?token={undo_token.token}"
+    
+    # Send confirmation email with undo link
+    try:
+        send_email(
+            to_address=user.email,
+            subject="Future Notes - Password Reset Confirmation",
+            content_html=f"""
+                <p>Your password was successfully reset.</p>
+                <p>If you didn't request this change, you can undo it within 3 days:</p>
+            """,
+            buttons=[{
+                'text': 'Undo Password Reset',
+                'href': undo_url,
+                'color': '#ff0000'
+            }],
+            logo_url=app.config['LOGO_URL'],
+            unsubscribe_url="#"
+        )
+    except Exception as e:
+        app.logger.error(f"Password reset confirmation email failed: {str(e)}")
+    
+    # Prepare login response
+    payload = {
+        "message": "Password reset successfully and logged in",
+        "session_key": session_key,
+        "user_id": user.id,
+        "startpage": user.startpage,
+        "lasting_key": user.lasting_key
+    }
+    
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie(
+        "session_key", session_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24
+    )
+    resp.set_cookie(
+        "lasting_key", user.lasting_key,
+        httponly=True, secure=True, samesite="Strict",
+        max_age=60*60*24*30
+    )
+    return resp
+
+# Step 3: Add undo reset endpoint
+@app.route('/undo_reset', methods=['GET'])
+def undo_reset():
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'error': 'Token is required'}), 400
+    
+    undo_token = ResetUndoToken.query.filter_by(token=token, used=False).first()
+    if not undo_token:
+        return jsonify({'error': 'Invalid token'}), 400
+    if undo_token.used:
+        return jsonify({'error': 'Token already used'}), 400
+    if datetime.utcnow() > undo_token.expires_at:
+        return jsonify({'error': 'Token expired'}), 400
+    
+    user = User.query.get(undo_token.user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Restore old password
+    user.password = undo_token.old_password_hash
+    
+    # Mark undo token as used
+    undo_token.used = True
+    
+    db.session.commit()
+
+    # Render success page with auto-redirect
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Password Reset Reverted</title>
+        <meta http-equiv="refresh" content="5;url=/login_page">
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}
+            .success { color: #2ecc71; font-size: 24px; }
+            .loader { 
+                width: 50px; 
+                height: 50px;
+                border: 5px solid #f3f3f3;
+                border-top: 5px solid #3498db;
+                border-radius: 50%;
+                margin: 20px auto;
+                animation: spin 1s linear infinite;
+            }
+            p {
+                color: white;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="success">✓ Password reset reverted successfully!</div>
+        <div class="loader"></div>
+        <p>Redirecting to login...</p>
+        <p><a href="/login_page">Click here if not redirected</a></p>
+    </body>
+    </html>
+    """
+
+    resp = make_response(html)
+
+    resp.delete_cookie("lasting_key")
+    resp.delete_cookie("session_key")
+    return resp
 
 
 @app.route('/login', methods=['POST'])

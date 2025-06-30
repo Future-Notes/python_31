@@ -63,7 +63,7 @@
         /* Formulieren en inputs */
         form {
           margin-bottom: 1.875rem;
-          background-color: var(--btn-color);
+          background-color: var(--ctr-color);
           padding: 1.25rem;
           border-radius: var(--border-radius-md);
           box-shadow: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.2);
@@ -88,6 +88,23 @@
           max-width: 21.875rem;
           background-color: var(--btn-color);
           color: var(--text-color);
+        }
+
+        select {
+          width: 100%;
+          padding: 0.75rem;
+          border-radius: var(--border-radius-sm);
+          background-color: var(--btn-color);
+          color: var(--text-color);
+          border: none;
+          font-size: 1rem;
+          margin-bottom: 0.9375rem;
+          box-sizing: border-box;
+        }
+
+        select:focus {
+          outline: none;
+          background-color: var(--input-bg-focus);
         }
       
         input::placeholder {
@@ -469,6 +486,14 @@
         <div class="profile-pic" id="profile-pic">U</div>
         <span id="username-display">Loading...</span>
     </div>
+
+    <div id="verify-modal" style="display:none;">
+        <h3>Verify Your Email</h3>
+        <p>Enter the 6-digit code sent to your new email</p>
+        <input type="text" id="verification-code" maxlength="6">
+        <button id="submit-verification">Verify</button>
+        <button id="resend-code">Resend Code</button>
+    </div>
     
     <div class="container">
         <div class="section" id="account-management">
@@ -481,6 +506,10 @@
                 <input type="password" id="current-password" placeholder="Current Password" required>
                 <input type="password" id="new-password" placeholder="New Password" required>
                 <button type="submit">Update Password</button>
+            </form>
+            <form id="update-email-form">
+              <input type="email" id="new-email" placeholder="New email">
+              <button type="submit">Update Email</button>
             </form>
         </div>
         <div class="section" id="account-actions">
@@ -873,6 +902,13 @@
 
           // default startpage
           document.getElementById("default-startpage").value = u.startpage || "/index";
+          const usernameInput = document.getElementById("new-username");
+          const emailInput = document.getElementById("new-email");
+          usernameInput.value = u.username;
+            if (u.email !== null && u.email !== undefined) {
+            emailInput.value = u.email;
+            }
+          
           console.log("User info loaded:", u);
 
         } catch (err) {
@@ -1097,6 +1133,46 @@
             }
             } catch (err) {
             console.error("Error updating default starting page:", err);
+            }
+        });
+
+        document.getElementById('update-email-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('new-email').value;
+            
+            const response = await fetch('/account/update_email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            
+            if (response.ok) {
+                // Show verification modal
+                alert("Please click the link in the email to complete updating your email!")
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error}`);
+            }
+        });
+
+        document.getElementById('submit-verification').addEventListener('click', async () => {
+            const code = document.getElementById('verification-code').value;
+            
+            // Verify code directly
+            const response = await fetch('/signup/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    verification_code: code,
+                    skip_email: false
+                })
+            });
+            
+            if (response.ok) {
+                alert('Email updated successfully!');
+                location.reload();
+            } else {
+                alert('Invalid verification code');
             }
         });
 
