@@ -2186,7 +2186,7 @@ def verify_email_update():
     <html>
     <head>
         <title>Email Verified</title>
-        <meta http-equiv="refresh" content="3;url=/signup/complete_verification?code={code}">
+        <meta http-equiv="refresh" content="3;url=/account_page">
         <style>
             body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}}
             .success {{ color: #2ecc71; font-size: 24px; }}
@@ -2212,7 +2212,7 @@ def verify_email_update():
         <div class="success">✓ Email verified successfully!</div>
         <div class="loader"></div>
         <p>Redirecting to your account...</p>
-        <p><a href="/signup/complete_verification?code={code}">Click here if not redirected</a></p>
+        <p><a href="/account_page">Click here if not redirected</a></p>
     </body>
     </html>
     """
