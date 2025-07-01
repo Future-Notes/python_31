@@ -1680,6 +1680,10 @@ def send_android_chrome_512():
 def send_android_chrome_192():
     return send_from_directory('static', 'android-chrome-192x192.png')
 
+@app.route('/sitemap.xml')
+def sitemap():
+    return send_from_directory('static', 'sitemap.xml')
+
 @app.route('/sw.js')
 def serve_sw():
     return send_from_directory('static', 'sw.js')
@@ -3414,7 +3418,7 @@ def update_profile_picture():
                     img.thumbnail((500, 500), Image.LANCZOS)
                     
                     # Save compressed version with quality=85
-                    img.save(file_path, 'JPEG', quality=85, optimize=True)
+                    img.save(file_path, 'JPEG', quality=45, optimize=True)
                 
                 # Remove temporary file
                 os.remove(temp_path)
