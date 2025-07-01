@@ -1,0 +1,12 @@
+User-agent: *
+Disallow: /admin_page
+Disallow: /admin-utm-tracking
+Disallow: /account_page
+Disallow: /database
+Disallow: /setup
+Disallow: /mutations_page
+Disallow: /checks_page
+Disallow: /sw.js
+Disallow: /static/
+
+Sitemap: https://bosbes.eu.pythonanywhere.com/sitemap.xml

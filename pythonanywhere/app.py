@@ -1644,6 +1644,13 @@ def handle_exception(e):
         "traceback": tb
     }), 500
 
+@app.errorhandler(405)
+def method_not_allowed(e):
+    # Return a JSON error for API routes, otherwise render a simple error page
+    if request.path.startswith('/api') or request.is_json:
+        return jsonify({"error": "Method Not Allowed"}), 405
+    return render_template('405.html'), 405
+
 @app.errorhandler(404)
 def page_not_found(error):
     # Check if the error is related to the profile pictures URL
@@ -1683,6 +1690,11 @@ def send_android_chrome_192():
 @app.route('/sitemap.xml')
 def sitemap():
     return send_from_directory('static', 'sitemap.xml')
+
+@app.route('/robots.txt')
+def robots():
+    return send_from_directory('static', 'robots.txt')
+
 
 @app.route('/sw.js')
 def serve_sw():
