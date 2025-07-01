@@ -40,6 +40,7 @@ from email import encoders
 from email.mime.image import MIMEImage
 import mimetypes
 import urllib
+from PIL import Image
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -3394,25 +3395,53 @@ def update_profile_picture():
             return jsonify({"error": "No file selected"}), 400
 
         if file and allowed_file(file.filename):
-            # Delete old profile picture if it exists
-            if user.profile_picture and os.path.isfile(user.profile_picture):
+            # Generate unique filename with .jpg extension
+            filename = secure_filename(f"{user.username}_{uuid.uuid4().hex}.jpg")
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{filename}")
+
+            try:
+                # Save temporarily for processing
+                file.save(temp_path)
+                
+                # Open and process image
+                with Image.open(temp_path) as img:
+                    # Convert to RGB if needed (removes transparency)
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        img = img.convert('RGB')
+                    
+                    # Downscale image (max dimensions: 500x500)
+                    img.thumbnail((500, 500), Image.LANCZOS)
+                    
+                    # Save compressed version with quality=85
+                    img.save(file_path, 'JPEG', quality=85, optimize=True)
+                
+                # Remove temporary file
+                os.remove(temp_path)
+                
+            except Exception as e:
+                app.logger.error(f"Image processing failed: {e}")
+                # Clean up any partial files
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                return jsonify({"error": "Failed to process image"}), 500
+
+            # Delete old profile picture after successful processing
+            old_picture = user.profile_picture
+            if old_picture and os.path.isfile(old_picture):
                 try:
-                    os.remove(user.profile_picture)
+                    os.remove(old_picture)
                 except Exception as e:
                     app.logger.warning(f"Failed to delete old profile picture: {e}")
 
-            # Sanitize the filename for security
-            filename = secure_filename(f"{user.username}_{file.filename}")
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(file_path)
-
-            # Update user record in the database
+            # Update database record
             user.profile_picture = file_path
             db.session.commit()
 
             return jsonify({"message": "Profile picture updated successfully", "path": file_path}), 200
 
-        return jsonify({"error": "Invalid file format"}), 400
     elif request.method == 'DELETE':
         user = User.query.get(g.user_id)
         if not user:
