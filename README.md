@@ -21,7 +21,7 @@ For support or inquiries, please visit our [Contact](https://bosbes.eu.pythonany
 ## About
 
 The Future Notes App is developed using Flask and styled with CSS. It is designed to provide a simple and efficient way to manage your notes.
-More info [here](https://bosbes.eu.pythonanywhere.com/#about).
+More info [here](https://bosbes.eu.pythonanywhere.com/#story).
 
 ## License
 
