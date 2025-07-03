@@ -133,13 +133,6 @@
             align-items: center;
         }
 
-        #mobile-search-input {
-            padding: 8px 12px;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-        }
-
         @media (max-width: 600px) {
             .desktop-nav {
                 display: none;
@@ -836,7 +829,6 @@
         <div class="mobile-header">
             <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
             <input type="password" style="position: absolute; left: -9999px; opacity: 0;">
-            <input type="text" id="mobile-search-input" placeholder="Search notes..." autocomplete="off">
         </div>
       
         <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
@@ -861,7 +853,7 @@
             <h2 id="group-name">Loading...</h2>
             <button id="leave-group-button">Leave Group</button>
         </div>
-
+        <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
         <input type="text" id="search-input" placeholder="Search notes...">
         <ul id="notes-list"></ul>
         <div id="floating-add-button">+</div>
@@ -1192,9 +1184,13 @@
                 .addEventListener("click", showCreateGroupModal);
             document.getElementById("join-group-button")
                 .addEventListener("click", joinGroup);
-            document.getElementById("group-list-sidebar").style.display = "none";
-            document.getElementById("group-members-sidebar").style.display = "none";
-            document.getElementById("floating-add-button").style.display = "none";
+            try {
+                document.getElementById("group-list-sidebar").style.display = "none";
+                document.getElementById("group-members-sidebar").style.display = "none";
+                document.getElementById("floating-add-button").style.display = "none";
+            } catch (e) {
+                // Ignore errors if elements do not exist
+            }
             fetchInvites();
         }
 
@@ -1264,9 +1260,32 @@
                 picTd.appendChild(picDiv);
                 tr.appendChild(picTd);
 
-                // Username
+                // Username + admin badge
                 const usernameTd = document.createElement('td');
                 usernameTd.textContent = member.username;
+
+                if (member.is_admin) {
+                    const badge = document.createElement('span');
+                    badge.style.cssText = `
+                        display: inline-block;
+                        margin-left: 8px;
+                        padding: 2px 8px;
+                        border-radius: 8px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        background: #ffd700;
+                        color: #222;
+                        vertical-align: middle;
+                    `;
+                    if (currentUserIsAdmin) {
+                        badge.textContent = 'Admin (You)';
+                        badge.style.background = '#ffb300';
+                    } else {
+                        badge.textContent = 'Admin';
+                    }
+                    usernameTd.appendChild(badge);
+                }
+
                 tr.appendChild(usernameTd);
 
                 // Remove button for admins
@@ -1479,8 +1498,8 @@
                             
                             inviteElement.querySelector(".accept-invite").addEventListener("click", async (e) => {
                                 const groupId = e.target.getAttribute("data-group-id");
-                                await joinGroup(groupId);
                                 await sendInviteResult(groupId, "accepted");
+                                await joinGroup(groupId);
                             });
                             
                             inviteElement.querySelector(".decline-invite").addEventListener("click", async (e) => {
@@ -1671,7 +1690,7 @@
         async function deleteNote() {
             const groupId = sessionStorage.getItem("group_id");
             try {
-                const response = await fetch(`/groups/${groupId}/notes/${currentNoteId}`, {
+                const response = await fetch(`/groups/${groupId}/notes`, {
                     method: "DELETE"
                 });
 
