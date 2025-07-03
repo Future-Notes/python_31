@@ -3011,6 +3011,10 @@ def join_group():
     data = request.json
     group_id = data.get('group_id')
 
+    if not isinstance(group_id, (int, str, uuid.UUID)):
+        # Handle invalid type (log/return error)
+        return jsonify(error="Invalid group ID format"), 400
+
     group = Group.query.get(group_id)
     if not group:
         print("Group not found")

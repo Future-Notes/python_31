@@ -780,6 +780,65 @@
                 display: none;
             }
         }
+        /* Sidebar Collapse/Expand CSS */
+        #group-list-sidebar,
+        #group-members-sidebar {
+            transition: transform 0.3s ease;
+        }
+        
+        #group-list-sidebar.collapsed { 
+            transform: translateX(-100%); 
+        }
+        
+        #group-members-sidebar.collapsed { 
+            transform: translateX(100%); 
+        }
+
+        .sidebar-toggle-btn {
+            position: absolute;
+            top: 10px;
+            width: 30px;
+            height: 30px;
+            background-color: var(--ctr-color);
+            border: 1px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 30px;
+            text-align: center;
+            z-index: 1001;
+        }
+
+        #group-list-sidebar .sidebar-toggle-btn.collapse { 
+            right: 10px; 
+        }
+        
+        #group-members-sidebar .sidebar-toggle-btn.collapse { 
+            left: 10px; 
+        }
+
+        .sidebar-toggle-btn.expand {
+            position: fixed;
+            top: 150px;
+            width: 30px;
+            height: 30px;
+            line-height: 30px;
+            z-index: 1000;
+        }
+        
+        .sidebar-toggle-btn.expand.list { 
+            left: 0; 
+        }
+        
+        .sidebar-toggle-btn.expand.members { 
+            right: 0; 
+        }
+
+        body.mobile-overlay #group-list-sidebar,
+        body.mobile-overlay #group-members-sidebar {
+            z-index: 2000;
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -1093,17 +1152,34 @@
         function searchNotes(searchTerm) {
             const notesList = document.getElementById("notes-list");
             const notes = Array.from(notesList.children);
-            let hasResults = false;
+            const noResultsMessage = document.querySelector(".no-results-message");
+            
+            // Remove existing no-results message at start
+            if (noResultsMessage) noResultsMessage.remove();
 
-            const terms = searchTerm
-                .match(/"[^"]+"|\S+/g)
-                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase());
-
-            if (!terms || terms.length === 0) {
+            // Handle empty search term immediately
+            if (!searchTerm.trim()) {
                 notes.forEach(note => note.style.display = "flex");
                 return;
             }
 
+            // Parse search terms (including phrases in quotes)
+            const terms = searchTerm
+                .match(/"[^"]+"|\S+/g)
+                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase()) || [];
+
+            let hasResults = false;
+
+            // Handle case where there are no notes at all
+            if (notes.length === 0) {
+                const messageElement = document.createElement("li");
+                messageElement.classList.add("no-results-message", "empty-note");
+                messageElement.innerText = "No notes available to search.";
+                notesList.appendChild(messageElement);
+                return;
+            }
+
+            // Process each note
             notes.forEach(note => {
                 const noteText = note.querySelector('.note-preview')?.innerText.toLowerCase() || "";
                 const noteTag = note.querySelector('.note-tag')?.innerText.toLowerCase() || "";
@@ -1126,18 +1202,12 @@
                 }
             });
 
-            const noResultsMessage = document.querySelector(".no-results-message");
+            // Show message if no matches found
             if (!hasResults) {
-                if (!noResultsMessage) {
-                    const messageElement = document.createElement("li");
-                    messageElement.classList.add("no-results-message", "empty-note");
-                    messageElement.innerText = "No results found.";
-                    notesList.appendChild(messageElement);
-                }
-            } else {
-                if (noResultsMessage) {
-                    noResultsMessage.remove();
-                }
+                const messageElement = document.createElement("li");
+                messageElement.classList.add("no-results-message", "empty-note");
+                messageElement.innerText = "No results found.";
+                notesList.appendChild(messageElement);
             }
         }
 
@@ -1521,7 +1591,10 @@
             if (!groupId) {
                 const inputEl = document.getElementById("join-uuid-input") || document.getElementById("group-uuid");
                 groupId = inputEl ? inputEl.value.trim() : null;
+                console.log(typeof groupId); // Should be "string" or "number"
             }
+
+            console.log(typeof groupId); // Should be "string" or "number"
             
             if (!groupId) {
                 alert("Please enter a Group ID");
@@ -1538,7 +1611,9 @@
                 if (response.ok) {
                     window.location.reload();
                 } else {
+                    const errorMsg = await response.text();
                     alert("Failed to join group");
+                    console.error("Failed to join group:", errorMsg);
                 }
             } catch (error) {
                 console.error("Error joining group:", error);
@@ -1704,6 +1779,105 @@
                 console.error("Error deleting note:", error);
             }
         }
+
+        // Sidebar Collapse/Expand Functions
+        function setupSidebar(id, side) {
+            const sb = document.getElementById(id);
+            if (!sb || sb.dataset.setupDone) return;
+            sb.dataset.setupDone = 'true';
+
+            // Create collapse button
+            const btnC = document.createElement('div');
+            btnC.className = `sidebar-toggle-btn collapse ${id}`;
+            btnC.textContent = side === 'right' ? '›' : '‹';
+            sb.appendChild(btnC);
+
+            // Create expand button
+            const btnE = document.createElement('div');
+            btnE.className = `sidebar-toggle-btn expand ${id.includes('members') ? 'members' : 'list'}`;
+            btnE.textContent = side === 'right' ? '‹' : '›';
+            btnE.style.display = 'none';
+            document.body.appendChild(btnE);
+
+            // Collapse logic
+            const doCollapse = () => {
+                sb.classList.add('collapsed');
+                btnC.style.display = 'none';
+                sb.addEventListener('transitionend', function onEnd(e) {
+                    if (e.propertyName === 'transform') {
+                        sb.hidden = true;
+                        btnE.style.display = 'block';
+                        sb.removeEventListener('transitionend', onEnd);
+                    }
+                });
+            };
+
+            // Expand logic
+            const doExpand = () => {
+                sb.hidden = false;
+                sb.classList.remove('collapsed');
+                btnE.style.display = 'none';
+                btnC.style.display = 'block';
+            };
+
+            btnC.addEventListener('click', doCollapse);
+            btnE.addEventListener('click', doExpand);
+
+            // Apply current mode
+            if (document.body.classList.contains('mobile-overlay')) {
+                doCollapse();
+            } else {
+                doExpand();
+            }
+        }
+
+        function enableMobileMode() {
+            document.body.classList.add('mobile-overlay');
+            ['group-list-sidebar', 'group-members-sidebar'].forEach(id => {
+                const sb = document.getElementById(id);
+                if (!sb) return;
+                const btnC = sb.querySelector('.sidebar-toggle-btn.collapse');
+                const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members')?'members':'list'}`);
+                sb.classList.add('collapsed');
+                sb.hidden = true;
+                if (btnC) btnC.style.display = 'none';
+                if (btnE) btnE.style.display = 'block';
+            });
+        }
+
+        function disableMobileMode() {
+            document.body.classList.remove('mobile-overlay');
+            ['group-list-sidebar', 'group-members-sidebar'].forEach(id => {
+                const sb = document.getElementById(id);
+                if (!sb) return;
+                const btnC = sb.querySelector('.sidebar-toggle-btn.collapse');
+                const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members')?'members':'list'}`);
+                sb.hidden = false;
+                sb.classList.remove('collapsed');
+                if (btnE) btnE.style.display = 'none';
+                if (btnC) btnC.style.display = 'block';
+            });
+        }
+
+        // Initialize sidebars when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set up media query listener
+            const mq = window.matchMedia('(max-width:600px)');
+            const handleMQ = e => e.matches ? enableMobileMode() : disableMobileMode();
+            mq.addListener(handleMQ);
+            handleMQ(mq); // Apply initial mode
+            
+            // Set up existing sidebars
+            setupSidebar('group-list-sidebar', 'left');
+            setupSidebar('group-members-sidebar', 'right');
+            
+            // Watch for dynamically added sidebars
+            const obs = new MutationObserver(() => {
+                setupSidebar('group-list-sidebar', 'left');
+                setupSidebar('group-members-sidebar', 'right');
+            });
+            obs.observe(document.documentElement, { childList: true, subtree: true });
+        });
 
         function showViewMenu(noteId, noteText, noteTag, noteTitle) {
             currentNoteId = noteId;
