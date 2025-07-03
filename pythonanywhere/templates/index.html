@@ -198,10 +198,6 @@
             background-color: #5a5a5a;
         }
 
-        input#note-tag {
-            max-width: 150px;
-        }
-
         button {
             background-color: var(--btn-color);
             color: #e0e0e0;
@@ -360,6 +356,13 @@
             font-size: 14px;
             border-top-left-radius: 15px;
             border-top-right-radius: 15px;
+        }
+
+        #add-note-form {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            column-gap: 16px;
+            align-items: start;            /* ↳ no stretching */
         }
         @media (max-width: 600px) {
             #add-note-form {
@@ -616,7 +619,6 @@
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             resize: none;
             text-align: left;
-            overflow-y: auto;
         }
         
         .rich-text-editor:focus {
@@ -716,6 +718,35 @@
         .note-preview li {
             margin-bottom: 3px;
         }
+        .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        /* fills right column */
+        }
+
+        .controls .buttons {
+        display: flex;
+        gap: 8px;
+        }
+
+        /* hide/show */
+        .hidden { display: none!important; }
+
+        /* make the simple textarea fill its container */
+        #simple-mode textarea {
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        font-size: 18px;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        background-color: var(--btn-color);
+        color: #e0e0e0;
+        resize: none;
+        min-height: 150px;
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -791,10 +822,18 @@
 
     <main>
         <form id="add-note-form">
-            <input type="text" id="note-title" placeholder="Title (optional)">
-            
-            <!-- Rich text editor -->
-            <div style="flex: 1; display: flex; flex-direction: column;">
+            <!-- EDITOR AREA -->
+            <div class="editor-wrapper">
+                <!-- Simple input -->
+                <div id="simple-mode">
+                <textarea
+                    type="text"
+                    id="note-text-simple"
+                    placeholder="Write a note…"
+                ></textarea>
+                </div>
+                <!-- Rich editor -->
+                <div id="rich-mode" class="hidden">
                 <div class="toolbar">
                     <button type="button" onclick="formatText('bold', 'note-text')" title="Bold"><b>B</b></button>
                     <button type="button" onclick="formatText('italic', 'note-text')" title="Italic"><i>I</i></button>
@@ -806,13 +845,27 @@
                     <button type="button" onclick="formatText('formatBlock', 'note-text', '<h2>')" title="Heading 2">H2</button>
                     <button type="button" onclick="formatText('formatBlock', 'note-text', '<h3>')" title="Heading 3">H3</button>
                 </div>
-                <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
+                <div
+                    id="note-text"
+                    class="rich-text-editor"
+                    contenteditable="true"
+                    placeholder="Write a note…"
+                ></div>
+                </div>
             </div>
-            
-            <input type="text" id="note-tag" placeholder="Tag (optional)">
-            <button type="submit">Add Note</button>
-            <button type="button" id="search-button">Search</button>
-        </form>
+
+            <!-- SIDEBAR: title, tag, add/search -->
+            <div class="controls">
+                <input type="text" id="note-title" placeholder="Title (optional)">
+                <input type="text" id="note-tag"   placeholder="Tag (optional)">
+                <div class="buttons">
+                <button type="submit">Add Note</button>
+                <button type="button" id="search-button">Search</button>
+                <button type="button" id="toggle-editor">Switch to rich</button>
+                </div>
+            </div>
+            </form>
+
         <input type="text" id="search-input" placeholder="Search..." style="display: none; margin-top: 10px; width: 97.5%; padding: 10px; font-size: 16px; margin-bottom: 20px;">
         
         <ul id="notes-list"></ul>
@@ -896,6 +949,35 @@
         // Global variable to store all notes
         let allNotes = [];
         let currentNoteId = null;
+
+        const toggleBtn     = document.getElementById('toggle-editor');
+        const editorWrapper = document.querySelector('.editor-wrapper');
+        const simpleDiv     = document.getElementById('simple-mode');
+        const richDiv       = document.getElementById('rich-mode');
+        const richEditor    = document.getElementById('note-text');
+        const simpleInput   = document.getElementById('note-text-simple');
+        let isRich = false;
+
+        toggleBtn.addEventListener('click', () => {
+        if (isRich) {
+            // → simple: extract plain text, hide rich wrapper
+            simpleInput.value = richEditor.textContent.trim();
+            richDiv.classList.add('hidden');
+            simpleDiv.classList.remove('hidden');
+            toggleBtn.textContent = 'Switch to Rich';
+        } else {
+            // → rich: dump simple back, hide simple input
+            richEditor.innerHTML = simpleInput.value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+            simpleDiv.classList.add('hidden');
+            richDiv.classList.remove('hidden');
+            toggleBtn.textContent = 'Switch to Simple';
+        }
+        isRich = !isRich;
+        });
         
         // Formatting function for rich text
         function formatText(command, editorId, value = null) {
@@ -1262,9 +1344,16 @@
     
 
         async function addNote() {
+        
             const noteTitle = document.getElementById("note-title").value;
-            const noteText = document.getElementById("note-text").innerHTML;
             const noteTag = document.getElementById("note-tag").value;
+
+            let noteText;
+            if (isRich) {
+                noteText = document.getElementById("note-text").innerHTML;
+            } else {
+                noteText = document.getElementById("note-text-simple").value;
+            }
 
             if (!noteText.trim() && !noteTitle.trim()) {
                 alert("Note cannot be empty.");
