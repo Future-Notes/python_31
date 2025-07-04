@@ -741,6 +741,7 @@
       </nav>      
 
     <main>
+        <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
         <input type="text" id="search-input" placeholder="Search notes...">
         <ul id="notes-list"></ul>
     </main>
@@ -942,18 +943,34 @@
         function searchNotes(searchTerm) {
             const notesList = document.getElementById("notes-list");
             const notes = Array.from(notesList.children);
+            const noResultsMessage = document.querySelector(".no-results-message");
+            
+            // Remove existing no-results message at start
+            if (noResultsMessage) noResultsMessage.remove();
 
-            let hasResults = false;
-
-            const terms = searchTerm
-                .match(/"[^"]+"|\S+/g)
-                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase());
-
-            if (!terms || terms.length === 0) {
+            // Handle empty search term immediately
+            if (!searchTerm.trim()) {
                 notes.forEach(note => note.style.display = "flex");
                 return;
             }
 
+            // Parse search terms (including phrases in quotes)
+            const terms = searchTerm
+                .match(/"[^"]+"|\S+/g)
+                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase()) || [];
+
+            let hasResults = false;
+
+            // Handle case where there are no notes at all
+            if (notes.length === 0) {
+                const messageElement = document.createElement("li");
+                messageElement.classList.add("no-results-message", "empty-note");
+                messageElement.innerText = "No notes available to search.";
+                notesList.appendChild(messageElement);
+                return;
+            }
+
+            // Process each note
             notes.forEach(note => {
                 const noteText = note.querySelector('.note-preview')?.innerText.toLowerCase() || "";
                 const noteTag = note.querySelector('.note-tag')?.innerText.toLowerCase() || "";
@@ -976,18 +993,12 @@
                 }
             });
 
-            const noResultsMessage = document.querySelector(".no-results-message");
+            // Show message if no matches found
             if (!hasResults) {
-                if (!noResultsMessage) {
-                    const messageElement = document.createElement("li");
-                    messageElement.classList.add("no-results-message", "empty-note");
-                    messageElement.innerText = "No results found.";
-                    notesList.appendChild(messageElement);
-                }
-            } else {
-                if (noResultsMessage) {
-                    noResultsMessage.remove();
-                }
+                const messageElement = document.createElement("li");
+                messageElement.classList.add("no-results-message", "empty-note");
+                messageElement.innerText = "No results found.";
+                notesList.appendChild(messageElement);
             }
         }
 
