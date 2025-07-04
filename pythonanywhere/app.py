@@ -388,6 +388,16 @@ class Note(db.Model):
             "user_id": self.user_id,
             "group_id": self.group_id
         }
+    
+class Draft(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    group_uuid = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
+    title = db.Column(db.String(100), nullable=True)
+    content = db.Column(db.Text, nullable=False)
+    tag = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Messages(db.Model):
@@ -5097,6 +5107,64 @@ def update_delete_note(note_id):
         db.session.delete(note)
         db.session.commit()
         return jsonify({"message": "Note deleted successfully!"}), 200
+    
+@app.route('/draft', methods=['POST', 'GET', 'DELETE'])
+@require_session_key
+def handle_draft():
+    group_uuid = request.args.get('group_uuid')
+    
+    # Always include group_uuid in filter (set to None for personal drafts)
+    filter_criteria = {
+        'user_id': g.user_id,
+        'group_uuid': group_uuid if group_uuid else None
+    }
+    
+    if request.method == 'POST':
+        return save_draft(filter_criteria)
+    elif request.method == 'GET':
+        return get_draft(filter_criteria)
+    elif request.method == 'DELETE':
+        return clear_draft(filter_criteria)
+
+# The rest of the functions remain unchanged
+
+def save_draft(filter_criteria):
+    data = request.get_json()
+    draft = Draft.query.filter_by(**filter_criteria).first()
+    
+    if not draft:
+        draft = Draft(
+            user_id=g.user_id,
+            group_uuid=filter_criteria.get('group_uuid'),
+            title=data.get('title'),
+            content=data.get('content'),
+            tag=data.get('tag')
+        )
+        db.session.add(draft)
+    else:
+        draft.title = data.get('title')
+        draft.content = data.get('content')
+        draft.tag = data.get('tag')
+    
+    db.session.commit()
+    return jsonify(success=True)
+
+def get_draft(filter_criteria):
+    draft = Draft.query.filter_by(**filter_criteria).first()
+    if draft:
+        return jsonify({
+            'title': draft.title,
+            'content': draft.content,
+            'tag': draft.tag
+        })
+    return jsonify(None)
+
+def clear_draft(filter_criteria):
+    draft = Draft.query.filter_by(**filter_criteria).first()
+    if draft:
+        db.session.delete(draft)
+        db.session.commit()
+    return jsonify(success=True)
     
 #---------------------------------Mutations--------------------------------
     
