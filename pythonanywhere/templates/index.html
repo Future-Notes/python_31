@@ -280,7 +280,7 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
+            z-index: 1003;
             width: 80%;
             max-width: 500px;
             opacity: 0;
@@ -316,7 +316,7 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
-            z-index: 999;
+            z-index: 1001;
             opacity: 0;
             animation: fadeIn 0.2s forwards 0.3s;
         }
@@ -371,7 +371,7 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
+            z-index: 1003;
             width: 80%;
             max-width: 500px;
             opacity: 0;
@@ -463,7 +463,7 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
+            z-index: 1003;
             width: 80%;
             max-width: 500px;
             opacity: 0;
@@ -1244,9 +1244,7 @@
         function closeViewMenu() {
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
-            if (window.innerWidth < 600) {
-                document.getElementById("floating-add-button").style.display = "flex";
-            }
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
         function showUpdateMenu(noteId) {
@@ -1264,19 +1262,19 @@
         function closeUpdateMenu() {
             document.getElementById("update-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
-            if (window.innerWidth < 600) {
-                document.getElementById("floating-add-button").style.display = "flex";
-            }
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
         function showAddMenu() {
             document.getElementById("add-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
+            document.getElementById("floating-add-button").style.display = "none";
         }
 
         function closeAddMenu() {
             document.getElementById("add-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
         document.getElementById("edit-note-button").addEventListener("click", () => {

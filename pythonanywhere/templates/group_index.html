@@ -777,8 +777,27 @@
         /* Sidebar Collapse/Expand CSS */
         #group-list-sidebar,
         #group-members-sidebar {
+            transform: translateX(0);
             transition: transform 0.3s ease;
         }
+        
+        #group-list-sidebar.collapsed { 
+            transform: translateX(-100%); 
+        }
+        
+        #group-members-sidebar.collapsed { 
+            transform: translateX(100%); 
+        }
+
+        .sidebar-toggle-btn.expand {
+            position: fixed;
+            top: 10px;
+            z-index: 1000;
+            display: none; /* Start hidden */
+        }
+        .sidebar-toggle-btn.expand.list { left: 10px; }
+        .sidebar-toggle-btn.expand.members { right: 10px; }
+
         
         #group-list-sidebar.collapsed { 
             transform: translateX(-100%); 
@@ -1810,6 +1829,8 @@
             // Expand logic
             const doExpand = () => {
                 sb.hidden = false;
+                // Force reflow before removing collapsed class to trigger animation
+                void sb.offsetHeight;
                 sb.classList.remove('collapsed');
                 btnE.style.display = 'none';
                 btnC.style.display = 'block';
