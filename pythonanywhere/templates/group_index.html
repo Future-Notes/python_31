@@ -692,7 +692,7 @@
         }
         
         .rich-text-editor {
-            min-height: 100px;
+            min-height: 200px;
             border: none;
             padding: 12px;
             font-size: 18px;
@@ -980,6 +980,9 @@
                 <button type="button" onclick="formatText('insertUnorderedList', 'update-note-text')" title="Bullet List">•</button>
                 <button type="button" onclick="formatText('insertOrderedList', 'update-note-text')" title="Numbered List">1.</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<p>')" title="Paragraph">¶</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
             </div>
             <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text"></div>
         </div>
@@ -1010,6 +1013,9 @@
                 <button type="button" onclick="formatText('insertUnorderedList', 'note-text')" title="Bullet List">•</button>
                 <button type="button" onclick="formatText('insertOrderedList', 'note-text')" title="Numbered List">1.</button>
                 <button type="button" onclick="formatText('formatBlock', 'note-text', '<p>')" title="Paragraph">¶</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
             </div>
             <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
         </div>
