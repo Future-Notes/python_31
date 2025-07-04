@@ -551,13 +551,29 @@
             top: 150px;
             left: 20px;
             width: 250px;
-            min-height: 700px;
+            height: calc(100vh - 170px); /* Updated to use viewport height */
+            max-height: 700px; /* Added maximum height */
             background-color: var(--ctr-color);
             padding: 15px;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
             color: #e0e0e0;
-            max-height: calc(100% - 120px);
+            overflow-y: auto;
+            z-index: 500;
+        }
+
+        .group-members-sidebar {
+            position: fixed;
+            top: 150px;
+            right: 20px;
+            width: 250px;
+            height: calc(100vh - 170px); /* Updated to use viewport height */
+            max-height: 700px; /* Added maximum height */
+            background-color: var(--ctr-color);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            color: #e0e0e0;
             overflow-y: auto;
             z-index: 500;
         }
@@ -568,22 +584,6 @@
 
         #join-uuid-input {
             width: 91.5%;
-        }
-
-        .group-members-sidebar {
-            position: fixed;
-            top: 150px;
-            right: 20px;
-            width: 250px;
-            min-height: 700px;
-            background-color: var(--ctr-color);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            color: #e0e0e0;
-            max-height: calc(100% - 120px);
-            overflow-y: auto;
-            z-index: 500;
         }
 
         .sidebar-header h2 {
@@ -774,12 +774,6 @@
             margin-bottom: 3px;
         }
 
-        @media (max-width: 600px) {
-            .group-list-sidebar,
-            .group-members-sidebar {
-                display: none;
-            }
-        }
         /* Sidebar Collapse/Expand CSS */
         #group-list-sidebar,
         #group-members-sidebar {
@@ -797,15 +791,16 @@
         .sidebar-toggle-btn {
             position: absolute;
             top: 10px;
-            width: 30px;
-            height: 30px;
-            background-color: var(--ctr-color);
+            width: 5px;
+            height: 5px;
+            background-color: var(--btn-color);
             border: 1px solid rgba(0,0,0,0.2);
             border-radius: 4px;
             color: #e0e0e0;
             font-weight: bold;
+            font-size: 14px;
             cursor: pointer;
-            line-height: 30px;
+            line-height: 5px;
             text-align: center;
             z-index: 1001;
         }
@@ -1836,12 +1831,16 @@
             ['group-list-sidebar', 'group-members-sidebar'].forEach(id => {
                 const sb = document.getElementById(id);
                 if (!sb) return;
-                const btnC = sb.querySelector('.sidebar-toggle-btn.collapse');
-                const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members')?'members':'list'}`);
-                sb.classList.add('collapsed');
-                sb.hidden = true;
+                
+                // Get buttons using updated selectors
+                const btnC = document.querySelector(`.sidebar-toggle-btn.collapse.${id}`);
+                const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members') ? 'members' : 'list'}`);
+                
+                // Ensure consistent mobile state
                 if (btnC) btnC.style.display = 'none';
                 if (btnE) btnE.style.display = 'block';
+                sb.classList.add('collapsed');
+                sb.hidden = true;
             });
         }
 
@@ -1850,12 +1849,14 @@
             ['group-list-sidebar', 'group-members-sidebar'].forEach(id => {
                 const sb = document.getElementById(id);
                 if (!sb) return;
-                const btnC = sb.querySelector('.sidebar-toggle-btn.collapse');
-                const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members')?'members':'list'}`);
-                sb.hidden = false;
-                sb.classList.remove('collapsed');
+                
+                const btnC = document.querySelector(`.sidebar-toggle-btn.collapse.${id}`);
+                const btnE = document.querySelector(`.sidebar-toggle-btn.expand.${id.includes('members') ? 'members' : 'list'}`);
+                
                 if (btnE) btnE.style.display = 'none';
                 if (btnC) btnC.style.display = 'block';
+                sb.classList.remove('collapsed');
+                sb.hidden = false;
             });
         }
 
@@ -1865,11 +1866,13 @@
             const mq = window.matchMedia('(max-width:600px)');
             const handleMQ = e => e.matches ? enableMobileMode() : disableMobileMode();
             mq.addListener(handleMQ);
-            handleMQ(mq); // Apply initial mode
             
-            // Set up existing sidebars
+            // Initialize sidebars SECOND
             setupSidebar('group-list-sidebar', 'left');
             setupSidebar('group-members-sidebar', 'right');
+            
+            // Apply initial mode LAST
+            handleMQ(mq);
             
             // Watch for dynamically added sidebars
             const obs = new MutationObserver(() => {
