@@ -41,6 +41,7 @@ from email.mime.image import MIMEImage
 import mimetypes
 import urllib
 from PIL import Image
+import bleach
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -5077,10 +5078,17 @@ def password_eisen():
 def manage_notes():
     if request.method == 'POST':
         data = request.json
-        title = data.get('title')  # Get the title if provided, else None
-        note = data['note']
-        tag = data.get('tag')  # Get the tag if provided, else None
-        new_note = Note(user_id=g.user_id, title=title, note=note, tag=tag)
+        note_html = data['note']
+        
+        # Sanitize HTML - IMPORTANT for security
+        note_html = sanitize_html(note_html)
+        
+        new_note = Note(
+            user_id=g.user_id, 
+            title=data.get('title'), 
+            note=note_html,  # Store HTML with checkboxes
+            tag=data.get('tag')
+        )
         db.session.add(new_note)
         db.session.commit()
         return jsonify({"message": "Note added successfully!"}), 201
@@ -5088,6 +5096,31 @@ def manage_notes():
         notes = Note.query.filter_by(user_id=g.user_id).all()
         sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
         return jsonify(sanitized_notes)
+    
+    # GET handling remains the same
+
+# Update sanitize_html function
+def sanitize_html(html):
+    # Allow checkbox lists and attributes
+    allowed_tags = [
+        'div', 'span', 'p', 'br', 'b', 'i', 'u', 'strong', 'em', 
+        'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'input'
+    ]
+    
+    allowed_attributes = {
+        'input': ['type', 'class', 'checked'],
+        'div': ['class'],
+        'span': ['class'],
+        'ul': ['class'],
+        'li': ['class']
+    }
+    
+    return bleach.clean(
+        html, 
+        tags=allowed_tags, 
+        attributes=allowed_attributes,
+        strip=True
+    )
 
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
@@ -5098,9 +5131,10 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
-        note.title = data.get('title')  # Update the title if provided, else None
-        note.note = data['note']
-        note.tag = data.get('tag')  # Update the tag if provided, else None
+        # Preserve checkbox states by accepting raw HTML
+        note.title = data.get('title')
+        note.note = data['note']  # Contains checkbox states in HTML
+        note.tag = data.get('tag')
         db.session.commit()
         return jsonify({"message": "Note updated successfully!"}), 200
     elif request.method == 'DELETE':
