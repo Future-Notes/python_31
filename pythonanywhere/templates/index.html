@@ -280,7 +280,7 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
+            z-index: 1003;
             width: 80%;
             max-width: 500px;
             opacity: 0;
@@ -316,7 +316,7 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
-            z-index: 999;
+            z-index: 1001;
             opacity: 0;
             animation: fadeIn 0.2s forwards 0.3s;
         }
@@ -371,7 +371,7 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
+            z-index: 1003;
             width: 80%;
             max-width: 500px;
             opacity: 0;
@@ -463,7 +463,7 @@
             padding: 30px;
             border-radius: 15px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
+            z-index: 1003;
             width: 80%;
             max-width: 500px;
             opacity: 0;
@@ -607,7 +607,7 @@
         }
         
         .rich-text-editor {
-            min-height: 100px;
+            min-height: 200px;
             border: none;
             padding: 12px;
             font-size: 18px;
@@ -671,6 +671,21 @@
 
         button:hover {
             background-color: #616161;
+        }
+
+        .clear-draft-btn {
+            position: absolute !important;
+            top: 10px !important;
+            right: 10px !important;
+            background: none !important;
+            border: none !important;
+            color: #ff6b6b !important;
+            cursor: pointer !important;
+            font-size: 12px !important;
+            padding: 5px !important;
+            width: 50px !important;
+            height: 50px !important;
+            display: none;
         }
     </style>
     <script>
@@ -807,6 +822,9 @@
                 <button type="button" onclick="formatText('insertUnorderedList', 'note-text')" title="Bullet List">•</button>
                 <button type="button" onclick="formatText('insertOrderedList', 'note-text')" title="Numbered List">1.</button>
                 <button type="button" onclick="formatText('formatBlock', 'note-text', '<p>')" title="Paragraph">¶</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
             </div>
             <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
         </div>
@@ -815,6 +833,8 @@
 
         <button id="add-note-button">Add Note</button>
         <button id="cancel-button">Cancel</button>
+        <!-- Add this to your add-menu -->
+        <button id="clear-draft-button" class="clear-draft-btn">Clear Draft</button>
     </div>
 
     <script>
@@ -1167,7 +1187,10 @@
                     showModal();
                     return;
                 }
-
+                if (response.ok) {
+                    fetch('/draft', { method: 'DELETE' });
+                    document.getElementById("clear-draft-button").style.display = 'none';
+                }
                 fetchNotes();
                 document.getElementById("note-title").value = '';
                 document.getElementById("note-text").innerHTML = '';
@@ -1244,9 +1267,7 @@
         function closeViewMenu() {
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
-            if (window.innerWidth < 600) {
-                document.getElementById("floating-add-button").style.display = "flex";
-            }
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
         function showUpdateMenu(noteId) {
@@ -1264,19 +1285,122 @@
         function closeUpdateMenu() {
             document.getElementById("update-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
-            if (window.innerWidth < 600) {
-                document.getElementById("floating-add-button").style.display = "flex";
+            document.getElementById("floating-add-button").style.display = "flex";
+        }
+
+        function updateClearButtonVisibility() {
+            const title = document.getElementById('note-title').value;
+            const content = document.getElementById('note-text').innerHTML;
+            const tag = document.getElementById('note-tag').value;
+            const clearBtn = document.getElementById('clear-draft-button');
+            
+            // Show button if any field has content
+            if (title.trim() || content.trim() || tag.trim()) {
+                clearBtn.style.display = 'block';
+            } else {
+                clearBtn.style.display = 'none';
             }
         }
 
+        let saveDraftTimer;
+        let draftInitialized = false;
+
+        // Initialize draft functionality
+        function initDraft() {
+            if (draftInitialized) return;
+            draftInitialized = true;
+            
+            const editor = document.getElementById('note-text');
+            const title = document.getElementById('note-title');
+            const tag = document.getElementById('note-tag');
+            const clearBtn = document.getElementById('clear-draft-button');
+            
+            // Hide clear button initially
+            clearBtn.style.display = 'none';
+            
+            // Create a single debounced save function
+            const saveDraft = debounce(() => {
+                const content = editor.innerHTML;
+                const titleVal = title.value;
+                const tagVal = tag.value;
+                
+                if (content.trim() || titleVal.trim()) {
+                    fetch('/draft', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            title: titleVal,
+                            content: content,
+                            tag: tagVal
+                        })
+                    }).catch(console.error);
+                }
+                updateClearButtonVisibility();
+            }, 1000);
+            
+            // Setup event listeners
+            title.addEventListener('input', saveDraft);
+            tag.addEventListener('input', saveDraft);
+            editor.addEventListener('input', saveDraft);
+            
+            // Clear draft button
+            clearBtn.addEventListener('click', () => {
+                title.value = '';
+                editor.innerHTML = '';
+                tag.value = '';
+                clearBtn.style.display = 'none';
+                fetch('/draft', { method: 'DELETE' }).catch(console.error);
+            });
+        }
+
+        function debounce(func, timeout = 300) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => func.apply(this, args), timeout);
+            };
+        }
+
+        // Update showAddMenu function
         function showAddMenu() {
             document.getElementById("add-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
+            document.getElementById("floating-add-button").style.display = "none";
+            
+            // Initialize draft functionality once
+            initDraft();
+            
+            // Load existing draft
+            fetch('/draft')
+                .then(response => response.json())
+                .then(draft => {
+                    if (draft) {
+                        document.getElementById('note-title').value = draft.title || '';
+                        document.getElementById('note-text').innerHTML = draft.content || '';
+                        document.getElementById('note-tag').value = draft.tag || '';
+                        updateClearButtonVisibility();
+                    }
+                })
+                .catch(console.error);
         }
 
         function closeAddMenu() {
+            // Save draft one last time before closing
+            const title = document.getElementById('note-title').value;
+            const content = document.getElementById('note-text').innerHTML;
+            const tag = document.getElementById('note-tag').value;
+            
+            if (content.trim() || title.trim()) {
+                fetch('/draft', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ title, content, tag })
+                }).catch(console.error);
+            }
+            
             document.getElementById("add-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
         document.getElementById("edit-note-button").addEventListener("click", () => {

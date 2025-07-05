@@ -692,7 +692,7 @@
         }
         
         .rich-text-editor {
-            min-height: 100px;
+            min-height: 200px;
             border: none;
             padding: 12px;
             font-size: 18px;
@@ -777,8 +777,27 @@
         /* Sidebar Collapse/Expand CSS */
         #group-list-sidebar,
         #group-members-sidebar {
+            transform: translateX(0);
             transition: transform 0.3s ease;
         }
+        
+        #group-list-sidebar.collapsed { 
+            transform: translateX(-100%); 
+        }
+        
+        #group-members-sidebar.collapsed { 
+            transform: translateX(100%); 
+        }
+
+        .sidebar-toggle-btn.expand {
+            position: fixed;
+            top: 10px;
+            z-index: 1000;
+            display: none; /* Start hidden */
+        }
+        .sidebar-toggle-btn.expand.list { left: 10px; }
+        .sidebar-toggle-btn.expand.members { right: 10px; }
+
         
         #group-list-sidebar.collapsed { 
             transform: translateX(-100%); 
@@ -833,6 +852,21 @@
         body.mobile-overlay #group-list-sidebar,
         body.mobile-overlay #group-members-sidebar {
             z-index: 2000;
+        }
+
+        .clear-draft-btn {
+            position: absolute !important;
+            top: 10px !important;
+            right: 10px !important;
+            background: none !important;
+            border: none !important;
+            color: #ff6b6b !important;
+            cursor: pointer !important;
+            font-size: 12px !important;
+            padding: 5px !important;
+            width: 50px !important;
+            height: 50px !important;
+            display: none;
         }
     </style>
     <script>
@@ -961,6 +995,9 @@
                 <button type="button" onclick="formatText('insertUnorderedList', 'update-note-text')" title="Bullet List">•</button>
                 <button type="button" onclick="formatText('insertOrderedList', 'update-note-text')" title="Numbered List">1.</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<p>')" title="Paragraph">¶</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
             </div>
             <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text"></div>
         </div>
@@ -991,12 +1028,16 @@
                 <button type="button" onclick="formatText('insertUnorderedList', 'note-text')" title="Bullet List">•</button>
                 <button type="button" onclick="formatText('insertOrderedList', 'note-text')" title="Numbered List">1.</button>
                 <button type="button" onclick="formatText('formatBlock', 'note-text', '<p>')" title="Paragraph">¶</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
+                <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
             </div>
             <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
         </div>
         <input type="text" id="note-tag" placeholder="Tag (optional)">
         <button id="add-note-button">Add Note</button>
         <button id="cancel-button">Cancel</button>
+        <button id="clear-draft-button" class="clear-draft-btn">Clear Draft</button>
     </div>
 
     <script>
@@ -1285,6 +1326,11 @@
 
         async function switchToGroup(groupId) {
             sessionStorage.setItem("group_id", groupId);
+            document.getElementById("note-title").value = '';
+            document.getElementById("note-text").innerHTML = '';
+            document.getElementById("note-tag").value = '';
+            document.getElementById("clear-draft-button").style.display = 'none';
+
             fetchNotes(groupId);
             fetchGroupInfo(groupId);
         }
@@ -1720,6 +1766,10 @@
 
                 if (response.ok) {
                     fetchNotes(groupId);
+                    const params = new URLSearchParams();
+                    params.append('group_uuid', sessionStorage.getItem("group_id"));
+                    fetch(`/draft?${params.toString()}`, { method: 'DELETE' }).catch(console.error);
+                    document.getElementById("clear-draft-button").style.display = 'none';
                     closeAddMenu();
                 } else if (response.status === 401) {
                     showModal();
@@ -1810,6 +1860,8 @@
             // Expand logic
             const doExpand = () => {
                 sb.hidden = false;
+                // Force reflow before removing collapsed class to trigger animation
+                void sb.offsetHeight;
                 sb.classList.remove('collapsed');
                 btnE.style.display = 'none';
                 btnC.style.display = 'block';
@@ -1915,14 +1967,127 @@
             document.getElementById("floating-add-button").style.display = "flex";
         }
 
+        function updateClearButtonVisibility() {
+            const title = document.getElementById('note-title').value;
+            const content = document.getElementById('note-text').innerHTML;
+            const tag = document.getElementById('note-tag').value;
+            const clearBtn = document.getElementById('clear-draft-button');
+            
+            // Show button if any field has content
+            if (title.trim() || content.trim() || tag.trim()) {
+                clearBtn.style.display = 'block';
+            } else {
+                clearBtn.style.display = 'none';
+            }
+        }
+
+        let saveDraftTimer;
+        let draftInitialized = false;
+
+        // Initialize draft functionality
+        function initDraft() {
+            if (draftInitialized) return;
+            draftInitialized = true;
+            
+            const editor = document.getElementById('note-text');
+            const title = document.getElementById('note-title');
+            const tag = document.getElementById('note-tag');
+            const clearBtn = document.getElementById('clear-draft-button');
+            
+            // Hide clear button initially
+            clearBtn.style.display = 'none';
+            
+            // Create a single debounced save function
+            const saveDraft = debounce(() => {
+                const content = editor.innerHTML;
+                const titleVal = title.value;
+                const tagVal = tag.value;
+                
+                if (content.trim() || titleVal.trim()) {
+                    const params = new URLSearchParams();
+                    params.append('group_uuid', sessionStorage.getItem("group_id"));
+
+                    fetch(`/draft?${params.toString()}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            title: titleVal,
+                            content: content,
+                            tag: tagVal
+                        })
+                    }).catch(console.error);
+                }
+                updateClearButtonVisibility();
+            }, 1000);
+            
+            // Setup event listeners
+            title.addEventListener('input', saveDraft);
+            tag.addEventListener('input', saveDraft);
+            editor.addEventListener('input', saveDraft);
+            
+            // Clear draft button
+            clearBtn.addEventListener('click', () => {
+                const params = new URLSearchParams();
+                params.append('group_uuid', sessionStorage.getItem("group_id"));
+                title.value = '';
+                editor.innerHTML = '';
+                tag.value = '';
+                clearBtn.style.display = 'none';
+                fetch(`/draft?${params.toString()}`, { method: 'DELETE' }).catch(console.error);
+            });
+        }
+
+        function debounce(func, timeout = 300) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => func.apply(this, args), timeout);
+            };
+        }
+
         function showAddMenu() {
             document.getElementById("add-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
+            document.getElementById("floating-add-button").style.display = "none";
+
+            initDraft();
+
+            const params = new URLSearchParams();
+            params.append('group_uuid', sessionStorage.getItem("group_id"))
+
+            fetch(`/draft?${params.toString()}`)
+                .then(response => response.json())
+                .then(draft => {
+                    if (draft) {
+                        document.getElementById('note-title').value = draft.title || '';
+                        document.getElementById('note-text').innerHTML = draft.content || '';
+                        document.getElementById('note-tag').value = draft.tag || '';
+                        updateClearButtonVisibility();
+                    }
+                })
+                .catch(console.error);
         }
 
         function closeAddMenu() {
+            // Save draft one last time before closing
+            const title = document.getElementById('note-title').value;
+            const content = document.getElementById('note-text').innerHTML;
+            const tag = document.getElementById('note-tag').value;
+
+            const params = new URLSearchParams();
+            params.append('group_uuid', sessionStorage.getItem("group_id"));
+            
+            if (content.trim() || title.trim()) {
+                fetch(`/draft?${params.toString()}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ title, content, tag })
+                }).catch(console.error);
+            }
+
             document.getElementById("add-menu").style.display = "none";
             document.getElementById("overlay").style.display = "none";
+            document.getElementById("floating-add-button").style.display = "flex";
         }
 
         // Event listeners
