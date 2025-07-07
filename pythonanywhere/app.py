@@ -3195,7 +3195,7 @@ def delete_group():
             send_notification(
                 user.id,
                 "Group deleted",
-                f"The group '{group.name}' has been deleted by {user.username}. Notes cannot be recovered, so I hope {user.username} let y'all know he was going to delete the group :)",
+                f"The group '{group.name}' has been deleted by {user.username}. Notes cannot be recovered.",
                 "/group-notes"
             )
 
@@ -3214,59 +3214,57 @@ def delete_group():
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
 def get_group_notes(group_id):
-
-    # Ensure the user is part of the group
-    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    if not membership:
-        print("Not a member of this group")
+    # Authorization check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     notes = Note.query.filter_by(group_id=group_id).all()
-    sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
-
-    return jsonify(sanitized_notes)
+    return jsonify([{
+        "id": note.id,
+        "title": note.title,
+        "note": note.note,  # Already sanitized when stored
+        "tag": note.tag
+    } for note in notes])
 
 @app.route('/groups/<string:group_id>/notes', methods=['POST'])
 @require_session_key
 def add_group_note(group_id):
-    data = request.json
-    title = data.get('title')
-    note_text = data['note']
-    tag = data.get('tag')
-
-    # Ensure user is in the group
-    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    if not membership:
-        print("Not a member of this group")
+    # Authorization check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
-    new_note = Note(group_id=group_id, title=title, note=note_text, tag=tag)
+    data = request.json
+    # Sanitize HTML input
+    sanitized_note = sanitize_html(data['note'])
+    
+    new_note = Note(
+        group_id=group_id,
+        title=data.get('title'),
+        note=sanitized_note,  # Store sanitized HTML
+        tag=data.get('tag')
+    )
     db.session.add(new_note)
     db.session.commit()
-
     return jsonify({"message": "Group note added successfully!"}), 201
 
-@app.route('/groups/<string:group_id>/notes', methods=['PUT', 'DELETE'])
+# Updated route with note_id parameter
+@app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
-def update_delete_group_note(group_id):
-
-    # Use filter_by to query by group_id
-    note = Note.query.filter_by(group_id=group_id).first()
-
-    if not note or note.group_id != group_id:
-        print("Note not found")
+def update_delete_group_note(group_id, note_id):  # Added note_id parameter
+    # Find note and verify group ownership
+    note = Note.query.filter_by(id=note_id, group_id=group_id).first()
+    if not note:
         return jsonify({"error": "Note not found"}), 404
 
-    # Ensure user is part of the group
-    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    if not membership:
-        print("Not a member of this group")
+    # Authorization check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     if request.method == 'PUT':
         data = request.json
+        # Sanitize updated HTML
         note.title = data.get('title')
-        note.note = data['note']
+        note.note = sanitize_html(data['note'])  # Sanitize before update
         note.tag = data.get('tag')
         db.session.commit()
         return jsonify({"message": "Note updated successfully!"}), 200
@@ -5131,11 +5129,11 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
-        # Preserve checkbox states by accepting raw HTML
+        # Added sanitization to match POST logic
         note.title = data.get('title')
-        note.note = data['note']  # Contains checkbox states in HTML
+        note.note = sanitize_html(data['note'])  # Now sanitizes updates
         note.tag = data.get('tag')
-        db.session.commit()
+        db.session.commit() 
         return jsonify({"message": "Note updated successfully!"}), 200
     elif request.method == 'DELETE':
         db.session.delete(note)
