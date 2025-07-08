@@ -1062,6 +1062,49 @@
       display: none;
     }
 
+    #google-calendar-section {
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #555;
+    }
+
+    #google-connect-container {
+      margin: 10px 0;
+    }
+
+    #google-sync-section {
+      margin-top: 15px;
+    }
+
+    .link-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .link-row select {
+      flex: 1;
+      padding: 5px;
+      background-color: #333;
+      color: #e0e0e0;
+      border: 1px solid #555;
+    }
+
+    #sync-status {
+      margin-top: 10px;
+      font-size: 0.9em;
+      color: #aaa;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    #google-calendar-select {
+      max-width: 110px;
+    }
+
   </style>
 
   <script src="/static/admin.js"></script>
@@ -1171,6 +1214,30 @@
             <input type="text" id="new-calendar-name" placeholder="Calendar Name" />
             <button id="create-calendar-btn">Create</button>
             <button id="cancel-calendar-btn">Cancel</button>
+          </div>
+        </div>
+        <!-- Google Calendar Section -->
+        <div id="google-calendar-section">
+          <h3>Google Calendar</h3>
+          <div id="google-connect-container">
+            <button id="connect-google-btn">Connect Google Calendar</button>
+          </div>
+          
+          <div id="google-sync-section" class="hidden">
+            <div id="calendar-linking">
+              <h4>Link Calendars</h4>
+              <div class="link-row">
+                <select id="local-calendar-select"></select>
+                <span>→</span>
+                <select id="google-calendar-select"></select>
+                <button id="link-calendars-btn">Link</button>
+              </div>
+            </div>
+            
+            <button id="sync-now-btn">Sync Now</button>
+            <div id="sync-status">
+              Last sync: <span id="last-sync-time">Never</span>
+            </div>
           </div>
         </div>
         </div>
@@ -1411,7 +1478,212 @@
     });
 
 
+    // Google Calendar State
+    let googleConnected = false;
+    let googleCalendars = [];
+    let syncMappings = {};
 
+    // DOM Elements
+    const connectGoogleBtn = document.getElementById('connect-google-btn');
+    const googleSyncSection = document.getElementById('google-sync-section');
+    const localCalendarSelect = document.getElementById('local-calendar-select');
+    const googleCalendarSelect = document.getElementById('google-calendar-select');
+    const linkCalendarsBtn = document.getElementById('link-calendars-btn');
+    const syncNowBtn = document.getElementById('sync-now-btn');
+    const lastSyncTime = document.getElementById('last-sync-time');
+
+    // Initialize Google Calendar functionality
+    document.addEventListener('DOMContentLoaded', () => {
+      checkGoogleConnection();
+      setupGoogleEventListeners();
+    });
+
+    // Check if user is connected to Google
+    async function checkGoogleConnection() {
+      try {
+        const response = await fetch('/sync/status');
+        const data = await response.json();
+        
+        googleConnected = data.google_connected;
+        syncMappings = data.calendars.reduce((acc, cal) => {
+          acc[cal.local_calendar_id] = cal;
+          return acc;
+        }, {});
+        
+        if (googleConnected) {
+          connectGoogleBtn.textContent = 'Disconnect Google';
+          googleSyncSection.classList.remove('hidden');
+          await fetchGoogleCalendars();
+          updateSyncStatus(data.calendars);
+        }
+      } catch (error) {
+        console.error('Error checking Google connection:', error);
+      }
+    }
+
+    // Setup event listeners
+    function setupGoogleEventListeners() {
+      connectGoogleBtn.addEventListener('click', toggleGoogleConnection);
+      linkCalendarsBtn.addEventListener('click', linkCalendars);
+      syncNowBtn.addEventListener('click', triggerSync);
+    }
+
+    // Connect/Disconnect Google Calendar
+    function toggleGoogleConnection() {
+      if (googleConnected) {
+        disconnectGoogle();
+      } else {
+        connectGoogle();
+      }
+    }
+
+    function connectGoogle() {
+      window.location.href = '/google/connect';
+    }
+
+    async function disconnectGoogle() {
+      try {
+        const response = await fetch('/google/disconnect', { method: 'POST' });
+        if (response.ok) {
+          googleConnected = false;
+          connectGoogleBtn.textContent = 'Connect Google Calendar';
+          googleSyncSection.classList.add('hidden');
+          googleCalendars = [];
+        }
+      } catch (error) {
+        console.error('Error disconnecting Google:', error);
+      }
+    }
+
+    // Fetch Google Calendars
+    async function fetchGoogleCalendars() {
+      try {
+        const response = await fetch('/google/calendars');
+        if (response.ok) {
+          const data = await response.json();
+          googleCalendars = data.calendars;
+          populateGoogleCalendarSelect();
+        }
+      } catch (error) {
+        console.error('Error fetching Google calendars:', error);
+      }
+    }
+
+    // Populate dropdowns
+    function populateLocalCalendarSelect() {
+      localCalendarSelect.innerHTML = '';
+      const calendars = document.querySelectorAll('#calendars-list li');
+      
+      calendars.forEach(li => {
+        const calendarId = li.dataset.calendarId;
+        const option = document.createElement('option');
+        option.value = calendarId;
+        option.textContent = li.querySelector('.calendar-name').textContent;
+        localCalendarSelect.appendChild(option);
+      });
+    }
+
+    function populateGoogleCalendarSelect() {
+      googleCalendarSelect.innerHTML = '';
+      
+      googleCalendars.forEach(calendar => {
+        const option = document.createElement('option');
+        option.value = calendar.id;
+        option.textContent = `${calendar.name}${calendar.primary ? ' (Primary)' : ''}`;
+        googleCalendarSelect.appendChild(option);
+      });
+    }
+
+    // Link calendars
+    async function linkCalendars() {
+      const localCalendarId = localCalendarSelect.value;
+      const googleCalendarId = googleCalendarSelect.value;
+      
+      if (!localCalendarId || !googleCalendarId) {
+        alert('Please select both calendars');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/calendars/link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            local_calendar_id: localCalendarId,
+            google_calendar_id: googleCalendarId
+          })
+        });
+        
+        if (response.ok) {
+          alert('Calendars linked successfully!');
+          await checkGoogleConnection();
+        }
+      } catch (error) {
+        console.error('Error linking calendars:', error);
+      }
+    }
+
+    // Trigger synchronization
+    async function triggerSync(forceFull = false) {
+      try {
+        syncNowBtn.disabled = true;
+        syncNowBtn.textContent = 'Syncing...';
+        
+        const response = await fetch('/google/sync', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ full_sync: forceFull })
+        });
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+          // Update UI with new sync time
+          lastSyncTime.textContent = new Date().toLocaleString();
+          alert('Sync completed successfully!');
+          
+          // Refresh appointments
+          await fetchSchedule();
+          
+          // Update sync status display
+          await checkGoogleConnection();
+        } else {
+          alert(`Sync failed: ${data.message}`);
+          
+          // Offer full sync option if incremental fails
+          if (data.message.includes('sync token') || data.message.includes('410')) {
+            const doFull = confirm('Sync token invalid. Perform full sync?');
+            if (doFull) await triggerSync(true);
+          }
+        }
+      } catch (error) {
+        console.error('Sync error:', error);
+        alert('Sync failed. Please try again.');
+      } finally {
+        syncNowBtn.disabled = false;
+        syncNowBtn.textContent = 'Sync Now';
+      }
+    }
+
+    async function retryWithFullSync() {
+      const result = confirm('Initial sync required. Perform full sync?');
+      if (result) {
+        await triggerSync(true);
+      }
+    }
+
+    // Update sync status display
+    function updateSyncStatus(calendars) {
+      const lastSyncedCalendar = calendars
+        .filter(cal => cal.last_synced)
+        .sort((a, b) => new Date(b.last_synced) - new Date(a.last_synced))[0];
+        
+      if (lastSyncedCalendar) {
+        const date = new Date(lastSyncedCalendar.last_synced);
+        lastSyncTime.textContent = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+      } else {
+        lastSyncTime.textContent = 'Never';
+      }
+    }
 
     document.addEventListener("DOMContentLoaded", async () => {
 
@@ -1481,6 +1753,7 @@
           }
           list.appendChild(li);
         });
+        populateLocalCalendarSelect(); // Add this line
       }
 
       // Set a calendar as active and refetch appointments
