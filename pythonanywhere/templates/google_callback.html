@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Connecting Google Calendar...</title>
+    <script>
+        // Extract state and code from URL query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const state = urlParams.get('state');
+        const code = urlParams.get('code');
+
+        // Monkey patch fetch to include credentials
+        if (!window.__fetchPatched) {
+            const _f = window.fetch;
+            window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+            };
+            window.__fetchPatched = true;
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            if (errorEl) {
+                errorEl.textContent = message;
+            }
+        }
+
+        // Fetch to finalize endpoint
+        fetch('/google/callback/finalize', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ state, code })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message with auto-mapping info
+                if (data.auto_mapped) {
+                    alert('Google account connected! Your Default Calendar has been automatically linked to your primary Google Calendar.');
+                }
+                window.location.href = data.redirect_url;
+            } else {
+                showError(data.error || 'Connection failed');
+            }
+        })
+        .catch(error => {
+            showError('Error: ' + error.message);
+        });
+    </script>
+</head>
+<body>
+    <p>Connecting your Google Calendar...</p>
+    <p id="error" style="color: red"></p>
+</body>
+</html>

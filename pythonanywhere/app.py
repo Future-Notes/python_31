@@ -42,6 +42,11 @@ import mimetypes
 import urllib
 from PIL import Image
 import bleach
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
+
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -71,6 +76,7 @@ jinja_env = Environment(
 app.config['LOGO_URL'] = 'https://bosbes.eu.pythonanywhere.com/static/android-chrome-512x512.png'
 app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
 app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Disables HTTPS check
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -141,6 +147,12 @@ error_template = '''
 '''
  
 # --------------------------------Models--------------------------------------
+
+class AppSecret(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(64), unique=True, nullable=False)
+    value = db.Column(db.String(256), nullable=False)
+
 class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
@@ -267,12 +279,14 @@ class Appointment(db.Model):
     start_datetime = db.Column(db.DateTime, nullable=False)
     end_datetime = db.Column(db.DateTime, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=False)  # New field
+    calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=False)
 
     recurrence_rule = db.Column(db.String(255), nullable=True)
     recurrence_end_date = db.Column(db.DateTime, nullable=True)
     is_all_day = db.Column(db.Boolean, nullable=False, default=False)
     color = db.Column(db.String(7), nullable=True)
+    google_event_id = db.Column(db.String(255))  # Add this field
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
     calendar = db.relationship('Calendar', backref=db.backref('appointments', lazy=True))
@@ -291,7 +305,8 @@ class Appointment(db.Model):
             "recurrence_end_date": self.recurrence_end_date.isoformat() if self.recurrence_end_date else None,
             "is_all_day": self.is_all_day,
             "color": self.color,
-            "notes": [note.to_dict() for note in self.notes]
+            "notes": [note.to_dict() for note in self.notes],
+            "google_event_id": self.google_event_id,
         }
 
 class Calendar(db.Model):
@@ -317,6 +332,25 @@ appointment_note = db.Table(
     db.Column('appointment_id', db.Integer, db.ForeignKey('appointment.id'), primary_key=True),
     db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
 )
+
+class GoogleCalendarCredentials(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    access_token = db.Column(db.String(255), nullable=False)
+    refresh_token = db.Column(db.String(255), nullable=False)
+    token_expiry = db.Column(db.DateTime, nullable=False)
+    calendar_id = db.Column(db.String(255))  # Default Google Calendar ID
+    last_sync = db.Column(db.DateTime)
+    sync_token = db.Column(db.String(500))  # For incremental syncs
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CalendarSync(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    local_calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'))
+    google_calendar_id = db.Column(db.String(255))  # Specific Google Calendar ID
+    sync_enabled = db.Column(db.Boolean, default=True)
+    last_synced = db.Column(db.DateTime)
 
 class Todo(db.Model):
     id             = db.Column(db.Integer, primary_key=True)
@@ -492,6 +526,337 @@ def generate_session_key(user_id):
         "last_active": datetime.now()
     }
     return key
+
+def load_secrets():
+    with app.app_context():
+        secrets = AppSecret.query.all()
+        for secret in secrets:
+            app.config[secret.key] = secret.value
+
+load_secrets()  # Call this when the app starts
+
+def get_google_oauth_flow(state=None):
+
+    redirect_uri = f"{request.scheme}://{request.host}/google/callback"
+    return Flow.from_client_config(
+        client_config={
+            'web': {
+                'client_id': current_app.config['GOOGLE_CLIENT_ID'],
+                'client_secret': current_app.config['GOOGLE_CLIENT_SECRET'],
+                'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+                'token_uri': 'https://oauth2.googleapis.com/token',
+                'redirect_uris': [redirect_uri]
+            }
+        },
+        scopes=['https://www.googleapis.com/auth/calendar'],
+        redirect_uri=redirect_uri,
+        state=state  # Pass the state parameter if provided
+    )
+
+def save_google_credentials(user_id, credentials):
+    existing = GoogleCalendarCredentials.query.filter_by(user_id=user_id).first()
+    
+    creds_data = {
+        'access_token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_expiry': credentials.expiry,
+        'calendar_id': 'primary'  # Default to primary calendar
+    }
+    
+    if existing:
+        for key, value in creds_data.items():
+            setattr(existing, key, value)
+    else:
+        creds = GoogleCalendarCredentials(user_id=user_id, **creds_data)
+        db.session.add(creds)
+    
+    # ADD THIS: Automatically create default sync mapping
+    default_calendar = Calendar.query.filter_by(user_id=user_id, is_default=True).first()
+    if default_calendar:
+        # Create sync mapping if it doesn't exist
+        if not CalendarSync.query.filter_by(
+            user_id=user_id,
+            local_calendar_id=default_calendar.id
+        ).first():
+            sync = CalendarSync(
+                user_id=user_id,
+                local_calendar_id=default_calendar.id,
+                google_calendar_id='primary'
+            )
+            db.session.add(sync)
+    
+    db.session.commit()
+
+def get_valid_google_credentials(user_id):
+    creds_record = GoogleCalendarCredentials.query.filter_by(user_id=user_id).first()
+    if not creds_record:
+        return None
+    
+    creds = Credentials(
+        token=creds_record.access_token,
+        refresh_token=creds_record.refresh_token,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=current_app.config['GOOGLE_CLIENT_ID'],
+        client_secret=current_app.config['GOOGLE_CLIENT_SECRET'],
+        scopes=['https://www.googleapis.com/auth/calendar']
+    )
+    
+    if creds.expired:
+        try:
+            creds.refresh(Request())
+            # Update credentials in DB
+            creds_record.access_token = creds.token
+            creds_record.token_expiry = creds.expiry
+            db.session.commit()
+        except Exception as e:
+            app.logger.error(f"Token refresh failed: {str(e)}")
+            return None
+    
+    return creds
+
+
+# sync.py
+def sync_calendars(user_id, full_sync=False):
+    creds = get_valid_google_credentials(user_id)
+    if not creds:
+        return False, "Google credentials invalid"
+    
+    sync_mappings = CalendarSync.query.filter_by(user_id=user_id, sync_enabled=True).all()
+    if not sync_mappings:
+        return False, "No calendars linked"
+    
+    service = build('calendar', 'v3', credentials=creds)
+    results = []
+    
+    # Update the overall last sync time for the credentials
+    creds_record = GoogleCalendarCredentials.query.filter_by(user_id=user_id).first()
+    if creds_record:
+        creds_record.last_sync = datetime.utcnow()
+    
+    # Check if any mapping requires full sync
+    if not full_sync:
+        for mapping in sync_mappings:
+            if not mapping.sync_token:
+                full_sync = True
+                break
+    
+    # Process all mappings
+    for mapping in sync_mappings:
+        try:
+            # Push local changes to Google
+            push_to_google(service, mapping)
+            
+            # Pull changes from Google
+            pull_from_google(service, mapping, full_sync)
+            
+            mapping.last_synced = datetime.utcnow()
+            results.append(f"Calendar {mapping.local_calendar_id} synced")
+        except Exception as e:
+            results.append(f"Sync failed for calendar {mapping.local_calendar_id}: {str(e)}")
+    
+    db.session.commit()
+    return True, "\n".join(results)
+
+def push_to_google(service, mapping):
+    # Record sync start time to avoid processing updates during sync
+    sync_start = datetime.utcnow()
+    
+    # Get modified appointments since last sync
+    last_sync = mapping.last_synced or datetime.min
+    appointments = Appointment.query.filter(
+        Appointment.calendar_id == mapping.local_calendar_id,
+        Appointment.updated_at > last_sync,
+        Appointment.updated_at < sync_start  # Exclude updates during sync
+    ).all()
+    
+    if not appointments:
+        return
+    
+    current_app.logger.info(f"Pushing {len(appointments)} appointment(s) to Google calendar")
+    
+    for appt in appointments:
+        event = convert_appointment_to_event(appt)
+        if not event:
+            continue
+            
+        google_calendar_id = mapping.google_calendar_id
+        
+        try:
+            if appt.google_event_id:
+                # Update existing event
+                current_app.logger.info(f"Updating event {appt.google_event_id} for appointment {appt.id}")
+                updated_event = service.events().update(
+                    calendarId=google_calendar_id,
+                    eventId=appt.google_event_id,
+                    body=event
+                ).execute()
+            else:
+                # Create new event
+                current_app.logger.info(f"Creating new event for appointment {appt.id}")
+                result = service.events().insert(
+                    calendarId=google_calendar_id,
+                    body=event
+                ).execute()
+                appt.google_event_id = result['id']
+                current_app.logger.info(f"Created event {result['id']}")
+        except Exception as e:
+            # Handle specific Google API errors
+            if 'deleted' in str(e).lower():
+                current_app.logger.warning(f"Event {appt.google_event_id} was deleted on Google. Removing local Google event ID.")
+                appt.google_event_id = None
+            else:
+                current_app.logger.error(f"Failed to push appointment {appt.id} to Google: {str(e)}")
+    
+    # Commit any changes made to appointments (google_event_id set or cleared)
+    db.session.commit()
+
+def pull_from_google(service, mapping, full_sync=False):
+    # Determine if we need to do a full sync
+    if full_sync or not mapping.sync_token:
+        sync_token = None
+    else:
+        sync_token = mapping.sync_token
+
+    events = []
+    next_sync_token = None
+    page_token = None
+
+    while True:
+        try:
+            # Prepare parameters
+            params = {
+                'calendarId': mapping.google_calendar_id,
+                'timeMin': (datetime.utcnow() - timedelta(days=365)).isoformat() + 'Z',
+                'maxResults': 250,
+                'singleEvents': True,
+                'showDeleted': True,
+            }
+            
+            # Add sync token if available
+            if sync_token and not full_sync:
+                params['syncToken'] = sync_token
+            else:
+                # For full syncs, use time range instead of sync token
+                params['timeMin'] = (datetime.utcnow() - timedelta(days=365)).isoformat() + 'Z'
+            
+            # Add page token if available
+            if page_token:
+                params['pageToken'] = page_token
+                
+            # Execute API call
+            events_result = service.events().list(**params).execute()
+            
+            events.extend(events_result.get('items', []))
+            page_token = events_result.get('nextPageToken')
+            
+            # Get next sync token on last page
+            if not page_token:
+                next_sync_token = events_result.get('nextSyncToken')
+                break
+                
+        except Exception as e:
+            # Handle invalid sync token (410 error)
+            if hasattr(e, 'resp') and e.resp.status == 410:
+                # Reset sync token and retry as full sync
+                mapping.sync_token = None
+                db.session.commit()
+                return pull_from_google(service, mapping, True)
+            else:
+                current_app.logger.error(f"Google API error: {str(e)}")
+                raise e
+    
+    # Process events
+    for event in events:
+        process_google_event(event, mapping.local_calendar_id, mapping.user_id)
+    
+    # Update sync token if we got a new one
+    if next_sync_token:
+        mapping.sync_token = next_sync_token
+
+def process_google_event(event, local_calendar_id, user_id):
+    try: 
+        # Handle deleted events
+        if event.get('status') == 'cancelled':
+            Appointment.query.filter_by(
+                google_event_id=event['id'],
+                user_id=user_id
+            ).delete()
+            return
+        
+        # Convert Google event to appointment
+        appt_data = {
+            'title': event.get('summary', 'No Title'),
+            'description': event.get('description', ''),
+            'start_datetime': parse_google_datetime(event['start']),
+            'end_datetime': parse_google_datetime(event['end']),
+            'google_event_id': event['id'],
+            'calendar_id': local_calendar_id,
+            'user_id': user_id,
+            'color': event.get('colorId')
+        }
+        
+        # Find existing or create new
+        appointment = Appointment.query.filter_by(
+            google_event_id=event['id'],
+            user_id=user_id
+        ).first()
+        
+        if appointment:
+            # Update existing appointment
+            for key, value in appt_data.items():
+                setattr(appointment, key, value)
+        else:
+            # Create new appointment
+            appointment = Appointment(**appt_data)
+            db.session.add(appointment)
+    except Exception as e:
+        current_app.logger.error(f"Error processing Google event {event.get('id')}: {str(e)}")
+
+def parse_google_datetime(time_dict):
+    try:
+        if 'dateTime' in time_dict:
+            # Handle timezone information
+            dt_str = time_dict['dateTime']
+            if dt_str.endswith('Z'):
+                return datetime.fromisoformat(dt_str[:-1] + '+00:00')
+            return datetime.fromisoformat(dt_str)
+        else:  # All-day event
+            return datetime.strptime(time_dict['date'], '%Y-%m-%d')
+    except Exception as e:
+        current_app.logger.error(f"Error parsing datetime: {time_dict} - {str(e)}")
+        return datetime.utcnow()
+
+    
+def convert_appointment_to_event(appointment):
+    try:
+        event = {
+            'summary': appointment.title,
+            'description': appointment.description or "",
+            'start': {
+                'dateTime': appointment.start_datetime.isoformat(),
+                'timeZone': 'UTC'
+            },
+            'end': {
+                'dateTime': appointment.end_datetime.isoformat(),
+                'timeZone': 'UTC'
+            }
+        }
+        
+        if appointment.google_event_id:
+            event['id'] = appointment.google_event_id
+        
+        if appointment.is_all_day:
+            # Adjust for Google's all-day event format
+            event['start'] = {'date': appointment.start_datetime.date().isoformat()}
+            event['end'] = {'date': (appointment.end_datetime.date() + timedelta(days=1)).isoformat()}
+        
+        if appointment.recurrence_rule:
+            event['recurrence'] = [appointment.recurrence_rule]
+        
+        return event
+    except Exception as e:
+        current_app.logger.error(f"Error converting appointment {appointment.id} to event: {str(e)}")
+        return None
 
 def check(key: str, default: str) -> str:
     """
@@ -1828,6 +2193,118 @@ def manager_list_routes():
         })
     return jsonify(routes)
 
+@app.route('/google/connect')
+@require_session_key
+def google_connect():
+    flow = get_google_oauth_flow()
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        prompt='consent',
+        include_granted_scopes='true'
+    )
+    session['oauth_state'] = state
+    return redirect(authorization_url)
+
+@app.route('/google/callback')
+def google_callback():
+    # Extract OAuth parameters
+    state = request.args.get('state', '')
+    code = request.args.get('code', '')
+    
+    # Render template with JS that will finalize the connection
+    return render_template('google_callback.html', state=state, code=code)
+
+@app.route('/google/callback/finalize', methods=['POST'])
+@require_session_key
+def google_callback_finalize():
+    try:
+        data = request.get_json()
+        state = data.get('state', '')
+        code = data.get('code', '')
+        
+        # Verify state matches session
+        if 'oauth_state' not in session or session['oauth_state'] != state:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid state parameter'
+            }), 400
+
+        # Exchange code for tokens
+        flow = get_google_oauth_flow()
+        flow.fetch_token(
+            authorization_response=f"?code={code}&state={state}",
+            code=code
+        )
+        
+        # Save credentials
+        credentials = flow.credentials
+        save_google_credentials(g.user_id, credentials)
+        
+        return jsonify({
+            'success': True,
+            'redirect_url': '/scheduler-page?google_connected=1',
+            'auto_mapped': True
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"OAuth finalization failed: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    
+@app.route('/google/disconnect', methods=['POST'])
+@require_session_key
+def google_disconnect():
+    try:
+        # Delete Google credentials
+        creds = GoogleCalendarCredentials.query.filter_by(user_id=g.user_id).first()
+        if creds:
+            db.session.delete(creds)
+        
+        # Delete sync mappings
+        mappings = CalendarSync.query.filter_by(user_id=g.user_id).all()
+        for mapping in mappings:
+            db.session.delete(mapping)
+        
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": "Google account disconnected"
+        })
+    except Exception as e:
+        current_app.logger.error(f"Disconnect failed: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": "Failed to disconnect Google account"
+        }), 500
+
+@app.route('/google/sync', methods=['POST'])
+@require_session_key
+def trigger_sync():
+    # Allow forcing full sync
+    full_sync = request.json.get('full_sync', False) if request.json else False
+    
+    success, message = sync_calendars(g.user_id, full_sync)
+    status = 200 if success else 400
+    return jsonify({"status": "success" if success else "error", "message": message}), status
+
+@app.route('/sync/status', methods=['GET'])
+@require_session_key
+def sync_status():
+    syncs = CalendarSync.query.filter_by(user_id=g.user_id).all()
+    creds = GoogleCalendarCredentials.query.filter_by(user_id=g.user_id).first()
+    
+    data = {
+        'google_connected': bool(creds),
+        'calendars': [{
+            'local_calendar_id': s.local_calendar_id,
+            'google_calendar_id': s.google_calendar_id,
+            'last_synced': s.last_synced.isoformat() if s.last_synced else None
+        } for s in syncs]
+    }
+    return jsonify(data), 200
+
 @app.route('/user-colors', methods=['GET'])
 @require_session_key
 def get_user_colors_fetch():
@@ -2490,6 +2967,67 @@ def delete_appointment(appointment_id):
     db.session.commit()
 
     return jsonify({"message": "Appointment deleted successfully"}), 200
+
+# calendars.py
+@app.route('/google/calendars', methods=['GET'])
+@require_session_key
+def get_google_calendars():
+    creds = get_valid_google_credentials(g.user_id)
+    if not creds:
+        return jsonify({"error": "Google not connected"}), 401
+        
+    service = build('calendar', 'v3', credentials=creds)
+    calendars = []
+    page_token = None
+    while True:
+        calendar_list = service.calendarList().list(
+            pageToken=page_token,
+            minAccessRole='writer'  # Only calendars user can write to
+        ).execute()
+        for cal in calendar_list.get('items', []):
+            calendars.append({
+                'id': cal['id'],
+                'name': cal['summary'],
+                'primary': cal.get('primary', False)
+            })
+        page_token = calendar_list.get('nextPageToken')
+        if not page_token:
+            break
+            
+    return jsonify({"calendars": calendars}), 200
+
+@app.route('/calendars/link', methods=['POST'])
+@require_session_key
+def link_calendar():
+    data = request.get_json()
+    local_calendar_id = data.get('local_calendar_id')
+    google_calendar_id = data.get('google_calendar_id', 'primary')
+    
+    # Validate local calendar
+    calendar = Calendar.query.filter_by(id=local_calendar_id, user_id=g.user_id).first()
+    if not calendar:
+        return jsonify({"error": "Local calendar not found"}), 404
+    
+    # Create or update sync mapping
+    sync = CalendarSync.query.filter_by(
+        user_id=g.user_id,
+        local_calendar_id=local_calendar_id
+    ).first()
+    
+    if sync:
+        sync.google_calendar_id = google_calendar_id
+        sync.sync_enabled = True
+    else:
+        sync = CalendarSync(
+            user_id=g.user_id,
+            local_calendar_id=local_calendar_id,
+            google_calendar_id=google_calendar_id,
+            sync_token=None  # Initialize as null
+        )
+        db.session.add(sync)
+    
+    db.session.commit()
+    return jsonify({"message": "Calendar linked successfully"}), 200
 
 @app.route('/calendars', methods=['POST'])
 @require_session_key
@@ -3195,7 +3733,7 @@ def delete_group():
             send_notification(
                 user.id,
                 "Group deleted",
-                f"The group '{group.name}' has been deleted by {user.username}. Notes cannot be recovered, so I hope {user.username} let y'all know he was going to delete the group :)",
+                f"The group '{group.name}' has been deleted by {user.username}. Notes cannot be recovered.",
                 "/group-notes"
             )
 
@@ -3214,59 +3752,57 @@ def delete_group():
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
 def get_group_notes(group_id):
-
-    # Ensure the user is part of the group
-    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    if not membership:
-        print("Not a member of this group")
+    # Authorization check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     notes = Note.query.filter_by(group_id=group_id).all()
-    sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
-
-    return jsonify(sanitized_notes)
+    return jsonify([{
+        "id": note.id,
+        "title": note.title,
+        "note": note.note,  # Already sanitized when stored
+        "tag": note.tag
+    } for note in notes])
 
 @app.route('/groups/<string:group_id>/notes', methods=['POST'])
 @require_session_key
 def add_group_note(group_id):
-    data = request.json
-    title = data.get('title')
-    note_text = data['note']
-    tag = data.get('tag')
-
-    # Ensure user is in the group
-    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    if not membership:
-        print("Not a member of this group")
+    # Authorization check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
-    new_note = Note(group_id=group_id, title=title, note=note_text, tag=tag)
+    data = request.json
+    # Sanitize HTML input
+    sanitized_note = sanitize_html(data['note'])
+    
+    new_note = Note(
+        group_id=group_id,
+        title=data.get('title'),
+        note=sanitized_note,  # Store sanitized HTML
+        tag=data.get('tag')
+    )
     db.session.add(new_note)
     db.session.commit()
-
     return jsonify({"message": "Group note added successfully!"}), 201
 
-@app.route('/groups/<string:group_id>/notes', methods=['PUT', 'DELETE'])
+# Updated route with note_id parameter
+@app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
-def update_delete_group_note(group_id):
-
-    # Use filter_by to query by group_id
-    note = Note.query.filter_by(group_id=group_id).first()
-
-    if not note or note.group_id != group_id:
-        print("Note not found")
+def update_delete_group_note(group_id, note_id):  # Added note_id parameter
+    # Find note and verify group ownership
+    note = Note.query.filter_by(id=note_id, group_id=group_id).first()
+    if not note:
         return jsonify({"error": "Note not found"}), 404
 
-    # Ensure user is part of the group
-    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
-    if not membership:
-        print("Not a member of this group")
+    # Authorization check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     if request.method == 'PUT':
         data = request.json
+        # Sanitize updated HTML
         note.title = data.get('title')
-        note.note = data['note']
+        note.note = sanitize_html(data['note'])  # Sanitize before update
         note.tag = data.get('tag')
         db.session.commit()
         return jsonify({"message": "Note updated successfully!"}), 200
@@ -5131,11 +5667,11 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
-        # Preserve checkbox states by accepting raw HTML
+        # Added sanitization to match POST logic
         note.title = data.get('title')
-        note.note = data['note']  # Contains checkbox states in HTML
+        note.note = sanitize_html(data['note'])  # Now sanitizes updates
         note.tag = data.get('tag')
-        db.session.commit()
+        db.session.commit() 
         return jsonify({"message": "Note updated successfully!"}), 200
     elif request.method == 'DELETE':
         db.session.delete(note)

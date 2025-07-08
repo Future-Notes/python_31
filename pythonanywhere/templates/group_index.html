@@ -868,6 +868,85 @@
             height: 50px !important;
             display: none;
         }
+
+        /* Add to your CSS */
+        .checkbox-list {
+            list-style-type: none;
+            padding-left: 0;
+            margin: 0.5em 0;
+        }
+
+        .checkbox-list li {
+            display: flex;
+            align-items: flex-start;
+            margin: 0.25em 0;
+            min-height: 1.5em;
+        }
+
+        .note-checkbox {
+            margin-right: 8px;
+            margin-top: 4px;
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            appearance: none;
+            -webkit-appearance: none;
+            border: 2px solid var(--btn-color);
+            border-radius: 4px;
+            outline: none;
+            transition: all 0.2s ease;
+            width: 10px !important;
+            background-color: var(--ctr-color);
+        }
+
+        .note-checkbox:hover {
+            background-color: var(--ctr-color);
+        }
+
+        .note-checkbox:checked {
+            border-color: var(--btn-color);
+            position: relative;
+        }
+
+        .note-checkbox:checked::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(45deg);
+            width: 4px;
+            height: 8px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+        }
+
+        .checkbox-content {
+            flex-grow: 1;
+            min-height: 1.5em;
+            outline: none;
+        }
+
+        /* Strikethrough for checked items in view mode */
+        #view-menu .checkbox-list li input[type="checkbox"]:checked + .checkbox-content {
+            text-decoration: line-through;
+            color: #777;
+        }
+
+        /* Adjust checkbox position for large text */
+        #view-menu .checkbox-list li h1 .note-checkbox,
+        #view-menu .checkbox-list li h2 .note-checkbox,
+        #view-menu .checkbox-list li h3 .note-checkbox {
+            margin-top: 12px;
+        }
+
+        #update-menu .checkbox-list li h1 .note-checkbox,
+        #add-menu .checkbox-list li h1 .note-checkbox,
+        #update-menu .checkbox-list li h2 .note-checkbox,
+        #add-menu .checkbox-list li h2 .note-checkbox,
+        #update-menu .checkbox-list li h3 .note-checkbox,
+        #add-menu .checkbox-list li h3 .note-checkbox {
+            margin-top: 12px;
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -998,6 +1077,7 @@
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
+                <button type="button" onclick="toggleCheckboxList('note-text')" title="Checkbox List">☑</button>
             </div>
             <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text"></div>
         </div>
@@ -1031,6 +1111,7 @@
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
+                <button type="button" onclick="toggleCheckboxList('update-note-text')" title="Checkbox List">☑</button>
             </div>
             <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
         </div>
@@ -1064,6 +1145,241 @@
             const div = document.createElement('div');
             div.textContent = html;
             return div.innerHTML;
+        }
+
+        // Add to group notes script
+        // ====== CHECKBOX FUNCTIONALITY ====== //
+        function toggleCheckboxList(editorId) {
+            const editor = document.getElementById(editorId);
+            if (!editor) return;
+            
+            const sel = window.getSelection();
+            if (sel.rangeCount === 0) return;
+            
+            const range = sel.getRangeAt(0);
+            let container = range.startContainer;
+            
+            // Handle text nodes
+            if (container.nodeType === Node.TEXT_NODE) {
+                container = container.parentNode;
+            }
+            
+            // Check if we're in a checkbox list
+            const listItem = container.closest('.checkbox-list li');
+            
+            if (listItem) {
+                // Already in checkbox list - remove checkbox
+                removeCheckboxFromListItem(listItem);
+            } else {
+                // Not in checkbox list - create new one
+                insertCheckboxList(editorId);
+            }
+            
+            // Trigger input event for draft
+            const inputEvent = new Event('input', { bubbles: true });
+            editor.dispatchEvent(inputEvent);
+        }
+
+        function insertCheckboxList(editorId) {
+            const editor = document.getElementById(editorId);
+            if (!editor) return;
+            
+            // Create checkbox list structure
+            const listItem = document.createElement('li');
+            listItem.innerHTML = `
+                <input type="checkbox" class="note-checkbox">
+                <span class="checkbox-content"></span>
+            `;
+            
+            const list = document.createElement('ul');
+            list.className = 'checkbox-list';
+            list.appendChild(listItem);
+            
+            // Insert at current position
+            document.execCommand('insertHTML', false, list.outerHTML);
+            
+            // Focus on content area
+            setTimeout(() => {
+                const contentSpan = editor.querySelector('.checkbox-list li .checkbox-content');
+                if (contentSpan) {
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    range.setStart(contentSpan, 0);
+                    range.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    editor.focus();
+                }
+            }, 0);
+        }
+
+        function removeCheckboxFromListItem(listItem) {
+            const contentSpan = listItem.querySelector('.checkbox-content');
+            if (!contentSpan) return;
+            
+            // Create text node with content
+            const textContent = contentSpan.textContent;
+            const textNode = document.createTextNode(textContent);
+            
+            // Replace list item with text
+            listItem.parentNode.replaceChild(textNode, listItem);
+            
+            // Remove empty lists
+            const editor = listItem.closest('.rich-text-editor');
+            if (editor) {
+                const emptyLists = editor.querySelectorAll('.checkbox-list:empty');
+                emptyLists.forEach(list => list.remove());
+            }
+        }
+
+        function handleEditorKeydown(editorId, event) {
+            if (event.key === 'Enter') {
+                const editor = document.getElementById(editorId);
+                const sel = window.getSelection();
+                if (sel.rangeCount === 0) return;
+                
+                const range = sel.getRangeAt(0);
+                let container = range.startContainer;
+                
+                // Handle text nodes
+                if (container.nodeType === Node.TEXT_NODE) {
+                    container = container.parentNode;
+                }
+                
+                // Check if we're in a checkbox list
+                const listItem = container.closest('.checkbox-list li');
+                if (listItem) {
+                    event.preventDefault();
+                    
+                    // Create new list item
+                    const newItem = document.createElement('li');
+                    newItem.innerHTML = `
+                        <input type="checkbox" class="note-checkbox">
+                        <span class="checkbox-content"></span>
+                    `;
+                    
+                    // Insert after current item
+                    listItem.parentNode.insertBefore(newItem, listItem.nextSibling);
+                    
+                    // Focus on new content area
+                    const contentSpan = newItem.querySelector('.checkbox-content');
+                    if (contentSpan) {
+                        const newRange = document.createRange();
+                        const newSel = window.getSelection();
+                        newRange.setStart(contentSpan, 0);
+                        newRange.collapse(true);
+                        newSel.removeAllRanges();
+                        newSel.addRange(newRange);
+                    }
+                }
+            }
+        }
+
+        function adjustCheckboxPositions() {
+            // For view menu
+            document.querySelectorAll('#view-menu .checkbox-list li').forEach(li => {
+                const checkbox = li.querySelector('.note-checkbox');
+                const content = li.querySelector('.checkbox-content');
+                if (checkbox && content) {
+                    // Check for large text elements
+                    if (content.querySelector('h1, h2, h3')) {
+                        checkbox.style.marginTop = '12px';
+                    } else {
+                        checkbox.style.marginTop = '4px';
+                    }
+                }
+            });
+            
+            // For edit menus
+            document.querySelectorAll('#update-menu .checkbox-list li, #add-menu .checkbox-list li').forEach(li => {
+                const checkbox = li.querySelector('.note-checkbox');
+                const content = li.querySelector('.checkbox-content');
+                if (checkbox && content) {
+                    if (content.querySelector('h1, h2, h3')) {
+                        checkbox.style.marginTop = '12px';
+                    } else {
+                        checkbox.style.marginTop = '4px';
+                    }
+                }
+            });
+        }
+
+        function initEditorEventListeners() {
+            const editors = [
+                {id: 'note-text', element: document.getElementById('note-text')},
+                {id: 'update-note-text', element: document.getElementById('update-note-text')}
+            ];
+            
+            editors.forEach(editor => {
+                if (editor.element) {
+                    // Keydown for Enter handling
+                    editor.element.addEventListener('keydown', (e) => {
+                        handleEditorKeydown(editor.id, e);
+                    });
+                    
+                    // Click handling for checkbox toggling
+                    editor.element.addEventListener('click', (e) => {
+                        if (e.target.classList.contains('note-checkbox')) {
+                            // Update checked state
+                            e.target.checked = !e.target.checked;
+                            
+                            // Trigger input event for draft saving
+                            const inputEvent = new Event('input', { bubbles: true });
+                            editor.element.dispatchEvent(inputEvent);
+                        }
+                    });
+                    
+                    // Add input listener to adjust checkbox positions
+                    editor.element.addEventListener('input', () => {
+                        setTimeout(adjustCheckboxPositions, 50);
+                    });
+                }
+            });
+        }
+
+        // Updated checkbox handler for group notes
+        function setupViewNoteCheckboxHandler() {
+            const viewMenu = document.getElementById('view-menu');
+            if (!viewMenu) return;
+            
+            const newHandler = function(e) {
+                if (e.target.classList.contains('note-checkbox')) {
+                    // Update the checked attribute
+                    e.target.toggleAttribute('checked', e.target.checked);
+                    
+                    // Get updated content
+                    const updatedContent = viewMenu.querySelector('#view-note-text').innerHTML;
+                    const title = viewMenu.querySelector('#view-note-title').value;
+                    const tag = viewMenu.querySelector('#view-note-tag').value;
+                    const groupId = sessionStorage.getItem("group_id");
+                    
+                    // Save with debounce to prevent duplicates
+                    clearTimeout(window.saveViewNoteTimeout);
+                    window.saveViewNoteTimeout = setTimeout(() => {
+                        fetch(`/groups/${groupId}/notes/${currentNoteId}`, {
+                            method: "PUT",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({
+                                title: title,
+                                note: updatedContent,
+                                tag: tag
+                            })
+                        })
+                        .then(response => {
+                            if (response.ok) {
+                                // Update local notes array
+                                const note = allNotes.find(n => n.id === currentNoteId);
+                                if (note) note.note = updatedContent;
+                            }
+                        });
+                    }, 300); // 300ms debounce
+                }
+            };
+            
+            // Remove any existing listener and add the new one
+            viewMenu.removeEventListener('change', viewMenu.checkboxHandler);
+            viewMenu.checkboxHandler = newHandler;
+            viewMenu.addEventListener('change', viewMenu.checkboxHandler);
         }
 
         document.addEventListener("DOMContentLoaded", async () => {
@@ -1124,6 +1440,7 @@
 
             // Load user profile picture
             loadUserProfile();
+            initEditorEventListeners();
         });
 
         async function loadUserProfile() {
@@ -1786,7 +2103,7 @@
             const updatedTag = document.getElementById("update-note-tag").value;
 
             try {
-                const response = await fetch(`/groups/${groupId}/notes`, {
+                const response = await fetch(`/groups/${groupId}/notes/${currentNoteId}`, {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1807,10 +2124,11 @@
             }
         }
 
+        // Updated deleteNote function with note_id in URL
         async function deleteNote() {
             const groupId = sessionStorage.getItem("group_id");
             try {
-                const response = await fetch(`/groups/${groupId}/notes`, {
+                const response = await fetch(`/groups/${groupId}/notes/${currentNoteId}`, {
                     method: "DELETE"
                 });
 
@@ -1942,6 +2260,12 @@
             document.getElementById("view-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
             document.getElementById("floating-add-button").style.display = "none";
+
+            // Setup checkbox handler
+            setupViewNoteCheckboxHandler();
+            
+            // Adjust checkbox positions
+            setTimeout(adjustCheckboxPositions, 50);
         }
 
         function closeViewMenu() {
