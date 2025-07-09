@@ -533,7 +533,7 @@ def load_secrets():
         for secret in secrets:
             app.config[secret.key] = secret.value
 
-load_secrets()  # Call this when the app starts
+
 
 def get_google_oauth_flow(state=None):
 
@@ -2174,6 +2174,14 @@ def signup_email_page():
 @app.route('/reset-password')
 def reset_password_page():
     return render_template('passwordreset.html')
+
+@app.route('/tos')
+def tos():
+    return render_template("tos.html")
+
+@app.route('/privacy')
+def privacy_policy():
+    return render_template("privacy-policy.html")
 
 #---------------------------------API routes--------------------------------
 
