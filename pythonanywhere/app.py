@@ -533,7 +533,11 @@ def load_secrets():
         for secret in secrets:
             app.config[secret.key] = secret.value
 
-
+@app.before_request
+def ensure_secrets_loaded():
+    # Only load if missing
+    if 'GOOGLE_CLIENT_ID' or 'GOOGLE_CLIENT_SECRET'not in app.config:
+        load_secrets()
 
 def get_google_oauth_flow(state=None):
 
