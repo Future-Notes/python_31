@@ -22,6 +22,7 @@ import uuid
 import random
 import string
 import time
+from datetime import timezone
 import glob
 import threading
 from update_DB import update_tables
@@ -535,9 +536,7 @@ def load_secrets():
 
 @app.before_request
 def ensure_secrets_loaded():
-    # Only load if missing
-    if 'GOOGLE_CLIENT_ID' or 'GOOGLE_CLIENT_SECRET'not in app.config:
-        load_secrets()
+    load_secrets()
 
 def get_google_oauth_flow(state=None):
 
@@ -796,7 +795,9 @@ def process_google_event(event, local_calendar_id, user_id):
             'google_event_id': event['id'],
             'calendar_id': local_calendar_id,
             'user_id': user_id,
-            'color': event.get('colorId')
+            'color': event.get('colorId'),
+            'is_all_day': 'date' in event['start'],  # Detect all-day events
+            'recurrence_rule': event.get('recurrence', [None])[0]  # Handle recurrence
         }
         
         # Find existing or create new
@@ -819,41 +820,56 @@ def process_google_event(event, local_calendar_id, user_id):
 def parse_google_datetime(time_dict):
     try:
         if 'dateTime' in time_dict:
-            # Handle timezone information
             dt_str = time_dict['dateTime']
-            if dt_str.endswith('Z'):
-                return datetime.fromisoformat(dt_str[:-1] + '+00:00')
-            return datetime.fromisoformat(dt_str)
+            # Parse as timezone-aware datetime
+            dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+            # Convert to UTC and remove timezone info
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
         else:  # All-day event
             return datetime.strptime(time_dict['date'], '%Y-%m-%d')
     except Exception as e:
         current_app.logger.error(f"Error parsing datetime: {time_dict} - {str(e)}")
         return datetime.utcnow()
 
+# In create_appointment and update_appointment endpoints
+# Add this conversion for incoming datetimes:
+def to_utc_naive(dt_str):
+    """Convert ISO string to UTC naive datetime"""
+    dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+    if dt.tzinfo:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
     
+# In convert_appointment_to_event function
 def convert_appointment_to_event(appointment):
     try:
         event = {
             'summary': appointment.title,
             'description': appointment.description or "",
-            'start': {
-                'dateTime': appointment.start_datetime.isoformat(),
-                'timeZone': 'UTC'
-            },
-            'end': {
-                'dateTime': appointment.end_datetime.isoformat(),
-                'timeZone': 'UTC'
-            }
         }
-        
+
         if appointment.google_event_id:
             event['id'] = appointment.google_event_id
-        
+
+        # Handle all-day events
         if appointment.is_all_day:
-            # Adjust for Google's all-day event format
-            event['start'] = {'date': appointment.start_datetime.date().isoformat()}
-            event['end'] = {'date': (appointment.end_datetime.date() + timedelta(days=1)).isoformat()}
+            # Google requires end date to be exclusive (next day after event)
+            end_date = appointment.end_datetime.date() + timedelta(days=1)
+            event.update({
+                'start': {'date': appointment.start_datetime.date().isoformat()},
+                'end': {'date': end_date.isoformat()}
+            })
+        else:
+            # Time-based events with UTC timezone
+            event.update({
+                'start': {'dateTime': appointment.start_datetime.isoformat() + 'Z',
+                          'timeZone': 'UTC'},
+                'end': {'dateTime': appointment.end_datetime.isoformat() + 'Z',
+                        'timeZone': 'UTC'}
+            })
         
+        # Handle recurrence if exists
         if appointment.recurrence_rule:
             event['recurrence'] = [appointment.recurrence_rule]
         
@@ -2799,8 +2815,8 @@ def create_appointment():
 
     # Validate datetime formats
     try:
-        start_datetime = datetime.fromisoformat(start_datetime_str)
-        end_datetime = datetime.fromisoformat(end_datetime_str)
+        start_datetime = to_utc_naive(start_datetime_str)
+        end_datetime = to_utc_naive(end_datetime_str)
     except ValueError:
         return jsonify({"error": "Invalid datetime format. Use ISO 8601 format."}), 400
 
@@ -2916,14 +2932,14 @@ def update_appointment(appointment_id):
 
     if start_datetime_str:
         try:
-            new_start = datetime.fromisoformat(start_datetime_str)
+            new_start = to_utc_naive(start_datetime_str)
             appointment.start_datetime = new_start
         except ValueError:
             return jsonify({"error": "Invalid start_datetime format. Use ISO 8601 format."}), 400
 
     if end_datetime_str:
         try:
-            new_end = datetime.fromisoformat(end_datetime_str)
+            new_end = to_utc_naive(end_datetime_str)
             appointment.end_datetime = new_end
         except ValueError:
             return jsonify({"error": "Invalid end_datetime format. Use ISO 8601 format."}), 400
