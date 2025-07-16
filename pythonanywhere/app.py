@@ -2106,6 +2106,13 @@ def todo_page():
     else: 
         abort(404)
 
+@app.route('/flow_page')
+def flow_page():
+    if check("flow", "Nee") == "Ja":
+        return render_template("flow.html")
+    else:
+        abort(404)
+
 @app.route('/login_page')
 def login_page():
     args = request.args.to_dict()

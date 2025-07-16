@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2c2c2c">
+    <title>Future Notes - Flow</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
+    <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
+    <link rel="manifest" href="static/site.webmanifest">
+    <script src="/static/js/loader.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: #e0e0e0;
+        }
+
+        header {
+            background-color: var(--hdr-color);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: #f2f2f2;
+        }
+
+        nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        nav a {
+            text-decoration: none;
+        }
+
+        .nav-link {
+            position: relative;
+            color: white;
+            font-size: 18px;
+            padding: 5px 0;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 0;
+            background-color: transparent;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .nav-link:hover::after {
+            width: 100%;
+            background-color: lightgray;
+        }
+
+        .nav-link.active::after {
+            width: 100%;
+            background-color: white;
+        }
+
+        .homepage-link {
+            text-decoration: none;
+            background-color: var(--ctr-color);
+            color: #e0e0e0;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        header a:hover {
+            background-color: #5c5c5c;
+        }
+
+        .mobile-sub-header {
+            display: none;
+            background-color: var(--bg-color);
+            padding: 10px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .mobile-sub-header a {
+            display: block;
+            color: white;
+            text-decoration: none;
+            padding: 10px;
+            font-size: 18px;
+        }
+
+        .mobile-sub-header a.active::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 100%;
+            background-color: white;
+        }
+
+        .mobile-sub-header a:hover::after {
+            background-color: lightgray;
+        }
+
+        .desktop-nav {
+            display: flex;
+            gap: 20px;
+            margin: 0 auto;
+        }
+
+        .toggle-mobile-nav {
+            background: none;
+            border: none;
+            color: #f2f2f2;
+            font-size: 24px;
+            cursor: pointer;
+            display: none;
+            margin-right: 10px;
+        }
+
+        .mobile-header {
+            display: none;
+            align-items: center;
+        }
+
+        main {
+            padding: 40px 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        input {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            outline: none;
+            transition: background-color 0.2s;
+        }
+
+        button {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        input:focus {
+            background-color: #5a5a5a;
+        }
+        
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+        
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--hdr-color);
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+        }
+        .profile-pic.no-picture {
+            background-color: #cc4f4f;
+            color: white;
+            border-radius: 50%;
+        }
+    </style>
+    <script>
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/static/sw_js/sw.js')
+            .then(() => console.log('Service Worker Registered'))
+            .catch(console.error);
+        }
+    </script>
+
+    <script src="/static/admin.js"></script>
+    <script src="/static/custom-alert.js"></script>
+    <script src="/static/js/notifications.js"></script>
+
+    <style>
+        :root {
+            --bg-color:  #2c2c2c;
+            --hdr-color: #3a3a3a;
+            --ctr-color: #1e1e1e;
+            --btn-color: #424242;
+        }
+        </style>
+
+        <script>
+        fetch("/user-colors")
+            .then(res => {
+                if (!res.ok) throw new Error("Could not load colors");
+                return res.json();
+            })
+            .then(cfg => {
+                document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
+                document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
+                document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
+                document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+
+                window.appConfig = {
+                    backgroundColor:  cfg.background_color,
+                    headerColor:      cfg.header_color,
+                    contrastingColor: cfg.contrasting_color,
+                    buttonColor:      cfg.button_color
+                };
+            })
+            .catch(err => console.error(err));
+        </script>
+<header>
+        <div class="mobile-header">
+          <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
+        </div>
+      
+        <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
+        <nav class="desktop-nav">
+          <a href="/index" class="nav-link">Personal notes</a>
+          <a href="/group-notes" class="nav-link">Group notes</a>
+          <a href="/scheduler-page" class="nav-link">Calendar</a>
+          <a href="/todo_page" class="nav-link">Todo</a>
+          <a href="/flow_page" class="nav-link active">Flow</a>
+        </nav>
+        <div id="profile-pic" class="profile-pic no-picture"></div>
+      </header>
+      
+      <nav id="mobileSubHeader" class="mobile-sub-header">
+        <a href="/index" class="nav-link">Personal notes</a>
+        <a href="/group-notes" class="nav-link">Group notes</a>
+        <a href="/scheduler-page" class="nav-link">Calendar</a>
+        <a href="/todo_page" class="nav-link">Todo</a>
+        <a href="/flow_page" class="nav-link active">Flow</a>
+      </nav>
+
+      <script>
+      document.addEventListener("DOMContentLoaded", async () => {
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
+            }
+
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    fetchFlow();
+                    return true;
+                }
+                if (res.status === 403) {
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    fetchFlow();
+                    return true;
+                }
+                showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
+        }
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+        const cfg = window.appConfig || {};
+        const userColors = {
+            bg:  cfg.backgroundColor,
+            hdr: cfg.headerColor,
+            ctr: cfg.contrastingColor,
+            btn: cfg.buttonColor
+        };
+
+        const root = document.documentElement;
+        root.style.setProperty("--bg-color",  userColors.bg);
+        root.style.setProperty("--hdr-color", userColors.hdr);
+        root.style.setProperty("--ctr-color", userColors.ctr);
+        root.style.setProperty("--btn-color", userColors.btn);
+        });
+
+        function showModal() {
+            window.location.href = '/login_page?redirect=/flow_page&warning=true';
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const toggleButton = document.getElementById("toggle-mobile-nav");
+            const mobileNav = document.getElementById("mobileSubHeader");
+
+            toggleButton.addEventListener("click", function() {
+                if (mobileNav.style.display === "block") {
+                mobileNav.style.display = "none";
+                } else {
+                mobileNav.style.display = "block";
+                }
+            });
+        });
+
+        async function fetchFlow() {
+            console.log("Hello!")
+        }
+
+        window.onload = async () => {
+            try {
+                const response = await fetch("/test-session", {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                });
+
+                if (response.status === 401) {
+                    showModal();
+                } else {
+                    const userInfoResponse = await fetch("/user-info", {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                    });
+
+                    if (userInfoResponse.ok) {
+                        const userInfo = await userInfoResponse.json();
+                        const username = userInfo.username;
+                        const profilePic = userInfo.profile_picture;
+                        const profilePicElement = document.getElementById("profile-pic");
+
+                        if (profilePic) {
+                            const correctedProfilePic = profilePic.replace(/\\/g, "/");
+                            profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+                            profilePicElement.classList.remove("no-picture");
+                            profilePicElement.textContent = "";
+                        } else {
+                            profilePicElement.textContent = username[0].toUpperCase();
+                            profilePicElement.classList.add("no-picture");
+                        }
+                    } else {
+                        console.error("Failed to fetch user info");
+                    }
+                }
+            } catch (error) {
+                console.error("Error during re-login:", error);
+            }
+        };
+
+        function showAccountMenu() {
+            window.location.href = "/account_page";
+        }
+
+        document.getElementById("profile-pic").addEventListener("click", showAccountMenu);
+        sessionStorage.setItem("last_page", "/flow_page");
+    </script>
