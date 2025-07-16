@@ -1,6 +1,6 @@
 # ------------------------------Imports--------------------------------
 from operator import is_not
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, Blueprint
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
@@ -517,6 +517,73 @@ class ResetUndoToken(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     used = db.Column(db.Boolean, default=False)
+
+# Flow
+
+class FlowProject(db.Model):
+    __tablename__ = 'flow_projects'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    total_impact = db.Column(db.Integer, nullable=False, default=100)
+    status = db.Column(db.String(20), default='active')  # active, completed
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    branches = db.relationship('FlowBranch', backref='project', lazy=True)
+    
+    @property
+    def progress(self):
+        return sum(commit.impact for branch in self.branches for commit in branch.commits)
+    
+    @property
+    def progress_percent(self):
+        return min(100, int((self.progress / self.total_impact) * 100))
+    
+    def mark_completed(self):
+        """Mark project as completed by setting progress to total impact"""
+        # Create a completion step in the main branch
+        main_branch = FlowBranch.query.filter_by(
+            project_id=self.id, 
+            name='main'
+        ).first()
+        
+        if main_branch:
+            # Calculate remaining impact needed
+            remaining = max(0, self.total_impact - self.progress)
+            
+            if remaining > 0:
+                completion_step = FlowCommit(
+                    branch_id=main_branch.id,
+                    title="Project Completion",
+                    description="Project marked as completed",
+                    impact=remaining
+                )
+                db.session.add(completion_step)
+        
+        self.status = 'completed'
+        db.session.commit()
+
+class FlowBranch(db.Model):
+    __tablename__ = 'flow_branches'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('flow_projects.id'), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    base_branch_id = db.Column(db.Integer, db.ForeignKey('flow_branches.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    commits = db.relationship('FlowCommit', backref='branch', lazy=True)
+    parent = db.relationship('FlowBranch', remote_side=[id], backref='children')
+
+class FlowCommit(db.Model):
+    __tablename__ = 'flow_commits'
+    id = db.Column(db.Integer, primary_key=True)
+    branch_id = db.Column(db.Integer, db.ForeignKey('flow_branches.id'), nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    impact = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    prev_commit_id = db.Column(db.Integer, db.ForeignKey('flow_commits.id'), nullable=True)
+    next_commits = db.relationship('FlowCommit', backref=db.backref('prev_commit', remote_side=[id]))
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -2211,6 +2278,293 @@ def privacy_policy():
     return render_template("privacy-policy.html")
 
 #---------------------------------API routes--------------------------------
+
+# Flow routes:
+
+@app.route('/flow/projects', methods=['GET'])
+@require_session_key
+def get_projects():
+    projects = FlowProject.query.filter_by(user_id=g.user_id).all()
+    return jsonify([{
+        'id': p.id,
+        'title': p.title,
+        'description': p.description,
+        'total_impact': p.total_impact,
+        'progress': p.progress,
+        'progress_percent': p.progress_percent,
+        'status': p.status,
+        'branch_count': len(p.branches),
+        'commit_count': sum(len(b.commits) for b in p.branches),
+        'created_at': p.created_at.isoformat()
+    } for p in projects])
+
+@app.route('/flow/projects', methods=['POST'])
+@require_session_key
+def create_project():
+    data = request.get_json()
+    new_project = FlowProject(
+        user_id=g.user_id,
+        title=data['title'],
+        description=data.get('description', ''),
+        total_impact=data.get('total_impact', 100)
+    )
+    db.session.add(new_project)
+    db.session.commit()
+    
+    # Create main branch
+    main_branch = FlowBranch(
+        project_id=new_project.id,
+        name='main'
+    )
+    db.session.add(main_branch)
+    db.session.commit()
+    
+    return jsonify({
+        'id': new_project.id,
+        'message': 'Project created with main branch'
+    }), 201
+
+@app.route('/flow/projects/<int:project_id>', methods=['PUT'])
+@require_session_key
+def update_project(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    data = request.get_json()
+    project.title = data.get('title', project.title)
+    project.description = data.get('description', project.description)
+    project.total_impact = data.get('total_impact', project.total_impact)
+    project.status = data.get('status', project.status)
+    db.session.commit()
+    return jsonify({'message': 'Project updated'})
+
+@app.route('/flow/projects/<int:project_id>', methods=['DELETE'])
+@require_session_key
+def delete_project(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    
+    # Delete all branches and commits first
+    for branch in project.branches:
+        # Delete all commits in this branch
+        FlowCommit.query.filter_by(branch_id=branch.id).delete()
+        db.session.delete(branch)
+    
+    db.session.delete(project)
+    db.session.commit()
+    return jsonify({'message': 'Project deleted'})
+
+@app.route('/flow/projects/<int:project_id>/branches', methods=['GET'])
+@require_session_key
+def get_branches(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    branches = FlowBranch.query.filter_by(project_id=project_id).all()
+    return jsonify([{
+        'id': b.id,
+        'name': b.name,
+        'commit_count': len(b.commits),
+        'created_at': b.created_at.isoformat(),
+        'base_branch_id': b.base_branch_id
+    } for b in branches])
+
+@app.route('/flow/projects/<int:project_id>/branches', methods=['POST'])
+@require_session_key
+def create_branch(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    data = request.get_json()
+    
+    # Check if branch name exists
+    existing = FlowBranch.query.filter_by(project_id=project_id, name=data['name']).first()
+    if existing:
+        return jsonify({'error': 'Branch name already exists'}), 400
+    
+    new_branch = FlowBranch(
+        project_id=project_id,
+        name=data['name'],
+        base_branch_id=data.get('base_branch_id')
+    )
+    db.session.add(new_branch)
+    db.session.commit()
+    
+    return jsonify({
+        'id': new_branch.id,
+        'name': new_branch.name
+    }), 201
+
+@app.route('/flow/branches/<int:branch_id>', methods=['PUT'])
+@require_session_key
+def update_branch(branch_id):
+    branch = FlowBranch.query.get_or_404(branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    if 'name' in data:
+        # Check if new name exists
+        existing = FlowBranch.query.filter_by(project_id=branch.project_id, name=data['name']).first()
+        if existing and existing.id != branch_id:
+            return jsonify({'error': 'Branch name already exists'}), 400
+        branch.name = data['name']
+    
+    db.session.commit()
+    return jsonify({'message': 'Branch updated'})
+
+@app.route('/flow/branches/<int:branch_id>', methods=['DELETE'])
+@require_session_key
+def delete_branch(branch_id):
+    branch = FlowBranch.query.get_or_404(branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    if branch.name == 'main':
+        return jsonify({'error': 'Cannot delete main branch'}), 400
+    
+    # Delete all commits in this branch first
+    FlowCommit.query.filter_by(branch_id=branch_id).delete()
+    
+    db.session.delete(branch)
+    db.session.commit()
+    return jsonify({'message': 'Branch deleted'})
+
+@app.route('/flow/sub-projects/<int:source_id>/merge/<int:target_id>', methods=['POST'])
+@require_session_key
+def merge_subprojects(source_id, target_id):
+    source = FlowBranch.query.get_or_404(source_id)
+    target = FlowBranch.query.get_or_404(target_id)
+    
+    if source.project_id != target.project_id:
+        return jsonify({'error': 'Sub-projects must be in the same project'}), 400
+    
+    project = FlowProject.query.get(source.project_id)
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Merge steps
+    for step in source.commits:
+        new_step = FlowCommit(
+            branch_id=target.id,
+            title=step.title,
+            description=step.description,
+            impact=step.impact
+        )
+        db.session.add(new_step)
+    
+    # Delete source if requested
+    delete_source = request.json.get('delete_source', False)
+    if delete_source and source.name != 'main':
+        FlowCommit.query.filter_by(branch_id=source.id).delete()
+        db.session.delete(source)
+    
+    db.session.commit()
+    
+    message = f'Sub-project {source.name} merged into {target.name}'
+    if delete_source:
+        message += f' and source deleted'
+    
+    return jsonify({'message': message})
+
+@app.route('/flow/branches/<int:branch_id>/steps', methods=['GET'])
+@require_session_key
+def get_steps(branch_id):
+    branch = FlowBranch.query.get_or_404(branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Get steps in reverse chronological order (newest first)
+    steps = FlowCommit.query.filter_by(branch_id=branch_id).order_by(FlowCommit.created_at.desc()).all()
+    return jsonify([{
+        'id': c.id,
+        'title': c.title,
+        'description': c.description,
+        'impact': c.impact,
+        'created_at': c.created_at.isoformat()
+    } for c in steps])
+
+@app.route('/flow/branches/<int:branch_id>/steps', methods=['POST'])
+@require_session_key
+def create_step(branch_id):
+    branch = FlowBranch.query.get_or_404(branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    new_step = FlowCommit(
+        branch_id=branch_id,
+        title=data['title'],
+        description=data['description'],
+        impact=data['impact']
+    )
+    db.session.add(new_step)
+    db.session.commit()
+    
+    # Check if project should be automatically completed
+    project = FlowProject.query.get(branch.project_id)
+    if project.progress >= project.total_impact and project.status != 'completed':
+        project.status = 'completed'
+        db.session.commit()
+    
+    return jsonify({
+        'id': new_step.id,
+        'message': 'Step created'
+    }), 201
+
+@app.route('/flow/commits/<int:commit_id>/revert', methods=['POST'])
+@require_session_key
+def revert_commit(commit_id):
+    commit = FlowCommit.query.get_or_404(commit_id)
+    branch = FlowBranch.query.get(commit.branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Get all subsequent commits
+    subsequent_commits = FlowCommit.query.filter(
+        FlowCommit.branch_id == branch.id,
+        FlowCommit.created_at >= commit.created_at
+    ).all()
+    
+    # Delete the commits
+    for c in subsequent_commits:
+        db.session.delete(c)
+    
+    db.session.commit()
+    return jsonify({'message': f'{len(subsequent_commits)} commits reverted'})
+
+# New endpoint to get project details including progress
+@app.route('/flow/projects/<int:project_id>/details', methods=['GET'])
+@require_session_key
+def get_project_details(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    return jsonify({
+        'id': project.id,
+        'title': project.title,
+        'description': project.description,
+        'total_impact': project.total_impact,
+        'progress': project.progress,
+        'progress_percent': project.progress_percent,
+        'status': project.status,
+        'branch_count': len(project.branches),
+        'commit_count': sum(len(b.commits) for b in project.branches),
+        'created_at': project.created_at.isoformat()
+    })
+
+@app.route('/flow/projects/<int:project_id>/all-branches', methods=['GET'])
+@require_session_key
+def get_all_branches(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    branches = FlowBranch.query.filter_by(project_id=project_id).all()
+    return jsonify([{
+        'id': b.id,
+        'name': b.name
+    } for b in branches])
+
+@app.route('/flow/projects/<int:project_id>/complete', methods=['POST'])
+@require_session_key
+def complete_project(project_id):
+    project = FlowProject.query.filter_by(id=project_id, user_id=g.user_id).first_or_404()
+    project.mark_completed()
+    return jsonify({'message': 'Project marked as completed'})
 
 # Only expose in non-production or over localhost for safety
 @app.route('/_manager/routes', methods=['GET'])

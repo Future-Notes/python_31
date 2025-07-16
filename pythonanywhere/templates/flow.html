@@ -10,9 +10,25 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
+    
+    <!-- Mermaid.js for graph visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@9.3.0/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'dark',
+            securityLevel: 'loose',
+            flowchart: { 
+                curve: 'basis',
+                useMaxWidth: false
+            }
+        });
+    </script>
+    
     <script src="/static/js/loader.js"></script>
     
     <style>
+        /* Global Styles */
         body {
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -29,115 +45,26 @@
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
-        header h1 {
-            margin: 0;
-            font-size: 28px;
-            font-weight: 600;
-            color: #f2f2f2;
-        }
-
-        nav {
-            display: flex;
-            gap: 20px;
-        }
-
-        nav a {
-            text-decoration: none;
-        }
-
-        .nav-link {
-            position: relative;
-            color: white;
-            font-size: 18px;
-            padding: 5px 0;
-            transition: all 0.3s ease;
-        }
-
-        .nav-link::after {
-            content: "";
-            display: block;
-            height: 2px;
-            width: 0;
-            background-color: transparent;
-            transition: width 0.3s ease, background-color 0.3s ease;
-        }
-
-        .nav-link:hover::after {
-            width: 100%;
-            background-color: lightgray;
-        }
-
-        .nav-link.active::after {
-            width: 100%;
-            background-color: white;
-        }
-
-        .homepage-link {
-            text-decoration: none;
-            background-color: var(--ctr-color);
-            color: #e0e0e0;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 16px;
-        }
-
-        header a:hover {
-            background-color: #5c5c5c;
-        }
-
-        .mobile-sub-header {
-            display: none;
-            background-color: var(--bg-color);
-            padding: 10px 0;
-            text-align: center;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        }
-
-        .mobile-sub-header a {
-            display: block;
-            color: white;
-            text-decoration: none;
-            padding: 10px;
-            font-size: 18px;
-        }
-
-        .mobile-sub-header a.active::after {
-            content: "";
-            display: block;
-            height: 2px;
-            width: 100%;
-            background-color: white;
-        }
-
-        .mobile-sub-header a:hover::after {
-            background-color: lightgray;
-        }
-
         .desktop-nav {
             display: flex;
             gap: 20px;
             margin: 0 auto;
         }
 
-        .toggle-mobile-nav {
-            background: none;
-            border: none;
+        header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
             color: #f2f2f2;
-            font-size: 24px;
-            cursor: pointer;
-            display: none;
-            margin-right: 10px;
         }
-
-        .mobile-header {
-            display: none;
-            align-items: center;
+        
+        nav {
+            display: flex;
+            gap: 20px;
         }
-
-        main {
-            padding: 40px 20px;
-            max-width: 900px;
-            margin: 0 auto;
+        
+        nav a {
+            text-decoration: none;
         }
 
         input {
@@ -150,6 +77,7 @@
             margin-bottom: 10px;
             outline: none;
             transition: background-color 0.2s;
+            width: 100%;
         }
 
         button {
@@ -164,15 +92,102 @@
         input:focus {
             background-color: #5a5a5a;
         }
-        
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
+        button:hover {
+            background-color: #616161;
+        }
+
+        select {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 16px;
+            outline: none;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+
+        textarea {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 16px;
+            outline: none;
+            resize: vertical;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+        
+        .nav-link {
+            position: relative;
+            color: white;
+            font-size: 18px;
+            padding: 5px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-link::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 0;
+            background-color: transparent;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+        
+        .nav-link:hover::after {
+            width: 100%;
+            background-color: lightgray;
+        }
+        
+        .nav-link.active::after {
+            width: 100%;
+            background-color: white;
+        }
+        
+        .homepage-link {
+            text-decoration: none;
+            background-color: var(--ctr-color);
+            color: #e0e0e0;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        header a:hover {
+            background-color: #5c5c5c;
+        }
+        
+        .mobile-sub-header {
+            display: none;
+            background-color: var(--hdr-color);
+            padding: 10px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        
+        .mobile-sub-header a {
+            display: block;
+            color: white;
+            text-decoration: none;
+            padding: 10px;
+            font-size: 18px;
+        }
+        
+        .mobile-sub-header a.active::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 100%;
+            background-color: white;
+        }
+        
+        .mobile-sub-header a:hover::after {
+            background-color: lightgray;
         }
         
         .profile-pic {
@@ -191,10 +206,460 @@
             background-size: cover;
             background-position: center;
         }
+        
         .profile-pic.no-picture {
             background-color: #cc4f4f;
             color: white;
             border-radius: 50%;
+        }
+        
+        .toggle-mobile-nav {
+            background: none;
+            border: none;
+            color: #f2f2f2;
+            font-size: 24px;
+            cursor: pointer;
+            display: none;
+            margin-right: 10px;
+        }
+        
+        .toggle-mobile-nav:hover {
+            background-color: none;
+        }
+        
+        /* Flow-specific Styles */
+        .flow-container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            height: calc(100vh - 160px);
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .projects-panel {
+            background-color: var(--ctr-color);
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .project-detail {
+            background-color: var(--ctr-color);
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #555;
+        }
+        
+        .panel-header h2 {
+            margin: 0;
+            font-size: 22px;
+            color: #f2f2f2;
+        }
+        
+        .project-card {
+            background-color: var(--btn-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .project-card:hover {
+            background-color: #4a4a4a;
+            transform: translateY(-2px);
+        }
+        
+        .project-card.active {
+            border-left: 4px solid #7a7a7a;
+            background-color: #4a4a4a;
+        }
+        
+        .project-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            display: flex;
+            justify-content: space-between;
+            color: #f2f2f2;
+        }
+        
+        .project-card .project-status {
+            font-size: 14px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background-color: #7a7a7a;
+        }
+        
+        .project-card .status-completed {
+            background-color: #5cb85c;
+        }
+        
+        .progress-container {
+            margin: 15px 0;
+        }
+        
+        .progress-bar {
+            height: 10px;
+            background-color: #555;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background-color: #7a7a7a;
+            border-radius: 5px;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+        
+        .sub-projects-section {
+            margin-top: 20px;
+        }
+        
+        .sub-projects-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        
+        .sub-project-item {
+            padding: 8px 12px;
+            background-color: var(--btn-color);
+            margin-bottom: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .sub-project-item.dragging {
+            opacity: 0.5;
+            background-color: rgba(122, 122, 122, 0.2);
+        }
+        
+        .sub-project-item.drop-target {
+            background-color: rgba(92, 184, 92, 0.3);
+        }
+        
+        .sub-project-item.active {
+            border-left: 3px solid #7a7a7a;
+        }
+        
+        .sub-project-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .sub-project-actions button {
+            padding: 5px;
+            font-size: 12px;
+            margin: 0;
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 4px;
+        }
+        
+        .sub-project-actions button:hover {
+            background-color: #5c5c5c;
+        }
+        
+        .steps-section {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .steps-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin: 10px 0;
+        }
+        
+        .step-item {
+            background-color: var(--btn-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            position: relative;
+        }
+        
+        .step-item:before {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 20px;
+            width: 2px;
+            background-color: #555;
+            z-index: 1;
+        }
+        
+        .step-item:first-child:before {
+            top: 50%;
+        }
+        
+        .step-item:last-child:before {
+            bottom: 50%;
+        }
+        
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .step-title {
+            font-weight: bold;
+            font-size: 18px;
+            color: white;
+        }
+        
+        .step-impact {
+            background-color: #7a7a7a;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .step-desc {
+            margin: 10px 0;
+            color: #ccc;
+        }
+        
+        .step-meta {
+            font-size: 12px;
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .step-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+        
+        .step-actions button {
+            padding: 5px 10px;
+            font-size: 14px;
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 4px;
+        }
+        
+        .step-actions button:hover {
+            background-color: #5c5c5c;
+        }
+        
+        /* Mermaid graph container */
+        .graph-container {
+            background-color: var(--btn-color);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            height: 200px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .graph-container .mermaid {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background-color: var(--ctr-color);
+            border-radius: 10px;
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #555;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+            color: #f2f2f2;
+        }
+        
+        .close-modal {
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #e0e0e0;
+        }
+        
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #555;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: #aaa;
+            font-size: 16px;
+            border-bottom: 3px solid transparent;
+            color: #e0e0e0;
+        }
+        
+        .tab.active {
+            color: white;
+            border-bottom: 3px solid #7a7a7a;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .no-projects {
+            text-align: center;
+            padding: 40px 0;
+            color: #888;
+        }
+        
+        .custom-confirm {
+            background-color: var(--ctr-color);
+            border-radius: 10px;
+            padding: 20px;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        
+        .custom-confirm p {
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+        
+        .custom-confirm-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .custom-confirm-buttons button {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .custom-confirm-buttons .confirm {
+            background-color: #d9534f;
+            color: white;
+        }
+        
+        .custom-confirm-buttons .cancel {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+        }
+        
+        /* Drag and drop instructions */
+        .drag-instruction {
+            text-align: center;
+            padding: 10px;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        /* Responsive Styles */
+        @media (max-width: 900px) {
+            .flow-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .projects-panel {
+                height: auto;
+                max-height: 300px;
+            }
+        }
+        
+        /* Color Variables */
+        :root {
+            --bg-color:  #2c2c2c;
+            --hdr-color: #3a3a3a;
+            --ctr-color: #1e1e1e;
+            --btn-color: #424242;
+            --success-color: #5cb85c;
+            --danger-color: #d9534f;
         }
     </style>
     <script>
@@ -209,16 +674,7 @@
     <script src="/static/custom-alert.js"></script>
     <script src="/static/js/notifications.js"></script>
 
-    <style>
-        :root {
-            --bg-color:  #2c2c2c;
-            --hdr-color: #3a3a3a;
-            --ctr-color: #1e1e1e;
-            --btn-color: #424242;
-        }
-        </style>
-
-        <script>
+    <script>
         fetch("/user-colors")
             .then(res => {
                 if (!res.ok) throw new Error("Could not load colors");
@@ -238,8 +694,10 @@
                 };
             })
             .catch(err => console.error(err));
-        </script>
-<header>
+    </script>
+</head>
+<body>
+    <header>
         <div class="mobile-header">
           <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
         </div>
@@ -253,154 +711,926 @@
           <a href="/flow_page" class="nav-link active">Flow</a>
         </nav>
         <div id="profile-pic" class="profile-pic no-picture"></div>
-      </header>
+    </header>
       
-      <nav id="mobileSubHeader" class="mobile-sub-header">
+    <nav id="mobileSubHeader" class="mobile-sub-header">
         <a href="/index" class="nav-link">Personal notes</a>
         <a href="/group-notes" class="nav-link">Group notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
         <a href="/flow_page" class="nav-link active">Flow</a>
-      </nav>
+    </nav>
 
-      <script>
-      document.addEventListener("DOMContentLoaded", async () => {
+    <main>
+        <div class="flow-container">
+            <div class="projects-panel">
+                <div class="panel-header">
+                    <h2>Projects</h2>
+                    <button class="primary" id="create-project-btn">+ New</button>
+                </div>
+                
+                <div class="tabs">
+                    <button class="tab active" data-tab="active">Active</button>
+                    <button class="tab" data-tab="completed">Completed</button>
+                </div>
+                
+                <div class="tab-content active" id="active-projects">
+                    <div class="no-projects">Loading active projects...</div>
+                </div>
+                
+                <div class="tab-content" id="completed-projects">
+                    <div class="no-projects">Loading completed projects...</div>
+                </div>
+            </div>
+            
+            <div class="project-detail">
+                <div class="panel-header">
+                    <h2 id="project-title">Select a Project</h2>
+                    <div>
+                        <button id="create-sub-project-btn" disabled>New Sub-project</button>
+                        <button id="create-step-btn" class="primary" disabled>New Step</button>
+                        <button id="complete-project-btn" class="success" disabled>Complete Project</button>
+                        <button id="delete-project-btn" class="danger" disabled>Delete Project</button>
+                    </div>
+                </div>
+                
+                <div class="progress-container" id="progress-container" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="progress-percent">0% Complete</span>
+                        <span id="progress-text">0/0</span>
+                    </div>
+                </div>
+                
+                <div class="graph-container" id="branch-graph">
+                    <!-- Mermaid graph will be rendered here -->
+                </div>
+                
+                <div class="sub-projects-section" id="sub-projects-section" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3>Sub-projects</h3>
+                        <div class="drag-instruction">Drag a sub-project onto another to merge</div>
+                    </div>
+                    <div class="sub-projects-list" id="sub-projects-list">
+                        <!-- Sub-projects will be loaded here -->
+                    </div>
+                </div>
+                
+                <div class="steps-section" id="steps-section" style="display: none;">
+                    <h3>Steps in <span id="current-sub-project-name">main</span></h3>
+                    <div class="steps-list" id="steps-list">
+                        <!-- Steps will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Project Modal -->
+    <div class="modal" id="project-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="project-modal-title">Create New Project</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="project-form">
+                <input type="hidden" id="project-id">
+                <div class="form-group">
+                    <label for="project-name">Project Name</label>
+                    <input type="text" id="project-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="project-desc">Description (Optional)</label>
+                    <textarea id="project-desc" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="project-impact">Total Impact Points</label>
+                    <input type="number" id="project-impact" value="100" min="10" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="close-modal">Cancel</button>
+                    <button type="submit" class="primary">Save Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Sub-project Modal -->
+    <div class="modal" id="sub-project-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="sub-project-modal-title">Create New Sub-project</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="sub-project-form">
+                <input type="hidden" id="sub-project-id">
+                <div class="form-group">
+                    <label for="sub-project-name">Sub-project Name</label>
+                    <input type="text" id="sub-project-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="base-sub-project">Base Sub-project</label>
+                    <select id="base-sub-project">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="close-modal">Cancel</button>
+                    <button type="submit" class="primary">Create Sub-project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Step Modal -->
+    <div class="modal" id="step-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="step-modal-title">Create New Step</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="step-form">
+                <input type="hidden" id="step-id">
+                <div class="form-group">
+                    <label for="step-sub-project">Sub-project</label>
+                    <select id="step-sub-project">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="step-title">Title</label>
+                    <input type="text" id="step-title" required>
+                </div>
+                <div class="form-group">
+                    <label for="step-desc">Description</label>
+                    <textarea id="step-desc" rows="4" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="step-impact">Impact Points</label>
+                    <input type="number" id="step-impact" min="1" value="5" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="close-modal">Cancel</button>
+                    <button type="submit" class="primary">Create Step</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Merge Modal -->
+    <div class="modal" id="merge-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Merge Sub-projects</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="merge-source">Source Sub-project (changes to merge)</label>
+                <select id="merge-source">
+                    <!-- Options will be populated dynamically -->
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="merge-target">Target Sub-project (where to merge)</label>
+                <select id="merge-target">
+                    <!-- Options will be populated dynamically -->
+                </select>
+            </div>
+            <div class="form-group">
+                <input type="checkbox" id="delete-after-merge">
+                <label for="delete-after-merge">Delete source sub-project after merge</label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="close-modal">Cancel</button>
+                <button type="button" id="perform-merge-btn" class="primary">Merge Sub-projects</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom Confirm Modal -->
+    <div class="modal" id="confirm-modal">
+        <div class="custom-confirm">
+            <p id="confirm-message">Are you sure you want to perform this action?</p>
+            <div class="custom-confirm-buttons">
+                <button class="cancel" id="confirm-cancel">Cancel</button>
+                <button class="confirm" id="confirm-ok">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global state
+        let currentProjectId = null;
+        let currentSubProjectId = null;
+        let projects = [];
+        let subProjects = [];
+        let steps = [];
+        let draggedSubProjectId = null;
+        
+        // DOM Elements
+        const activeProjectsEl = document.getElementById('active-projects');
+        const completedProjectsEl = document.getElementById('completed-projects');
+        const projectTitleEl = document.getElementById('project-title');
+        const progressContainer = document.getElementById('progress-container');
+        const progressFillEl = document.getElementById('progress-fill');
+        const progressPercentEl = document.getElementById('progress-percent');
+        const progressTextEl = document.getElementById('progress-text');
+        const subProjectsSection = document.getElementById('sub-projects-section');
+        const stepsSection = document.getElementById('steps-section');
+        const subProjectsListEl = document.getElementById('sub-projects-list');
+        const stepsListEl = document.getElementById('steps-list');
+        const currentSubProjectNameEl = document.getElementById('current-sub-project-name');
+        const branchGraphEl = document.getElementById('branch-graph');
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initUserProfile();
+            loadProjects();
+            setupEventListeners();
+            setupSessionHandling();
+        });
+        
+        // Setup event listeners
+        function setupEventListeners() {
+            // Tab switching
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    this.classList.add('active');
+                    document.getElementById(this.dataset.tab + '-projects').classList.add('active');
+                });
+            });
+            
+            // Modal handling
+            const modals = document.querySelectorAll('.modal');
+            const closeButtons = document.querySelectorAll('.close-modal');
+            
+            // Open project modal
+            document.getElementById('create-project-btn').addEventListener('click', function() {
+                document.getElementById('project-modal-title').textContent = "Create New Project";
+                document.getElementById('project-form').reset();
+                document.getElementById('project-id').value = "";
+                document.getElementById('project-modal').style.display = 'flex';
+            });
+            
+            // Open sub-project modal
+            document.getElementById('create-sub-project-btn').addEventListener('click', function() {
+                document.getElementById('sub-project-modal-title').textContent = "Create New Sub-project";
+                document.getElementById('sub-project-form').reset();
+                document.getElementById('sub-project-id').value = "";
+                
+                // Populate base sub-project dropdown
+                const baseSelect = document.getElementById('base-sub-project');
+                baseSelect.innerHTML = '';
+                subProjects.forEach(subProject => {
+                    const option = document.createElement('option');
+                    option.value = subProject.id;
+                    option.textContent = subProject.name;
+                    baseSelect.appendChild(option);
+                });
+                
+                document.getElementById('sub-project-modal').style.display = 'flex';
+            });
+            
+            // Open step modal
+            document.getElementById('create-step-btn').addEventListener('click', function() {
+                document.getElementById('step-modal-title').textContent = "Create New Step";
+                document.getElementById('step-form').reset();
+                document.getElementById('step-id').value = "";
+                
+                // Populate sub-project dropdown
+                const subProjectSelect = document.getElementById('step-sub-project');
+                subProjectSelect.innerHTML = '';
+                subProjects.forEach(subProject => {
+                    const option = document.createElement('option');
+                    option.value = subProject.id;
+                    option.textContent = subProject.name;
+                    subProjectSelect.appendChild(option);
+                });
+                
+                document.getElementById('step-modal').style.display = 'flex';
+            });
+            
+            // Project completion
+            document.getElementById('complete-project-btn').addEventListener('click', function() {
+                if (currentProjectId) {
+                    showConfirm('Mark this project as completed? This will create a completion step.', async () => {
+                        const response = await fetch(`/flow/projects/${currentProjectId}/complete`, {
+                            method: 'POST'
+                        });
+                        
+                        if (response.ok) {
+                            alert('Project marked as completed');
+                            loadProjects();
+                            loadProjectDetails(currentProjectId);
+                        } else {
+                            alert('Failed to complete project');
+                        }
+                    });
+                }
+            });
+            
+            // Project deletion
+            document.getElementById('delete-project-btn').addEventListener('click', function() {
+                if (currentProjectId) {
+                    showConfirm('Delete this project and all its data? This cannot be undone.', async () => {
+                        const response = await fetch(`/flow/projects/${currentProjectId}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (response.ok) {
+                            alert('Project deleted successfully');
+                            loadProjects();
+                            resetProjectView();
+                        } else {
+                            alert('Failed to delete project');
+                        }
+                    });
+                }
+            });
+            
+            // Merge button
+            document.getElementById('perform-merge-btn').addEventListener('click', function() {
+                const sourceId = document.getElementById('merge-source').value;
+                const targetId = document.getElementById('merge-target').value;
+                const deleteAfterMerge = document.getElementById('delete-after-merge').checked;
+                
+                if (sourceId && targetId && sourceId !== targetId) {
+                    performMerge(sourceId, targetId, deleteAfterMerge);
+                } else {
+                    alert('Please select different sub-projects to merge');
+                }
+            });
+            
+            // Confirm modal
+            document.getElementById('confirm-cancel').addEventListener('click', function() {
+                document.getElementById('confirm-modal').style.display = 'none';
+            });
+            
+            // Close modals
+            closeButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    modals.forEach(modal => modal.style.display = 'none');
+                });
+            });
+            
+            // Close modal when clicking outside
+            window.addEventListener('click', function(event) {
+                modals.forEach(modal => {
+                    if (event.target === modal) {
+                        modal.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Form submissions
+            document.getElementById('project-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const name = document.getElementById('project-name').value;
+                const desc = document.getElementById('project-desc').value;
+                const impact = parseInt(document.getElementById('project-impact').value);
+                
+                const response = await fetch('/flow/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: name, description: desc, total_impact: impact })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    alert('Project created!');
+                    document.getElementById('project-modal').style.display = 'none';
+                    loadProjects();
+                } else {
+                    alert('Error creating project');
+                }
+            });
+            
+            document.getElementById('sub-project-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const name = document.getElementById('sub-project-name').value;
+                const baseId = parseInt(document.getElementById('base-sub-project').value);
+                
+                const response = await fetch(`/flow/projects/${currentProjectId}/branches`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, base_branch_id: baseId })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    alert('Sub-project created!');
+                    document.getElementById('sub-project-modal').style.display = 'none';
+                    loadSubProjects(currentProjectId);
+                } else {
+                    const error = await response.text();
+                    alert('Error: ' + error);
+                }
+            });
+            
+            document.getElementById('step-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const title = document.getElementById('step-title').value;
+                const desc = document.getElementById('step-desc').value;
+                const impact = parseInt(document.getElementById('step-impact').value);
+                const subProjectId = parseInt(document.getElementById('step-sub-project').value);
+                
+                const response = await fetch(`/flow/branches/${subProjectId}/steps`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, description: desc, impact })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    alert('Step created!');
+                    document.getElementById('step-modal').style.display = 'none';
+                    loadSteps(currentSubProjectId);
+                    loadProjectDetails(currentProjectId);
+                } else {
+                    const error = await response.text();
+                    alert('Error: ' + error);
+                }
+            });
+        }
+        
+        // Session handling
+        function setupSessionHandling() {
             if (!window.__fetchPatched) {
                 const _f = window.fetch;
                 window.fetch = (url, opts = {}) => {
-                opts.credentials = 'include';
-                return _f(url, opts);
+                    opts.credentials = 'include';
+                    return _f(url, opts);
                 };
                 window.__fetchPatched = true;
             }
-
-            async function validateSession() {
-                try {
-                const res = await fetch("/test-session", { method: "GET" });
-                if (res.status === 200) {
-                    fetchFlow();
-                    return true;
-                }
-                if (res.status === 403) {
-                    window.location.href = '/login_page?suspended=true';
-                    return false;
-                }
-                return false;
-                } catch (err) {
-                return false;
-                }
-            }
-
-            async function attemptAutoLogin() {
-                try {
-                const res = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({})
-                });
-                if (res.ok) {
-                    console.log("Auto-login successful");
-                    fetchFlow();
-                    return true;
-                }
-                showModal();
-                return false;
-                } catch (err) {
-                showModal();
-                return false;
-                }
-            }
             
-        const ok = await validateSession();
-        if (!ok) {
-            await attemptAutoLogin();
-        }
-        });
-
-        document.addEventListener("DOMContentLoaded", () => {
-        const cfg = window.appConfig || {};
-        const userColors = {
-            bg:  cfg.backgroundColor,
-            hdr: cfg.headerColor,
-            ctr: cfg.contrastingColor,
-            btn: cfg.buttonColor
-        };
-
-        const root = document.documentElement;
-        root.style.setProperty("--bg-color",  userColors.bg);
-        root.style.setProperty("--hdr-color", userColors.hdr);
-        root.style.setProperty("--ctr-color", userColors.ctr);
-        root.style.setProperty("--btn-color", userColors.btn);
-        });
-
-        function showModal() {
-            window.location.href = '/login_page?redirect=/flow_page&warning=true';
-        }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            const toggleButton = document.getElementById("toggle-mobile-nav");
-            const mobileNav = document.getElementById("mobileSubHeader");
-
-            toggleButton.addEventListener("click", function() {
+            document.getElementById("toggle-mobile-nav")?.addEventListener("click", function() {
+                const mobileNav = document.getElementById("mobileSubHeader");
                 if (mobileNav.style.display === "block") {
-                mobileNav.style.display = "none";
+                    mobileNav.style.display = "none";
                 } else {
-                mobileNav.style.display = "block";
+                    mobileNav.style.display = "block";
                 }
             });
-        });
-
-        async function fetchFlow() {
-            console.log("Hello!")
+            
+            sessionStorage.setItem("last_page", "/flow_page");
         }
-
-        window.onload = async () => {
-            try {
-                const response = await fetch("/test-session", {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
+        
+        // Load projects
+        async function loadProjects() {
+            const response = await fetch('/flow/projects');
+            if (response.ok) {
+                projects = await response.json();
+                renderProjects(projects);
+            } else {
+                activeProjectsEl.innerHTML = '<div class="no-projects">Failed to load projects</div>';
+                completedProjectsEl.innerHTML = '<div class="no-projects">Failed to load projects</div>';
+            }
+        }
+        
+        // Render projects
+        function renderProjects(projects) {
+            const activeProjects = projects.filter(p => p.status === 'active');
+            const completedProjects = projects.filter(p => p.status === 'completed');
+            
+            if (activeProjects.length === 0) {
+                activeProjectsEl.innerHTML = '<div class="no-projects">No active projects</div>';
+            } else {
+                activeProjectsEl.innerHTML = '';
+                activeProjects.forEach(project => {
+                    const card = createProjectCard(project);
+                    activeProjectsEl.appendChild(card);
                 });
-
-                if (response.status === 401) {
-                    showModal();
-                } else {
-                    const userInfoResponse = await fetch("/user-info", {
-                        method: "GET",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                    });
-
-                    if (userInfoResponse.ok) {
-                        const userInfo = await userInfoResponse.json();
-                        const username = userInfo.username;
-                        const profilePic = userInfo.profile_picture;
-                        const profilePicElement = document.getElementById("profile-pic");
-
-                        if (profilePic) {
-                            const correctedProfilePic = profilePic.replace(/\\/g, "/");
-                            profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
-                            profilePicElement.classList.remove("no-picture");
-                            profilePicElement.textContent = "";
-                        } else {
-                            profilePicElement.textContent = username[0].toUpperCase();
-                            profilePicElement.classList.add("no-picture");
-                        }
-                    } else {
-                        console.error("Failed to fetch user info");
+            }
+            
+            if (completedProjects.length === 0) {
+                completedProjectsEl.innerHTML = '<div class="no-projects">No completed projects</div>';
+            } else {
+                completedProjectsEl.innerHTML = '';
+                completedProjects.forEach(project => {
+                    const card = createProjectCard(project);
+                    completedProjectsEl.appendChild(card);
+                });
+            }
+        }
+        
+        // Create project card element
+        function createProjectCard(project) {
+            const card = document.createElement('div');
+            card.className = 'project-card';
+            card.dataset.id = project.id;
+            
+            card.innerHTML = `
+                <h3>${project.title} 
+                    <span class="project-status ${project.status === 'active' ? 'status-active' : 'status-completed'}">
+                        ${project.status === 'active' ? 'Active' : 'Completed'}
+                    </span>
+                </h3>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${project.progress_percent}%"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span>${project.progress_percent}% Complete</span>
+                        <span>${project.progress}/${project.total_impact}</span>
+                    </div>
+                </div>
+                <div class="project-meta">
+                    <span>${project.branch_count} sub-projects</span> • 
+                    <span>${project.commit_count} steps</span>
+                </div>
+            `;
+            
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.project-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                currentProjectId = project.id;
+                loadProjectDetails(project.id);
+            });
+            
+            return card;
+        }
+        
+        // Load project details
+        async function loadProjectDetails(projectId) {
+            const response = await fetch(`/flow/projects/${projectId}/details`);
+            if (response.ok) {
+                const project = await response.json();
+                projectTitleEl.textContent = project.title;
+                
+                // Show progress
+                progressFillEl.style.width = `${project.progress_percent}%`;
+                progressPercentEl.textContent = `${project.progress_percent}% Complete`;
+                progressTextEl.textContent = `${project.progress}/${project.total_impact} Impact Points`;
+                progressContainer.style.display = 'block';
+                
+                // Enable buttons
+                document.getElementById('create-sub-project-btn').disabled = false;
+                document.getElementById('create-step-btn').disabled = false;
+                document.getElementById('complete-project-btn').disabled = false;
+                document.getElementById('delete-project-btn').disabled = false;
+                
+                // Load sub-projects
+                loadSubProjects(projectId);
+            }
+        }
+        
+        // Reset project view
+        function resetProjectView() {
+            projectTitleEl.textContent = "Select a Project";
+            progressContainer.style.display = 'none';
+            subProjectsSection.style.display = 'none';
+            stepsSection.style.display = 'none';
+            subProjectsListEl.innerHTML = '';
+            stepsListEl.innerHTML = '';
+            branchGraphEl.innerHTML = '';
+            
+            document.getElementById('create-sub-project-btn').disabled = true;
+            document.getElementById('create-step-btn').disabled = true;
+            document.getElementById('complete-project-btn').disabled = true;
+            document.getElementById('delete-project-btn').disabled = true;
+        }
+        
+        // Load sub-projects
+        async function loadSubProjects(projectId) {
+            const response = await fetch(`/flow/projects/${projectId}/branches`);
+            if (response.ok) {
+                subProjects = await response.json();
+                
+                // For each sub-project, load its steps
+                for (const subProject of subProjects) {
+                    const stepsResponse = await fetch(`/flow/branches/${subProject.id}/steps`);
+                    if (stepsResponse.ok) {
+                        subProject.commits = await stepsResponse.json();
                     }
                 }
-            } catch (error) {
-                console.error("Error during re-login:", error);
+                
+                renderSubProjects(subProjects);
+                
+                // Select the first sub-project by default
+                if (subProjects.length > 0) {
+                    currentSubProjectId = subProjects[0].id;
+                    currentSubProjectNameEl.textContent = subProjects[0].name;
+                    loadSteps(currentSubProjectId);
+                }
+                
+                // Render the graph with commit data
+                renderFlowGraph(subProjects);
+                
+                // Show sub-projects section
+                subProjectsSection.style.display = 'block';
             }
-        };
-
-        function showAccountMenu() {
-            window.location.href = "/account_page";
+        }
+        
+        // Render sub-projects
+        function renderSubProjects(subProjects) {
+            subProjectsListEl.innerHTML = '';
+            
+            subProjects.forEach(subProject => {
+                const item = document.createElement('div');
+                item.className = 'sub-project-item';
+                item.dataset.id = subProject.id;
+                item.draggable = true;
+                
+                if (subProject.id === currentSubProjectId) item.classList.add('active');
+                
+                item.innerHTML = `
+                    <div>
+                        <strong>${subProject.name}</strong>
+                        <div class="branch-meta">${subProject.commit_count} steps</div>
+                    </div>
+                    <div class="sub-project-actions">
+                        ${subProject.name !== 'main' ? `
+                            <button class="delete-sub-project">Delete</button>
+                        ` : ''}
+                    </div>
+                `;
+                
+                // Sub-project selection
+                item.addEventListener('click', (e) => {
+                    if (!e.target.closest('.sub-project-actions')) {
+                        document.querySelectorAll('.sub-project-item').forEach(b => b.classList.remove('active'));
+                        item.classList.add('active');
+                        currentSubProjectId = subProject.id;
+                        currentSubProjectNameEl.textContent = subProject.name;
+                        loadSteps(subProject.id);
+                    }
+                });
+                
+                // Delete sub-project
+                item.querySelector('.delete-sub-project')?.addEventListener('click', async () => {
+                    showConfirm(`Delete sub-project "${subProject.name}" and all its steps?`, async () => {
+                        const response = await fetch(`/flow/branches/${subProject.id}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (response.ok) {
+                            loadSubProjects(currentProjectId);
+                        } else {
+                            alert('Failed to delete sub-project');
+                        }
+                    });
+                });
+                
+                // Drag events
+                item.addEventListener('dragstart', (e) => {
+                    draggedSubProjectId = subProject.id;
+                    item.classList.add('dragging');
+                    e.dataTransfer.setData('text/plain', subProject.id);
+                });
+                
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('dragging');
+                    document.querySelectorAll('.sub-project-item').forEach(b => b.classList.remove('drop-target'));
+                });
+                
+                item.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    item.classList.add('drop-target');
+                });
+                
+                item.addEventListener('dragleave', () => {
+                    item.classList.remove('drop-target');
+                });
+                
+                item.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    item.classList.remove('drop-target');
+                    
+                    const sourceId = draggedSubProjectId;
+                    const targetId = subProject.id;
+                    
+                    if (sourceId && targetId && sourceId !== targetId) {
+                        showConfirm(`Merge sub-project ${getSubProjectName(sourceId)} into ${getSubProjectName(targetId)}?`, () => {
+                            openMergeModal(sourceId, targetId);
+                        });
+                    }
+                });
+                
+                subProjectsListEl.appendChild(item);
+            });
+        }
+        
+        // Get sub-project name by ID
+        function getSubProjectName(subProjectId) {
+            const subProject = subProjects.find(b => b.id == subProjectId);
+            return subProject ? subProject.name : 'Unknown';
+        }
+        
+        // Open merge modal
+        function openMergeModal(sourceId, targetId) {
+            document.getElementById('merge-modal').style.display = 'flex';
+            
+            // Populate sub-project dropdowns
+            const sourceSelect = document.getElementById('merge-source');
+            const targetSelect = document.getElementById('merge-target');
+            
+            sourceSelect.innerHTML = '';
+            targetSelect.innerHTML = '';
+            
+            subProjects.forEach(subProject => {
+                const sourceOption = document.createElement('option');
+                sourceOption.value = subProject.id;
+                sourceOption.textContent = subProject.name;
+                sourceOption.selected = subProject.id == sourceId;
+                sourceSelect.appendChild(sourceOption);
+                
+                const targetOption = document.createElement('option');
+                targetOption.value = subProject.id;
+                targetOption.textContent = subProject.name;
+                targetOption.selected = subProject.id == targetId;
+                targetSelect.appendChild(targetOption);
+            });
+        }
+        
+        // Perform merge
+        async function performMerge(sourceId, targetId, deleteAfterMerge) {
+            const response = await fetch(`/flow/sub-projects/${sourceId}/merge/${targetId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ delete_source: deleteAfterMerge })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                alert(data.message);
+                document.getElementById('merge-modal').style.display = 'none';
+                loadSubProjects(currentProjectId);
+                loadSteps(targetId);
+            } else {
+                const error = await response.text();
+                alert('Failed to merge sub-projects: ' + error);
+            }
+        }
+        
+        // Load steps for a sub-project
+        async function loadSteps(subProjectId) {
+            const response = await fetch(`/flow/branches/${subProjectId}/steps`);
+            if (response.ok) {
+                steps = await response.json();
+                renderSteps(steps);
+                
+                // Show steps section
+                stepsSection.style.display = 'block';
+            }
+        }
+        
+        // Render steps
+        function renderSteps(steps) {
+            stepsListEl.innerHTML = '';
+            
+            // Show steps in reverse chronological order (newest first)
+            steps.slice().reverse().forEach(step => {
+                const stepItem = document.createElement('div');
+                stepItem.className = 'step-item';
+                
+                stepItem.innerHTML = `
+                    <div class="step-header">
+                        <div class="step-title">${step.title}</div>
+                        <div class="step-impact">+${step.impact}</div>
+                    </div>
+                    <div class="step-desc">
+                        ${step.description}
+                    </div>
+                    <div class="step-meta">
+                        <span>${new Date(step.created_at).toLocaleString()}</span>
+                    </div>
+                    <div class="step-actions">
+                        <button class="revert-step">Revert</button>
+                    </div>
+                `;
+                
+                // Revert step
+                stepItem.querySelector('.revert-step').addEventListener('click', async () => {
+                    showConfirm(`Revert this step and all subsequent steps? This action cannot be undone.`, async () => {
+                        const response = await fetch(`/flow/commits/${step.id}/revert`, {
+                            method: 'POST'
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            alert(data.message);
+                            loadSteps(currentSubProjectId);
+                            loadProjectDetails(currentProjectId);
+                        } else {
+                            alert('Failed to revert step');
+                        }
+                    });
+                });
+                
+                stepsListEl.appendChild(stepItem);
+            });
         }
 
-        document.getElementById("profile-pic").addEventListener("click", showAccountMenu);
-        sessionStorage.setItem("last_page", "/flow_page");
+        // Update renderFlowGraph to handle various states
+        function renderFlowGraph(subProjects) {
+            branchGraphEl.innerHTML = '';
+            
+            // Don't render if no sub-projects
+            if (subProjects.length === 0) {
+                branchGraphEl.innerHTML = '<p class="no-graph">Create sub-projects to visualize workflow</p>';
+                return;
+            }
+            
+            try {
+                // Generate Mermaid graph definition
+                let graphDefinition = "graph TD\n";
+                let hasConnections = false;
+                
+                // Add nodes
+                subProjects.forEach(sp => {
+                    // Get last step if exists
+                    let label = sp.name;
+                    if (sp.commits && sp.commits.length > 0) {
+                        const lastStep = sp.commits[sp.commits.length - 1];
+                        label = `${sp.name}\\n"${lastStep.title}"`;
+                    }
+                    graphDefinition += `    ${sp.id}["${label}"]\n`;
+                });
+                
+                // Add edges
+                subProjects.forEach(sp => {
+                    if (sp.base_branch_id) {
+                        graphDefinition += `    ${sp.base_branch_id} --> ${sp.id}\n`;
+                        hasConnections = true;
+                    }
+                });
+                
+                // If no connections, add the main branch at least
+                if (!hasConnections && subProjects.length > 0) {
+                    const mainBranch = subProjects.find(sp => sp.name === 'main');
+                    if (mainBranch) {
+                        graphDefinition += `    ${mainBranch.id}["${mainBranch.name}"]\n`;
+                    }
+                }
+                
+                // Create graph container
+                const graphDiv = document.createElement('div');
+                graphDiv.className = 'mermaid';
+                graphDiv.textContent = graphDefinition;
+                branchGraphEl.appendChild(graphDiv);
+                
+                // Render the graph
+                mermaid.init({ 
+                    startOnLoad: false,
+                    theme: 'dark',
+                    securityLevel: 'loose',
+                    flowchart: { 
+                        curve: 'basis',
+                        useMaxWidth: false
+                    }
+                }, [graphDiv]);
+            } catch (e) {
+                branchGraphEl.innerHTML = `<p class="graph-error">Error rendering workflow: ${e.message}</p>`;
+            }
+        }
+        
+        // Show custom confirmation
+        function showConfirm(message, callback) {
+            document.getElementById('confirm-message').textContent = message;
+            document.getElementById('confirm-modal').style.display = 'flex';
+            
+            // Remove previous event listeners
+            const okBtn = document.getElementById('confirm-ok');
+            const newOkBtn = okBtn.cloneNode(true);
+            okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+            
+            newOkBtn.addEventListener('click', function() {
+                document.getElementById('confirm-modal').style.display = 'none';
+                callback();
+            });
+        }
+        
+        // Initialize user profile
+        async function initUserProfile() {
+            try {
+                const response = await fetch("/user-info");
+                if (response.ok) {
+                    const userInfo = await response.json();
+                    const profilePic = document.getElementById("profile-pic");
+                    
+                    if (userInfo.profile_picture) {
+                        profilePic.style.backgroundImage = `url(${userInfo.profile_picture.replace(/\\/g, "/")})`;
+                        profilePic.classList.remove("no-picture");
+                        profilePic.textContent = "";
+                    } else {
+                        profilePic.textContent = userInfo.username[0].toUpperCase();
+                        profilePic.classList.add("no-picture");
+                    }
+                    
+                    profilePic.addEventListener('click', () => {
+                        window.location.href = "/account_page";
+                    });
+                }
+            } catch (error) {
+                console.error("Error loading user info:", error);
+            }
+        }
     </script>
+</body>
+</html>
