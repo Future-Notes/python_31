@@ -1439,6 +1439,7 @@
                     item.classList.remove('drop-target');
                 });
                 
+                // UPDATED DROP HANDLER - Shift modifier support
                 item.addEventListener('drop', (e) => {
                     e.preventDefault();
                     item.classList.remove('drop-target');
@@ -1447,9 +1448,19 @@
                     const targetId = subProject.id;
                     
                     if (sourceId && targetId && sourceId !== targetId) {
-                        showConfirm(`Merge sub-project ${getSubProjectName(sourceId)} into ${getSubProjectName(targetId)}?`, () => {
-                            openMergeModal(sourceId, targetId);
-                        });
+                        // Check if shift key is pressed for power user shortcut
+                        const deleteAfterMerge = e.shiftKey;
+                        
+                        // Show confirmation only if shift isn't pressed
+                        if (e.shiftKey) {
+                            // Power user mode - no confirmation
+                            performMerge(sourceId, targetId, true);
+                        } else {
+                            // Normal mode - show confirmation
+                            showConfirm(`Merge sub-project ${getSubProjectName(sourceId)} into ${getSubProjectName(targetId)}?`, () => {
+                                performMerge(sourceId, targetId, false);
+                            });
+                        }
                     }
                 });
                 
