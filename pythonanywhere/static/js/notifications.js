@@ -5,8 +5,8 @@
     '/index',
     '/group-notes',
     '/scheduler-page',
-    '/todo_page'
-    // ... other routes
+    '/todo_page',
+    '/flow_page'
   ];
 
   // ——— STATE ———

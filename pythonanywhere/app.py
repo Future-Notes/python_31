@@ -47,6 +47,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
+import requests
 
 
 # ------------------------------Global variables--------------------------------
@@ -5011,29 +5012,72 @@ def scan_dev_vs_master():
 @require_session_key
 @require_admin
 def merge_dev_into_master():
+    # GitHub API configuration
+    GITHUB_REPO_OWNER = "BosbesplaysYT" 
+    GITHUB_REPO_NAME = "python_31"
     try:
-        repo = get_repo(REPO_PATH)
-        # Ensure origin info is up‑to‑date
-        origin = repo.remote("origin")
-        origin.fetch()
-
-        # Checkout master (or main)
-        target_branch = "master" if "master" in repo.heads else "main"
-        repo.git.checkout(target_branch)
-        # Merge origin/dev
-        merge_index = repo.git.merge("origin/dev", m="Auto-merged dev into master")
-
-        return jsonify({
-            "status": "Merge completed successfully",
-            "merge_output": merge_index
-        })
-
-    except GitCommandError as e:
-        app.logger.error("Merge failed: %s", e.stderr)
-        return jsonify({"error": "Merge failed", "details": e.stderr}), 500
+        load_secrets()
     except Exception as e:
-        app.logger.error("Unexpected error: %s", str(e))
-        return jsonify({"error": "Unexpected failure", "details": str(e)}), 500
+        app.logger.error("Failed to load secrets: %s", str(e))
+        return jsonify({"error": "Failed to load GitHub secrets", "details": str(e)}), 500
+    GITHUB_TOKEN = app.config["GITHUB_PERSONAL_ACCESS_TOKEN"]
+    HEADERS = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    # Step 1: Get default branch
+    try:
+        repo_url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}"
+        response = requests.get(repo_url, headers=HEADERS)
+        if response.status_code != 200:
+            app.logger.error("Failed to get repo info: %s", response.text)
+            return jsonify({"error": "Failed to get repository information", 
+                           "details": response.text}), 500
+        default_branch = response.json()["default_branch"]
+    except Exception as e:
+        app.logger.error("Error getting default branch: %s", str(e))
+        return jsonify({"error": "Error getting default branch", 
+                       "details": str(e)}), 500
+
+    # Step 2: Create pull request
+    try:
+        pr_url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/pulls"
+        pr_data = {
+            "title": "Automatic PR: Merge dev into production",
+            "head": "dev",
+            "base": default_branch,
+            "body": "Automatically generated PR to merge development changes"
+        }
+        response = requests.post(pr_url, headers=HEADERS, json=pr_data)
+        if response.status_code != 201:
+            app.logger.error("PR creation failed: %s", response.text)
+            return jsonify({"error": "PR creation failed", 
+                           "details": response.text}), 500
+        pr_number = response.json()["number"]
+    except Exception as e:
+        app.logger.error("Error creating PR: %s", str(e))
+        return jsonify({"error": "PR creation error", 
+                       "details": str(e)}), 500
+
+    # Step 3: Merge the pull request
+    try:
+        merge_url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/pulls/{pr_number}/merge"
+        response = requests.put(merge_url, headers=HEADERS)
+        if response.status_code != 200:
+            app.logger.error("Merge failed: %s", response.text)
+            return jsonify({"error": "Merge failed", 
+                           "details": response.text}), 500
+    except Exception as e:
+        app.logger.error("Error merging PR: %s", str(e))
+        return jsonify({"error": "Merge error", 
+                       "details": str(e)}), 500
+
+    return jsonify({
+        "status": "Pull request created and merged successfully",
+        "pr_number": pr_number,
+        "merge_sha": response.json().get("sha")
+    })
 
 
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])

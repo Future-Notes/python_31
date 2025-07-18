@@ -164,30 +164,30 @@
         
         .mobile-sub-header {
             display: none;
-            background-color: var(--hdr-color);
+            background-color: var(--bg-color);
             padding: 10px 0;
             text-align: center;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        }
-        
-        .mobile-sub-header a {
+            }
+
+            .mobile-sub-header a {
             display: block;
             color: white;
             text-decoration: none;
             padding: 10px;
             font-size: 18px;
-        }
-        
-        .mobile-sub-header a.active::after {
+            }
+
+            .mobile-sub-header a.active::after {
             content: "";
             display: block;
             height: 2px;
             width: 100%;
             background-color: white;
         }
-        
+
         .mobile-sub-header a:hover::after {
-            background-color: lightgray;
+        background-color: lightgray;
         }
         
         .profile-pic {
@@ -661,6 +661,35 @@
             --success-color: #5cb85c;
             --danger-color: #d9534f;
         }
+
+        @media (max-width: 600px) {
+            .desktop-nav {
+                display: none;
+            }
+            
+            .mobile-header {
+                display: flex;
+            }
+            
+            .toggle-mobile-nav {
+                display: block;
+            }
+            
+            .homepage-link {
+                display: none;
+            }
+            #search-input {
+                width: 95%;
+            }
+            #add-menu button {
+                padding: 4px;
+            }
+
+            #update-menu button {
+                padding: 4px;
+            }
+
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -765,7 +794,7 @@
                 </div>
                 
                 <div class="graph-container" id="branch-graph">
-                    <!-- Mermaid graph will be rendered here -->
+                    <div class="graph-placeholder">Select a project to view workflow</div>
                 </div>
                 
                 <div class="sub-projects-section" id="sub-projects-section" style="display: none;">
@@ -950,6 +979,18 @@
             loadProjects();
             setupEventListeners();
             setupSessionHandling();
+            // Initialize Mermaid
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: 'default',
+                securityLevel: 'loose',
+                flowchart: {
+                    curve: 'basis',
+                    useMaxWidth: false,
+                    htmlLabels: true
+                },
+                fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
+            });
         });
         
         // Setup event listeners
@@ -1531,9 +1572,8 @@
         function renderFlowGraph(subProjects) {
             branchGraphEl.innerHTML = '';
             
-            // Don't render if no sub-projects
             if (subProjects.length === 0) {
-                branchGraphEl.innerHTML = '<p class="no-graph">Create sub-projects to visualize workflow</p>';
+                branchGraphEl.innerHTML = '<div class="graph-placeholder">Create sub-projects to visualize workflow</div>';
                 return;
             }
             
@@ -1542,13 +1582,16 @@
                 let graphDefinition = "graph TD\n";
                 let hasConnections = false;
                 
-                // Add nodes
+                // Add nodes with proper escaping
                 subProjects.forEach(sp => {
-                    // Get last step if exists
                     let label = sp.name;
                     if (sp.commits && sp.commits.length > 0) {
                         const lastStep = sp.commits[sp.commits.length - 1];
-                        label = `${sp.name}\\n"${lastStep.title}"`;
+                        // Escape special characters
+                        const safeTitle = lastStep.title
+                            .replace(/"/g, '&quot;')
+                            .replace(/\n/g, ' ');
+                        label = `${sp.name}\\n"${safeTitle}"`;
                     }
                     graphDefinition += `    ${sp.id}["${label}"]\n`;
                 });
@@ -1561,14 +1604,6 @@
                     }
                 });
                 
-                // If no connections, add the main branch at least
-                if (!hasConnections && subProjects.length > 0) {
-                    const mainBranch = subProjects.find(sp => sp.name === 'main');
-                    if (mainBranch) {
-                        graphDefinition += `    ${mainBranch.id}["${mainBranch.name}"]\n`;
-                    }
-                }
-                
                 // Create graph container
                 const graphDiv = document.createElement('div');
                 graphDiv.className = 'mermaid';
@@ -1576,17 +1611,9 @@
                 branchGraphEl.appendChild(graphDiv);
                 
                 // Render the graph
-                mermaid.init({ 
-                    startOnLoad: false,
-                    theme: 'dark',
-                    securityLevel: 'loose',
-                    flowchart: { 
-                        curve: 'basis',
-                        useMaxWidth: false
-                    }
-                }, [graphDiv]);
+                mermaid.init(undefined, graphDiv);
             } catch (e) {
-                branchGraphEl.innerHTML = `<p class="graph-error">Error rendering workflow: ${e.message}</p>`;
+                branchGraphEl.innerHTML = `<div class="graph-error">Error rendering workflow: ${e.message}</div>`;
             }
         }
         
