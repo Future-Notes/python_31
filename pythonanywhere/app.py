@@ -5152,7 +5152,7 @@ def deploy_version(vid):
 @require_admin
 def get_commits():
     repo = get_repo(REPO_PATH)
-    branch = request.args.get('branch', 'main')
+    branch = request.args.get('branch', 'master')
     commits = []
     for commit in repo.iter_commits(branch):
         commits.append({
