@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Management Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        .card { transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); }
+        .commit-card { cursor: pointer; }
+        .commit-card:hover { background-color: #f8f9fa; }
+        .version-badge { font-size: 0.8rem; }
+        .active-version { border-left: 5px solid #0d6efd; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 bg-light p-4 min-vh-100">
+                <h3 class="mb-4">Git Dashboard</h3>
+                <ul class="nav nav-pills flex-column">
+                    <li class="nav-item mb-2">
+                        <a class="nav-link active" href="#" data-bs-toggle="tab" data-target="#dashboard">
+                            <i class="bi bi-speedometer2 me-2"></i>Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item mb-2">
+                        <a class="nav-link" href="#" data-bs-toggle="tab" data-target="#versions">
+                            <i class="bi bi-tag me-2"></i>Version Management
+                        </a>
+                    </li>
+                    <li class="nav-item mb-2">
+                        <a class="nav-link" href="#" data-bs-toggle="tab" data-target="#commits">
+                            <i class="bi bi-code-square me-2"></i>Commits
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="tab" data-target="#pull-requests">
+                            <i class="bi bi-git me-2"></i>Pull Requests
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 p-4">
+                <!-- Dashboard Tab -->
+                <div id="dashboard" class="tab-content">
+                    <h2 class="mb-4">Dashboard Overview</h2>
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <div class="card shadow-sm">
+                                <div class="card-body">
+                                    <h5 class="card-title">Repository Status</h5>
+                                    <div id="repo-status">Checking...</div>
+                                    <button class="btn btn-primary mt-3" id="check-updates">
+                                        <i class="bi bi-arrow-repeat me-2"></i>Check Updates
+                                    </button>
+                                    <button class="btn btn-success mt-3 ms-2" id="update-btn">
+                                        <i class="bi bi-cloud-download me-2"></i>Update Now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-4">
+                            <div class="card shadow-sm">
+                                <div class="card-body">
+                                    <h5 class="card-title">Current Version</h5>
+                                    <div id="current-version">Loading...</div>
+                                    <button class="btn btn-info mt-3" id="refresh-versions">
+                                        <i class="bi bi-arrow-repeat me-2"></i>Refresh
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title d-flex justify-content-between">
+                                <span>Recent Commits</span>
+                                <button class="btn btn-sm btn-outline-secondary" id="load-commits">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                </button>
+                            </h5>
+                            <div id="commit-list" class="list-group"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Version Management Tab -->
+                <div id="versions" class="tab-content d-none">
+                    <h2 class="mb-4">Version Management</h2>
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title">Create New Version</h5>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <input type="text" class="form-control mb-2" id="version-number" placeholder="Version (e.g., 1.2.0)">
+                                </div>
+                                <div class="col-md-4">
+                                    <select class="form-select mb-2" id="version-type">
+                                        <option value="major">Major Release</option>
+                                        <option value="minor">Minor Release</option>
+                                        <option value="patch">Patch</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <button class="btn btn-primary w-100" id="create-version">
+                                        <i class="bi bi-plus-circle me-2"></i>Create Version
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea class="form-control mt-2" id="version-description" rows="3" placeholder="Release notes"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="card-title">Version History</h5>
+                            <div id="version-list" class="list-group"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Commits Tab -->
+                <div id="commits" class="tab-content d-none">
+                    <h2 class="mb-4">Commit History</h2>
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-3">
+                                <select class="form-select w-25" id="branch-select">
+                                    <option value="main">main</option>
+                                    <option value="dev">dev</option>
+                                </select>
+                                <button class="btn btn-primary" id="refresh-commits">
+                                    <i class="bi bi-arrow-repeat me-2"></i>Refresh
+                                </button>
+                            </div>
+                            <div id="commit-history" class="list-group"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pull Requests Tab -->
+                <div id="pull-requests" class="tab-content d-none">
+                    <h2 class="mb-4">Pull Request Management</h2>
+                    <button class="btn btn-success mb-4" id="create-pr-btn">
+                        <i class="bi bi-plus-circle me-2"></i>Create New PR
+                    </button>
+                    
+                    <div class="card shadow-sm mb-4 d-none" id="pr-form">
+                        <div class="card-body">
+                            <h5 class="card-title">Create Pull Request</h5>
+                            <div class="mb-3">
+                                <input type="text" class="form-control" id="pr-title" placeholder="Title">
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <select class="form-select" id="pr-base">
+                                        <option value="main">Base: main</option>
+                                        <option value="dev">Base: dev</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <select class="form-select" id="pr-head">
+                                        <option value="dev">Head: dev</option>
+                                        <option value="main">Head: main</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <textarea class="form-control mb-3" id="pr-body" rows="3" placeholder="Description"></textarea>
+                            <button class="btn btn-primary" id="submit-pr">Create PR</button>
+                            <button class="btn btn-secondary" id="cancel-pr">Cancel</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="card-title">Open Pull Requests</h5>
+                            <div id="pr-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
+            }
+
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    initDashboard();
+                    return true;
+                }
+                if (res.status === 403) {
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    initDashboard();
+                    return true;
+                }
+                showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
+        }
+        });
+
+        function showModal() {
+            window.location.href = '/login_page?redirect=/version-management&warning=true';
+        }
+        // DOM Elements
+        const tabs = document.querySelectorAll('.nav-link');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const commitList = document.getElementById('commit-list');
+        const versionList = document.getElementById('version-list');
+        const commitHistory = document.getElementById('commit-history');
+        const prList = document.getElementById('pr-list');
+        const repoStatus = document.getElementById('repo-status');
+        
+        // Tab Switching
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(c => c.classList.add('d-none'));
+                
+                tab.classList.add('active');
+                document.querySelector(tab.dataset.target).classList.remove('d-none');
+                
+                // Load data when tab is activated
+                if (tab.dataset.target === '#versions') loadVersions();
+                if (tab.dataset.target === '#commits') loadCommitHistory();
+                if (tab.dataset.target === '#pull-requests') loadPRs();
+            });
+        });
+
+        // Load initial data
+        function initDashboard() {
+            checkUpdates();
+            loadCommits();
+            loadCurrentVersion();
+        }
+
+        // API Functions
+        async function checkUpdates() {
+            repoStatus.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Checking...';
+            try {
+                const response = await fetch('/admin/scan-updates');
+                const data = await response.json();
+                
+                if (data.update_available) {
+                    repoStatus.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            ${data.commits_behind} commits behind remote
+                        </div>
+                    `;
+                } else {
+                    repoStatus.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            Repository is up to date
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                repoStatus.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-x-circle me-2"></i>
+                        Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function loadCommits() {
+            commitList.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+            try {
+                const response = await fetch('/admin/commits?limit=5');
+                const commits = await response.json();
+                
+                let html = '';
+                commits.slice(0, 5).forEach(commit => {
+                    html += `
+                        <div class="list-group-item commit-card">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${commit.message.split('\n')[0]}</h6>
+                                <small>${new Date(commit.date).toLocaleDateString()}</small>
+                            </div>
+                            <small class="text-muted">${commit.author} • ${commit.sha}</small>
+                        </div>
+                    `;
+                });
+                commitList.innerHTML = html;
+            } catch (error) {
+                commitList.innerHTML = `<div class="alert alert-danger">Error loading commits</div>`;
+            }
+        }
+
+        // Version Management Functions
+        async function loadVersions() {
+            versionList.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+            try {
+                const response = await fetch('/admin/versions');
+                const versions = await response.json();
+                
+                let html = '';
+                versions.forEach(version => {
+                    html += `
+                        <div class="list-group-item ${version.is_production ? 'active-version' : ''}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-1">${version.version} ${version.is_production ? '<span class="badge bg-success">Production</span>' : ''}</h5>
+                                    <p class="mb-1">${version.description}</p>
+                                    <small>${new Date(version.date).toLocaleString()}</small>
+                                </div>
+                                <div>
+                                    ${!version.is_production ? `
+                                        <button class="btn btn-sm btn-success deploy-btn" data-id="${version.id}">
+                                            <i class="bi bi-cloud-arrow-up"></i> Deploy
+                                        </button>
+                                    ` : ''}
+                                    <button class="btn btn-sm btn-danger delete-btn" data-id="${version.id}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                versionList.innerHTML = html || '<div class="text-center py-4">No versions found</div>';
+                
+                // Add event listeners
+                document.querySelectorAll('.deploy-btn').forEach(btn => {
+                    btn.addEventListener('click', () => deployVersion(btn.dataset.id));
+                });
+                
+                document.querySelectorAll('.delete-btn').forEach(btn => {
+                    btn.addEventListener('click', () => deleteVersion(btn.dataset.id));
+                });
+            } catch (error) {
+                versionList.innerHTML = `<div class="alert alert-danger">Error loading versions: ${error.message}</div>`;
+            }
+        }
+
+        async function createVersion() {
+            const versionNumber = document.getElementById('version-number').value;
+            const description = document.getElementById('version-description').value;
+            
+            if (!versionNumber) {
+                alert('Please enter a version number');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/versions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        version: versionNumber,
+                        description: description
+                    })
+                });
+                
+                if (response.ok) {
+                    alert('Version created successfully!');
+                    document.getElementById('version-number').value = '';
+                    document.getElementById('version-description').value = '';
+                    loadVersions();
+                    loadCurrentVersion();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create version');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function deployVersion(versionId) {
+            if (!confirm('Deploy this version to production?')) return;
+            
+            try {
+                const response = await fetch(`/admin/versions/${versionId}/deploy`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert('Version deployed successfully!');
+                    loadVersions();
+                    loadCurrentVersion();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Deployment failed');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function deleteVersion(versionId) {
+            if (!confirm('Permanently delete this version?')) return;
+            
+            try {
+                const response = await fetch(`/admin/versions/${versionId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert('Version deleted!');
+                    loadVersions();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Deletion failed');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function loadCurrentVersion() {
+            try {
+                const response = await fetch('/admin/versions');
+                const versions = await response.json();
+                const productionVersion = versions.find(v => v.is_production);
+                
+                if (productionVersion) {
+                    document.getElementById('current-version').innerHTML = `
+                        <div class="d-flex align-items-center">
+                            <span class="fs-4 me-2">${productionVersion.version}</span>
+                            <span class="badge bg-success">Production</span>
+                        </div>
+                        <p class="mt-2">${productionVersion.description}</p>
+                        <small>Deployed: ${new Date(productionVersion.date).toLocaleDateString()}</small>
+                    `;
+                } else {
+                    document.getElementById('current-version').innerHTML = `
+                        <div class="alert alert-warning">No production version set</div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('current-version').innerHTML = `
+                    <div class="alert alert-danger">Error loading current version</div>
+                `;
+            }
+        }
+
+        // Commit Management Functions
+        async function loadCommitHistory() {
+            commitHistory.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+            const branch = document.getElementById('branch-select').value;
+            
+            try {
+                const response = await fetch(`/admin/commits?branch=${branch}`);
+                const commits = await response.json();
+                
+                let html = '';
+                commits.forEach(commit => {
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h6 class="mb-1">${commit.message.split('\n')[0]}</h6>
+                                    <small class="text-muted">${commit.author} • ${commit.sha}</small>
+                                </div>
+                                <div class="text-end">
+                                    <small>${new Date(commit.date).toLocaleString()}</small>
+                                    <div class="mt-2">
+                                        <button class="btn btn-sm btn-warning revert-btn" data-sha="${commit.full_sha}">
+                                            <i class="bi bi-arrow-counterclockwise"></i> Revert
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                commitHistory.innerHTML = html || '<div class="text-center py-4">No commits found</div>';
+                
+                // Add event listeners
+                document.querySelectorAll('.revert-btn').forEach(btn => {
+                    btn.addEventListener('click', () => revertCommit(btn.dataset.sha));
+                });
+            } catch (error) {
+                commitHistory.innerHTML = `<div class="alert alert-danger">Error loading commits: ${error.message}</div>`;
+            }
+        }
+
+        async function revertCommit(commitSha) {
+            if (!confirm(`Create a revert commit for ${commitSha.slice(0,7)}?`)) return;
+            
+            try {
+                const response = await fetch('/admin/commits/revert', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ sha: commitSha })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`Revert PR created: #${result.pr.number}`);
+                    loadPRs();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Revert failed');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Pull Request Management Functions
+        async function loadPRs() {
+            prList.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+            
+            try {
+                const response = await fetch('/admin/pull-requests');
+                const prs = await response.json();
+                
+                let html = '';
+                prs.filter(pr => pr.state === 'open').forEach(pr => {
+                    html += `
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <h5 class="card-title">
+                                            <a href="${pr.html_url}" target="_blank">#${pr.number}: ${pr.title}</a>
+                                        </h5>
+                                        <p class="card-text">${pr.body || 'No description'}</p>
+                                        <div class="d-flex gap-2">
+                                            <span class="badge bg-primary">${pr.base.ref} ← ${pr.head.ref}</span>
+                                            <span class="badge bg-info">Commits: ${pr.commits}</span>
+                                            <span class="badge bg-secondary">Changed Files: ${pr.changed_files}</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-end">
+                                        <button class="btn btn-success merge-btn" data-number="${pr.number}">
+                                            <i class="bi bi-git"></i> Merge
+                                        </button>
+                                        <button class="btn btn-danger close-btn" data-number="${pr.number}">
+                                            <i class="bi bi-x-circle"></i> Close
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                prList.innerHTML = html || '<div class="text-center py-4">No open pull requests</div>';
+                
+                // Add event listeners
+                document.querySelectorAll('.merge-btn').forEach(btn => {
+                    btn.addEventListener('click', () => mergePR(btn.dataset.number));
+                });
+                
+                document.querySelectorAll('.close-btn').forEach(btn => {
+                    btn.addEventListener('click', () => closePR(btn.dataset.number));
+                });
+            } catch (error) {
+                prList.innerHTML = `<div class="alert alert-danger">Error loading PRs: ${error.message}</div>`;
+            }
+        }
+
+        async function createPR() {
+            const title = document.getElementById('pr-title').value;
+            const base = document.getElementById('pr-base').value;
+            const head = document.getElementById('pr-head').value;
+            const body = document.getElementById('pr-body').value;
+            
+            if (!title) {
+                alert('Please enter a PR title');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/pull-requests/create', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        title: title,
+                        base: base,
+                        head: head,
+                        body: body
+                    })
+                });
+                
+                if (response.ok) {
+                    const pr = await response.json();
+                    alert(`PR created successfully: #${pr.number}`);
+                    document.getElementById('pr-form').classList.add('d-none');
+                    document.getElementById('pr-title').value = '';
+                    document.getElementById('pr-body').value = '';
+                    loadPRs();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'PR creation failed');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function mergePR(prNumber) {
+            if (!confirm(`Merge PR #${prNumber}?`)) return;
+            
+            try {
+                const response = await fetch(`/admin/pull-requests/${prNumber}/merge`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert(`PR #${prNumber} merged successfully!`);
+                    loadPRs();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Merge failed');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function closePR(prNumber) {
+            if (!confirm(`Close PR #${prNumber} without merging?`)) return;
+            
+            try {
+                const response = await fetch(`/admin/pull-requests/${prNumber}/close`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert(`PR #${prNumber} closed`);
+                    loadPRs();
+                } else {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Close failed');
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Add missing event listeners
+        document.getElementById('create-version').addEventListener('click', createVersion);
+        document.getElementById('refresh-commits').addEventListener('click', loadCommitHistory);
+        document.getElementById('branch-select').addEventListener('change', loadCommitHistory);
+        document.getElementById('create-pr-btn').addEventListener('click', () => {
+            document.getElementById('pr-form').classList.toggle('d-none');
+        });
+        document.getElementById('cancel-pr').addEventListener('click', () => {
+            document.getElementById('pr-form').classList.add('d-none');
+        });
+        document.getElementById('submit-pr').addEventListener('click', createPR);
+
+        // Event Listeners
+        document.getElementById('check-updates').addEventListener('click', checkUpdates);
+        document.getElementById('update-btn').addEventListener('click', () => {
+            fetch('/admin/update', { method: 'POST' })
+                .then(() => alert('Update initiated. Refresh in a few minutes.'))
+                .catch(err => alert('Error: ' + err.message));
+        });
+
+        document.getElementById('refresh-versions').addEventListener('click', loadCurrentVersion);
+        document.getElementById('load-commits').addEventListener('click', loadCommits);
+    </script>
+</body>
+</html>
