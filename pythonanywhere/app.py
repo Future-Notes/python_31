@@ -5153,8 +5153,43 @@ def deploy_version(vid):
 def get_commits():
     repo = get_repo(REPO_PATH)
     branch = request.args.get('branch', 'master')
+    limit = request.args.get('limit', default=None, type=int)
+    
+    # Handle invalid limit values
+    if limit is not None and limit < 0:
+        return jsonify({"error": "Limit must be non-negative"}), 400
+
+    try:
+        # First try to get commits normally
+        if limit is not None:
+            commit_generator = repo.iter_commits(branch, max_count=limit)
+        else:
+            commit_generator = repo.iter_commits(branch)
+            
+    except GitCommandError as e:
+        if "bad revision" in str(e).lower():
+            # Branch doesn't exist locally - fetch from remote
+            try:
+                repo.remotes.origin.fetch()
+                # Retry with the same branch after fetching
+                if limit is not None:
+                    commit_generator = repo.iter_commits(branch, max_count=limit)
+                else:
+                    commit_generator = repo.iter_commits(branch)
+            except GitCommandError as fetch_error:
+                # Handle case where branch doesn't exist even after fetch
+                if "bad revision" in str(fetch_error).lower():
+                    return jsonify({"error": f"Revision/branch '{branch}' not found"}), 404
+                # Handle other fetch errors
+                app.logger.error(f"Git fetch error: {str(fetch_error)}")
+                return jsonify({"error": "Error fetching from remote repository"}), 500
+        else:
+            # Handle other Git errors
+            app.logger.error(f"Git command error: {str(e)}")
+            return jsonify({"error": "Error accessing repository"}), 500
+
     commits = []
-    for commit in repo.iter_commits(branch):
+    for commit in commit_generator:
         commits.append({
             "sha": commit.hexsha[:7],
             "full_sha": commit.hexsha,
