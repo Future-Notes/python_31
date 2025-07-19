@@ -79,6 +79,8 @@ app.config['LOGO_URL'] = 'https://bosbes.eu.pythonanywhere.com/static/android-ch
 app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
 app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Disables HTTPS check
+GITHUB_REPO_OWNER = "BosbesplaysYT" 
+GITHUB_REPO_NAME = "python_31"
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -154,6 +156,15 @@ class AppSecret(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(64), unique=True, nullable=False)
     value = db.Column(db.String(256), nullable=False)
+
+class Version(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    version_number = db.Column(db.String(20), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    git_tag = db.Column(db.String(50), nullable=False)
+    commit_sha = db.Column(db.String(40), nullable=False)
+    is_production = db.Column(db.Boolean, default=False)
 
 class User(db.Model):
     __tablename__ = 'user'
@@ -2290,6 +2301,10 @@ def tos():
 def privacy_policy():
     return render_template("privacy-policy.html")
 
+@app.route('/version-management')
+def version_management():
+    return render_template("version_management.html")
+
 #---------------------------------API routes--------------------------------
 
 # Flow routes:
@@ -2524,7 +2539,7 @@ def create_step(branch_id):
 
 @app.route('/flow/commits/<int:commit_id>/revert', methods=['POST'])
 @require_session_key
-def revert_commit(commit_id):
+def revert_commit_flow(commit_id):
     commit = FlowCommit.query.get_or_404(commit_id)
     branch = FlowBranch.query.get(commit.branch_id)
     project = FlowProject.query.get(branch.project_id)
@@ -5025,14 +5040,12 @@ def scan_dev_vs_master():
 @require_admin
 def merge_dev_into_master():
     # GitHub API configuration
-    GITHUB_REPO_OWNER = "BosbesplaysYT" 
-    GITHUB_REPO_NAME = "python_31"
+    GITHUB_TOKEN = app.config["GITHUB_PERSONAL_ACCESS_TOKEN"]
     try:
         load_secrets()
     except Exception as e:
         app.logger.error("Failed to load secrets: %s", str(e))
         return jsonify({"error": "Failed to load GitHub secrets", "details": str(e)}), 500
-    GITHUB_TOKEN = app.config["GITHUB_PERSONAL_ACCESS_TOKEN"]
     HEADERS = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
@@ -5090,6 +5103,161 @@ def merge_dev_into_master():
         "pr_number": pr_number,
         "merge_sha": response.json().get("sha")
     })
+
+@app.route('/admin/versions', methods=['GET', 'POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def versions():
+    if request.method == 'GET':
+        versions = Version.query.order_by(Version.created_at.desc()).all()
+        return jsonify([{
+            'id': v.id,
+            'version': v.version_number,
+            'description': v.description,
+            'date': v.created_at.isoformat(),
+            'is_production': v.is_production
+        } for v in versions])
+    
+    data = request.json
+    repo = get_repo(REPO_PATH)
+    new_tag = repo.create_tag(data['version'], message=data['description'])
+    version = Version(
+        version_number=data['version'],
+        description=data['description'],
+        git_tag=new_tag.name,
+        commit_sha=new_tag.commit.hexsha
+    )
+    db.session.add(version)
+    db.session.commit()
+    return jsonify({"status": "Version created"}), 201
+
+@app.route('/admin/versions/<int:vid>/deploy', methods=['POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def deploy_version(vid):
+    version = Version.query.get(vid)
+    Version.query.update({'is_production': False})
+    version.is_production = True
+    db.session.commit()
+    
+    # Reset to this version in production
+    subprocess.run(['git', 'reset', '--hard', version.git_tag], cwd=REPO_PATH)
+    return jsonify({"status": f"Version {version.version_number} deployed"})
+
+@app.route('/admin/commits', methods=['GET'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def get_commits():
+    repo = get_repo(REPO_PATH)
+    branch = request.args.get('branch', 'main')
+    commits = []
+    for commit in repo.iter_commits(branch):
+        commits.append({
+            "sha": commit.hexsha[:7],
+            "full_sha": commit.hexsha,
+            "author": commit.author.name,
+            "date": commit.authored_datetime.isoformat(),
+            "message": commit.message
+        })
+    return jsonify(commits)
+
+@app.route('/admin/commits/revert', methods=['POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def revert_commit():
+    data = request.json
+    headers = {
+        "Authorization": f"token {app.config['GITHUB_PERSONAL_ACCESS_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/commits/{data['sha']}/revert"
+    response = requests.post(url, headers=headers, json={"maintainer_can_modify": True})
+    return jsonify(response.json()), response.status_code
+
+@app.route('/admin/pull-requests', methods=['GET'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def pull_requests():
+    headers = {
+        "Authorization": f"token {app.config['GITHUB_PERSONAL_ACCESS_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/pulls?state=all"
+    response = requests.get(url, headers=headers)
+    return jsonify(response.json())
+
+@app.route('/admin/pull-requests/create', methods=['POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def create_pr():
+    data = request.json
+    headers = {
+        "Authorization": f"token {app.config['GITHUB_PERSONAL_ACCESS_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/pulls"
+    payload = {
+        "title": data['title'],
+        "head": data['head'],
+        "base": data['base'],
+        "body": data.get('body', '')
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    return jsonify(response.json()), response.status_code
+
+@app.route('/admin/pull-requests/<int:pr_number>/merge', methods=['POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def merge_pr(pr_number):
+    headers = {
+        "Authorization": f"token {app.config['GITHUB_PERSONAL_ACCESS_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/pulls/{pr_number}/merge"
+    response = requests.put(url, headers=headers)
+    return jsonify(response.json()), response.status_code
+
+
+# Additional backend endpoints
+@app.route('/admin/versions/<int:version_id>', methods=['DELETE'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def delete_version(version_id):
+    version = Version.query.get(version_id)
+    if not version:
+        return jsonify({"error": "Version not found"}), 404
+        
+    # Delete git tag
+    try:
+        repo = get_repo(REPO_PATH)
+        repo.delete_tag(version.git_tag)
+    except Exception as e:
+        app.logger.error(f"Error deleting tag: {str(e)}")
+    
+    db.session.delete(version)
+    db.session.commit()
+    return jsonify({"status": "Version deleted"})
+
+@app.route('/admin/pull-requests/<int:pr_number>/close', methods=['POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def close_pr(pr_number):
+    headers = {
+        "Authorization": f"token {app.config['GITHUB_PERSONAL_ACCESS_TOKEN']}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}/pulls/{pr_number}"
+    response = requests.patch(url, headers=headers, json={"state": "closed"})
+    return jsonify(response.json()), response.status_code
 
 
 @app.route('/admin/database', methods=['GET', 'POST', 'PUT', 'DELETE'])
