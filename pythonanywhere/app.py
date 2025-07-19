@@ -971,6 +971,18 @@ def check(key: str, default: str) -> str:
             return default
         return setting.value
 
+@app.route('/api/setting', methods=['POST'])
+def handle_setting():
+    data = request.get_json()
+    key = data.get('key')
+    default = data.get('default')
+    
+    if key is None or default is None:
+        return jsonify({"error": "Both key and default are required"}), 400
+    
+    value = check(key, default)
+    return jsonify({"key": key, "value": value})
+
 
 # Generate device ID in frontend
 def send_notification(user_id, title, text, module):
