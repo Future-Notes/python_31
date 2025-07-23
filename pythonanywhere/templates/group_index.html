@@ -1614,6 +1614,7 @@
                 document.getElementById("group-list-sidebar").style.display = "none";
                 document.getElementById("group-members-sidebar").style.display = "none";
                 document.getElementById("floating-add-button").style.display = "none";
+                document.getElementById("expand-btn").style.display = "none !important";
             } catch (e) {
                 // Ignore errors if elements do not exist
             }
@@ -2163,6 +2164,7 @@
             btnE.className = `sidebar-toggle-btn expand ${id.includes('members') ? 'members' : 'list'}`;
             btnE.textContent = side === 'right' ? '‹' : '›';
             btnE.style.display = 'none';
+            btnE.id = `expand-btn`;
             document.body.appendChild(btnE);
 
             // Collapse logic

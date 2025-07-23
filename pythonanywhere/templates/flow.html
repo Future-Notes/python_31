@@ -777,12 +777,97 @@
             <div class="project-detail">
                 <div class="panel-header">
                     <h2 id="project-title">Select a Project</h2>
-                    <div>
-                        <button id="create-sub-project-btn" disabled>New Sub-project</button>
-                        <button id="create-step-btn" class="primary" disabled>New Step</button>
-                        <button id="complete-project-btn" class="success" disabled>Complete Project</button>
-                        <button id="delete-project-btn" class="danger" disabled>Delete Project</button>
+                    <div class="project-actions">
+                        <!-- Desktop: show buttons inline -->
+                        <div class="desktop-actions">
+                            <button id="create-sub-project-btn" disabled>New Sub-project</button>
+                            <button id="create-todo-btn" disabled>New Todo</button>
+                            <button id="create-step-btn" class="primary" disabled>New Step</button>
+                            <button id="complete-project-btn" class="success" disabled>Complete Project</button>
+                            <button id="delete-project-btn" class="danger" disabled>Delete Project</button>
+                        </div>
+                        <!-- Mobile: show a compact menu -->
+                        <div class="mobile-actions">
+                            <button id="project-actions-menu-btn" title="Actions" aria-label="Project actions">&#x22EE;</button>
+                            <div id="project-actions-dropdown" class="actions-dropdown">
+                                <button id="create-sub-project-btn-mobile" disabled>New Sub-project</button>
+                                <button id="create-todo-btn-mobile" disabled>New Todo</button>
+                                <button id="create-step-btn-mobile" disabled>New Step</button>
+                                <button id="complete-project-btn-mobile" disabled>Complete Project</button>
+                                <button id="delete-project-btn-mobile" disabled>Delete Project</button>
+                            </div>
+                        </div>
                     </div>
+                    <style>
+                        .project-actions {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                        }
+                        .desktop-actions { display: flex; gap: 10px; }
+                        .mobile-actions { display: none; position: relative; }
+                        .actions-dropdown {
+                            display: none;
+                            position: absolute;
+                            right: 0;
+                            top: 40px;
+                            background: var(--ctr-color);
+                            border-radius: 8px;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                            flex-direction: column;
+                            min-width: 160px;
+                            z-index: 10;
+                        }
+                        .actions-dropdown button {
+                            width: 100%;
+                            text-align: left;
+                            padding: 10px 16px;
+                            background: none;
+                            border: none;
+                            color: #e0e0e0;
+                            font-size: 16px;
+                            border-radius: 0;
+                        }
+                        .actions-dropdown button:hover {
+                            background: #444;
+                        }
+                        @media (max-width: 600px) {
+                            .desktop-actions { display: none; }
+                            .mobile-actions { display: block; }
+                            .actions-dropdown { font-size: 15px; }
+                        }
+                    </style>
+                    <script>
+                        // Mobile actions menu logic
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const menuBtn = document.getElementById('project-actions-menu-btn');
+                            const dropdown = document.getElementById('project-actions-dropdown');
+                            if (menuBtn && dropdown) {
+                                menuBtn.addEventListener('click', function(e) {
+                                    e.stopPropagation();
+                                    dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+                                });
+                                document.addEventListener('click', function() {
+                                    dropdown.style.display = 'none';
+                                });
+                            }
+                            // Sync mobile and desktop buttons
+                            function syncButton(id1, id2) {
+                                const btn1 = document.getElementById(id1);
+                                const btn2 = document.getElementById(id2);
+                                if (btn1 && btn2) {
+                                    btn2.onclick = btn1.onclick ? btn1.onclick.bind(btn1) : null;
+                                    btn1.addEventListener('click', () => btn2.disabled = btn1.disabled);
+                                    btn2.addEventListener('click', () => btn1.disabled = btn2.disabled);
+                                }
+                            }
+                            syncButton('create-sub-project-btn', 'create-sub-project-btn-mobile');
+                            syncButton('create-todo-btn', 'create-todo-btn-mobile');
+                            syncButton('create-step-btn', 'create-step-btn-mobile');
+                            syncButton('complete-project-btn', 'complete-project-btn-mobile');
+                            syncButton('delete-project-btn', 'delete-project-btn-mobile');
+                        });
+                    </script>
                 </div>
                 
                 <div class="progress-container" id="progress-container" style="display: none;">
@@ -819,9 +904,9 @@
         </div>
     </main>
     
-    <!-- Project Modal -->
+    <!-- Update your project-modal div with this -->
     <div class="modal" id="project-modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
                 <h2 id="project-modal-title">Create New Project</h2>
                 <button class="close-modal">&times;</button>
@@ -840,9 +925,53 @@
                     <label for="project-impact">Total Impact Points</label>
                     <input type="number" id="project-impact" value="100" min="10" required>
                 </div>
+                
+                <!-- Todo Creation Section -->
+                <div class="form-group">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <label>Initial Todos (Optional)</label>
+                        <button type="button" id="add-todo-btn" class="small">+ Add Todo</button>
+                    </div>
+                    <div id="todos-container" style="margin-top: 10px;">
+                        <!-- Todos will be added here -->
+                    </div>
+                </div>
+                
                 <div class="form-actions">
                     <button type="button" class="close-modal">Cancel</button>
                     <button type="submit" class="primary">Save Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add this new modal for manual todo creation -->
+    <div class="modal" id="todo-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="todo-modal-title">Create New Todo</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="todo-form">
+                <div class="form-group">
+                    <label for="todo-title">Title</label>
+                    <input type="text" id="todo-title" required>
+                </div>
+                <div class="form-group">
+                    <label for="todo-desc">Description (Optional)</label>
+                    <textarea id="todo-desc" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="todo-impact">Estimated Impact Points</label>
+                    <input type="number" id="todo-impact" min="1" value="5" required>
+                </div>
+                <div class="form-group">
+                    <label for="todo-due-date">Due Date</label>
+                    <input type="datetime-local" id="todo-due-date" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="close-modal">Cancel</button>
+                    <button type="submit" class="primary">Create Todo</button>
                 </div>
             </form>
         </div>
@@ -1013,19 +1142,21 @@
             const closeButtons = document.querySelectorAll('.close-modal');
             
             // Open project modal
-            document.getElementById('create-project-btn').addEventListener('click', function() {
+            function openProjectModal() {
                 document.getElementById('project-modal-title').textContent = "Create New Project";
                 document.getElementById('project-form').reset();
                 document.getElementById('project-id').value = "";
                 document.getElementById('project-modal').style.display = 'flex';
-            });
-            
+            }
+            document.getElementById('create-project-btn').addEventListener('click', openProjectModal);
+            document.getElementById('create-project-btn-mobile')?.addEventListener('click', openProjectModal);
+
             // Open sub-project modal
-            document.getElementById('create-sub-project-btn').addEventListener('click', function() {
+            function openSubProjectModal() {
                 document.getElementById('sub-project-modal-title').textContent = "Create New Sub-project";
                 document.getElementById('sub-project-form').reset();
                 document.getElementById('sub-project-id').value = "";
-                
+
                 // Populate base sub-project dropdown
                 const baseSelect = document.getElementById('base-sub-project');
                 baseSelect.innerHTML = '';
@@ -1035,16 +1166,18 @@
                     option.textContent = subProject.name;
                     baseSelect.appendChild(option);
                 });
-                
+
                 document.getElementById('sub-project-modal').style.display = 'flex';
-            });
-            
+            }
+            document.getElementById('create-sub-project-btn').addEventListener('click', openSubProjectModal);
+            document.getElementById('create-sub-project-btn-mobile')?.addEventListener('click', openSubProjectModal);
+
             // Open step modal
-            document.getElementById('create-step-btn').addEventListener('click', function() {
+            function openStepModal() {
                 document.getElementById('step-modal-title').textContent = "Create New Step";
                 document.getElementById('step-form').reset();
                 document.getElementById('step-id').value = "";
-                
+
                 // Populate sub-project dropdown
                 const subProjectSelect = document.getElementById('step-sub-project');
                 subProjectSelect.innerHTML = '';
@@ -1054,18 +1187,20 @@
                     option.textContent = subProject.name;
                     subProjectSelect.appendChild(option);
                 });
-                
+
                 document.getElementById('step-modal').style.display = 'flex';
-            });
-            
+            }
+            document.getElementById('create-step-btn').addEventListener('click', openStepModal);
+            document.getElementById('create-step-btn-mobile')?.addEventListener('click', openStepModal);
+
             // Project completion
-            document.getElementById('complete-project-btn').addEventListener('click', function() {
+            async function completeProjectHandler() {
                 if (currentProjectId) {
                     showConfirm('Mark this project as completed? This will create a completion step.', async () => {
                         const response = await fetch(`/flow/projects/${currentProjectId}/complete`, {
                             method: 'POST'
                         });
-                        
+
                         if (response.ok) {
                             alert('Project marked as completed');
                             loadProjects();
@@ -1075,16 +1210,18 @@
                         }
                     });
                 }
-            });
-            
+            }
+            document.getElementById('complete-project-btn').addEventListener('click', completeProjectHandler);
+            document.getElementById('complete-project-btn-mobile')?.addEventListener('click', completeProjectHandler);
+
             // Project deletion
-            document.getElementById('delete-project-btn').addEventListener('click', function() {
+            async function deleteProjectHandler() {
                 if (currentProjectId) {
                     showConfirm('Delete this project and all its data? This cannot be undone.', async () => {
                         const response = await fetch(`/flow/projects/${currentProjectId}`, {
                             method: 'DELETE'
                         });
-                        
+
                         if (response.ok) {
                             alert('Project deleted successfully');
                             loadProjects();
@@ -1094,7 +1231,9 @@
                         }
                     });
                 }
-            });
+            }
+            document.getElementById('delete-project-btn').addEventListener('click', deleteProjectHandler);
+            document.getElementById('delete-project-btn-mobile')?.addEventListener('click', deleteProjectHandler);
             
             // Merge button
             document.getElementById('perform-merge-btn').addEventListener('click', function() {
@@ -1133,23 +1272,101 @@
             // Form submissions
             document.getElementById('project-form').addEventListener('submit', async function(e) {
                 e.preventDefault();
-                const name = document.getElementById('project-name').value;
-                const desc = document.getElementById('project-desc').value;
+                
+                const name = document.getElementById('project-name').value.trim();
+                const desc = document.getElementById('project-desc').value.trim();
                 const impact = parseInt(document.getElementById('project-impact').value);
                 
-                const response = await fetch('/flow/projects', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title: name, description: desc, total_impact: impact })
-                });
+                // Validate project fields
+                if (!name) {
+                    alert('Project name is required');
+                    return;
+                }
                 
-                if (response.ok) {
-                    const data = await response.json();
-                    alert('Project created!');
+                if (isNaN(impact) || impact < 10) {
+                    alert('Please enter a valid impact value (minimum 10)');
+                    return;
+                }
+                
+                try {
+                    // First create the project
+                    const projectResponse = await fetch('/flow/projects', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            title: name, 
+                            description: desc, 
+                            total_impact: impact 
+                        })
+                    });
+                    
+                    if (!projectResponse.ok) {
+                        const error = await projectResponse.json();
+                        throw new Error(error.error || 'Error creating project');
+                    }
+                    
+                    const projectData = await projectResponse.json();
+                    const projectId = projectData.id;
+                    
+                    // Get the main branch ID (created automatically)
+                    const branchesResponse = await fetch(`/flow/projects/${projectId}/branches`);
+                    if (!branchesResponse.ok) {
+                        throw new Error('Failed to get branches');
+                    }
+                    
+                    const branches = await branchesResponse.json();
+                    const mainBranch = branches.find(b => b.name === 'main');
+                    
+                    if (!mainBranch) {
+                        throw new Error('Main branch not found');
+                    }
+                    
+                    // Process todos if any were added
+                    const todoFields = document.querySelectorAll('.todo-field');
+                    if (todoFields.length > 0) {
+                        const todos = Array.from(todoFields).map(field => {
+                            const title = field.querySelector('.todo-title').value.trim();
+                            const description = field.querySelector('.todo-desc').value.trim();
+                            const impact = parseInt(field.querySelector('.todo-impact').value);
+                            const dueDate = field.querySelector('.todo-due-date').value;
+                            
+                            return {
+                                title: title,
+                                description: description,  // Consistent field name
+                                estimated_impact: isNaN(impact) ? 0 : impact,
+                                due_date: dueDate
+                            };
+                        });
+                        
+                        // Filter out invalid todos
+                        const validTodos = todos.filter(t => 
+                            t.title && 
+                            !isNaN(t.estimated_impact) && 
+                            t.estimated_impact > 0 &&
+                            t.due_date
+                        );
+                        
+                        if (validTodos.length > 0) {
+                            const todosResponse = await fetch(`/flow/branches/${mainBranch.id}/todos/bulk`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ todos: validTodos })
+                            });
+                            
+                            if (!todosResponse.ok) {
+                                const error = await todosResponse.json();
+                                console.warn('Some todos failed:', error);
+                            }
+                        }
+                    }
+                    
                     document.getElementById('project-modal').style.display = 'none';
                     loadProjects();
-                } else {
-                    alert('Error creating project');
+                    loadProjectDetails(projectId);
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert(`Error: ${error.message}`);
                 }
             });
             
@@ -1199,6 +1416,9 @@
                     alert('Error: ' + error);
                 }
             });
+            document.getElementById('add-todo-btn').addEventListener('click', addTodoField);
+            document.getElementById('create-todo-btn').addEventListener('click', openTodoModal);
+            document.getElementById('todo-form').addEventListener('submit', handleTodoSubmit);
         }
         
         // Session handling
@@ -1261,6 +1481,103 @@
                 });
             }
         }
+
+        // Add these new functions
+        function addTodoField() {
+            const container = document.getElementById('todos-container');
+            const todoId = Date.now();
+            
+            const todoDiv = document.createElement('div');
+            todoDiv.className = 'todo-field';
+            todoDiv.dataset.id = todoId;
+            
+            todoDiv.innerHTML = `
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <input type="text" placeholder="Todo title" class="todo-title" required style="flex: 2;">
+                    <input type="number" placeholder="Impact" class="todo-impact" min="1" value="5" required style="flex: 1;">
+                    <input type="datetime-local" class="todo-due-date" required style="flex: 2;">
+                    <button type="button" class="remove-todo small danger">×</button>
+                </div>
+                <textarea class="todo-desc" placeholder="Description (optional)" rows="2" style="width: 95%%;"></textarea>
+            `;
+            
+            todoDiv.querySelector('.remove-todo').addEventListener('click', () => {
+                container.removeChild(todoDiv);
+            });
+            
+            container.appendChild(todoDiv);
+        }
+
+        function openTodoModal() {
+            if (!currentProjectId || !currentSubProjectId) return;
+            
+            document.getElementById('todo-modal-title').textContent = `Create Todo in ${getSubProjectName(currentSubProjectId)}`;
+            document.getElementById('todo-form').reset();
+            
+            // Set default due date to tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('todo-due-date').value = tomorrow.toISOString().slice(0, 16);
+            
+            document.getElementById('todo-modal').style.display = 'flex';
+        }
+
+        async function handleTodoSubmit(e) {
+            e.preventDefault();
+            
+            const title = document.getElementById('todo-title').value.trim();
+            const description = document.getElementById('todo-desc').value.trim();
+            const impact = parseInt(document.getElementById('todo-impact').value);
+            const dueDate = document.getElementById('todo-due-date').value;
+            
+            // Frontend validation
+            if (!title) {
+                alert('Title is required');
+                return;
+            }
+            
+            if (isNaN(impact) || impact <= 0) {
+                alert('Please enter a valid positive impact value');
+                return;
+            }
+            
+            if (!dueDate) {
+                alert('Due date is required');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/flow/branches/${currentSubProjectId}/todos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        description,  // Consistent with backend
+                        estimated_impact: impact,
+                        due_date: dueDate
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to create todo');
+                }
+                
+                alert('Todo created successfully!');
+                document.getElementById('todo-modal').style.display = 'none';
+                
+                // Refresh UI
+                if (currentSubProjectId) {
+                    loadSteps(currentSubProjectId);
+                    loadProjectDetails(currentProjectId);
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`Error creating todo: ${error.message}`);
+            }
+        }
         
         // Create project card element
         function createProjectCard(project) {
@@ -1317,7 +1634,14 @@
                 document.getElementById('create-step-btn').disabled = false;
                 document.getElementById('complete-project-btn').disabled = false;
                 document.getElementById('delete-project-btn').disabled = false;
-                
+                document.getElementById('create-todo-btn').disabled = false;
+
+                document.getElementById('create-sub-project-btn-mobile').disabled = false;
+                document.getElementById('create-step-btn-mobile').disabled = false;
+                document.getElementById('complete-project-btn-mobile').disabled = false;
+                document.getElementById('delete-project-btn-mobile').disabled = false;
+                document.getElementById('create-todo-btn-mobile').disabled = false;
+
                 // Load sub-projects
                 loadSubProjects(projectId);
             }
@@ -1337,6 +1661,13 @@
             document.getElementById('create-step-btn').disabled = true;
             document.getElementById('complete-project-btn').disabled = true;
             document.getElementById('delete-project-btn').disabled = true;
+            document.getElementById('create-todo-btn').disabled = true;
+
+            document.getElementById('create-sub-project-btn-mobile').disabled = true;
+            document.getElementById('create-step-btn-mobile').disabled = true;
+            document.getElementById('complete-project-btn-mobile').disabled = true;
+            document.getElementById('delete-project-btn-mobile').disabled = true;
+            document.getElementById('create-todo-btn-mobile').disabled = true;
         }
         
         // Load sub-projects
