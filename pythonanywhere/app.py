@@ -379,22 +379,37 @@ class Todo(db.Model):
                                nullable=True)
     appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'),
                                nullable=True)
+    
+    # Add to Todo model
+    flow_branch_id = db.Column(db.Integer, db.ForeignKey('flow_branches.id'), nullable=True)
+    estimated_impact = db.Column(db.Integer, default=0)  # Estimated impact points
+
+    # Add relationship to FlowBranch model
+    flow_branch = db.relationship('FlowBranch', backref='todos')
+    # This property will give us the associated commit (if any)
+    @property
+    def commit(self):
+        # Since we used backref='flow_commits', we get a list
+        # We return the first one (should only be one)
+        return self.flow_commits[0] if self.flow_commits else None
 
     # Relationships:
     note           = db.relationship("Note", backref="todos")
     appointment    = db.relationship("Appointment", backref="todos")
     user           = db.relationship("User", backref="todos")
 
+    # In Todo model
     def to_dict(self):
         return {
-            "id": self.id,
-            "title": self.title,
-            "text": self.text,
-            "due_date": self.due_date.isoformat() if self.due_date else None,
-            "completed": self.completed,
-            "user_id": self.user_id,
-            "note_id": self.note_id,
-            "appointment_id": self.appointment_id
+            'id': self.id,
+            'title': self.title,
+            'description': self.text,
+            'due_date': self.due_date.isoformat() if self.due_date else None,
+            'completed': self.completed,
+            'note_id': self.note_id,
+            'appointment_id': self.appointment_id,
+            'flow_branch_id': self.flow_branch_id,
+            'estimated_impact': self.estimated_impact
         }
 
 
@@ -595,7 +610,11 @@ class FlowCommit(db.Model):
     impact = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     prev_commit_id = db.Column(db.Integer, db.ForeignKey('flow_commits.id'), nullable=True)
+    todo_id = db.Column(db.Integer, db.ForeignKey('todo.id'), nullable=True)  # New field
+    
+    # Relationships
     next_commits = db.relationship('FlowCommit', backref=db.backref('prev_commit', remote_side=[id]))
+    todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
 def generate_session_key(user_id):
@@ -2559,6 +2578,131 @@ def revert_commit_flow(commit_id):
     db.session.commit()
     return jsonify({'message': f'{len(subsequent_commits)} commits reverted'})
 
+@app.route('/flow/branches/<int:branch_id>/todos', methods=['GET', 'POST'])
+@require_session_key
+def branch_todos(branch_id):
+    branch = FlowBranch.query.get_or_404(branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    if request.method == 'GET':
+        todos = Todo.query.filter_by(flow_branch_id=branch_id).all()
+        return jsonify([{
+            'id': t.id,
+            'title': t.title,
+            'description': t.text,  # Still using t.text here for backward compatibility
+            'due_date': t.due_date.isoformat() if t.due_date else None,
+            'completed': t.completed,
+            'estimated_impact': t.estimated_impact
+        } for t in todos])
+    
+    elif request.method == 'POST':
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('title'):
+            return jsonify({'error': 'Title is required'}), 400
+        
+        try:
+            # Handle due date
+            due_date = None
+            if data.get('due_date'):
+                try:
+                    due_date = datetime.fromisoformat(data['due_date'])
+                except ValueError as e:
+                    return jsonify({'error': f'Invalid date format: {str(e)}'}), 400
+            
+            # Create new todo - using description instead of text
+            new_todo = Todo(
+                user_id=g.user_id,
+                title=data['title'],
+                text=data.get('description', ''),  # This matches your frontend
+                due_date=due_date,
+                flow_branch_id=branch_id,
+                estimated_impact=data.get('estimated_impact', 0)
+            )
+            
+            db.session.add(new_todo)
+            db.session.commit()
+            
+            return jsonify({
+                'id': new_todo.id,
+                'message': 'Todo created successfully',
+                'todo': {
+                    'id': new_todo.id,
+                    'title': new_todo.title,
+                    'description': new_todo.text,  # Consistent with frontend
+                    'due_date': new_todo.due_date.isoformat() if new_todo.due_date else None,
+                    'completed': new_todo.completed,
+                    'estimated_impact': new_todo.estimated_impact
+                }
+            }), 201
+        
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': f'Error creating todo: {str(e)}'}), 500
+
+@app.route('/flow/branches/<int:branch_id>/todos/bulk', methods=['POST'])
+@require_session_key
+def create_bulk_branch_todos(branch_id):
+    branch = FlowBranch.query.get_or_404(branch_id)
+    project = FlowProject.query.get(branch.project_id)
+    
+    if project.user_id != g.user_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    created_ids = []
+    
+    # Validate at least one todo exists
+    if not data.get('todos') or not isinstance(data['todos'], list):
+        return jsonify({'error': 'No todos provided or invalid format'}), 400
+    
+    try:
+        for todo_data in data['todos']:
+            # Validate required fields
+            if not todo_data.get('title'):
+                continue  # Skip invalid entries
+                
+            # Parse and validate impact
+            impact = todo_data.get('estimated_impact', 0)
+            if impact < 0:
+                continue  # Skip invalid entries
+                
+            # Handle due date
+            due_date = None
+            if todo_data.get('due_date'):
+                try:
+                    due_date = datetime.fromisoformat(todo_data['due_date'])
+                except ValueError:
+                    continue  # Skip entries with invalid date format
+                
+            # Create new todo - using description field consistently
+            new_todo = Todo(
+                user_id=g.user_id,
+                title=todo_data['title'],
+                text=todo_data.get('description', ''),  # Using description from frontend
+                due_date=due_date,
+                flow_branch_id=branch_id,
+                estimated_impact=impact
+            )
+            db.session.add(new_todo)
+            created_ids.append(new_todo.id)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Created {len(created_ids)} todos',
+            'created_ids': created_ids,
+            'created_count': len(created_ids)
+        }), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error creating todos: {str(e)}'}), 500
+
 # New endpoint to get project details including progress
 @app.route('/flow/projects/<int:project_id>/details', methods=['GET'])
 @require_session_key
@@ -3748,21 +3892,67 @@ def update_todo(todo_id):
         db.session.rollback()
         return jsonify(error=f"Error updating todo: {str(e)}"), 500
     
-# 4. mark a todo as completed
 @app.route('/todos/<int:todo_id>/toggle-completed', methods=['POST'])
 @require_session_key
 def toggle_todo_completed(todo_id):
     user_id = g.user_id
     todo = Todo.query.get(todo_id)
+    
     if not todo or todo.user_id != user_id:
         return jsonify({"error": "Todo not found"}), 404
-
+    
+    was_completed = todo.completed
     todo.completed = not todo.completed
-    db.session.commit()
-    return jsonify({
-        "message": f"Todo marked as {'completed' if todo.completed else 'uncompleted'}!",
-        "completed": todo.completed
-    }), 200
+    
+    try:
+        if not was_completed and todo.completed and todo.flow_branch_id and todo.estimated_impact > 0:
+            # Marking as complete - create commit
+            new_commit = FlowCommit(
+                branch_id=todo.flow_branch_id,
+                title=f"Completed: {todo.title}",
+                description=f"Automatically completed todo: {todo.text or 'No description'}",
+                impact=todo.estimated_impact,
+                todo_id=todo.id  # Link the commit to the todo
+            )
+            db.session.add(new_commit)
+            
+            # Update project status if needed
+            project = FlowProject.query.get(todo.flow_branch.project_id)
+            if project.progress >= project.total_impact and project.status != 'completed':
+                project.status = 'completed'
+        
+        elif was_completed and not todo.completed:
+            # Marking as incomplete - find and revert the commit
+            commit_to_revert = todo.commit  # This uses our property
+            
+            if commit_to_revert:
+                # Find all subsequent commits to revert
+                subsequent_commits = FlowCommit.query.filter(
+                    FlowCommit.branch_id == todo.flow_branch_id,
+                    FlowCommit.created_at >= commit_to_revert.created_at
+                ).all()
+                
+                # Delete the commits
+                for commit in subsequent_commits:
+                    db.session.delete(commit)
+                
+                # Update project status if needed
+                project = FlowProject.query.get(todo.flow_branch.project_id)
+                if project.status == 'completed':
+                    # Recalculate progress
+                    if project.progress < project.total_impact:
+                        project.status = 'active'
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": f"Todo marked as {'completed' if todo.completed else 'uncompleted'}!",
+            "completed": todo.completed
+        }), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 # 5. delete a todo
 @app.route('/todos/<int:todo_id>', methods=['DELETE'])
