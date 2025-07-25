@@ -1013,6 +1013,32 @@ def handle_setting():
     value = check(key, default)
     return jsonify({"key": key, "value": value})
 
+def parse_flow_tags(text):
+    """Extracts project, branch, and impact tags from todo text.
+    Returns: {project_id: int, branch_id: int, impact: int}
+    """
+    tags = {
+        'project_id': None,
+        'branch_name': None,  # We'll look up the ID later
+        'impact': 0
+    }
+    
+    # Example: #proj-123 → project_id=123
+    project_match = re.search(r'#proj-(\d+)', text)
+    if project_match:
+        tags['project_id'] = int(project_match.group(1))
+    
+    # Example: #branch-feature-auth → branch_name="feature-auth"
+    branch_match = re.search(r'#branch-([\w-]+)', text)
+    if branch_match:
+        tags['branch_name'] = branch_match.group(1)
+    
+    # Example: #impact-8 → impact=8
+    impact_match = re.search(r'#impact-(\d+)', text)
+    if impact_match:
+        tags['impact'] = int(impact_match.group(1))
+    
+    return tags
 
 # Generate device ID in frontend
 def send_notification(user_id, title, text, module):
@@ -2327,6 +2353,35 @@ def version_management():
 #---------------------------------API routes--------------------------------
 
 # Flow routes:
+
+@app.route('/flow/tag-suggestions', methods=['GET'])
+@require_session_key
+def get_flow_tag_suggestions():
+    user_id = g.user_id
+    
+    # Fetch all projects and their branches
+    projects = FlowProject.query.filter_by(user_id=user_id).all()
+    suggestions = []
+    
+    for project in projects:
+        project_data = {
+            'id': project.id,
+            'title': project.title,
+            'branches': []
+        }
+        
+        # Get all branches for this project
+        branches = FlowBranch.query.filter_by(project_id=project.id).all()
+        for branch in branches:
+            project_data['branches'].append({
+                'id': branch.id,
+                'name': branch.name,
+                'is_main': branch.name == 'main'
+            })
+        
+        suggestions.append(project_data)
+    
+    return jsonify(suggestions)
 
 @app.route('/flow/projects', methods=['GET'])
 @require_session_key
@@ -3721,6 +3776,7 @@ def create_todo():
     title   = (data.get('title') or "").strip()
     text    = (data.get('description') or "").strip()
     due_str = data.get('due_date')
+    flow_tags = parse_flow_tags(f"{title} {text}")
     current_app.logger.debug(f"[create_todo] Parsed fields - title: '{title}', text: '{text}', due_date: '{due_str}'")
 
     # --- Attachment IDs ---
@@ -3748,6 +3804,33 @@ def create_todo():
         if due_date < datetime.now():
             current_app.logger.warning(f"[create_todo] Due date is in the past: {due_date}")
             return jsonify(error="Due date cannot be in the past"), 400
+        
+    if flow_tags['project_id']:
+        project = FlowProject.query.filter_by(
+            id=flow_tags['project_id'],
+            user_id=user_id
+        ).first()
+        if not project:
+            return jsonify(error="Project not found or access denied"), 404
+        
+        # Find or default to 'main' branch
+        branch = None
+        if flow_tags['branch_name']:
+            branch = FlowBranch.query.filter_by(
+                name=flow_tags['branch_name'],
+                project_id=project.id
+            ).first()
+            if not branch:
+                return jsonify(error=f"Branch '{flow_tags['branch_name']}' not found in project"), 404
+        else:
+            branch = FlowBranch.query.filter_by(
+                project_id=project.id,
+                name='main'
+            ).first()
+        
+        # Assign to todo
+        new_todo.flow_branch_id = branch.id if branch else None
+        new_todo.estimated_impact = flow_tags['impact']
 
     # --- Attachments lookup & ownership check ---
     note        = None
@@ -3855,6 +3938,34 @@ def update_todo(todo_id):
                 if due_date < dt.datetime.now():
                     return jsonify(error="Due date cannot be in the past"), 400
             todo.due_date = due_date
+
+    if 'title' in data or 'description' in data:
+        new_text = f"{data.get('title', todo.title)} {data.get('description', todo.text)}"
+        flow_tags = parse_flow_tags(new_text)
+        
+        # Only process if project tag exists
+        if flow_tags['project_id']:
+            project = FlowProject.query.filter_by(
+                id=flow_tags['project_id'],
+                user_id=user_id
+            ).first()
+            if not project:
+                return jsonify(error="Project not found or access denied"), 404
+            
+            # Update branch linkage
+            if flow_tags['branch_name']:
+                branch = FlowBranch.query.filter_by(
+                    name=flow_tags['branch_name'],
+                    project_id=project.id
+                ).first()
+                if not branch:
+                    return jsonify(error=f"Branch '{flow_tags['branch_name']}' not found"), 404
+                todo.flow_branch_id = branch.id
+            elif todo.flow_branch_id:  # Clear branch if no tag
+                todo.flow_branch_id = None
+            
+            # Update impact
+            todo.estimated_impact = flow_tags['impact']
 
     # — Validate & apply completed flag
     if done is not None:
