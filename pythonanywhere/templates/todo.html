@@ -469,6 +469,50 @@
       }
     }
 
+    /* Add to your CSS */
+    .tag-suggestions {
+      position: absolute;
+      background: var(--bg-color);
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      z-index: 1000;
+      max-height: 300px;
+      overflow-y: auto;
+      display: none;
+      width: 300px;
+    }
+
+    .tag-suggestion-header {
+      padding: 10px 15px;
+      font-weight: bold;
+      background-color: var(--bg-color);
+      border-bottom: 1px solid #eee;
+      position: sticky;
+      top: 0;
+    }
+
+    .tag-suggestion-project {
+      padding: 8px 15px;
+      font-weight: bold;
+      background-color: var(--ctr-color);
+      cursor: default;
+    }
+
+    .tag-suggestion-branch {
+      padding: 10px 15px 10px 25px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .tag-suggestion-branch:hover {
+      background-color: var(--btn-color);
+    }
+
+    .tag-suggestion-branch.selected {
+      background-color: var(--btn-color);
+    }
+
 
   </style>
   <script src="static/admin.js"></script>
@@ -582,6 +626,11 @@
         <div class="item-list" id="appt-list"><!-- populated by JS --></div>
       </div>
 
+      <div id="tag-suggestions-dropdown" class="tag-suggestions">
+          <div class="tag-suggestion-header">Projects & Branches</div>
+          <div id="tag-suggestion-list"></div>
+      </div>
+
       <form id="todo-form">
         <input type="hidden" id="todo-id">
         <label for="todo-title">Title</label>
@@ -662,6 +711,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         });
 
+    let tagSuggestions = [];
+    let currentInputElement = null;
+
+    // Fetch tag suggestions when modal opens
+    async function fetchTagSuggestions() {
+      try {
+        const res = await fetch('/flow/tag-suggestions', {
+          headers: { }
+        });
+        if (res.ok) {
+          tagSuggestions = await res.json();
+        }
+      } catch (err) {
+        console.error('Error fetching tag suggestions', err);
+      }
+    }
+
     // Element refs
     const addBtn        = document.getElementById('floating-add-button');
     const overlay       = document.getElementById('todo-modal-overlay');
@@ -731,6 +797,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         localStorage.setItem(proTipKey, "1");
       }
+
+      await fetchTagSuggestions();
+
+      setupTagDetection();
 
       // Prefill core fields
       document.getElementById('todo-id').value   = data.id || '';
@@ -831,6 +901,174 @@ document.addEventListener("DOMContentLoaded", async () => {
           console.error('Network error', err);
         }
       };
+    }
+
+    function setupTagDetection() {
+      const titleInput = document.getElementById('todo-title');
+      const descInput = document.getElementById('todo-desc');
+      
+      [titleInput, descInput].forEach(input => {
+        input.addEventListener('input', handleTagInput);
+        input.addEventListener('keydown', handleTagKeydown);
+        input.addEventListener('click', handleTagClick);
+      });
+      
+      // Close dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('tag-suggestions-dropdown');
+        if (!dropdown.contains(e.target) && !titleInput.contains(e.target) && !descInput.contains(e.target)) {
+          dropdown.style.display = 'none';
+        }
+      });
+    }
+
+    function handleTagInput(e) {
+      const input = e.target;
+      const value = input.value;
+      const cursorPos = input.selectionStart;
+      
+      // Check if we're typing a hashtag
+      if (value[cursorPos - 1] === '#' || 
+          (value.substring(cursorPos - 1, cursorPos) === '#')) {
+        showTagSuggestions(input, cursorPos);
+      } else {
+        document.getElementById('tag-suggestions-dropdown').style.display = 'none';
+      }
+    }
+
+    function handleTagClick(e) {
+      const input = e.target;
+      const cursorPos = input.selectionStart;
+      showTagSuggestions(input, cursorPos);
+    }
+
+    function handleTagKeydown(e) {
+      const dropdown = document.getElementById('tag-suggestions-dropdown');
+      if (dropdown.style.display !== 'block') return;
+      
+      const items = dropdown.querySelectorAll('.tag-suggestion-branch');
+      if (!items.length) return;
+      
+      const currentSelected = dropdown.querySelector('.tag-suggestion-branch.selected');
+      let currentIndex = currentSelected ? Array.from(items).indexOf(currentSelected) : -1;
+      
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const newIndex = (currentIndex + 1) % items.length;
+        selectSuggestionItem(items, newIndex);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const newIndex = (currentIndex - 1 + items.length) % items.length;
+        selectSuggestionItem(items, newIndex);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentSelected) {
+          insertTag(currentSelected);
+        }
+      } else if (e.key === 'Escape') {
+        dropdown.style.display = 'none';
+      }
+    }
+
+    function showTagSuggestions(input, cursorPos) {
+      currentInputElement = input;
+      const dropdown = document.getElementById('tag-suggestions-dropdown');
+      const rect = input.getBoundingClientRect();
+      
+      // Position dropdown below cursor
+      dropdown.style.top = `${rect.bottom + window.scrollY + 5}px`;
+      dropdown.style.left = `${rect.left + window.scrollX}px`;
+      dropdown.style.display = 'block';
+      
+      // Populate suggestions
+      populateTagSuggestions();
+    }
+
+    function populateTagSuggestions() {
+      const container = document.getElementById('tag-suggestion-list');
+      container.innerHTML = '';
+      
+      if (!tagSuggestions.length) {
+        container.innerHTML = '<div class="tag-suggestion-branch">No projects found</div>';
+        return;
+      }
+      
+      tagSuggestions.forEach(project => {
+        // Add project header (non-selectable)
+        const projectHeader = document.createElement('div');
+        projectHeader.className = 'tag-suggestion-project';
+        projectHeader.textContent = project.title;
+        container.appendChild(projectHeader);
+        
+        // Add branches
+        project.branches.forEach(branch => {
+          const branchItem = document.createElement('div');
+          branchItem.className = 'tag-suggestion-branch';
+          branchItem.dataset.projectId = project.id;
+          branchItem.dataset.projectTitle = project.title;
+          branchItem.dataset.branchId = branch.id;
+          branchItem.dataset.branchName = branch.name;
+          
+          branchItem.innerHTML = `
+            <span>${branch.name}</span>
+            ${branch.is_main ? '<span class="tag-main-indicator">(main)</span>' : ''}
+          `;
+          
+          branchItem.addEventListener('click', () => insertTag(branchItem));
+          container.appendChild(branchItem);
+        });
+      });
+    }
+
+    function selectSuggestionItem(items, index) {
+      items.forEach(item => item.classList.remove('selected'));
+      items[index].classList.add('selected');
+      items[index].scrollIntoView({ block: 'nearest' });
+    }
+
+    function insertTag(branchElement) {
+      if (!currentInputElement) return;
+      
+      const projectId = branchElement.dataset.projectId;
+      const branchName = branchElement.dataset.branchName;
+      
+      // Create tags
+      const projectTag = `#proj-${projectId}`;
+      const branchTag = `#branch-${branchName.replace(/\s+/g, '-')}`;
+      
+      // Insert tags at cursor position
+      const cursorPos = currentInputElement.selectionStart;
+      const value = currentInputElement.value;
+      
+      // Check if we're replacing a partial tag
+      let newValue, newCursorPos;
+      
+      if (value.substring(cursorPos - 1, cursorPos) === '#') {
+        // Insert after the #
+        newValue = value.substring(0, cursorPos) + 
+                  `${projectTag} ${branchTag} ` + 
+                  value.substring(cursorPos);
+        newCursorPos = cursorPos + projectTag.length + branchTag.length + 3;
+      } else {
+        // Find the start of the current word
+        let start = cursorPos - 1;
+        while (start >= 0 && !/\s/.test(value[start])) {
+          start--;
+        }
+        start = Math.max(start + 1, 0);
+        
+        newValue = value.substring(0, start) + 
+                  `${projectTag} ${branchTag} ` + 
+                  value.substring(cursorPos);
+        newCursorPos = start + projectTag.length + branchTag.length + 3;
+      }
+      
+      currentInputElement.value = newValue;
+      currentInputElement.focus();
+      currentInputElement.setSelectionRange(newCursorPos, newCursorPos);
+      
+      // Close dropdown
+      document.getElementById('tag-suggestions-dropdown').style.display = 'none';
     }
 
     // Toggle handlers

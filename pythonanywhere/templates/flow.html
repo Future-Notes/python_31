@@ -692,6 +692,45 @@
             }
 
         }
+
+        #bosbes-overlay {
+            position: fixed; top: 0; left: 0; width:100%; height:100%;
+            background: rgba(0,0,0,0.7); z-index:10000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #bosbes-modal {
+            background: var(--ctr-color); color: #e0e0e0;
+            padding: 24px; border-radius: 8px; max-width: 500px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        #bosbes-modal h2 { margin-top:0; }
+        #bosbes-modal .btn {
+            margin:8px 4px 0; padding:8px 16px; border:none; border-radius:4px;
+            cursor:pointer; font-size: 1rem;
+        }
+        #bosbes-modal .btn-primary { background: var(--btn-color); color:#e0e0e0; }
+        #bosbes-modal .btn-success { background: var(--success-color); color:#fff; }
+        #bosbes-modal .btn-secondary { background: var(--hdr-color); color:#e0e0e0; }
+        /* Tooltip for wizard */
+        #bosbes-tooltip {
+            position: absolute; max-width: 250px;
+            background: var(--hdr-color); color:#e0e0e0;
+            padding: 12px; border-radius: 6px; z-index:10001;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        #bosbes-tooltip p { margin:0 0 8px; }
+        #bosbes-tooltip .wiz-btn {
+            margin-right: 8px; padding:6px 12px; border:none; border-radius:4px;
+            cursor:pointer;
+        }
+        #bosbes-tooltip .wiz-next { background: var(--success-color); color:#fff; }
+        #bosbes-tooltip .wiz-skip { background: var(--danger-color); color:#fff; }
+        /* Highlighted element outline */
+        .bosbes-highlight {
+            position: relative;
+            box-shadow: 0 0 0 4px rgba(92,184,92,0.7);
+            z-index:10002;
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -772,6 +811,21 @@
                 <div class="tab-content" id="completed-projects">
                     <div class="no-projects">Loading completed projects...</div>
                 </div>
+            </div>
+
+            <div id="bosbes-overlay" style="display:none;">
+                <div id="bosbes-modal">
+                    <h2>Welcome to Future Notes Flow!</h2>
+                    <p>If you know git, you know this: instead of code commits you earn <strong>impact points</strong>.  
+                    Complete a linked todo → auto‑commit to that branch.</p>
+                    <button class="btn btn-primary" id="bosbes-git-btn">I know Git</button>
+                    <button class="btn btn-secondary" id="bosbes-tour-btn">Show me around</button>
+                </div>
+                </div>
+                <div id="bosbes-tooltip" style="display:none;">
+                <p id="bosbes-tip-text"></p>
+                <button class="wiz-btn wiz-next">Next</button>
+                <button class="wiz-btn wiz-skip">Skip Tour</button>
             </div>
             
             <div class="project-detail">
@@ -1110,6 +1164,18 @@
             loadProjects();
             setupEventListeners();
             setupSessionHandling();
+            if (!localStorage.getItem('bosbesProductivitySeen')) {
+                localStorage.setItem('bosbesProductivitySeen','1');
+                showWelcome(); // your existing “I know Git / Show me around” dialog
+                document.getElementById('bosbes-tour-btn').onclick = () => {
+                document.getElementById('bosbes-overlay').style.display = 'none';
+                startWizardFlow();
+                };
+            }
+            // if wizard resumed across a reload
+            if (wizardIsRunning()) {
+                resumeWizard();
+            }
             // Initialize Mermaid
             mermaid.initialize({
                 startOnLoad: false,
@@ -1123,6 +1189,174 @@
                 fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
             });
         });
+
+        const WIZ_KEY = 'bosbesWizardRunning';
+        const WIZ_STEP = 'bosbesWizardStep';
+
+        function showWelcome(){
+        const overlay = document.getElementById('bosbes-overlay');
+        const gitBtn  = document.getElementById('bosbes-git-btn');
+        const tourBtn = document.getElementById('bosbes-tour-btn');
+        overlay.style.display = 'flex';
+
+        gitBtn.onclick = () => {
+            alert('Great! Just dive in: impact points = commits, linked to your todos. Happy coding!');
+            overlay.style.display = 'none';
+        };
+        tourBtn.onclick = () => {
+            overlay.style.display = 'none';
+            startWizardFlow();
+        };
+        }
+
+        function wizardIsRunning() {
+        return localStorage.getItem(WIZ_KEY) === '1';
+        }
+        function startWizardFlow() {
+        localStorage.setItem(WIZ_KEY, '1');
+        localStorage.setItem(WIZ_STEP, '0');
+        resumeWizard();
+        }
+        function advanceWizard() {
+        let idx = parseInt(localStorage.getItem(WIZ_STEP) || '0', 10);
+        idx++;
+        localStorage.setItem(WIZ_STEP, idx);
+        resumeWizard();
+        }
+        function stopWizard() {
+        localStorage.removeItem(WIZ_KEY);
+        localStorage.removeItem(WIZ_STEP);
+        document.getElementById('bosbes-tooltip').style.display = 'none';
+        document.querySelectorAll('.bosbes-highlight').forEach(el=>el.classList.remove('bosbes-highlight'));
+        }
+
+        // ———————— WIZARD DEFINITIONS ————————
+        const fullWizard = [
+        // 0: NEW PROJECT
+        {
+            selector: '#create-project-btn',
+            text: 'First, let’s make a project! Click “+ New”.',
+            onNext: () => document.getElementById('create-project-btn').click()
+        },
+        {
+            selector: '#project-modal .modal-content',
+            text: 'Name it and set total impact, then hit “Save Project.”',
+            onNext: () => {
+            document.getElementById('project-name').value = 'My First Project';
+            document.getElementById('project-impact').value = 100;
+            document.getElementById('project-form').submit();
+            }
+        },
+
+        // 2: OPEN PROJECTs
+        {
+            selector: '.project-card[data-id]',
+            text: 'Nice! Click your new project to open its details.',
+            onNext: () => document.querySelectorAll('.project-card')[0].click()
+        },
+
+        // 3: CREATE SUB‑PROJECT
+        {
+            selector: '#create-sub-project-btn',
+            text: 'Each branch is a sub‑project. Click “New Sub‑project.”',
+            onNext: () => document.getElementById('create-sub-project-btn').click()
+        },
+        {
+            selector: '#sub-project-modal .modal-content',
+            text: 'Give your branch a name (e.g. “feature‑x”), then “Create Sub‑project.”',
+            onNext: () => {
+            document.getElementById('sub-project-name').value = 'feature‑x';
+            document.getElementById('sub-project-form').submit();
+            }
+        },
+
+        // 4: ADD A STEP (COMMIT)
+        {
+            selector: '#create-step-btn',
+            text: 'Steps are your commits. Click “New Step.”',
+            onNext: () => document.getElementById('create-step-btn').click()
+        },
+        {
+            selector: '#step-modal .modal-content',
+            text: 'Describe your change and impact, then “Create Step.”',
+            onNext: () => {
+            document.getElementById('step-title').value  = 'Initial commit';
+            document.getElementById('step-desc').value   = 'Setup project structure';
+            document.getElementById('step-impact').value = 10;
+            document.getElementById('step-form').submit();
+            }
+        },
+
+        // 5: OPTIONAL TODO (auto‑commit demo)
+        {
+            selector: '#create-todo-btn',
+            text: 'You can also link todos to branches. Click “New Todo.”',
+            onNext: () => document.getElementById('create-todo-btn').click()
+        },
+        {
+            selector: '#todo-modal .modal-content',
+            text: 'Fill title + impact + due date, then “Create Todo.” Completing it will auto‑commit.',
+            onNext: () => {
+            document.getElementById('todo-title').value  = 'Write README';
+            document.getElementById('todo-impact').value = 5;
+            // set due date to tomorrow
+            let d = new Date(); d.setDate(d.getDate()+1);
+            document.getElementById('todo-due-date').value = d.toISOString().slice(0,16);
+            document.getElementById('todo-form').submit();
+            }
+        },
+
+        // 6: COMPLETE PROJECT
+        {
+            selector: '#complete-project-btn',
+            text: 'When you’re done, click “Complete Project” to finish it.',
+            onNext: () => document.getElementById('complete-project-btn').click()
+        },
+        {
+            selector: '#project-title',
+            text: '🎉 Boom! Project completed. Impact points = commits. Wizard over!',
+            onNext: stopWizard
+        }
+        ];
+
+
+
+        // ———————— WIZARD CORE ————————
+        function resumeWizard() {
+        if (!wizardIsRunning()) return;
+        const step = parseInt(localStorage.getItem(WIZ_STEP) || '0', 10);
+        if (step >= fullWizard.length) {
+            stopWizard();
+            return;
+        }
+
+        // highlight + tooltip
+        const { selector, text } = fullWizard[step];
+        const el = document.querySelector(selector);
+        if (!el) {
+            // maybe still loading; retry in a bit
+            return setTimeout(resumeWizard, 500);
+        }
+
+        // clear old
+        document.querySelectorAll('.bosbes-highlight').forEach(x=>x.classList.remove('bosbes-highlight'));
+        el.classList.add('bosbes-highlight');
+
+        const tip = document.getElementById('bosbes-tooltip');
+        const rect = el.getBoundingClientRect();
+        tip.style.top  = `${window.scrollY + rect.bottom + 8}px`;
+        tip.style.left = `${window.scrollX + rect.left}px`;
+        document.getElementById('bosbes-tip-text').textContent = text;
+        tip.style.display = 'block';
+
+        // wire Next/Skip
+        tip.querySelector('.wiz-next').onclick = () => {
+            // call any step-specific action
+            fullWizard[step].onNext && fullWizard[step].onNext();
+            advanceWizard();
+        };
+        tip.querySelector('.wiz-skip').onclick = stopWizard;
+        }
         
         // Setup event listeners
         function setupEventListeners() {
