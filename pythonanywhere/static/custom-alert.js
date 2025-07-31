@@ -10,37 +10,34 @@
 
     // 2) Override alert
     window.alert = function (message, type = "info") {
-        // Limit raw message length
         const MAX_CHARS = 5000;
-        let isFullPage = /<!DOCTYPE\s+html|<html/i.test(message);
+        const isFullPage = /<!DOCTYPE\s+html|<html/i.test(message);
         let displayMessage = message;
         if (!isFullPage && message.length > MAX_CHARS) {
             displayMessage = message.slice(0, MAX_CHARS) + "…";
         }
 
-        // Create wrapper
+        // wrapper container
         const wrapper = document.createElement("div");
-        wrapper.style.position = "fixed";
-        wrapper.style.zIndex = 9999;
-        wrapper.style.boxShadow = "0 4px 6px rgba(0,0,0,0.1)";
-        wrapper.style.borderRadius = "6px";
-        wrapper.style.overflow = "hidden";
-        wrapper.style.maxWidth = "90vw";
-        wrapper.style.maxHeight = "80vh";
-        wrapper.style.display = "flex";
-        wrapper.style.flexDirection = "column";
-        wrapper.style.background = "#fff";
-        wrapper.style.fontFamily = "Arial, sans-serif";
-        wrapper.style.color = "#333";
+        Object.assign(wrapper.style, {
+            position:     "fixed",
+            zIndex:       "9999",
+            boxShadow:    "0 4px 6px rgba(0,0,0,0.1)",
+            borderRadius: "6px",
+            overflow:     "hidden",
+            maxWidth:     "400px",
+            maxHeight:    "200px",
+            display:      "flex",
+            flexDirection:"column",
+            background:   "#fff",
+            fontFamily:   "Arial, sans-serif",
+            color:        "#333"
+        });
 
-        // Position & style by type
+        // type-specific border & timeout
         let timeout = 5000;
-        const iconClass = {
-            info:    "fa-info-circle",
-            success: "fa-check-circle",
-            error:   "fa-exclamation-circle"
-        }[type.toLowerCase()] || "fa-info-circle";
-
+        const icons = { info: "fa-info-circle", success: "fa-check-circle", error: "fa-exclamation-circle" };
+        const iconClass = icons[type.toLowerCase()] || icons.info;
         switch (type.toLowerCase()) {
             case "success":
                 wrapper.style.borderTop = "5px solid #4CAF50";
@@ -54,51 +51,58 @@
                 wrapper.style.borderTop = "5px solid #2196F3";
         }
 
-        // Container for content
-        const content = document.createElement(isFullPage ? "iframe" : "div");
+        // header + close button
+        const header = document.createElement("div");
+        Object.assign(header.style, { display: "flex", justifyContent: "flex-end", padding: "5px 10px" });
+        const closeBtn = document.createElement("button");
+        closeBtn.innerHTML = '<i class="fa fa-times" aria-hidden="true"></i>';
+        Object.assign(closeBtn.style, {
+            background: "none", border: "none",
+            fontSize:   "16px", cursor: "pointer"
+        });
+        closeBtn.onclick = remove;
+        header.appendChild(closeBtn);
+
+        // content area (iframe for full-page HTML, div otherwise)
+        let content;
         if (isFullPage) {
-            content.setAttribute("sandbox", "");
-            content.style.border = "none";
-            content.style.flex = "1 1 auto";
+            content = document.createElement("iframe");
+            content.setAttribute("sandbox", "allow-scripts allow-same-origin");
             content.srcdoc = displayMessage;
+            Object.assign(content.style, {
+                border: "none",
+                flex:   "1 1 auto"
+            });
         } else {
-            content.style.padding = "15px 20px";
-            content.style.overflow = "auto";
-            content.style.flex = "1 1 auto";
+            content = document.createElement("div");
             content.innerHTML = `<i class="fa ${iconClass}" aria-hidden="true" style="margin-right:8px;"></i>${displayMessage}`;
+            Object.assign(content.style, {
+                padding:  "15px 20px",
+                overflow: "auto",
+                flex:     "1 1 auto"
+            });
         }
 
-        // Header with close button
-        const header = document.createElement("div");
-        header.style.display = "flex";
-        header.style.justifyContent = "flex-end";
-        header.style.background = "transparent";
-        header.style.padding = "5px 10px";
-        const btn = document.createElement("button");
-        btn.innerHTML = '<i class="fa fa-times" aria-hidden="true"></i>';
-        btn.style.background = "none";
-        btn.style.border = "none";
-        btn.style.fontSize = "16px";
-        btn.style.cursor = "pointer";
-        btn.onclick = () => remove();
-        header.appendChild(btn);
-
-        // Assemble & position
+        // assemble
         wrapper.appendChild(header);
         wrapper.appendChild(content);
         document.body.appendChild(wrapper);
 
-        // Position top-center for full pages, else top-right
+        // position: full-page centered top, else top-right
         if (isFullPage) {
-            wrapper.style.top = "20px";
-            wrapper.style.left = "50%";
-            wrapper.style.transform = "translateX(-50%)";
+            Object.assign(wrapper.style, {
+                top:       "20px",
+                left:      "50%",
+                transform: "translateX(-50%)"
+            });
         } else {
-            wrapper.style.top = "20px";
-            wrapper.style.right = "20px";
+            Object.assign(wrapper.style, {
+                top:   "20px",
+                right: "20px"
+            });
         }
 
-        // Auto-remove
+        // auto-hide
         const hideTimer = setTimeout(remove, timeout);
         function remove() {
             clearTimeout(hideTimer);
