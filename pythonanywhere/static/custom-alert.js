@@ -45,7 +45,7 @@
         }
 
         // Set message text
-        alertBox.innerText = message;
+        alertBox.innerHTML = message;
         document.body.appendChild(alertBox);
 
         // Auto-remove after 3 seconds
