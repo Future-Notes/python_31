@@ -29,7 +29,7 @@
             maxHeight:    "200px",
             display:      "flex",
             flexDirection:"column",
-            background:   "#fff",
+            background:   "var(--bg-color)",
             fontFamily:   "Arial, sans-serif",
             color:        "#333"
         });
