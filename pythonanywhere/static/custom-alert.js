@@ -31,7 +31,7 @@
             flexDirection:"column",
             background:   "var(--bg-color)",
             fontFamily:   "Arial, sans-serif",
-            color:        "#333"
+            color:        "white"
         });
 
         // type-specific border & timeout

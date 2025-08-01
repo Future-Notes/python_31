@@ -1223,7 +1223,7 @@
         overlay.style.display = 'flex';
 
         gitBtn.onclick = () => {
-            alert('Great! Just dive in: impact points = commits, linked to your todos. Happy coding!');
+            alert('Great! Just dive in: impact points = commits, linked to your todos. Happy coding!', 'success');
             overlay.style.display = 'none';
         };
         tourBtn.onclick = () => {
@@ -1463,7 +1463,7 @@
                             loadProjects();
                             loadProjectDetails(currentProjectId);
                         } else {
-                            alert('Failed to complete project');
+                            alert('Failed to complete project', 'error');
                         }
                     });
                 }
@@ -1484,7 +1484,7 @@
                             loadProjects();
                             resetProjectView();
                         } else {
-                            alert('Failed to delete project');
+                            alert('Failed to delete project', 'error');
                         }
                     });
                 }
@@ -1501,7 +1501,7 @@
                 if (sourceId && targetId && sourceId !== targetId) {
                     performMerge(sourceId, targetId, deleteAfterMerge);
                 } else {
-                    alert('Please select different sub-projects to merge');
+                    alert('Please select different sub-projects to merge', 'error');
                 }
             });
             
@@ -1536,12 +1536,12 @@
                 
                 // Validate project fields
                 if (!name) {
-                    alert('Project name is required');
+                    alert('Project name is required', 'error');
                     return;
                 }
                 
                 if (isNaN(impact) || impact < 10) {
-                    alert('Please enter a valid impact value (minimum 10)');
+                    alert('Please enter a valid impact value (minimum 10)', 'error');
                     return;
                 }
                 
@@ -1623,7 +1623,7 @@
                     
                 } catch (error) {
                     console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
+                    alert(`Error: ${error.message}`, 'error');
                 }
             });
             
@@ -1645,7 +1645,7 @@
                     loadSubProjects(currentProjectId);
                 } else {
                     const error = await response.text();
-                    alert('Error: ' + error);
+                    alert('Error: ' + error, 'error');
                 }
             });
             
@@ -1670,7 +1670,7 @@
                     loadProjectDetails(currentProjectId);
                 } else {
                     const error = await response.text();
-                    alert('Error: ' + error);
+                    alert('Error: ' + error, 'error');
                 }
             });
             document.getElementById('add-todo-btn').addEventListener('click', addTodoField);
@@ -1793,17 +1793,17 @@
             
             // Frontend validation
             if (!title) {
-                alert('Title is required');
+                alert('Title is required', 'error');
                 return;
             }
             
             if (isNaN(impact) || impact <= 0) {
-                alert('Please enter a valid positive impact value');
+                alert('Please enter a valid positive impact value', 'error');
                 return;
             }
             
             if (!dueDate) {
-                alert('Due date is required');
+                alert('Due date is required', 'error');
                 return;
             }
             
@@ -1836,7 +1836,7 @@
                 
             } catch (error) {
                 console.error('Error:', error);
-                alert(`Error creating todo: ${error.message}`);
+                alert(`Error creating todo: ${error.message}`, 'error');
             }
         }
         
@@ -2007,7 +2007,7 @@
                         if (response.ok) {
                             loadSubProjects(currentProjectId);
                         } else {
-                            alert('Failed to delete sub-project');
+                            alert('Failed to delete sub-project', 'error');
                         }
                     });
                 });
@@ -2110,7 +2110,7 @@
                 loadSteps(targetId);
             } else {
                 const error = await response.text();
-                alert('Failed to merge sub-projects: ' + error);
+                alert('Failed to merge sub-projects: ' + error, 'error');
             }
         }
         
@@ -2164,7 +2164,7 @@
                             loadSteps(currentSubProjectId);
                             loadProjectDetails(currentProjectId);
                         } else {
-                            alert('Failed to revert step');
+                            alert('Failed to revert step', 'error');
                         }
                     });
                 });
