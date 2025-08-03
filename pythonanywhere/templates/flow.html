@@ -776,9 +776,39 @@
         }
 
         .fade {
-            background: linear-gradient(to right, transparent, white);
+            position: relative;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+
+            -webkit-mask-image: linear-gradient(to right, black 80%, transparent);
+            mask-image: linear-gradient(to right, black 80%, transparent);
+
+            /* Optional styling */
+            color: white;
             padding-left: 4px;
         }
+
+        .description-container {
+            position: relative;
+            overflow: hidden;
+            max-height: calc(1.2em * 2); /* assuming ~1.2 line-height */
+        }
+
+        .description {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3; /* show 2 lines max */
+            line-clamp: 3;
+            overflow: hidden;
+            line-height: 1.2em;
+            position: relative;
+
+            /* fade out on the right of the second line */
+            -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+            mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+        }
+
 
         .description-container {
             max-height: 3em; /* around 2 lines */
@@ -2028,23 +2058,27 @@
             card.className = 'project-card';
             card.dataset.id = project.id;
 
-            const truncatedTitle = project.title.length > 20
-                ? project.title.slice(0, 20)
-                : project.title;
+            const hasDescription = !!project.description && project.description.trim() !== '';
+
+            const isTruncated = project.title.length > 20;
+            const firstPart = project.title.slice(0, 20);
+            const fadePart = isTruncated ? project.title.slice(20, 25) : '';
 
             card.innerHTML = `
+                <span class="project-status ${project.status === 'active' ? 'status-active' : 'status-completed'}">
+                    ${project.status === 'active' ? 'Active' : 'Completed'}
+                </span>
                 <div class="card-header">
                     <h3 class="title">
-                        ${truncatedTitle}
-                        ${project.title.length > 20 ? '<span class="fade">...</span>' : ''}
-                        <span class="project-status ${project.status === 'active' ? 'status-active' : 'status-completed'}">
-                            ${project.status === 'active' ? 'Active' : 'Completed'}
-                        </span>
+                        ${firstPart}
+                        ${isTruncated ? `<span class="fade">${fadePart}</span>` : ''}
                     </h3>
                 </div>
-                <div class="description-container">
-                    <p class="description">${project.description}</p>
-                </div>
+                ${hasDescription ? `
+                    <div class="description-fade-mask">
+                        <p class="description">${project.description}</p>
+                    </div>
+                ` : ''}
                 <div class="progress-container">
                     <div class="progress-bar">
                         <div class="progress-fill" style="width: ${project.progress_percent}%"></div>
