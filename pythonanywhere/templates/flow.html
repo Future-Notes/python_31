@@ -814,6 +814,10 @@
             color: #222;
         }
 
+        #project-show-desc {
+            font-style: italic;
+        }
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -1008,6 +1012,9 @@
                             syncButton('merge-sub-project-btn', 'merge-sub-project-btn-mobile')
                         });
                     </script>
+                </div>
+                <div class="project-description">
+                    <span id="project-show-desc">Loading description...</span>
                 </div>
                 
                 <div class="progress-container" id="progress-container" style="display: none;">
@@ -1272,6 +1279,7 @@
         const stepsListEl = document.getElementById('steps-list');
         const currentSubProjectNameEl = document.getElementById('current-sub-project-name');
         const branchGraphEl = document.getElementById('branch-graph');
+        const projectShowDesc = document.getElementById('project-show-desc');
         
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
@@ -2078,6 +2086,8 @@
             if (response.ok) {
                 const project = await response.json();
                 projectTitleEl.textContent = project.title;
+
+                projectShowDesc.textContent = project.description;
                 
                 // Show progress
                 progressFillEl.style.width = `${project.progress_percent}%`;
