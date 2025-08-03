@@ -218,7 +218,7 @@
         /* Flow-specific Styles */
         .flow-container {
             display: grid;
-            grid-template-columns: 300px 1fr;
+            grid-template-columns: 305px 1fr;
             gap: 20px;
             height: calc(100vh - 160px);
             padding: 20px;
@@ -290,6 +290,7 @@
             font-size: 14px;
             padding: 3px 8px;
             border-radius: 4px;
+            margin-left: 3px;
             background-color: #7a7a7a;
         }
         
@@ -765,6 +766,54 @@
             box-shadow: 0 0 0 4px rgba(92,184,92,0.7);
             z-index:10002;
         }
+        .title {
+            display: inline-block;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            position: relative;
+        }
+
+        .fade {
+            background: linear-gradient(to right, transparent, white);
+            padding-left: 4px;
+        }
+
+        .description-container {
+            max-height: 3em; /* around 2 lines */
+            overflow: hidden;
+            position: relative;
+        }
+
+        .description {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .edit-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #666;
+            font-size: 1rem;
+            transition: color 0.2s;
+        }
+
+        .edit-btn:hover {
+            color: #222;
+        }
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -869,6 +918,7 @@
                         <!-- Desktop: show buttons inline -->
                         <div class="desktop-actions">
                             <button id="create-sub-project-btn" disabled>New Sub-project</button>
+                            <button id="merge-sub-project-btn" disabled>Merge Sub-projects</button>
                             <button id="create-todo-btn" disabled>New Todo</button>
                             <button id="create-step-btn" class="primary" disabled>New Step</button>
                             <button id="complete-project-btn" class="success" disabled>Complete Project</button>
@@ -879,6 +929,7 @@
                             <button id="project-actions-menu-btn" title="Actions" aria-label="Project actions">&#x22EE;</button>
                             <div id="project-actions-dropdown" class="actions-dropdown">
                                 <button id="create-sub-project-btn-mobile" disabled>New Sub-project</button>
+                                <button id="merge-sub-project-btn-mobile" disabled>Merge Sub-projects</button>
                                 <button id="create-todo-btn-mobile" disabled>New Todo</button>
                                 <button id="create-step-btn-mobile" disabled>New Step</button>
                                 <button id="complete-project-btn-mobile" disabled>Complete Project</button>
@@ -954,6 +1005,7 @@
                             syncButton('create-step-btn', 'create-step-btn-mobile');
                             syncButton('complete-project-btn', 'complete-project-btn-mobile');
                             syncButton('delete-project-btn', 'delete-project-btn-mobile');
+                            syncButton('merge-sub-project-btn', 'merge-sub-project-btn-mobile')
                         });
                     </script>
                 </div>
@@ -1026,6 +1078,34 @@
                     </div>
                 </div>
                 
+                <div class="form-actions">
+                    <button type="button" class="close-modal">Cancel</button>
+                    <button type="submit" class="primary">Save Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal" id="project-edit-modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2 id="project-edit-modal-title">Edit "<span id="project-edit-title"></span>"</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="project-edit-form">
+                <input type="hidden" id="project-edit-id">
+                <div class="form-group">
+                    <label for="project-edit-name">Project Name</label>
+                    <input type="text" id="project-edit-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="project-edit-desc">Description (Optional)</label>
+                    <textarea id="project-edit-desc" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="project-edit-impact">Total Impact Points</label>
+                    <input type="number" id="project-edit-impact" value="100" min="10" required>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="close-modal">Cancel</button>
                     <button type="submit" class="primary">Save Project</button>
@@ -1380,6 +1460,28 @@
         };
         tip.querySelector('.wiz-skip').onclick = stopWizard;
         }
+
+        // Project completion
+        async function completeProjectHandler() {
+            if (currentProjectId) {
+                showConfirm('Mark this project as completed? This will create a completion step.', async () => {
+                    const response = await fetch(`/flow/projects/${currentProjectId}/complete`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        alert('Project marked as completed');
+                        loadProjects().then(() => {
+                            const card = document.querySelector(`.project-card[data-id="${currentProjectId}"]`);
+                            if (card) card.click();
+                        }
+                    )
+                    } else {
+                        alert('Failed to complete project', 'error');
+                    }
+                });
+            }
+        }
         
         // Setup event listeners
         function setupEventListeners() {
@@ -1405,8 +1507,22 @@
                 document.getElementById('project-id').value = "";
                 document.getElementById('project-modal').style.display = 'flex';
             }
+
+            function openProjectEditModal(project) {
+                document.getElementById("project-edit-title").textContent = project.title;
+                document.getElementById("project-edit-form").reset();
+                document.getElementById("project-edit-id").value = project.id;
+                document.getElementById("project-edit-name").value = project.title;
+                document.getElementById("project-edit-desc").value = project.description;
+                document.getElementById("project-edit-impact").value = project.total_impact;
+                document.getElementById("project-edit-modal").style.display = "flex";
+            }
+            window.openProjectEditModal = openProjectEditModal; //Edit button in project card is outside of setupEventListeners()
             document.getElementById('create-project-btn').addEventListener('click', openProjectModal);
             document.getElementById('create-project-btn-mobile')?.addEventListener('click', openProjectModal);
+
+            document.getElementById('merge-sub-project-btn').addEventListener('click', openMergeModal);
+            document.getElementById('merge-sub-project-btn-mobile')?.addEventListener('click', openMergeModal);
 
             // Open sub-project modal
             function openSubProjectModal() {
@@ -1450,24 +1566,6 @@
             document.getElementById('create-step-btn').addEventListener('click', openStepModal);
             document.getElementById('create-step-btn-mobile')?.addEventListener('click', openStepModal);
 
-            // Project completion
-            async function completeProjectHandler() {
-                if (currentProjectId) {
-                    showConfirm('Mark this project as completed? This will create a completion step.', async () => {
-                        const response = await fetch(`/flow/projects/${currentProjectId}/complete`, {
-                            method: 'POST'
-                        });
-
-                        if (response.ok) {
-                            alert('Project marked as completed');
-                            loadProjects();
-                            loadProjectDetails(currentProjectId);
-                        } else {
-                            alert('Failed to complete project', 'error');
-                        }
-                    });
-                }
-            }
             document.getElementById('complete-project-btn').addEventListener('click', completeProjectHandler);
             document.getElementById('complete-project-btn-mobile')?.addEventListener('click', completeProjectHandler);
 
@@ -1626,6 +1724,56 @@
                     alert(`Error: ${error.message}`, 'error');
                 }
             });
+
+            document.getElementById('project-edit-form').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const id = parseInt(document.getElementById('project-edit-id').value, 10);
+                const name = document.getElementById('project-edit-name').value.trim();
+                const desc = document.getElementById('project-edit-desc').value.trim();
+                const impact = parseInt(document.getElementById('project-edit-impact').value, 10);
+                const modal = document.getElementById('project-edit-modal');
+                
+                // Validate project fields
+                if (!name) {
+                    return alert('Project name is required', 'error');
+                }
+                if (isNaN(impact) || impact < 10) {
+                    return alert('Please enter a valid impact value (minimum 10)', 'error');
+                }
+
+                try {
+                    const res = await fetch(`/flow/projects/${id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            title: name,
+                            description: desc,
+                            total_impact: impact
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.message || `Server responded ${res.status}`);
+                    }
+
+                    const body = await res.json();
+                    alert(body.message || 'Project updated successfully', 'success');
+
+                    loadProjects();
+                    loadProjectDetails(id);
+
+                    // Close the modal
+                    document.getElementById('project-edit-modal').style.display = 'none';
+                } catch (error) {
+                    console.error('Update failed:', error);
+                    alert(`Failed to update project: ${error.message}`, 'error');
+                }
+            });
+
             
             document.getElementById('sub-project-form').addEventListener('submit', async function(e) {
                 e.preventDefault();
@@ -1643,6 +1791,7 @@
                     alert('Sub-project created!');
                     document.getElementById('sub-project-modal').style.display = 'none';
                     loadSubProjects(currentProjectId);
+                    loadProjects();
                 } else {
                     const error = await response.text();
                     alert('Error: ' + error, 'error');
@@ -1668,6 +1817,7 @@
                     document.getElementById('step-modal').style.display = 'none';
                     loadSteps(currentSubProjectId);
                     loadProjectDetails(currentProjectId);
+                    loadProjects();
                 } else {
                     const error = await response.text();
                     alert('Error: ' + error, 'error');
@@ -1706,16 +1856,39 @@
             const response = await fetch('/flow/projects');
             if (response.ok) {
                 projects = await response.json();
+                // INSIDE loadProjects()
                 renderProjects(projects);
+                const firstCard = activeProjectsEl.querySelector('.project-card');
+                if (firstCard) firstCard.click();
 
-                // Get the ID of the first project (if it exists)
-                const firstProjectId = projects.length > 0 ? projects[0].id : null;
-                loadProjectDetails(firstProjectId);
             } else {
                 activeProjectsEl.innerHTML = '<div class="no-projects">Failed to load projects</div>';
                 completedProjectsEl.innerHTML = '<div class="no-projects">Failed to load projects</div>';
             }
         }
+
+        async function reactivateProjectHandler() {
+            if (!currentProjectId) return;
+            showConfirm(
+                'Re-open this project and remove its completion step?',
+                async () => {
+                const response = await fetch(`/flow/projects/${currentProjectId}/reactivate`, {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    alert('Project re-activated');
+                    // reload & re-select to sync UI
+                    loadProjects().then(() => {
+                    const card = document.querySelector(`.project-card[data-id="${currentProjectId}"]`);
+                    if (card) card.click();
+                    });
+                } else {
+                    alert('Failed to re-activate project', 'error');
+                }
+                }
+            );
+        }
+
         
         // Render projects
         function renderProjects(projects) {
@@ -1832,6 +2005,7 @@
                 if (currentSubProjectId) {
                     loadSteps(currentSubProjectId);
                     loadProjectDetails(currentProjectId);
+                    loadProjects();
                 }
                 
             } catch (error) {
@@ -1845,13 +2019,24 @@
             const card = document.createElement('div');
             card.className = 'project-card';
             card.dataset.id = project.id;
-            
+
+            const truncatedTitle = project.title.length > 20
+                ? project.title.slice(0, 20)
+                : project.title;
+
             card.innerHTML = `
-                <h3>${project.title} 
-                    <span class="project-status ${project.status === 'active' ? 'status-active' : 'status-completed'}">
-                        ${project.status === 'active' ? 'Active' : 'Completed'}
-                    </span>
-                </h3>
+                <div class="card-header">
+                    <h3 class="title">
+                        ${truncatedTitle}
+                        ${project.title.length > 20 ? '<span class="fade">...</span>' : ''}
+                        <span class="project-status ${project.status === 'active' ? 'status-active' : 'status-completed'}">
+                            ${project.status === 'active' ? 'Active' : 'Completed'}
+                        </span>
+                    </h3>
+                </div>
+                <div class="description-container">
+                    <p class="description">${project.description}</p>
+                </div>
                 <div class="progress-container">
                     <div class="progress-bar">
                         <div class="progress-fill" style="width: ${project.progress_percent}%"></div>
@@ -1864,8 +2049,18 @@
                 <div class="project-meta">
                     <span>${project.branch_count} sub-projects</span> • 
                     <span>${project.commit_count} steps</span>
+                    <button class="edit-btn" title="Edit Project">
+                        <i class="fas fa-pencil-alt"></i>
+                    </button>
                 </div>
             `;
+
+            const editBtn = card.querySelector('.edit-btn');
+            editBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent card click event
+                openProjectEditModal(project); // Stub for future modal logic
+            });
+
             
             card.addEventListener('click', () => {
                 document.querySelectorAll('.project-card').forEach(c => c.classList.remove('active'));
@@ -1873,7 +2068,7 @@
                 currentProjectId = project.id;
                 loadProjectDetails(project.id);
             });
-            
+
             return card;
         }
         
@@ -1889,15 +2084,33 @@
                 progressPercentEl.textContent = `${project.progress_percent}% Complete`;
                 progressTextEl.textContent = `${project.progress}/${project.total_impact} Impact Points`;
                 progressContainer.style.display = 'block';
+
+                const completeBtn = document.getElementById('complete-project-btn');
+                const completeBtnMobile = document.getElementById('complete-project-btn-mobile');
+                if (project.status === 'completed') {
+                    // switch to “Turn Active”
+                    completeBtn.textContent = 'Re-open Project';
+                    completeBtn.onclick = reactivateProjectHandler;
+                    completeBtnMobile.textContent = 'Re-open';
+                    completeBtnMobile.onclick = reactivateProjectHandler;
+                } else {
+                    // keep your original “Complete Project” setup
+                    completeBtn.textContent = 'Complete Project';
+                    completeBtn.onclick = completeProjectHandler;
+                    completeBtnMobile.textContent = 'Complete';
+                    completeBtnMobile.onclick = completeProjectHandler;
+                }
                 
                 // Enable buttons
                 document.getElementById('create-sub-project-btn').disabled = false;
+                document.getElementById('merge-sub-project-btn').disabled = false;
                 document.getElementById('create-step-btn').disabled = false;
                 document.getElementById('complete-project-btn').disabled = false;
                 document.getElementById('delete-project-btn').disabled = false;
                 document.getElementById('create-todo-btn').disabled = false;
 
                 document.getElementById('create-sub-project-btn-mobile').disabled = false;
+                document.getElementById('merge-sub-project-btn-mobile').disabled = false;
                 document.getElementById('create-step-btn-mobile').disabled = false;
                 document.getElementById('complete-project-btn-mobile').disabled = false;
                 document.getElementById('delete-project-btn-mobile').disabled = false;
@@ -2163,6 +2376,7 @@
                             alert(data.message);
                             loadSteps(currentSubProjectId);
                             loadProjectDetails(currentProjectId);
+                            loadProjects();
                         } else {
                             alert('Failed to revert step', 'error');
                         }

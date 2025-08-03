@@ -1,6 +1,7 @@
 # ------------------------------Imports--------------------------------
 from operator import is_not
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, Blueprint
+from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
@@ -59,6 +60,7 @@ class CustomJSONProvider(DefaultJSONProvider):
         return super().default(obj)
 app = Flask(__name__)
 CORS(app)
+Compress(app)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -151,6 +153,19 @@ error_template = '''
 '''
  
 # --------------------------------Models--------------------------------------
+
+class Task(db.Model):
+    __tablename__ = 'tasks'
+    
+    id             = db.Column(db.Integer, primary_key=True)
+    function_path  = db.Column(db.String(255), nullable=False)
+    args           = db.Column(db.JSON, nullable=True)    # e.g. ["user@example.com"]
+    kwargs         = db.Column(db.JSON, nullable=True)    # e.g. {"template": "weekly.html"}
+    interval_secs  = db.Column(db.Integer, nullable=False)  # seconds between runs
+    next_run       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    def schedule_next(self):
+        self.next_run = datetime.utcnow() + timedelta(seconds=self.interval_secs)
 
 class AppSecret(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -584,7 +599,8 @@ class FlowProject(db.Model):
                     branch_id=main_branch.id,
                     title="Project Completion",
                     description="Project marked as completed",
-                    impact=remaining
+                    impact=remaining,
+                    is_completion=True
                 )
                 db.session.add(completion_step)
         
@@ -611,6 +627,7 @@ class FlowCommit(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     prev_commit_id = db.Column(db.Integer, db.ForeignKey('flow_commits.id'), nullable=True)
     todo_id = db.Column(db.Integer, db.ForeignKey('todo.id'), nullable=True)  # New field
+    is_completion = db.Column(db.Boolean, nullable=False, default=False)
     
     # Relationships
     next_commits = db.relationship('FlowCommit', backref=db.backref('prev_commit', remote_side=[id]))
@@ -625,6 +642,27 @@ def generate_session_key(user_id):
         "last_active": datetime.now()
     }
     return key
+
+def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_run=None):
+    """
+    Schedule a new task (or update an existing one).
+    
+    - function_path: "module.submodule:func_name"
+    - interval_secs: seconds between runs
+    - args: list of positional args for the function
+    - kwargs: dict of keyword args for the function
+    - first_run: datetime of first execution (defaults to now)
+    """
+    task = Task(
+        function_path=function_path,
+        interval_secs=interval_secs,
+        args=args or [],
+        kwargs=kwargs or {},
+        next_run=first_run or datetime.utcnow()
+    )
+    db.session.add(task)
+    db.session.commit()
+    return task
 
 def load_secrets():
     with app.app_context():
@@ -2434,7 +2472,6 @@ def update_project(project_id):
     project.title = data.get('title', project.title)
     project.description = data.get('description', project.description)
     project.total_impact = data.get('total_impact', project.total_impact)
-    project.status = data.get('status', project.status)
     db.session.commit()
     return jsonify({'message': 'Project updated'})
 
@@ -2536,6 +2573,9 @@ def merge_subprojects(source_id, target_id):
     if source.project_id != target.project_id:
         return jsonify({'error': 'Sub-projects must be in the same project'}), 400
     
+    if source_id == target_id or target_id == source_id:
+        return jsonify({'error': 'Source cannot match destination'})
+    
     project = FlowProject.query.get(source.project_id)
     if project.user_id != g.user_id:
         return jsonify({'error': 'Unauthorized'}), 403
@@ -2589,8 +2629,9 @@ def create_step(branch_id):
     project = FlowProject.query.get(branch.project_id)
     if project.user_id != g.user_id:
         return jsonify({'error': 'Unauthorized'}), 403
-    
+
     data = request.get_json()
+    current_progress = project.progress  # BEFORE the new step
     new_step = FlowCommit(
         branch_id=branch_id,
         title=data['title'],
@@ -2598,17 +2639,25 @@ def create_step(branch_id):
         impact=data['impact']
     )
     db.session.add(new_step)
-    db.session.commit()
-    
-    # Check if project should be automatically completed
-    project = FlowProject.query.get(branch.project_id)
-    if project.progress >= project.total_impact and project.status != 'completed':
+    db.session.flush()  # Push the step to the DB so project.progress updates
+
+    is_completion = False
+    updated_progress = project.progress  # NOW includes new_step
+
+    if (
+        current_progress < project.total_impact and
+        updated_progress >= project.total_impact and
+        project.status != 'completed'
+    ):
         project.status = 'completed'
-        db.session.commit()
-    
+        is_completion = True
+
+    db.session.commit()
+
     return jsonify({
         'id': new_step.id,
-        'message': 'Step created'
+        'message': 'Step created',
+        'is_completion': is_completion
     }), 201
 
 @app.route('/flow/commits/<int:commit_id>/revert', methods=['POST'])
@@ -2619,6 +2668,9 @@ def revert_commit_flow(commit_id):
     project = FlowProject.query.get(branch.project_id)
     if project.user_id != g.user_id:
         return jsonify({'error': 'Unauthorized'}), 403
+    
+    if commit.is_completion:
+        project.status = 'active'
     
     # Get all subsequent commits
     subsequent_commits = FlowCommit.query.filter(
@@ -2632,6 +2684,46 @@ def revert_commit_flow(commit_id):
     
     db.session.commit()
     return jsonify({'message': f'{len(subsequent_commits)} commits reverted'})
+
+@app.route('/flow/projects/<int:project_id>/reactivate', methods=['POST'])
+@require_session_key
+def reactivate_project(project_id):
+    # 1. Fetch & validate
+    project = FlowProject.query.get(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    if project.status != 'completed':
+        return jsonify({'error': 'Project is not completed'}), 400
+
+    # 2. Locate the “completion” step
+    #    We’ll assume it's the last step on the “main” branch.
+    main_branch = (
+        FlowBranch.query
+        .filter_by(project_id=project.id, name='main')
+        .first()
+    )
+    if main_branch:
+        completion_step = (
+            FlowCommit.query
+            .filter_by(branch_id=main_branch.id)
+            .order_by(FlowCommit.created_at.desc())
+            .first()
+        )
+        # Optionally, you could further check a flag or title on that step:
+        if completion_step and completion_step.is_completion:
+            db.session.delete(completion_step)
+
+    # 3. Flip the status back
+    project.status = 'active'
+
+    # 4. (Re-)calculate any aggregates if needed.
+    #    e.g. project.progress = sum(step.impact for branch in project.branches for step in branch.steps)
+    #    but if you recalc on-the-fly elsewhere you can skip it.
+
+    # 5. Commit & respond
+    db.session.commit()
+    return jsonify({'message': 'Project re-activated'}), 200
 
 @app.route('/flow/branches/<int:branch_id>/todos', methods=['GET', 'POST'])
 @require_session_key
