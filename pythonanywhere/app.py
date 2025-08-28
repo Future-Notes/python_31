@@ -7198,7 +7198,13 @@ def leaderboard_info():
 
 @app.route('/leaderboard-info-players', methods=['GET', 'POST'])
 def leaderboard_info_players():
-    data = request.json
+    # Handle both JSON and form data
+    if request.is_json:
+        data = request.get_json()
+    else:
+        # For form data or query parameters
+        data = request.form or request.args
+    
     if not data:
         return jsonify({"error": "No data provided!"}), 400
 
