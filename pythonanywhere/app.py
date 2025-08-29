@@ -71,6 +71,7 @@ app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfD
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
 # Jinja setup (point at your templates/)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = Environment(
@@ -3231,11 +3232,100 @@ def contact():
     data = request.json
     email = data['email']
     message = data['message']
+
+    # First clean with bleach
+    message = bleach.clean(message)
+    
     try:
+        # Send confirmation email with promo content
+        html_content = """
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; color: white;">
+            
+            <p style="font-size: 16px; line-height: 1.6;">
+                We've received your message and will get back to you shortly. In the meantime, 
+                we'd like to share some of the amazing features that make Future Notes the perfect 
+                tool for organizing your thoughts and tasks.
+            </p>
+            
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                <h3 style="color: #4A90E2; margin-top: 0;">✨ Key Features of Future Notes ✨</h3>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Organized Notes" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Smart Organization</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Categorize, tag, and search your notes with our intuitive system.</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1589652717521-10c0d092dea9?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Sync Across Devices" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Cross-Device Sync</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Access your notes from anywhere - phone, tablet, or computer.</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Rich Text Editing" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Rich Text Editing</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Format your notes with bold, italics, lists, and more.</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Reminders" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Smart Reminders</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Set reminders for important tasks and never miss a deadline.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="https://bosbes.eu.pythonanywhere.com/signup_page" 
+                style="background-color: #4A90E2; color: white; padding: 12px 24px; 
+                        text-decoration: none; border-radius: 4px; font-weight: bold; 
+                        display: inline-block;">Explore Future Notes Now</a>
+            </div>
+            
+            <p style="font-size: 14px; text-align: center; color: #666;">
+                We're constantly working to improve Future Notes. Stay tuned for exciting updates!
+            </p>
+        </div>
+        """
+        
+        send_email(
+            to_address=email,
+            subject="Thank You for Contacting Future Notes!",
+            content_html=html_content,
+            content_text="Thank you for contacting us! We've received your message and will get back to you shortly. In the meantime, check out Future Notes at https://bosbes.eu.pythonanywhere.com",
+            logo_url="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png",
+            unsubscribe_url="https://bosbes.eu.pythonanywhere.com"
+        )
+        
+        # Also send notification to yourself
+        admin_html = f"<p>New contact form submission from: {email}</p><p>Message: {message}</p>"
+        send_email(
+            to_address=app.config['ADMIN_EMAIL'],
+            subject=f"New Contact Form Submission from {email}",
+            content_html=admin_html,
+            content_text=f"New contact form submission from: {email}\nMessage: {message}",
+            logo_url="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png",
+            unsubscribe_url="https://bosbes.eu.pythonanywhere.com",
+        )
+        
+        # Save to database
         message = Messages(email=email, message=message)
         db.session.add(message)
         db.session.commit()
-        return jsonify({"succes": "Message received successfully!"}), 201
+        
+        return jsonify({"success": "Message received successfully!"}), 201
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     

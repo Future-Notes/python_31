@@ -1100,6 +1100,106 @@
                 gap: 3rem;
             }
         }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        
+        .loading-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .loading-content {
+            text-align: center;
+            background: gray;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .loader {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 20px;
+            position: relative;
+        }
+        
+        .loader:before {
+            content: '';
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #3498db;
+            animation: spin 1.2s linear infinite;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        .loader:after {
+            content: '';
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 6px solid transparent;
+            border-top: 6px solid #3498db;
+            opacity: 0.7;
+            animation: spin 0.8s linear infinite reverse;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        .loading-content p {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-top: 15px;
+        }
+        
+        .dots {
+            display: inline-block;
+            position: relative;
+            width: 20px;
+            height: 10px;
+        }
+        
+        .dots::after {
+            content: '...';
+            position: absolute;
+            animation: dots 1.5s infinite steps(4);
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+            100% { content: ''; }
+        }
     </style>
 </head>
 <body>
@@ -1221,7 +1321,7 @@
         <div class="story-content">
             <div class="story-card">
                 <div class="dev-info">
-                    <div class="dev-avatar" style="width: 80px; height: 80px; overflow: hidden; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(45deg, var(--primary), var(--secondary));">
+                    <div class="dev-avatar" id="dev-avatar" style="width: 80px; height: 80px; overflow: hidden; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(45deg, var(--primary), var(--secondary));">
                         <img src="/static/webp/Bosbes_PXL_20240914_1555337522.webp" alt="Bosbes (Nathan)" style="width: 76px; height: 76px; object-fit: cover; border-radius: 50%;">
                     </div>
                     <div class="dev-details">
@@ -1404,6 +1504,14 @@
         </div>
     </section>
 
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-content">
+            <div class="loader"></div>
+            <p>Je bericht wordt verzonden<span class="dots"></span></p>
+            <p><small>Dit kan even duren omdat we een e-mail synchroniseren</small></p>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer>
         <div class="footer-content">
@@ -1480,17 +1588,38 @@
                 behavior: 'smooth'
             });
         });
+
+        const devAvatar = document.getElementById('dev-avatar');
+
+        
+        let avatarHoldTimeout;
+        devAvatar.addEventListener('mousedown', () => {
+            avatarHoldTimeout = setTimeout(() => {
+                // Easter egg: Show a fun modal or animation
+                alert("🎉 Easter Egg! Bedankt voor het klikken van de avatar. Een productieve dag toegewenst!");
+            }, 3000);
+        });
+        devAvatar.addEventListener('mouseup', () => {
+            clearTimeout(avatarHoldTimeout);
+        });
+        devAvatar.addEventListener('mouseleave', () => {
+            clearTimeout(avatarHoldTimeout);
+        });
         
         // Contact form submission
         const contactForm = document.getElementById('contact-form');
         const successMessage = document.getElementById('success-message');
         const errorMessage = document.getElementById('error-message');
+        const loadingOverlay = document.getElementById('loading-overlay');
         
         contactForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const email = document.getElementById('email').value;
             const message = document.getElementById('message').value;
+            
+            // Show loading animation
+            loadingOverlay.classList.add('active');
             
             try {
                 const response = await fetch('/contact', {
@@ -1522,6 +1651,9 @@
                 setTimeout(() => {
                     errorMessage.style.display = 'none';
                 }, 5000);
+            } finally {
+                // Hide loading animation regardless of outcome
+                loadingOverlay.classList.remove('active');
             }
         });
         
