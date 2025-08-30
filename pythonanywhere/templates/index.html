@@ -781,6 +781,48 @@
         #add-menu .checkbox-list li h3 .note-checkbox {
             margin-top: 12px;
         }
+
+        /* Container for counter + bar */
+        #storage-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            width: 200px;  /* adjust to your header size */
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            margin: 0 10px;
+        }
+
+        /* Text counter */
+        #storage-counter {
+            margin-bottom: 4px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        /* Background of progress bar */
+        #storage-bar-bg {
+            width: 100%;
+            height: 8px;
+            background-color: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        /* Filled portion */
+        #storage-bar-fill {
+            width: 0%; /* dynamically updated by JS */
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #81c784);
+            border-radius: 4px 0 0 4px;
+            transition: width 0.3s ease, background 0.3s ease;
+        }
+
+        /* Red when almost full */
+        #storage-bar-fill.almost-full {
+            background: linear-gradient(90deg, #e53935, #ffb74d);
+        }
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -840,6 +882,12 @@
           <a href="/todo_page" class="nav-link">Todo</a>
           <a href="/flow_page" class="nav-link">Flow</a>
         </nav>
+        <div id="storage-container" style="margin: 0px 100px;">
+            <span id="storage-counter">0 / 0 MB</span>
+            <div id="storage-bar-bg">
+                <div id="storage-bar-fill"></div>
+            </div>
+        </div>
         <div id="profile-pic" class="profile-pic no-picture"></div>
       </header>
       
@@ -849,7 +897,8 @@
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
         <a href="/flow_page" class="nav-link">Flow</a>
-      </nav>      
+      </nav> 
+
 
     <main>
         <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
@@ -887,6 +936,13 @@
         </div>
         
         <input type="text" id="update-note-tag" placeholder="Tag (optional)">
+        <label for="update-file-input" class="file-label">Attach files</label>
+        <input id="update-file-input" type="file" multiple>
+        <div id="update-file-list" class="attachment-list"></div>
+
+        <!-- show existing attachments -->
+        <div id="update-existing-attachments" class="attachment-list"></div>
+
         <button id="save-note-button">Save</button>
         <button id="delete-button" onclick="deleteNote(currentNoteId)">Delete</button>
         <button id="back-button">Back</button>
@@ -929,6 +985,12 @@
         
         <input type="text" id="note-tag" placeholder="Tag (optional)">
 
+        <!-- inside add-menu, below note-tag -->
+        <label for="add-file-input" class="file-label">Attach files</label>
+        <input id="add-file-input" type="file" multiple>
+        <div id="add-file-list" class="attachment-list"></div>
+
+
         <button id="add-note-button">Add Note</button>
         <button id="cancel-button">Cancel</button>
         <!-- Add this to your add-menu -->
@@ -938,6 +1000,12 @@
     <script>
         let allNotes = [];
         let currentNoteId = null;
+        let addPendingFiles = [];         // File objects selected in Add UI
+        let addUploadedIds = [];         // upload_ids returned from /uploads for add
+        let updatePendingFiles = [];     // File objects selected in Update UI (new)
+        let updateUploadedIds = [];      // upload_ids returned for new files in Update
+        let updateExistingAttachments = []; // [{id, filename, size_bytes, mimetype}, ...] from server
+        // note: when user removes an existing attachment, remove it from updateExistingAttachments array
 
         function formatText(command, editorId, value = null) {
             const editor = document.getElementById(editorId);
@@ -973,6 +1041,7 @@
                 if (res.status === 200) {
                     hideModal();
                     fetchNotes();
+                    updateStorageCounter();
                     return true;
                 }
                 if (res.status === 403) {
@@ -996,6 +1065,7 @@
                     console.log("Auto-login successful");
                     hideModal();
                     fetchNotes();
+                    updateStorageCounter();
                     return true;
                 }
                 showModal();
@@ -1011,6 +1081,30 @@
             await attemptAutoLogin();
         }
         });
+
+        // Example: update the bar along with the text
+        async function updateStorageCounter() {
+            try {
+                const res = await fetch('/user/storage');
+                if (!res.ok) throw new Error("Failed to fetch storage info");
+                const data = await res.json();
+
+                const usedMB = (data.used_bytes / 1024 / 1024).toFixed(2);
+                const totalMB = (data.total_bytes / 1024 / 1024).toFixed(2);
+                const percentUsed = Math.min((data.used_bytes / data.total_bytes) * 100, 100);
+
+                document.getElementById('storage-counter').textContent = `${usedMB} / ${totalMB} MB`;
+                document.getElementById('storage-bar-fill').style.width = `${percentUsed}%`;
+                if (percentUsed > 90) {
+                    document.getElementById('storage-bar-fill').classList.add('almost-full');
+                } else {
+                    document.getElementById('storage-bar-fill').classList.remove('almost-full');
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
 
         document.addEventListener("DOMContentLoaded", () => {
         const cfg = window.appConfig || {};
@@ -1038,6 +1132,89 @@
             if (window.innerWidth < 600) {
                 document.getElementById("floating-add-button").style.display = "flex";
             }
+        }
+
+        function renderFileList(target, fileObjs, existing=false) {
+            // target: element id string
+            // fileObjs: for existing attachments expect objects with id & filename; for pending files use File objects
+            const el = document.getElementById(target);
+            el.innerHTML = '';
+            fileObjs.forEach((f, idx) => {
+                const row = document.createElement('div');
+                row.className = 'attachment-row';
+                const name = document.createElement('span');
+                name.textContent = existing ? f.original_filename || f.filename || f.name : f.name;
+                row.appendChild(name);
+
+                // remove button
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = 'Remove';
+                btn.onclick = () => {
+                    if (target === 'add-file-list') {
+                        addPendingFiles.splice(idx, 1);
+                        renderFileList('add-file-list', addPendingFiles, false);
+                    } else if (target === 'update-file-list') {
+                        updatePendingFiles.splice(idx, 1);
+                        renderFileList('update-file-list', updatePendingFiles, false);
+                    } else if (target === 'update-existing-attachments') {
+                        // remove existing attachment object (user intends to detach it)
+                        updateExistingAttachments.splice(idx, 1);
+                        renderFileList('update-existing-attachments', updateExistingAttachments, true);
+                    }
+                };
+                row.appendChild(btn);
+                el.appendChild(row);
+            });
+        }
+
+        // --------- File input handlers ----------
+        document.getElementById('add-file-input').addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            addPendingFiles = addPendingFiles.concat(files);
+            renderFileList('add-file-list', addPendingFiles, false);
+            // reset input so same file can be re-selected later if removed
+            e.target.value = '';
+        });
+
+        document.getElementById('update-file-input').addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            updatePendingFiles = updatePendingFiles.concat(files);
+            renderFileList('update-file-list', updatePendingFiles, false);
+            e.target.value = '';
+        });
+
+        async function uploadSingleFile(file) {
+            // returns upload_id on success, throws Error on failure
+            const form = new FormData();
+            form.append('file', file);
+            const res = await fetch('/uploads', {
+                method: 'POST',
+                body: form, // DO NOT set Content-Type; browser adds boundary
+                credentials: 'same-origin'
+            });
+            if (!res.ok) {
+                const json = await res.json().catch(()=>({error:res.statusText}));
+                throw new Error(json.error || `Upload failed (${res.status})`);
+            }
+            const data = await res.json();
+            return data.upload_id;
+        }
+
+        async function uploadFilesSequential(files, onProgress) {
+            // Upload files one-by-one to reduce load and keep ordering predictable.
+            const ids = [];
+            for (let i = 0; i < files.length; i++) {
+                try {
+                    const id = await uploadSingleFile(files[i]);
+                    ids.push(id);
+                    if (onProgress) onProgress(i+1, files.length);
+                } catch (err) {
+                    // Surface which file failed
+                    throw new Error(`Failed to upload "${files[i].name}": ${err.message}`);
+                }
+            }
+            return ids;
         }
 
         document.addEventListener("DOMContentLoaded", function() {
@@ -1264,19 +1441,40 @@
             const noteTitle = document.getElementById("note-title").value;
             const noteTag = document.getElementById("note-tag").value;
             const noteText = document.getElementById("note-text").innerHTML;
-
             if (!noteText.trim() && !noteTitle.trim()) {
                 alert("Note cannot be empty.");
                 return;
             }
 
+            // Disable add button to prevent double-submit
+            const addBtn = document.getElementById('add-note-button');
+            addBtn.disabled = true;
+            addBtn.textContent = 'Uploading...';
+
             try {
+                // 1) Upload any pending files first
+                addUploadedIds = [];
+                if (addPendingFiles.length > 0) {
+                    addUploadedIds = await uploadFilesSequential(addPendingFiles, (done, total) => {
+                        addBtn.textContent = `Uploading ${done}/${total}…`;
+                    });
+                }
+
+                // 2) Submit note with attachments array (could be empty)
+                const payload = {
+                    title: noteTitle || null,
+                    note: noteText,
+                    tag: noteTag || null,
+                    attachments: addUploadedIds  // backend expects list of upload ids
+                };
+
                 const response = await fetch("/notes", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({title: noteTitle || null, note: noteText, tag: noteTag || null }),
+                    body: JSON.stringify(payload),
+                    credentials: 'same-origin'
                 });
 
                 if (!response.ok && response.status !== 401) {
@@ -1288,53 +1486,100 @@
                 if (response.ok) {
                     fetch('/draft', { method: 'DELETE' });
                     document.getElementById("clear-draft-button").style.display = 'none';
+                    // reset local add-file state
+                    addPendingFiles = [];
+                    addUploadedIds = [];
+                    renderFileList('add-file-list', addPendingFiles, false);
                 }
                 fetchNotes();
+                updateStorageCounter();
                 document.getElementById("note-title").value = '';
                 document.getElementById("note-text").innerHTML = '';
                 document.getElementById("note-tag").value = '';
                 closeAddMenu();
             } catch (error) {
                 console.error("Error adding note:", error);
-                alert("There was an error adding your note. Please try again.");
+                alert("There was an error adding your note. " + error.message);
+            } finally {
+                addBtn.disabled = false;
+                addBtn.textContent = 'Add Note';
             }
         }
 
+        // --------- Update note (include attachments handling) ----------
         async function updateNote() {
             const updatedTitle = document.getElementById("update-note-title").value;
             const updatedText = document.getElementById("update-note-text").innerHTML;
             const updatedTag = document.getElementById("update-note-tag").value;
-            if (currentNoteId) {
-                try {
-                    const response = await fetch(`/notes/${currentNoteId}`, {
-                        method: "PUT",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({title: updatedTitle || null, note: updatedText, tag: updatedTag || null }),
+
+            if (!currentNoteId) return;
+
+            // Prepare UI lock
+            const saveBtn = document.getElementById('save-note-button');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                // 1) upload any new files selected in updatePendingFiles
+                updateUploadedIds = [];
+                if (updatePendingFiles.length > 0) {
+                    updateUploadedIds = await uploadFilesSequential(updatePendingFiles, (done, total) => {
+                        saveBtn.textContent = `Uploading ${done}/${total}…`;
                     });
-
-                    if (!response.ok && response.status !== 401) {
-                        throw new Error("Failed to update note");
-                    } else if (response.status === 401) {
-                        showModal();
-                        return;
-                    }
-
-                    currentNoteId = null;
-                    closeUpdateMenu();
-                    fetchNotes();
-                } catch (error) {
-                    console.error("Error updating note:", error);
-                    alert("There was an error updating your note. Please try again.");
                 }
+
+                // 2) Build final attachments list:
+                // existing attachments (updateExistingAttachments) + newly uploaded ids
+                const existingIds = (updateExistingAttachments || []).map(a => a.id);
+                const finalAttachments = existingIds.concat(updateUploadedIds);
+
+                // 3) send PUT to update note, include attachments
+                const response = await fetch(`/notes/${currentNoteId}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        title: updatedTitle || null,
+                        note: updatedText,
+                        tag: updatedTag || null,
+                        attachments: finalAttachments
+                    }),
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok && response.status !== 401) {
+                    throw new Error("Failed to update note");
+                } else if (response.status === 401) {
+                    showModal();
+                    return;
+                }
+
+                // Reset local state for update UI
+                updatePendingFiles = [];
+                updateUploadedIds = [];
+                renderFileList('update-file-list', updatePendingFiles, false);
+                // updateExistingAttachments is already pruned by user removing items in UI
+
+                currentNoteId = null;
+                closeUpdateMenu();
+                fetchNotes();
+                updateStorageCounter();
+            } catch (error) {
+                console.error("Error updating note:", error);
+                alert("There was an error updating your note. " + error.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save';
             }
         }
 
+        // --------- Delete note (same as before) ----------
         async function deleteNote(noteId) {
             try {
                 const response = await fetch(`/notes/${noteId}`, {
                     method: "DELETE",
+                    credentials: 'same-origin'
                 });
 
                 if (!response.ok && response.status !== 401) {
@@ -1346,6 +1591,7 @@
 
                 closeUpdateMenu();
                 fetchNotes();
+                updateStorageCounter();
             } catch (error) {
                 console.error("Error deleting note:", error);
                 alert("There was an error deleting your note. Please try again.");
@@ -1390,9 +1636,33 @@
             document.getElementById("view-menu").style.display = "block";
             document.getElementById("overlay").style.display = "block";
             document.getElementById("floating-add-button").style.display = "none";
-            
+
             // Setup checkbox handler
             setupViewNoteCheckboxHandler();
+
+            // if note has attachments and you want to show the toggle
+            const noteObj = allNotes.find(n => n.id === noteId);
+            if (noteObj && noteObj.attachments && noteObj.attachments.length > 0) {
+                const tbtn = document.getElementById('toggle-attachments-btn');
+                const viewList = document.getElementById('view-attachments');
+                tbtn.style.display = 'inline-block';
+                // populate viewList
+                viewList.innerHTML = '';
+                noteObj.attachments.forEach(a => {
+                    const row = document.createElement('div');
+                    row.className = 'attachment-row';
+                    const link = document.createElement('a');
+                    // server should expose a download route like /uploads/<id>/download
+                    link.href = `/uploads/${a.upload_id || a.id}/download`;
+                    link.textContent = a.filename || a.original_filename || 'attachment';
+                    link.target = '_blank';
+                    row.appendChild(link);
+                    viewList.appendChild(row);
+                });
+            } else {
+                document.getElementById('toggle-attachments-btn').style.display = 'none';
+                document.getElementById('view-attachments').style.display = 'none';
+            }
 
             setTimeout(adjustCheckboxPositions, 50);
         }
@@ -1455,10 +1725,23 @@
         function showUpdateMenu(noteId) {
             const note = allNotes.find(n => n.id === noteId);
             if (!note) return;
-            
+
             document.getElementById("update-note-title").value = note.title || '';
             document.getElementById("update-note-text").innerHTML = note.note || '';
             document.getElementById("update-note-tag").value = note.tag || '';
+
+            // prepare attachments UI
+            // Expect server to return note.attachments as array of {upload_id, filename, size_bytes, mimetype}
+            updateExistingAttachments = (note.attachments || []).map(a => {
+                // normalize shape: id, original_filename
+                return { id: a.upload_id || a.id, original_filename: a.filename || a.original_filename || a.name };
+            });
+            renderFileList('update-existing-attachments', updateExistingAttachments, true);
+
+            // reset pending new files list too
+            updatePendingFiles = [];
+            renderFileList('update-file-list', updatePendingFiles, false);
+
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("update-menu").style.display = "block";
             document.getElementById("floating-add-button").style.display = "none";
