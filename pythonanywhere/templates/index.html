@@ -827,6 +827,54 @@
             background: linear-gradient(90deg, #e53935, #ffb74d);
         }
 
+        .attachment-list {
+            border: 1px solid #e6e6e6;
+            background: #fafafa;
+            padding: 6px;
+            border-radius: 6px;
+            max-height: 160px;
+            overflow: auto;
+            margin-top: 6px;
+            font-size: 13px;
+        }
+
+        .attachment-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 6px 4px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .attachment-row:last-child { border-bottom: none; }
+
+        .attachment-row span.filename {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .attachment-row .meta {
+            color: #666;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+
+        .attachment-row button {
+            background: transparent;
+            border: 1px solid #ddd;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .attachment-row button:hover {
+            background: #f0f0f0;
+        }
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -916,6 +964,8 @@
         <input type="text" id="view-note-title" readonly>
         <div id="view-note-text" class="view-note-content"></div>
         <input id="view-note-tag" type="hidden">
+        <button id="toggle-attachments-btn" style="display:none" type="button">Show attachments</button>
+        <div id="view-attachments" style="display:none" class="attachment-list"></div>
         <button id="edit-note-button">Edit</button>
     </div>
 
@@ -1139,16 +1189,35 @@
         }
 
         function renderFileList(target, fileObjs, existing=false) {
-            // target: element id string
-            // fileObjs: for existing attachments expect objects with id & filename; for pending files use File objects
             const el = document.getElementById(target);
+            if (!el) return;
             el.innerHTML = '';
             fileObjs.forEach((f, idx) => {
                 const row = document.createElement('div');
                 row.className = 'attachment-row';
+
                 const name = document.createElement('span');
-                name.textContent = existing ? f.original_filename || f.filename || f.name : f.name;
+                name.className = 'filename';
+                name.textContent = existing ? (f.original_filename || f.filename || f.name) : f.name;
                 row.appendChild(name);
+
+                // meta / size if available
+                const meta = document.createElement('span');
+                meta.className = 'meta';
+                const sizeBytes = existing ? (f.size_bytes || 0) : (f.size || 0);
+                meta.textContent = sizeBytes ? `${(sizeBytes/1024).toFixed(1)} KB` : '';
+                row.appendChild(meta);
+
+                // Open / download link for existing attachments
+                if (existing && (f.upload_id || f.id)) {
+                    const link = document.createElement('a');
+                    const uid = f.upload_id || f.id;
+                    link.href = `/uploads/${uid}/download`;
+                    link.target = '_blank';
+                    link.textContent = 'Open';
+                    link.style.marginLeft = '8px';
+                    row.appendChild(link);
+                }
 
                 // remove button
                 const btn = document.createElement('button');
@@ -1162,15 +1231,29 @@
                         updatePendingFiles.splice(idx, 1);
                         renderFileList('update-file-list', updatePendingFiles, false);
                     } else if (target === 'update-existing-attachments') {
-                        // remove existing attachment object (user intends to detach it)
                         updateExistingAttachments.splice(idx, 1);
                         renderFileList('update-existing-attachments', updateExistingAttachments, true);
                     }
                 };
                 row.appendChild(btn);
+
                 el.appendChild(row);
             });
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleBtn = document.getElementById('toggle-attachments-btn');
+            const viewList = document.getElementById('view-attachments');
+            if (toggleBtn && viewList) {
+                toggleBtn.addEventListener('click', () => {
+                    const visible = viewList.style.display !== 'none';
+                    viewList.style.display = visible ? 'none' : 'block';
+                    toggleBtn.textContent = visible ? 'Show attachments' : 'Hide attachments';
+                });
+            }
+        });
+
+
 
         // --------- File input handlers ----------
         document.getElementById('add-file-input').addEventListener('change', (e) => {

@@ -2373,6 +2373,50 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
             os.remove(stored_path)
         db.session.rollback()
         return False, "Database error while recording upload."
+    
+# Force-delete an upload regardless of who the actor is (used for group flows)
+def force_delete_upload(upload_id, actor_user=None):
+    """
+    Force-delete an upload:
+      - remove file from disk if present
+      - mark Upload.deleted = True and set deleted_at
+      - subtract size_bytes from the original uploader's storage_used_bytes
+    Returns (True, "msg") or (False, "msg")
+    """
+    upload = Upload.query.get(upload_id)
+    if not upload:
+        return False, "Upload not found."
+    if upload.deleted:
+        return True, "Already deleted."
+
+    owner = User.query.get(upload.user_id) if upload.user_id else None
+    stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename) if upload.stored_filename else None
+
+    try:
+        if stored_path and os.path.exists(stored_path):
+            os.remove(stored_path)
+    except Exception as e:
+        app.logger.exception("Error removing upload file %s: %s", stored_path, e)
+        # continue — we still want to mark DB as deleted to keep things consistent
+
+    try:
+        upload.deleted = True
+        upload.deleted_at = datetime.utcnow()
+        if owner:
+            owner.storage_used_bytes = max(0, (owner.storage_used_bytes or 0) - (upload.size_bytes or 0))
+
+        db.session.add(upload)
+        if owner:
+            db.session.add(owner)
+        db.session.commit()
+        return True, "Upload force-deleted."
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("DB error while force-deleting upload %s: %s", upload_id, e)
+        return False, "Database error while force-deleting upload."
+    
+def _note_attachment_ids(note_id):
+    return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
 
 def delete_upload(upload_id, user):
     """
@@ -4871,65 +4915,242 @@ def delete_group():
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
 def get_group_notes(group_id):
-    # Authorization check
-    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # must be a group member
+    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     notes = Note.query.filter_by(group_id=group_id).all()
+
+    def attachments_for_note(n):
+        rows = NoteUpload.query.filter_by(note_id=n.id).all()
+        out = []
+        for r in rows:
+            up = Upload.query.get(r.upload_id)
+            if up and not up.deleted:
+                out.append({
+                    "upload_id": up.id,
+                    "filename": up.original_filename,
+                    "size_bytes": up.size_bytes,
+                    "mimetype": up.mimetype
+                })
+        return out
+
     return jsonify([{
         "id": note.id,
         "title": note.title,
-        "note": note.note,  # Already sanitized when stored
-        "tag": note.tag
-    } for note in notes])
+        "note": note.note,
+        "tag": note.tag,
+        "attachments": attachments_for_note(note)
+    } for note in notes]), 200
 
+
+# -----------------------
+# POST add group note (attachments allowed)
+# -----------------------
 @app.route('/groups/<string:group_id>/notes', methods=['POST'])
 @require_session_key
 def add_group_note(group_id):
-    # Authorization check
-    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # must be a group member
+    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
-    data = request.json
-    # Sanitize HTML input
+    data = request.json or {}
+    if 'note' not in data:
+        return jsonify({"error": "Missing note content"}), 400
+
     sanitized_note = sanitize_html(data['note'])
-    
+
+    attachments = data.get('attachments') or []
+    valid_attachments = []
+
+    # Validate attachments: allow uploads by any user, but ensure upload exists, not deleted,
+    # and is not already attached to another note.
+    for uid in attachments:
+        up = Upload.query.get(uid)
+        if not up or up.deleted:
+            return jsonify({"error": f"Invalid or deleted attachment id: {uid}"}), 400
+        # runtime check that the upload isn't already attached to another note
+        if NoteUpload.query.filter_by(upload_id=uid).first():
+            return jsonify({"error": f"Attachment {uid} is already attached to a note."}), 400
+        valid_attachments.append(up.id)
+
     new_note = Note(
+        user_id=None,
         group_id=group_id,
         title=data.get('title'),
-        note=sanitized_note,  # Store sanitized HTML
+        note=sanitized_note,
         tag=data.get('tag')
     )
     db.session.add(new_note)
     db.session.commit()
-    return jsonify({"message": "Group note added successfully!"}), 201
 
-# Updated route with note_id parameter
+    # associate attachments
+    try:
+        for uid in valid_attachments:
+            db.session.add(NoteUpload(note_id=new_note.id, upload_id=uid))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Failed to associate attachments to new group note: %s", e)
+        return jsonify({"error": "Failed to associate attachments"}), 500
+
+    return jsonify({"message": "Group note added successfully!", "id": new_note.id}), 201
+
+
+# -----------------------
+# PUT / DELETE group note (attachments editable by any member)
+# -----------------------
 @app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
-def update_delete_group_note(group_id, note_id):  # Added note_id parameter
-    # Find note and verify group ownership
+def update_delete_group_note(group_id, note_id):
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
     note = Note.query.filter_by(id=note_id, group_id=group_id).first()
     if not note:
         return jsonify({"error": "Note not found"}), 404
 
-    # Authorization check
-    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+    # must be a group member
+    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     if request.method == 'PUT':
-        data = request.json
-        # Sanitize updated HTML
+        data = request.json or {}
         note.title = data.get('title')
-        note.note = sanitize_html(data['note'])  # Sanitize before update
+        note.note = sanitize_html(data.get('note', note.note))
         note.tag = data.get('tag')
-        db.session.commit()
-        return jsonify({"message": "Note updated successfully!"}), 200
+
+        requested_attachments = set(data.get('attachments') or [])
+        existing_attachments = {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note.id).all()}
+
+        to_add = requested_attachments - existing_attachments
+        to_remove = existing_attachments - requested_attachments
+
+        # Validate additions: ensure each upload exists, not deleted, and not already attached
+        for uid in list(to_add):
+            up = Upload.query.get(uid)
+            if not up or up.deleted:
+                return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
+            if NoteUpload.query.filter_by(upload_id=uid).first():
+                return jsonify({"error": f"Attachment {uid} is already attached to a note."}), 400
+
+        try:
+            for uid in to_add:
+                db.session.add(NoteUpload(note_id=note.id, upload_id=uid))
+            for uid in to_remove:
+                nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
+                if nu_row:
+                    db.session.delete(nu_row)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("DB error when updating group note attachments: %s", e)
+            return jsonify({"error": "Database error updating attachments"}), 500
+
+        # Force-delete any removed attachments (owned by anyone)
+        for uid in to_remove:
+            try:
+                ok, msg = force_delete_upload(uid, actor_user=user)
+                if not ok:
+                    app.logger.warning("Failed to force-delete upload %s: %s", uid, msg)
+            except Exception:
+                app.logger.exception("Failed to force-delete upload %s", uid)
+
+        return jsonify({"message": "Group note updated successfully!"}), 200
 
     elif request.method == 'DELETE':
-        db.session.delete(note)
-        db.session.commit()
-        return jsonify({"message": "Note deleted successfully!"}), 200
+        existing_attachments = {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note.id).all()}
+        try:
+            # remove associations and delete the note
+            NoteUpload.query.filter_by(note_id=note.id).delete()
+            db.session.delete(note)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("DB error deleting group note: %s", e)
+            return jsonify({"error": "Database error deleting note"}), 500
+
+        # Force-delete attached uploads
+        for uid in existing_attachments:
+            try:
+                ok, msg = force_delete_upload(uid, actor_user=user)
+                if not ok:
+                    app.logger.warning("Failed to force-delete upload %s on note delete: %s", uid, msg)
+            except Exception:
+                app.logger.exception("Failed to force-delete upload %s on note delete", uid)
+
+        return jsonify({"message": "Group note deleted successfully."}), 200
+    
+@app.route('/uploads/<int:upload_id>/download', methods=['GET'])
+@require_session_key
+def download_upload(upload_id):
+    # get current user object (assumes require_session_key sets g.user or g.user_id)
+    user = getattr(g, 'user', None)
+    if not user and getattr(g, 'user_id', None):
+        user = User.query.get(g.user_id)
+
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    upload = Upload.query.get(upload_id)
+    if not upload or upload.deleted:
+        return jsonify({"error": "Not found"}), 404
+
+    # Permission: allow if the uploader is the requester
+    if upload.user_id == user.id:
+        permitted = True
+    else:
+        permitted = False
+        # Otherwise, allow only if this upload is attached to a group note in a group the user is a member of
+        # Query notes that reference this upload and check membership
+        group_note = (
+            db.session.query(Note)
+            .join(NoteUpload, Note.id == NoteUpload.note_id)
+            .join(GroupMember, GroupMember.group_id == Note.group_id)
+            .filter(NoteUpload.upload_id == upload_id, GroupMember.user_id == user.id)
+            .first()
+        )
+        if group_note:
+            permitted = True
+
+    if not permitted:
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Serve file
+    stored_filename = upload.stored_filename
+    if not stored_filename:
+        return jsonify({"error": "File missing"}), 404
+
+    file_path = os.path.join(UPLOAD_FOLDER, stored_filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    # try to send with original filename
+    try:
+        # Use attachment_filename for compatibility with older Flask versions
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            stored_filename,
+            as_attachment=True,
+            attachment_filename=upload.original_filename
+        )
+    except TypeError:
+        # fallback if attachment_filename is not supported: try download_name
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            stored_filename,
+            as_attachment=True,
+            download_name=upload.original_filename
+        )
 
 # Sharing notes
 
