@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from operator import is_not
+import imghdr
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, Blueprint
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
@@ -71,6 +71,7 @@ app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfD
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
 # Jinja setup (point at your templates/)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = Environment(
@@ -83,11 +84,21 @@ app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Disables HTTPS check
 GITHUB_REPO_OWNER = "BosbesplaysYT" 
 GITHUB_REPO_NAME = "python_31"
+MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB default (changeable)
+# Allowed extensions and mimetypes
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'txt', 'md', 'pdf', 'zip'}
+ALLOWED_MIMETYPES = {
+    'image/png', 'image/jpeg', 'image/gif',
+    'text/plain', 'application/pdf', 'application/zip',    "application/x-zip-compressed",
+    "application/octet-stream",  # optional, safest fallback
+}
+# Upload folder
+UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 UPLOAD_FOLDER = 'static/uploads/profile_pictures'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
@@ -154,6 +165,26 @@ error_template = '''
  
 # --------------------------------Models--------------------------------------
 
+class NoteUpload(db.Model):
+    __tablename__ = 'note_uploads'
+    id = db.Column(db.Integer, primary_key=True)
+    note_id = db.Column(db.Integer, db.ForeignKey('note.id'), nullable=False)
+    upload_id = db.Column(db.Integer, db.ForeignKey('uploads.id'), nullable=False)
+
+class Upload(db.Model):
+    __tablename__ = 'uploads'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    original_filename = db.Column(db.String(512), nullable=False)
+    stored_filename = db.Column(db.String(512), nullable=False)  # actual filename on disk
+    mimetype = db.Column(db.String(128))
+    size_bytes = db.Column(db.Integer, nullable=False)
+    deleted = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship('User', backref=db.backref('uploads', lazy='dynamic'))
+
 class Task(db.Model):
     __tablename__ = 'tasks'
     
@@ -194,6 +225,9 @@ class User(db.Model):
     suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
+
+    base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
+    storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
     
     # existing relationships
     colors = db.relationship(
@@ -642,6 +676,30 @@ def generate_session_key(user_id):
         "last_active": datetime.now()
     }
     return key
+
+def remove_upload_if_orphan(upload_id):
+    """
+    If upload has no remaining NoteUpload references (and not used elsewhere),
+    call the central delete_upload() to remove file and subtract storage.
+    Returns (True, msg) on success, (False, msg) on error.
+    """
+    upload = Upload.query.get(upload_id)
+    if not upload:
+        return False, "Upload not found."
+
+    # Count remaining note references
+    remaining_refs = NoteUpload.query.filter_by(upload_id=upload_id).count()
+
+    # If still referenced (maybe by other notes), don't delete the upload file
+    if remaining_refs > 0:
+        return True, "Still referenced by other notes; not deleting file."
+
+    # Otherwise, call the central delete function which checks ownership & updates storage
+    # We need a user object for delete_upload; use the owner of the upload
+    user = User.query.get(upload.user_id)
+    ok, msg = delete_upload(upload_id, user)
+    return ok, msg
+
 
 def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_run=None):
     """
@@ -2188,6 +2246,212 @@ def cleanup_expired_tokens():
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Token cleanup failed: {str(e)}")
+
+from werkzeug.datastructures import FileStorage
+
+def allowed_extension(filename):
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    return ext in ALLOWED_EXTENSIONS
+
+def get_user_quota_bytes(user):
+    # If you later add upgrades, change this to sum(base + upgrades)
+    return (user.base_storage_mb or 0) * 1024 * 1024
+
+def verify_file_content(file_path, mimetype):
+    """
+    Light-weight content verification:
+      - For images: verify actual file is an image via imghdr
+      - For text/pdf/zip: trust mimetype but you could add extra checks
+    Returns True if content seems OK, False otherwise.
+    """
+    # image verification
+    if mimetype and mimetype.startswith('image/'):
+        img_type = imghdr.what(file_path)
+        return img_type is not None  # jpeg/png/gif etc.
+    # For text files, try reading small chunk
+    if mimetype == 'text/plain':
+        try:
+            with open(file_path, 'rb') as f:
+                chunk = f.read(512)
+                # If the data has null bytes it's probably not plain text
+                if b'\x00' in chunk:
+                    return False
+            return True
+        except Exception:
+            return False
+    # For pdf/zip we could add more checks (e.g., header bytes), but for now:
+    if mimetype in ('application/pdf', 'application/zip'):
+        # quick header check
+        try:
+            with open(file_path, 'rb') as f:
+                hdr = f.read(8)
+                if mimetype == 'application/pdf':
+                    return hdr.startswith(b'%PDF')
+                if mimetype == 'application/zip':
+                    return hdr.startswith(b'PK')
+        except Exception:
+            return False
+    # If unknown mimetype, be conservative and reject
+    return mimetype in ALLOWED_MIMETYPES
+
+def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
+    """
+    Generic upload handler:
+      - file: werkzeug FileStorage
+      - user: user model instance
+      - max_size_bytes: maximum bytes allowed for this single upload
+    Returns tuple: (success, data) where data is Upload object on success or error message on failure.
+    """
+    # Basic checks
+    if file is None:
+        return False, "No file provided."
+
+    filename = secure_filename(file.filename)
+    if not filename:
+        return False, "Invalid filename."
+
+    if not allowed_extension(filename):
+        return False, f"Extension not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
+
+    # Try to determine file size without loading everything into memory:
+    file.stream.seek(0, os.SEEK_END)
+    size = file.stream.tell()
+    file.stream.seek(0)
+
+    if size > max_size_bytes:
+        return False, f"File too large: {size} bytes (max {max_size_bytes} bytes)."
+
+    # Check user storage quota
+    quota = get_user_quota_bytes(user)
+    if (user.storage_used_bytes or 0) + size > quota:
+        return False, "User storage quota exceeded."
+
+    # Determine mimetype
+    mimetype = file.mimetype or ''
+    if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith('image/'):
+        # be conservative:
+        return False, "MIME type not allowed."
+
+    # Save to a temp file first
+    unique = f"{uuid.uuid4().hex}_{filename}"
+    stored_path = os.path.join(UPLOAD_FOLDER, unique)
+    try:
+        # Save the stream to disk
+        file.save(stored_path)
+    except Exception as e:
+        # cleanup if needed
+        if os.path.exists(stored_path):
+            os.remove(stored_path)
+        return False, "Failed to save uploaded file."
+
+    # Verify the content matches mimetype and allowed content
+    ok = verify_file_content(stored_path, mimetype)
+    if not ok:
+        # delete file and return error
+        os.remove(stored_path)
+        return False, "Uploaded file failed content verification."
+
+    # All good -> create DB record and update user's storage usage
+    try:
+        upload = Upload(
+            user_id=user.id,
+            original_filename=filename,
+            stored_filename=unique,
+            mimetype=mimetype,
+            size_bytes=size,
+            created_at=datetime.utcnow(),
+            deleted=False
+        )
+        db.session.add(upload)
+        # increment user's storage usage
+        user.storage_used_bytes = (user.storage_used_bytes or 0) + size
+        db.session.commit()
+        return True, upload
+    except Exception as e:
+        # cleanup file
+        if os.path.exists(stored_path):
+            os.remove(stored_path)
+        db.session.rollback()
+        return False, "Database error while recording upload."
+    
+# Force-delete an upload regardless of who the actor is (used for group flows)
+def force_delete_upload(upload_id, actor_user=None):
+    """
+    Force-delete an upload:
+      - remove file from disk if present
+      - mark Upload.deleted = True and set deleted_at
+      - subtract size_bytes from the original uploader's storage_used_bytes
+    Returns (True, "msg") or (False, "msg")
+    """
+    upload = Upload.query.get(upload_id)
+    if not upload:
+        return False, "Upload not found."
+    if upload.deleted:
+        return True, "Already deleted."
+
+    owner = User.query.get(upload.user_id) if upload.user_id else None
+    stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename) if upload.stored_filename else None
+
+    try:
+        if stored_path and os.path.exists(stored_path):
+            os.remove(stored_path)
+    except Exception as e:
+        app.logger.exception("Error removing upload file %s: %s", stored_path, e)
+        # continue — we still want to mark DB as deleted to keep things consistent
+
+    try:
+        upload.deleted = True
+        upload.deleted_at = datetime.utcnow()
+        if owner:
+            owner.storage_used_bytes = max(0, (owner.storage_used_bytes or 0) - (upload.size_bytes or 0))
+
+        db.session.add(upload)
+        if owner:
+            db.session.add(owner)
+        db.session.commit()
+        return True, "Upload force-deleted."
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("DB error while force-deleting upload %s: %s", upload_id, e)
+        return False, "Database error while force-deleting upload."
+    
+def _note_attachment_ids(note_id):
+    return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
+
+def delete_upload(upload_id, user):
+    """
+    Centralised delete handler.
+    Will mark upload deleted, remove file from disk, and subtract bytes from user's storage_used_bytes.
+    Only owner or admins should be allowed to delete (check before calling).
+    """
+    upload = Upload.query.get(upload_id)
+    if not upload:
+        return False, "Upload not found."
+    if upload.user_id != user.id:
+        return False, "Permission denied."
+    if upload.deleted:
+        return False, "Already deleted."
+
+    stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename)
+    try:
+        # remove file from disk if exists
+        if os.path.exists(stored_path):
+            os.remove(stored_path)
+    except Exception as e:
+        # log but continue: we'll still mark deleted to keep DB consistent
+        pass
+
+    # update db
+    try:
+        upload.deleted = True
+        upload.deleted_at = datetime.utcnow()
+        # subtract bytes from user
+        user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - upload.size_bytes)
+        db.session.commit()
+        return True, "Deleted."
+    except Exception as e:
+        db.session.rollback()
+        return False, "Database error on delete."
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -3231,11 +3495,100 @@ def contact():
     data = request.json
     email = data['email']
     message = data['message']
+
+    # First clean with bleach
+    message = bleach.clean(message)
+    
     try:
+        # Send confirmation email with promo content
+        html_content = """
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; color: white;">
+            
+            <p style="font-size: 16px; line-height: 1.6;">
+                We've received your message and will get back to you shortly. In the meantime, 
+                we'd like to share some of the amazing features that make Future Notes the perfect 
+                tool for organizing your thoughts and tasks.
+            </p>
+            
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                <h3 style="color: #4A90E2; margin-top: 0;">✨ Key Features of Future Notes ✨</h3>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Organized Notes" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Smart Organization</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Categorize, tag, and search your notes with our intuitive system.</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1589652717521-10c0d092dea9?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Sync Across Devices" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Cross-Device Sync</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Access your notes from anywhere - phone, tablet, or computer.</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Rich Text Editing" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Rich Text Editing</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Format your notes with bold, italics, lists, and more.</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin: 20px 0;">
+                    <img src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
+                        alt="Reminders" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
+                    <div>
+                        <h4 style="margin: 0; color: #333;">Smart Reminders</h4>
+                        <p style="margin: 5px 0 0; font-size: 14px;">Set reminders for important tasks and never miss a deadline.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="https://bosbes.eu.pythonanywhere.com/signup_page" 
+                style="background-color: #4A90E2; color: white; padding: 12px 24px; 
+                        text-decoration: none; border-radius: 4px; font-weight: bold; 
+                        display: inline-block;">Explore Future Notes Now</a>
+            </div>
+            
+            <p style="font-size: 14px; text-align: center; color: #666;">
+                We're constantly working to improve Future Notes. Stay tuned for exciting updates!
+            </p>
+        </div>
+        """
+        
+        send_email(
+            to_address=email,
+            subject="Thank You for Contacting Future Notes!",
+            content_html=html_content,
+            content_text="Thank you for contacting us! We've received your message and will get back to you shortly. In the meantime, check out Future Notes at https://bosbes.eu.pythonanywhere.com",
+            logo_url="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png",
+            unsubscribe_url="https://bosbes.eu.pythonanywhere.com"
+        )
+        
+        # Also send notification to yourself
+        admin_html = f"<p>New contact form submission from: {email}</p><p>Message: {message}</p>"
+        send_email(
+            to_address=app.config['ADMIN_EMAIL'],
+            subject=f"New Contact Form Submission from {email}",
+            content_html=admin_html,
+            content_text=f"New contact form submission from: {email}\nMessage: {message}",
+            logo_url="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png",
+            unsubscribe_url="https://bosbes.eu.pythonanywhere.com",
+        )
+        
+        # Save to database
         message = Messages(email=email, message=message)
         db.session.add(message)
         db.session.commit()
-        return jsonify({"succes": "Message received successfully!"}), 201
+        
+        return jsonify({"success": "Message received successfully!"}), 201
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
     
@@ -4562,65 +4915,242 @@ def delete_group():
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
 def get_group_notes(group_id):
-    # Authorization check
-    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # must be a group member
+    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     notes = Note.query.filter_by(group_id=group_id).all()
+
+    def attachments_for_note(n):
+        rows = NoteUpload.query.filter_by(note_id=n.id).all()
+        out = []
+        for r in rows:
+            up = Upload.query.get(r.upload_id)
+            if up and not up.deleted:
+                out.append({
+                    "upload_id": up.id,
+                    "filename": up.original_filename,
+                    "size_bytes": up.size_bytes,
+                    "mimetype": up.mimetype
+                })
+        return out
+
     return jsonify([{
         "id": note.id,
         "title": note.title,
-        "note": note.note,  # Already sanitized when stored
-        "tag": note.tag
-    } for note in notes])
+        "note": note.note,
+        "tag": note.tag,
+        "attachments": attachments_for_note(note)
+    } for note in notes]), 200
 
+
+# -----------------------
+# POST add group note (attachments allowed)
+# -----------------------
 @app.route('/groups/<string:group_id>/notes', methods=['POST'])
 @require_session_key
 def add_group_note(group_id):
-    # Authorization check
-    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # must be a group member
+    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
-    data = request.json
-    # Sanitize HTML input
+    data = request.json or {}
+    if 'note' not in data:
+        return jsonify({"error": "Missing note content"}), 400
+
     sanitized_note = sanitize_html(data['note'])
-    
+
+    attachments = data.get('attachments') or []
+    valid_attachments = []
+
+    # Validate attachments: allow uploads by any user, but ensure upload exists, not deleted,
+    # and is not already attached to another note.
+    for uid in attachments:
+        up = Upload.query.get(uid)
+        if not up or up.deleted:
+            return jsonify({"error": f"Invalid or deleted attachment id: {uid}"}), 400
+        # runtime check that the upload isn't already attached to another note
+        if NoteUpload.query.filter_by(upload_id=uid).first():
+            return jsonify({"error": f"Attachment {uid} is already attached to a note."}), 400
+        valid_attachments.append(up.id)
+
     new_note = Note(
+        user_id=None,
         group_id=group_id,
         title=data.get('title'),
-        note=sanitized_note,  # Store sanitized HTML
+        note=sanitized_note,
         tag=data.get('tag')
     )
     db.session.add(new_note)
     db.session.commit()
-    return jsonify({"message": "Group note added successfully!"}), 201
 
-# Updated route with note_id parameter
+    # associate attachments
+    try:
+        for uid in valid_attachments:
+            db.session.add(NoteUpload(note_id=new_note.id, upload_id=uid))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Failed to associate attachments to new group note: %s", e)
+        return jsonify({"error": "Failed to associate attachments"}), 500
+
+    return jsonify({"message": "Group note added successfully!", "id": new_note.id}), 201
+
+
+# -----------------------
+# PUT / DELETE group note (attachments editable by any member)
+# -----------------------
 @app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
-def update_delete_group_note(group_id, note_id):  # Added note_id parameter
-    # Find note and verify group ownership
+def update_delete_group_note(group_id, note_id):
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
     note = Note.query.filter_by(id=note_id, group_id=group_id).first()
     if not note:
         return jsonify({"error": "Note not found"}), 404
 
-    # Authorization check
-    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+    # must be a group member
+    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     if request.method == 'PUT':
-        data = request.json
-        # Sanitize updated HTML
+        data = request.json or {}
         note.title = data.get('title')
-        note.note = sanitize_html(data['note'])  # Sanitize before update
+        note.note = sanitize_html(data.get('note', note.note))
         note.tag = data.get('tag')
-        db.session.commit()
-        return jsonify({"message": "Note updated successfully!"}), 200
+
+        requested_attachments = set(data.get('attachments') or [])
+        existing_attachments = {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note.id).all()}
+
+        to_add = requested_attachments - existing_attachments
+        to_remove = existing_attachments - requested_attachments
+
+        # Validate additions: ensure each upload exists, not deleted, and not already attached
+        for uid in list(to_add):
+            up = Upload.query.get(uid)
+            if not up or up.deleted:
+                return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
+            if NoteUpload.query.filter_by(upload_id=uid).first():
+                return jsonify({"error": f"Attachment {uid} is already attached to a note."}), 400
+
+        try:
+            for uid in to_add:
+                db.session.add(NoteUpload(note_id=note.id, upload_id=uid))
+            for uid in to_remove:
+                nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
+                if nu_row:
+                    db.session.delete(nu_row)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("DB error when updating group note attachments: %s", e)
+            return jsonify({"error": "Database error updating attachments"}), 500
+
+        # Force-delete any removed attachments (owned by anyone)
+        for uid in to_remove:
+            try:
+                ok, msg = force_delete_upload(uid, actor_user=user)
+                if not ok:
+                    app.logger.warning("Failed to force-delete upload %s: %s", uid, msg)
+            except Exception:
+                app.logger.exception("Failed to force-delete upload %s", uid)
+
+        return jsonify({"message": "Group note updated successfully!"}), 200
 
     elif request.method == 'DELETE':
-        db.session.delete(note)
-        db.session.commit()
-        return jsonify({"message": "Note deleted successfully!"}), 200
+        existing_attachments = {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note.id).all()}
+        try:
+            # remove associations and delete the note
+            NoteUpload.query.filter_by(note_id=note.id).delete()
+            db.session.delete(note)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("DB error deleting group note: %s", e)
+            return jsonify({"error": "Database error deleting note"}), 500
+
+        # Force-delete attached uploads
+        for uid in existing_attachments:
+            try:
+                ok, msg = force_delete_upload(uid, actor_user=user)
+                if not ok:
+                    app.logger.warning("Failed to force-delete upload %s on note delete: %s", uid, msg)
+            except Exception:
+                app.logger.exception("Failed to force-delete upload %s on note delete", uid)
+
+        return jsonify({"message": "Group note deleted successfully."}), 200
+    
+@app.route('/uploads/<int:upload_id>/download', methods=['GET'])
+@require_session_key
+def download_upload(upload_id):
+    # get current user object (assumes require_session_key sets g.user or g.user_id)
+    user = getattr(g, 'user', None)
+    if not user and getattr(g, 'user_id', None):
+        user = User.query.get(g.user_id)
+
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    upload = Upload.query.get(upload_id)
+    if not upload or upload.deleted:
+        return jsonify({"error": "Not found"}), 404
+
+    # Permission: allow if the uploader is the requester
+    if upload.user_id == user.id:
+        permitted = True
+    else:
+        permitted = False
+        # Otherwise, allow only if this upload is attached to a group note in a group the user is a member of
+        # Query notes that reference this upload and check membership
+        group_note = (
+            db.session.query(Note)
+            .join(NoteUpload, Note.id == NoteUpload.note_id)
+            .join(GroupMember, GroupMember.group_id == Note.group_id)
+            .filter(NoteUpload.upload_id == upload_id, GroupMember.user_id == user.id)
+            .first()
+        )
+        if group_note:
+            permitted = True
+
+    if not permitted:
+        return jsonify({"error": "Forbidden"}), 403
+
+    # Serve file
+    stored_filename = upload.stored_filename
+    if not stored_filename:
+        return jsonify({"error": "File missing"}), 404
+
+    file_path = os.path.join(UPLOAD_FOLDER, stored_filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    # try to send with original filename
+    try:
+        # Use attachment_filename for compatibility with older Flask versions
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            stored_filename,
+            as_attachment=True,
+            attachment_filename=upload.original_filename
+        )
+    except TypeError:
+        # fallback if attachment_filename is not supported: try download_name
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            stored_filename,
+            as_attachment=True,
+            download_name=upload.original_filename
+        )
 
 # Sharing notes
 
@@ -6656,25 +7186,108 @@ def manage_notes():
     if request.method == 'POST':
         data = request.json
         note_html = data['note']
-        
-        # Sanitize HTML - IMPORTANT for security
+        # sanitize
         note_html = sanitize_html(note_html)
-        
+
+        # optional attachments: list of upload ids
+        attachments = data.get('attachments') or []
+        valid_attachments = []
+        if attachments:
+            for uid in attachments:
+                up = Upload.query.get(uid)
+                if not up or up.user_id != g.user_id or up.deleted:
+                    return jsonify({"error": f"Invalid attachment id: {uid}"}), 400
+                valid_attachments.append(up.id)
+
         new_note = Note(
             user_id=g.user_id, 
             title=data.get('title'), 
-            note=note_html,  # Store HTML with checkboxes
+            note=note_html,
             tag=data.get('tag')
         )
         db.session.add(new_note)
         db.session.commit()
+
+        # Optionally store attachments association in another table note_uploads
+        if valid_attachments:
+            for uid in valid_attachments:
+                nu = NoteUpload(note_id=new_note.id, upload_id=uid)
+                db.session.add(nu)
+            db.session.commit()
+
         return jsonify({"message": "Note added successfully!"}), 201
     else:
         notes = Note.query.filter_by(user_id=g.user_id).all()
-        sanitized_notes = [{"id": note.id, "title": note.title, "note": note.note, "tag": note.tag} for note in notes]
+        sanitized_notes = []
+        for note in notes:
+            # fetch attachments
+            attachments = []
+            for nu in NoteUpload.query.filter_by(note_id=note.id).all():
+                uploads_row = Upload.query.get(nu.upload_id)
+                if uploads_row and not uploads_row.deleted:
+                    attachments.append({
+                        "upload_id": uploads_row.id,
+                        "filename": uploads_row.original_filename,
+                        "size_bytes": uploads_row.size_bytes,
+                        "mimetype": uploads_row.mimetype
+                    })
+            sanitized_notes.append({
+                "id": note.id,
+                "title": note.title,
+                "note": note.note,
+                "tag": note.tag,
+                "attachments": attachments
+            })
         return jsonify(sanitized_notes)
     
-    # GET handling remains the same
+@app.route('/uploads', methods=['POST'])
+@require_session_key
+def uploads_post():
+    # Expecting multipart/form-data with key 'file'
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['file']
+    # file is a FileStorage instance
+    # If you only have g.user_id, load user object:
+    if not hasattr(g, 'user'):
+        g.user = User.query.get(g.user_id)
+    ok, result = verify_and_record_upload(file, g.user)
+    if not ok:
+        return jsonify({"error": result}), 400
+
+    upload = result
+    return jsonify({
+        "upload_id": upload.id,
+        "filename": upload.original_filename,
+        "size_bytes": upload.size_bytes,
+        "mimetype": upload.mimetype,
+        "created_at": upload.created_at.isoformat()
+    }), 201
+
+@app.route('/uploads/<int:upload_id>', methods=['DELETE'])
+@require_session_key
+def uploads_delete(upload_id):
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    ok, msg = delete_upload(upload_id, user)
+    if not ok:
+        return jsonify({"error": msg}), 400
+    return jsonify({"message": msg}), 200
+
+@app.route('/user/storage', methods=['GET'])
+@require_session_key
+def get_user_storage():
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+
+    total_bytes = get_user_quota_bytes(user)
+    used_bytes = user.storage_used_bytes or 0
+    remaining_bytes = max(total_bytes - used_bytes, 0)
+
+    return jsonify({
+        "total_bytes": total_bytes,
+        "used_bytes": used_bytes,
+        "remaining_bytes": remaining_bytes
+    }), 200
+
 
 # Update sanitize_html function
 def sanitize_html(html):
@@ -6706,18 +7319,81 @@ def update_delete_note(note_id):
     if not note or note.user_id != g.user_id:
         return jsonify({"error": "Note not found"}), 404
 
+    # Helper: load current attachments set for the note (upload ids)
+    def current_attachment_ids(note_id):
+        return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
+
     if request.method == 'PUT':
         data = request.json
-        # Added sanitization to match POST logic
+        # sanitize incoming HTML
         note.title = data.get('title')
-        note.note = sanitize_html(data['note'])  # Now sanitizes updates
+        note.note = sanitize_html(data.get('note', note.note))
         note.tag = data.get('tag')
-        db.session.commit() 
+
+        # Handle attachments (expected to be a list of upload ids)
+        requested_attachments = set(data.get('attachments') or [])
+        existing_attachments = current_attachment_ids(note.id)
+
+        # Determine additions and removals
+        to_add = requested_attachments - existing_attachments
+        to_remove = existing_attachments - requested_attachments
+
+        # Validate additions: uploads must exist, belong to user, and not be deleted
+        for uid in list(to_add):
+            up = Upload.query.get(uid)
+            if not up or up.user_id != g.user_id or up.deleted:
+                return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
+
+        try:
+            # Add new associations
+            for uid in to_add:
+                nu = NoteUpload(note_id=note.id, upload_id=uid)
+                db.session.add(nu)
+
+            # Remove skipped attachments (and possibly delete files if orphaned)
+            for uid in to_remove:
+                nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
+                if nu_row:
+                    db.session.delete(nu_row)
+            # commit note changes + association changes
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": "Database error on updating note attachments."}), 500
+
+        # After commit, try to remove orphaned uploads (non-blocking for the note update)
+        # These call delete_upload which will check ownership etc.
+        for uid in to_remove:
+            try:
+                ok, msg = remove_upload_if_orphan(uid)
+                # We don't fail the whole request if removal fails; just log (or return message)
+                # If you want stricter behavior, return an error here instead
+            except Exception:
+                pass
+
         return jsonify({"message": "Note updated successfully!"}), 200
+
     elif request.method == 'DELETE':
-        db.session.delete(note)
-        db.session.commit()
-        return jsonify({"message": "Note deleted successfully!"}), 200
+        # Delete the note and clean up attachments that become orphaned
+        existing_attachments = current_attachment_ids(note.id)
+        try:
+            # Delete NoteUpload associations first
+            NoteUpload.query.filter_by(note_id=note.id).delete()
+            # Delete the note itself
+            db.session.delete(note)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": "Database error on deleting note."}), 500
+
+        # Post-commit: try to delete any orphaned uploads
+        for uid in existing_attachments:
+            try:
+                ok, msg = remove_upload_if_orphan(uid)
+            except Exception:
+                pass
+
+        return jsonify({"message": "Note deleted successfully."}), 200
     
 @app.route('/draft', methods=['POST', 'GET', 'DELETE'])
 @require_session_key
