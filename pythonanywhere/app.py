@@ -7627,8 +7627,8 @@ def uploads_delete(upload_id):
 def get_user_storage():
     user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
 
-    total_bytes = get_user_quota_bytes(user)
-    used_bytes = user.storage_used_bytes or 0
+    total_bytes = int(get_user_quota_bytes(user))
+    used_bytes = int(user.storage_used_bytes or 0)
     remaining_bytes = max(total_bytes - used_bytes, 0)
 
     return jsonify({
