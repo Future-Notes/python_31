@@ -1,11 +1,11 @@
 # ------------------------------Imports--------------------------------
 import imghdr
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, Blueprint
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select
+from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, func
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
@@ -23,7 +23,7 @@ import uuid
 import random
 import string
 import time
-from datetime import timezone
+from datetime import timezone, datetime, timedelta
 import glob
 import threading
 from update_DB import update_tables
@@ -49,7 +49,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import requests
-
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -250,6 +249,33 @@ class User(db.Model):
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
+
+class InviteReferral(db.Model):
+    __tablename__ = "invite_referral"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    inviter_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    invited_email = db.Column(db.String(200), nullable=False)
+    token = db.Column(db.String(64), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    claimed = db.Column(db.Boolean, default=False, nullable=False)
+    claimed_at = db.Column(db.DateTime, nullable=True)
+    claimed_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    inviter = db.relationship("User", foreign_keys=[inviter_id], backref="outgoing_invites")
+    claimed_user = db.relationship("User", foreign_keys=[claimed_user_id])
+
+class ReferralSession(db.Model):
+    __tablename__ = "referral_session"
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # >>> correct FK target: invite_referral.id (not invite.id)
+    invite_id = db.Column(db.String(36), db.ForeignKey('invite_referral.id'), nullable=False)
+    inviter_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    invited_email = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    # relationship points to InviteReferral
+    invite = db.relationship("InviteReferral", backref="referral_sessions")
+    inviter = db.relationship("User", backref="referral_sessions")
 
 # models.py
 class SignupSession(db.Model):
@@ -731,6 +757,15 @@ def load_secrets():
 @app.before_request
 def ensure_secrets_loaded():
     load_secrets()
+
+def _is_local_request():
+    return request.remote_addr in ('127.0.0.1', '::1', 'localhost')
+
+def _today_utc_range():
+    """Return (start_of_today_utc, now_utc) as timezone-aware datetimes."""
+    now = datetime.now(timezone.utc)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, now
 
 def get_google_oauth_flow(state=None):
 
@@ -1727,7 +1762,7 @@ def delete_user_and_data(user):
         
         # Delete user colors
         UserColor.query.filter_by(user_id=user_to_delete.id).delete()
-        
+
         # Finally, delete the user
         db.session.delete(user_to_delete)
         return True
@@ -1736,6 +1771,104 @@ def delete_user_and_data(user):
         db.session.rollback()
         print(f"Error deleting user data: {str(e)}")
         return False
+    
+def _redeem_referral_for_user(user, signup_session):
+    """
+    If there's a referral_session cookie and it points to a valid invite,
+    run the anti-cheat checks and — if allowed — award +5MB to both the inviter
+    and the newly created user. Always remove the ReferralSession afterwards
+    to prevent replay.
+    """
+    try:
+        referral_cookie = request.cookies.get('referral_session')
+        if not referral_cookie:
+            return
+
+        ref = ReferralSession.query.get(referral_cookie)
+        if not ref:
+            return
+
+        invite = InviteReferral.query.get(ref.invite_id)
+        if not invite or invite.claimed:
+            # clean up referral session anyway
+            db.session.delete(ref)
+            db.session.commit()
+            return
+
+        allow_award = False
+
+        # If signup_session has an email and it matches the invited email -> allow
+        if signup_session.email and invite.invited_email and \
+           signup_session.email.lower() == (invite.invited_email or "").lower():
+            allow_award = True
+        else:
+            # If signup_session.email is missing (skip-email) we permit awarding,
+            # but we'll keep the IP/self-invite protections below.
+            if not signup_session.email:
+                allow_award = True
+
+        # Prevent self-invite via email match with inviter's email (if available)
+        if allow_award and signup_session.email and not _is_local_request():
+            inviter_obj = User.query.get(ref.inviter_id)
+            inviter_email = (inviter_obj.email or "").lower() if inviter_obj else ""
+            if inviter_email and inviter_email == signup_session.email.lower():
+                allow_award = False
+
+        # IP-based anti-cheat (skip when running on localhost)
+        if allow_award and not _is_local_request():
+            same_ip = IpAddres.query.filter_by(user_id=ref.inviter_id, ip=signup_session.user_ip).first()
+            if same_ip:
+                allow_award = False
+
+        if allow_award and not _is_local_request():
+            same_email_again = InviteReferral.query.filter_by(inviter_id=ref.inviter_id, invited_email=signup_session.email).first()
+            if same_email_again:
+                allow_award = False
+
+        # Apply awards and mark invite claimed in one DB transaction
+        if allow_award:
+            inviter = User.query.get(ref.inviter_id)
+            if inviter:
+                inviter.base_storage_mb = (inviter.base_storage_mb or 0) + 5
+                user.base_storage_mb = (user.base_storage_mb or 0) + 5
+
+                invite.claimed = True
+                invite.claimed_at = datetime.now(timezone.utc)
+                invite.claimed_user_id = user.id
+
+                db.session.add_all([inviter, user, invite])
+                # delete referral session to prevent reuse
+                db.session.delete(ref)
+                db.session.commit()
+
+                # notify inviter and (optionally) the new user
+                send_notification(
+                    ref.inviter_id,
+                    "Invite redeemed!",
+                    f"{user.username} signed up via your invite — you got +5MB storage!",
+                    "/index"
+                )
+                send_notification(
+                    user.id,
+                    "Welcome bonus!",
+                    "You signed up using an invite — you received +5MB extra storage!",
+                    "/index"
+                )
+                return
+
+        # If not allowed, we still delete the referral session to avoid replays
+        db.session.delete(ref)
+        db.session.commit()
+    except Exception:
+        # Non-fatal: log and continue signup
+        app.logger.exception("Referral redemption failed (non-fatal)")
+        try:
+            # best-effort cleanup
+            if 'ref' in locals() and ref:
+                db.session.delete(ref)
+                db.session.commit()
+        except Exception:
+            pass
     
 
 def generate_game_code(length=6):
@@ -2684,6 +2817,151 @@ def get_flow_tag_suggestions():
         suggestions.append(project_data)
     
     return jsonify(suggestions)
+
+@app.route('/invites/status', methods=['GET'])
+@require_session_key
+def invites_status():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # storage
+    used_bytes = user.storage_used_bytes or 0
+    total_mb = (user.base_storage_mb or 0)
+    used_mb = round(used_bytes / 1024 / 1024, 2)
+
+    # invites sent today
+    start, now = _today_utc_range()
+    sent_today = InviteReferral.query.filter(
+        InviteReferral.inviter_id == user.id,
+        InviteReferral.created_at >= start
+    ).count()
+    per_day_limit = 3
+    remaining_today = max(per_day_limit - sent_today, 0)
+
+    # pending invites
+    pending = InviteReferral.query.filter_by(inviter_id=user.id, claimed=False).order_by(InviteReferral.created_at.desc()).all()
+    pending_list = [{
+        "id": inv.id,
+        "email": inv.invited_email,
+        "created_at": inv.created_at.isoformat(),
+        "token": inv.token
+    } for inv in pending]
+
+    return jsonify({
+        "used_mb": used_mb,
+        "total_mb": total_mb,
+        "sent_today": sent_today,
+        "remaining_today": remaining_today,
+        "per_day_limit": per_day_limit,
+        "pending_invites": pending_list
+    })
+
+@app.route('/invites/send', methods=['POST'])
+@require_session_key
+def send_invite():
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    if not email or not re.match(r'[^@]+@[^@]+\.[^@]+', email):
+        return jsonify({"error": "Invalid email"}), 400
+
+    inviter = User.query.get(g.user_id)
+    if not inviter:
+        return jsonify({"error": "No inviter user"}), 404
+
+    # Localhost testing bypass - allow sending freely on localhost
+    if not _is_local_request():
+        # Can't invite yourself
+        if inviter.email and inviter.email.lower() == email:
+            return jsonify({"error": "You can't invite your own email"}), 400
+
+        # Prevent inviting existing registered user
+        if User.query.filter(func.lower(User.email) == email).first():
+            return jsonify({"error": "This email is already registered"}), 400
+
+        # Rate-limit: 3 invites/day
+        start, now = _today_utc_range()
+        sent_today = InviteReferral.query.filter(InviteReferral.inviter_id == inviter.id, InviteReferral.created_at >= start).count()
+        if sent_today >= 3:
+            return jsonify({"error": "Daily invite limit reached (3/day)"}), 429
+
+    # create invite
+    token = str(uuid.uuid4())
+    new_invite = InviteReferral(
+        inviter_id=inviter.id,
+        invited_email=email,
+        token=token
+    )
+    db.session.add(new_invite)
+    db.session.commit()
+
+    # build accept url
+    site_url = f"{request.scheme}://{request.host}"
+    accept_url = f"{site_url}/invite/accept?token={urllib.parse.quote(token)}"
+
+    # send email using your existing send_email helper
+    try:
+        send_email(
+            to_address=email,
+            subject="Future Notes — You've been invited!",
+            content_html=f"""
+                <h2>You've been invited to Future Notes!</h2>
+                <p>{inviter.username} invited you. Click the button to accept and sign up — You both get +5MB of storage when you complete signup.</p>
+                <p><small>If you wish to decline this invitation, simply ignore this email.</small></p>
+            """,
+            buttons=[{
+                "text": "Accept invite & sign up",
+                "href": accept_url,
+                "color": "#313ca3"
+            }],
+            logo_url=app.config.get('LOGO_URL'),
+            unsubscribe_url="#"
+        )
+    except Exception as e:
+        app.logger.exception("Error sending invite email")
+        # don't leak internal errors, but let caller know
+        return jsonify({"error": "Failed to send invite email"}), 500
+
+    return jsonify({"message": "Invite sent", "invite_id": new_invite.id}), 200
+
+@app.route('/invites/cancel/<string:id>', methods=['POST'])
+@require_session_key
+def invite_cancel(id):
+    invite_id_to_cancel = id
+
+    invite = InviteReferral.query.filter_by(id=invite_id_to_cancel, inviter_id=g.user_id).first()
+    if not invite:
+        return jsonify({"error": "Invite not found"}), 404
+
+    db.session.delete(invite)
+    db.session.commit()
+    return jsonify({"message": "Invite canceled"}), 200
+
+@app.route('/invite/accept')
+def invite_accept():
+    token = request.args.get('token')
+    if not token:
+        return "Missing invite token", 400
+
+    invite = InviteReferral.query.filter_by(token=token).first()
+    if not invite:
+        return "Invalid or expired invite link", 400
+
+    # create referral session record
+    ref = ReferralSession(
+        invite_id=invite.id,
+        inviter_id=invite.inviter_id,
+        invited_email=invite.invited_email
+    )
+    db.session.add(ref)
+    db.session.commit()
+
+    # Set cookie (non-httponly so front-end can inspect if needed; but we only need backend)
+    resp = redirect("/signup_page")
+    # cookie name "referral_session"
+    resp.set_cookie("referral_session", ref.id, httponly=True, secure=False, samesite="Lax", max_age=60*60)  # 1 hour
+    return resp
+
 
 @app.route('/flow/projects', methods=['GET'])
 @require_session_key
@@ -6475,6 +6753,7 @@ def signup():
     return resp
 
 # Helper function to create user from signup session
+# Replace the body of create_user_from_signup_session with this version
 def create_user_from_signup_session(signup_session, skip_email=False):
     """Core logic to create user from signup session"""
     try:
@@ -6506,7 +6785,10 @@ def create_user_from_signup_session(signup_session, skip_email=False):
             "Thank you for creating an account on Future Notes! Click for a quick guide.",
             "/guide_page"
         )
-        
+
+        # after commit and ip_record saved
+        _redeem_referral_for_user(user, signup_session)
+
         return {
             "session_key": session_key,
             "lasting_key": user.lasting_key,
@@ -6647,13 +6929,11 @@ def verify_email_via_link():
 # Verification completion endpoint
 @app.route('/signup/complete_verification')
 def complete_email_verification():
-    """Finalize verification from link click"""
+    """Finalize verification from link click and set auth cookies, then redirect."""
     code = request.args.get('code')
-    
     if not code:
         return "Missing verification code", 400
 
-    # Find session by code
     signup_session = SignupSession.query.filter_by(
         verification_code=code
     ).first()
@@ -6661,39 +6941,108 @@ def complete_email_verification():
     if not signup_session:
         return "Invalid verification code", 400
 
-    # Complete the signup process
-    return complete_signup_internal(signup_session)
+    # Keep complete_signup_internal unchanged; it returns a dict with session_key, lasting_key, user_id
+    result = complete_signup_internal(signup_session)
+
+    # Defensive: ensure we got the expected shape (keep previous error bubbling behavior otherwise)
+    if not isinstance(result, dict) or "session_key" not in result or "lasting_key" not in result or "user_id" not in result:
+        current_app.logger.error("complete_signup_internal returned unexpected result")
+        return "Signup failed", 500
+
+    session_key = result["session_key"]
+    lasting_key = result["lasting_key"]
+    user_id = result["user_id"]
+
+    # Build redirect response and set cookies (do NOT return plaintext body)
+    resp = make_response(redirect(url_for('index')))  # redirect to /index
+
+    # Security flags (tweak for local dev if needed via config)
+    secure_flag = current_app.config.get("SESSION_COOKIE_SECURE", True)
+
+    # Cookie lifetimes (seconds) — adjust if you have app-level policy
+    session_max_age = current_app.config.get("SESSION_COOKIE_MAX_AGE", 60 * 60 * 24)        # default 1 day
+    lasting_max_age  = current_app.config.get("LASTING_KEY_MAX_AGE", 60 * 60 * 24 * 30)    # default 30 days
+
+    # Write cookies: HttpOnly so JS cannot read sensitive tokens
+    resp.set_cookie(
+        "session_key",
+        session_key,
+        max_age=session_max_age,
+        httponly=True,
+        secure=secure_flag,
+        samesite="Lax",
+        path="/"
+    )
+    resp.set_cookie(
+        "lasting_key",
+        lasting_key,
+        max_age=lasting_max_age,
+        httponly=True,
+        secure=secure_flag,
+        samesite="Lax",
+        path="/"
+    )
+    # user_id is non-sensitive enough, but keep HttpOnly unless frontend needs it accessible
+    resp.set_cookie(
+        "user_id",
+        str(user_id),
+        max_age=lasting_max_age,
+        httponly=True,
+        secure=secure_flag,
+        samesite="Lax",
+        path="/"
+    )
+
+    return resp
 
 # Shared signup completion logic
 def complete_signup_internal(signup_session):
     """Shared signup completion logic"""
     try:
-        # Create user and get session data
+        # Create user
         skip_email = False if signup_session.email else True
-        user_data = create_user_from_signup_session(signup_session, skip_email)
-        
-        # Clean up session
-        db.session.delete(signup_session)
+        user = User(
+            username=signup_session.username,
+            password=signup_session.hashed_password,
+            email=None if skip_email else signup_session.email
+        )
+        user.lasting_key = secrets.token_hex(32)
+        db.session.add(user)
         db.session.commit()
-        
-        # Prepare response
-        resp = redirect("/index")
-        resp.set_cookie(
-            "session_key", user_data['session_key'],
-            httponly=True, secure=True, samesite="Strict",
-            max_age=60*60*24  # 1 day
+
+        # Record IP
+        ip_record = IpAddres(user_id=user.id, ip=signup_session.user_ip)
+        db.session.add(ip_record)
+        db.session.commit()
+
+        # Create session key
+        session_key = generate_session_key(user.id)
+
+        # Initialize user resources
+        create_default_calendar(user.id)
+        ensure_user_colors(user.id)
+
+        # Send welcome notification
+        send_notification(
+            user.id, "Welcome!",
+            "Thank you for creating an account on Future Notes! Click for a quick guide.",
+            "/guide_page"
         )
-        resp.set_cookie(
-            "lasting_key", user_data['lasting_key'],
-            httponly=True, secure=True, samesite="Strict",
-            max_age=60*60*24*30  # 30 days
-        )
-        resp.delete_cookie("signup_session")
-        return resp
-        
+
+        _redeem_referral_for_user(user.id, signup_session)
+
+        return {
+            "session_key": session_key,
+            "lasting_key": user.lasting_key,
+            "user_id": user.id
+        }
+    except IntegrityError:
+        db.session.rollback()
+        raise Exception("Account creation failed (username might be taken)")
     except Exception as e:
-        app.logger.error(f"Signup completion failed: {str(e)}")
-        return "Account creation failed. Please try signing up again.", 500
+        db.session.rollback()
+        app.logger.error(f"Signup error: {str(e)}")
+        raise Exception("Account creation failed")
 
 # Updated email sending endpoint
 @app.route('/signup/send_verification', methods=['POST'])
