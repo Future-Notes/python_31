@@ -2859,11 +2859,13 @@ def invites_status():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # storage
-    used_bytes = user.storage_used_bytes or 0
-    total_mb = (user.base_storage_mb or 0)
-    used_mb = round(int(used_bytes) / 1024 / 1024, 2)
-
+      # storage
+    try:
+        used_bytes = int(user.storage_used_bytes or 0)
+    except (ValueError, TypeError):
+        used_bytes = 0
+    total_mb = int(user.base_storage_mb or 0)
+    used_mb = round(used_bytes / 1024 / 1024, 2)
     # invites sent today
     start, now = _today_utc_range()
     sent_today = InviteReferral.query.filter(
