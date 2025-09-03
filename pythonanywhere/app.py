@@ -2387,8 +2387,26 @@ def allowed_extension(filename):
     return ext in ALLOWED_EXTENSIONS
 
 def get_user_quota_bytes(user):
-    # If you later add upgrades, change this to sum(base + upgrades)
-    return (user.base_storage_mb or 0) * 1024 * 1024
+    """
+    Return quota in bytes.
+    If user.base_storage_mb is None -> default to 10 MB.
+    Coerce strings to int safely; on failure fall back to 10.
+    """
+    default_mb = 10
+    try:
+        base_mb = user.base_storage_mb
+        if base_mb is None:
+            base_mb = default_mb
+        else:
+            # coerce strings like "10" or b"10" to int, sanitize weird values
+            base_mb = int(str(base_mb).strip())
+            # negative values don't make sense; fallback to default
+            if base_mb < 0:
+                base_mb = default_mb
+    except (ValueError, TypeError):
+        base_mb = default_mb
+
+    return int(base_mb) * 1024 * 1024
 
 def verify_file_content(file_path, mimetype):
     """
@@ -2585,6 +2603,22 @@ def delete_upload(upload_id, user):
     except Exception as e:
         db.session.rollback()
         return False, "Database error on delete."
+
+def initialize_user_storage(user_id):
+    """
+    Initialize storage-related fields for a user.
+    This is called when a user is created or when their storage is reset.
+    """
+    user = User.query.get(user_id)
+    if not user:
+        return False, "User not found."
+
+    user.storage_used_bytes = 0
+    user.base_storage_mb = 10
+    db.session.add(user)
+    db.session.commit()
+    return True, "User storage initialized."
+
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -7021,6 +7055,7 @@ def complete_signup_internal(signup_session):
         # Initialize user resources
         create_default_calendar(user.id)
         ensure_user_colors(user.id)
+        initialize_user_storage(user.id)
 
         # Send welcome notification
         send_notification(
@@ -7626,9 +7661,37 @@ def uploads_delete(upload_id):
 @require_session_key
 def get_user_storage():
     user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
-    total_bytes = int(get_user_quota_bytes(user))
-    used_bytes = int(user.storage_used_bytes or 0)
+    total_bytes = int(get_user_quota_bytes(user) or 0)
+
+    # ---- handle storage_used_bytes (NULL, strings, garbage) ----
+    raw_used = getattr(user, 'storage_used_bytes', None)
+
+    # If explicit NULL in DB => treat as 0 and persist that (so next time it's not null).
+    # If you don't want to persist, set persist_null_to_zero=False below.
+    persist_null_to_zero = True
+
+    if raw_used is None:
+        used_bytes = 0
+        if persist_null_to_zero:
+            try:
+                user.storage_used_bytes = 0
+                db.session.add(user)
+                db.session.commit()
+            except Exception:
+                # don't crash on commit issues; rollback and proceed with used_bytes=0
+                db.session.rollback()
+    else:
+        # raw_used might be int-like string, or it might be something messy.
+        try:
+            used_bytes = int(raw_used)
+        except (ValueError, TypeError):
+            # attempt a best-effort sanitize: keep digits only
+            s = re.sub(r'\D', '', str(raw_used or ''))
+            used_bytes = int(s) if s else 0
+
     remaining_bytes = max(total_bytes - used_bytes, 0)
 
     return jsonify({
