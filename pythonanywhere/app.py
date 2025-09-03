@@ -2603,6 +2603,22 @@ def delete_upload(upload_id, user):
     except Exception as e:
         db.session.rollback()
         return False, "Database error on delete."
+
+def initialize_user_storage(user_id):
+    """
+    Initialize storage-related fields for a user.
+    This is called when a user is created or when their storage is reset.
+    """
+    user = User.query.get(user_id)
+    if not user:
+        return False, "User not found."
+
+    user.storage_used_bytes = 0
+    user.base_storage_mb = 10
+    db.session.add(user)
+    db.session.commit()
+    return True, "User storage initialized."
+
 #---------------------------------Error handlers---------------------------------
 
 @app.errorhandler(OperationalError)
@@ -7039,6 +7055,7 @@ def complete_signup_internal(signup_session):
         # Initialize user resources
         create_default_calendar(user.id)
         ensure_user_colors(user.id)
+        initialize_user_storage(user.id)
 
         # Send welcome notification
         send_notification(
