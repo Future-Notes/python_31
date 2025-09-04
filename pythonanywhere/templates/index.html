@@ -828,14 +828,52 @@
         }
 
         .attachment-list {
-            border: 1px solid #e6e6e6;
-            background: #fafafa;
-            padding: 6px;
+            background: var(--ctr-color);
             border-radius: 6px;
+            margin: 2px;
             max-height: 160px;
             overflow: auto;
             margin-top: 6px;
             font-size: 13px;
+            align-items: center;
+            justify-content: center;
+            display: flex;
+        }
+
+        .attachment-list a,
+        .attachment-list button {
+            all: unset !important; /* 🚀 reset EVERYTHING for the button */
+            display: inline-block !important;
+
+            text-decoration: none !important;
+            color: #fff !important;
+            background: var(--btn-color) !important;
+            border: 1px solid #ccc !important;
+            border-radius: 4px !important;
+            padding: 5px 8px !important;
+            font-size: 12px !important;
+            margin-left: 8px !important;
+            cursor: pointer !important;
+            transition: background 0.2s, color 0.2s !important;
+        }
+
+        .attachment-list a:hover {
+            background: #d1d1d1 !important;
+            color: #111 !important;
+        }
+
+        input[type="file"]::file-selector-button {
+        background: var(--btn-color);
+        color: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 5px 10px;
+        cursor: pointer;
+        transition: background 0.2s;
+        }
+
+        input[type="file"]::file-selector-button:hover {
+        background: #444;
         }
 
         .attachment-row {
@@ -844,7 +882,6 @@
             justify-content: space-between;
             gap: 8px;
             padding: 6px 4px;
-            border-bottom: 1px solid #eee;
         }
 
         .attachment-row:last-child { border-bottom: none; }
@@ -956,7 +993,6 @@
           <a href="/group-notes" class="nav-link">Group notes</a>
           <a href="/scheduler-page" class="nav-link">Calendar</a>
           <a href="/todo_page" class="nav-link">Todo</a>
-          <a href="/flow_page" class="nav-link">Flow</a>
         </nav>
         <div id="storage-container" style="margin: 0px 100px;">
             <span id="storage-counter">0 / 0 MB</span>
@@ -972,7 +1008,6 @@
         <a href="/group-notes" class="nav-link">Group notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
-        <a href="/flow_page" class="nav-link">Flow</a>
       </nav> 
 
 
@@ -1064,7 +1099,7 @@
         <label for="update-file-input" class="file-label">Attach files</label>
         <input id="update-file-input" type="file" multiple>
         <div id="update-file-list" class="attachment-list"></div>
-
+        <h4 id="existing-attachments-title" style="margin-top:12px; margin-bottom:6px;">Existing attachments</h4>
         <!-- show existing attachments -->
         <div id="update-existing-attachments" class="attachment-list"></div>
 
@@ -1420,7 +1455,7 @@
             if (toggleBtn && viewList) {
                 toggleBtn.addEventListener('click', () => {
                     const visible = viewList.style.display !== 'none';
-                    viewList.style.display = visible ? 'none' : 'block';
+                    viewList.style.display = visible ? 'none' : 'flex';
                     toggleBtn.textContent = visible ? 'Show attachments' : 'Hide attachments';
                 });
             }
@@ -1444,38 +1479,140 @@
             e.target.value = '';
         });
 
-        async function uploadSingleFile(file) {
-            // returns upload_id on success, throws Error on failure
-            const form = new FormData();
-            form.append('file', file);
-            const res = await fetch('/uploads', {
-                method: 'POST',
-                body: form, // DO NOT set Content-Type; browser adds boundary
-                credentials: 'same-origin'
-            });
-            if (!res.ok) {
-                const json = await res.json().catch(()=>({error:res.statusText}));
-                throw new Error(json.error || `Upload failed (${res.status})`);
-            }
-            const data = await res.json();
-            return data.upload_id;
+        // Custom Upload error type for clearer control flow
+        class UploadError extends Error {
+        constructor(message, { code = 'OTHER', status = null } = {}) {
+            super(message);
+            this.name = 'UploadError';
+            this.code = code;     // 'STORAGE_QUOTA' or 'OTHER'
+            this.status = status;
+        }
         }
 
-        async function uploadFilesSequential(files, onProgress) {
-            // Upload files one-by-one to reduce load and keep ordering predictable.
-            const ids = [];
-            for (let i = 0; i < files.length; i++) {
-                try {
-                    const id = await uploadSingleFile(files[i]);
-                    ids.push(id);
-                    if (onProgress) onProgress(i+1, files.length);
-                } catch (err) {
-                    // Surface which file failed
-                    throw new Error(`Failed to upload "${files[i].name}": ${err.message}`);
-                }
-            }
-            return ids;
+        /**
+         * Inspect server response JSON + status to detect user storage quota errors
+         * (Matches the server string: "User storage quota exceeded.")
+         */
+        function isStorageQuotaError(json, status) {
+        if (!json) return false;
+        const err = (json.error || '').toString();
+        // Exact server message check OR heuristic fallback
+        return err === 'User storage quota exceeded.' ||
+                /storage.*quota|quota.*storage|storage quota exceeded/i.test(err) ||
+                (status === 507 || status === 413); // defensive fallback
         }
+
+        async function uploadSingleFile(file) {
+        const form = new FormData();
+        form.append('file', file);
+
+        const res = await fetch('/uploads', {
+            method: 'POST',
+            body: form, // browser sets Content-Type/boundary
+            credentials: 'same-origin'
+        });
+
+        const json = await res.json().catch(()=>null);
+
+        if (!res.ok) {
+            const message = (json && json.error) ? json.error : `Upload failed (${res.status})`;
+            const isQuota = isStorageQuotaError(json, res.status);
+            throw new UploadError(message, { code: isQuota ? 'STORAGE_QUOTA' : 'OTHER', status: res.status });
+        }
+
+        // Success: server returns 201 and body with upload_id
+        if (!json || !json.upload_id) {
+            throw new UploadError('Upload succeeded but server returned no upload_id', { code: 'OTHER', status: res.status });
+        }
+
+        return json.upload_id;
+        }
+
+        async function deleteSingleUpload(id) {
+        const res = await fetch(`/uploads/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+
+        const json = await res.json().catch(()=>null);
+
+        if (!res.ok) {
+            const message = (json && json.error) ? json.error : `Delete failed (${res.status})`;
+            return { ok: false, id, status: res.status, error: message };
+        }
+
+        return { ok: true, id };
+        }
+
+        /**
+         * Attempt to delete all ids sequentially and return summary.
+         * Sequential so we don't spike the server; swap to Promise.allSettled() if you prefer concurrency.
+         */
+        async function deleteUploads(ids) {
+        const results = [];
+        for (const id of ids) {
+            try {
+            const r = await deleteSingleUpload(id);
+            results.push(r);
+            } catch (err) {
+            results.push({ ok: false, id, error: err?.message ?? String(err) });
+            }
+        }
+        const failures = results.filter(r => !r.ok);
+        return { results, failures };
+        }
+
+        /**
+         * Upload files one-by-one. If a storage-quota error occurs for any file and
+         * some previous files already uploaded, attempt to delete all previous uploads
+         * to avoid orphaned bytes on the server. Throws on any upload failure.
+         *
+         * onProgress( doneCount, totalCount )
+         */
+        async function uploadFilesSequential(files, onProgress) {
+        const ids = [];
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            try {
+            const id = await uploadSingleFile(file);
+            ids.push(id);
+            if (typeof onProgress === 'function') onProgress(i + 1, files.length);
+            } catch (err) {
+            // normalize to UploadError
+            const uerr = err instanceof UploadError ? err : new UploadError(err?.message ?? String(err));
+
+            // If this is a storage-quota problem and we have prior uploads, attempt cleanup
+            if (uerr.code === 'STORAGE_QUOTA' && ids.length > 0) {
+                let summary;
+                try {
+                summary = await deleteUploads(ids);
+                } catch (delErr) {
+                throw new Error(
+                    `Failed to upload "${file.name}": ${uerr.message}. Also failed during cleanup: ${delErr?.message || delErr}`
+                );
+                }
+
+                if (summary.failures.length > 0) {
+                const failMsgs = summary.failures.map(f => `${f.id}: ${f.error || f.status}`).join('; ');
+                throw new Error(
+                    `Failed to upload "${file.name}": ${uerr.message}. Attempted cleanup of ${ids.length} prior upload(s), but some deletions failed: ${failMsgs}`
+                );
+                }
+
+                // All prior deletions succeeded
+                throw new Error(
+                `Failed to upload "${file.name}": ${uerr.message}. All ${ids.length} prior upload(s) were deleted to avoid orphaned storage.`
+                );
+            }
+
+            // Non-quota error or no previous uploads: just throw with file context
+            throw new Error(`Failed to upload "${file.name}": ${uerr.message}`);
+            }
+        }
+
+        return ids;
+        }
+
 
         document.addEventListener("DOMContentLoaded", function() {
             const toggleButton = document.getElementById("toggle-mobile-nav");
@@ -1587,7 +1724,6 @@
                         <h3>${escapedTitle}</h3>
                         <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
                         ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
-                        <button class="share-button" data-note-id="${note.id}">Share</button>
                     </li>
                     `;
                 }).join("");
