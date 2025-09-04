@@ -513,6 +513,71 @@
       background-color: var(--btn-color);
     }
 
+    #storage-modal { position: fixed; inset:0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,0.6); z-index:2000; }
+    #storage-modal .panel { width: 760px; max-width:96%; background: linear-gradient(90deg,#1b1b1b,#121212); color:white; border-radius:12px; padding:20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 3px solid #ffcc00; }
+    #storage-modal .header { display:flex; align-items:center; gap:12px; }
+    #storage-modal .logo-badge { background:#ffcc00; color:#111; padding:8px 12px; border-radius:8px; font-weight:800; }
+    #storage-modal .big { font-size:28px; font-weight:800; }
+    #storage-modal .advert { margin-top:12px; background: linear-gradient(90deg,#ff7a18,#af002d); padding:12px; border-radius:8px; text-align:center; font-weight:700; }
+    #storage-modal .invites { margin-top:16px; display:flex; gap:12px; }
+    #storage-modal .invites .left, #storage-modal .invites .right { flex:1; }
+    #storage-modal .input-row { display:flex; gap:8px; margin-top:8px; }
+    #storage-modal .btn { padding:10px 14px; border-radius:8px; background:#333; color:white; border:none; cursor:pointer; }
+    #storage-modal .btn.primary { background: linear-gradient(90deg,#ffcc00,#ff8a00); color:#111; font-weight:700; }
+    #storage-modal .pending-list { max-height:220px; overflow:auto; margin-top:8px; border-top:1px solid rgba(255,255,255,0.06); padding-top:8px; }
+    .almost-full { background: linear-gradient(90deg,#e74c3c,#c0392b) !important; }
+    .cancel-invite-btn {
+        background: transparent;
+        position: relative;
+        border: 1px solid #ddd;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        left: 300px;
+    }
+
+    /* Container for counter + bar */
+        #storage-container {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          width: 200px;  /* adjust to your header size */
+          font-family: Arial, sans-serif;
+          font-size: 12px;
+          margin: 0 10px;
+      }
+
+      /* Text counter */
+      #storage-counter {
+          margin-bottom: 4px;
+          font-weight: bold;
+          color: #ffffff;
+      }
+
+      /* Background of progress bar */
+      #storage-bar-bg {
+          width: 100%;
+          height: 8px;
+          background-color: #eee;
+          border-radius: 4px;
+          overflow: hidden;
+      }
+
+      /* Filled portion */
+      #storage-bar-fill {
+          width: 0%; /* dynamically updated by JS */
+          height: 100%;
+          background: linear-gradient(90deg, #4caf50, #81c784);
+          border-radius: 4px 0 0 4px;
+          transition: width 0.3s ease, background 0.3s ease;
+      }
+
+      /* Red when almost full */
+      #storage-bar-fill.almost-full {
+          background: linear-gradient(90deg, #ffb74d , #e53935);
+      }
+
 
   </style>
   <script src="static/admin.js"></script>
@@ -562,8 +627,14 @@
       <a href="/group-notes" class="nav-link">Group notes</a>
       <a href="/scheduler-page" class="nav-link">Calendar</a>
       <a href="/todo_page" class="nav-link active">Todo</a>
-      <a href="/flow_page" class="nav-link">Flow</a>
     </nav>
+
+    <div id="storage-container" style="margin: 0px 100px;">
+        <span id="storage-counter">0 / 0 MB</span>
+        <div id="storage-bar-bg">
+            <div id="storage-bar-fill"></div>
+        </div>
+    </div>
     
     <div id="profile-pic" class="profile-pic no-picture"></div>
 </header>
@@ -574,7 +645,6 @@
     <a href="/group-notes" class="nav-link">Group notes</a>
     <a href="/scheduler-page" class="nav-link">Calendar</a>
     <a href="/todo_page" class="nav-link active">Todo</a>
-    <a href="/flow_page" class="nav-link">Flow</a>
   </nav>  
 
   <div id="overlay"></div>
@@ -651,6 +721,53 @@
     </div>
   </div>
 
+  <div id="storage-modal" role="dialog" aria-hidden="true">
+        <div class="panel" role="document">
+            <div class="header">
+            <div class="logo-badge">FUTURE NOTES</div>
+            <div style="flex:1">
+                <div class="big">Your storage — make it bigger!</div>
+                <div style="opacity:0.8">Store notes, files, memories. Invite friends to grow your quota.</div>
+            </div>
+            <div><button id="storage-modal-close" class="btn">✕</button></div>
+            </div>
+
+            <div class="advert">Invite friends → get <strong>+5MB</strong> per verified signup. Limit: <span id="per-day-limit">3</span>/day. <span style="margin-left:12px">🎉</span></div>
+
+            <div class="invites">
+            <div class="left">
+                <h4>Current storage</h4>
+                <div style="display:flex; align-items:center; gap:12px;">
+                <div style="flex:1; background:#222; height:18px; border-radius:12px; padding:3px;">
+                    <div id="storage-bar-fill-modal" style="width:0%; height:100%; border-radius:9px; background:linear-gradient(90deg,#ffd166,#ff8a00);"></div>
+                </div>
+                <div id="storage-counter-modal">0 / 0 MB</div>
+                </div>
+
+                <div style="margin-top:12px;">
+                <h4>Invite someone</h4>
+                <div>Remaining invites today: <strong id="remaining-today">3</strong></div>
+                <div class="input-row">
+                    <input id="invite-email" type="email" placeholder="friend@example.com" style="flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:#0f0f0f; color:white;">
+                    <button id="send-invite-btn" class="btn primary">Send Invite</button>
+                </div>
+                <div id="invite-feedback" style="margin-top:8px; color:#f1c40f;"></div>
+                </div>
+            </div>
+
+            <div class="right">
+                <h4>Pending invites</h4>
+                <div class="pending-list" id="pending-invites-list">
+                <div style="opacity:0.6">Loading...</div>
+                </div>
+
+                <h4 style="margin-top:12px;">Daily stats</h4>
+                <div>Sent today: <strong id="sent-today">0</strong></div>
+            </div>
+            </div>
+        </div>
+    </div>
+
 <script>
 document.addEventListener("DOMContentLoaded", async () => {
             // ensure fetch sends cookies
@@ -669,6 +786,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const res = await fetch("/test-session", { method: "GET" });
                 if (res.status === 200) {
                     fetchTodos();
+                    updateStorageCounter();
                     return true;
                 }
                 if (res.status === 403) {
@@ -694,6 +812,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 if (res.ok) {
                     console.log("Auto-login successful");
                     fetchTodos();  // re-fetch todos
+                    updateStorageCounter();
                     return true;
                 }
                 // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
@@ -710,6 +829,132 @@ document.addEventListener("DOMContentLoaded", async () => {
             await attemptAutoLogin();
         }
         });
+
+    // Example: update the bar along with the text
+        async function updateStorageCounter() {
+          try {
+              const res = await fetch('/user/storage');
+              if (!res.ok) throw new Error("Failed to fetch storage info");
+              const data = await res.json();
+
+              const usedMB = (data.used_bytes / 1024 / 1024).toFixed(2);
+              const totalMB = (data.total_bytes / 1024 / 1024).toFixed(2);
+              const percentUsed = Math.min((data.used_bytes / data.total_bytes) * 100, 100);
+
+              document.getElementById('storage-counter').textContent = `${usedMB} / ${totalMB} MB`;
+              document.getElementById('storage-bar-fill').style.width = `${percentUsed}%`;
+              if (percentUsed > 90) {
+                  document.getElementById('storage-bar-fill').classList.add('almost-full');
+              } else {
+                  document.getElementById('storage-bar-fill').classList.remove('almost-full');
+              }
+          } catch (err) {
+              console.error(err);
+          }
+      }
+
+      document.getElementById('storage-container').style.cursor = 'pointer';
+      document.getElementById('storage-container').addEventListener('click', openStorageModal);
+      document.getElementById('storage-modal-close').addEventListener('click', closeStorageModal);
+      document.getElementById('send-invite-btn').addEventListener('click', sendInvite)
+
+      async function openStorageModal(e){
+      e && e.preventDefault();
+      document.getElementById('storage-modal').style.display = 'flex';
+      await refreshModalData();
+      }
+
+      function closeStorageModal(){
+      document.getElementById('storage-modal').style.display = 'none';
+      document.getElementById('invite-feedback').textContent = '';
+      }
+
+      async function refreshModalData(){
+      try {
+          const res = await fetch('/invites/status');
+          if (!res.ok) throw new Error('Failed to load status');
+          const data = await res.json();
+
+          document.getElementById('storage-counter-modal').textContent = `${data.used_mb} / ${data.total_mb} MB`;
+          const percent = Math.min((data.used_mb / Math.max(data.total_mb, 1)) * 100, 100);
+          document.getElementById('storage-bar-fill-modal').style.width = percent + '%';
+          if (percent > 90) document.getElementById('storage-bar-fill-modal').classList.add('almost-full');
+          else document.getElementById('storage-bar-fill-modal').classList.remove('almost-full');
+
+          document.getElementById('remaining-today').textContent = data.remaining_today;
+          document.getElementById('sent-today').textContent = data.sent_today;
+          document.getElementById('per-day-limit').textContent = data.per_day_limit;
+
+          const pendingList = document.getElementById('pending-invites-list');
+          pendingList.innerHTML = '';
+          if (!data.pending_invites || data.pending_invites.length === 0) {
+          pendingList.innerHTML = '<div style="opacity:0.6">No pending invites</div>';
+          } else {
+          for (const p of data.pending_invites) {
+              const el = document.createElement('div');
+              el.style.padding = '8px';
+              el.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+              el.innerHTML = `<div style="font-weight:700">${p.email}</div><div style="opacity:0.6; font-size:12px">Sent ${new Date(p.created_at).toLocaleString()}</div><button onclick="cancelInvite('${p.id}')" class="cancel-invite-btn">Cancel</button>`;
+              pendingList.appendChild(el);
+          }
+          }
+      } catch (err) {
+          console.error(err);
+          document.getElementById('invite-feedback').textContent = 'Could not load invite status.';
+      }
+      }
+
+      async function sendInvite(){
+      const email = document.getElementById('invite-email').value.trim();
+      if (!email) {
+          document.getElementById('invite-feedback').textContent = 'Enter an email first.';
+          return;
+      }
+      document.getElementById('send-invite-btn').disabled = true;
+      document.getElementById('invite-feedback').textContent = 'Sending...';
+
+      try {
+          const res = await fetch('/invites/send', {
+          method:'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({email})
+          });
+          const j = await res.json();
+          if (!res.ok) {
+          document.getElementById('invite-feedback').textContent = j.error || 'Failed to send';
+          } else {
+          document.getElementById('invite-feedback').textContent = 'Invite sent! They must sign up via the link to redeem.';
+          document.getElementById('invite-email').value = '';
+          // refresh
+          await refreshModalData();
+          }
+      } catch (err) {
+          console.error(err);
+          document.getElementById('invite-feedback').textContent = 'Network error';
+      } finally {
+          document.getElementById('send-invite-btn').disabled = false;
+      }
+      }
+
+      async function cancelInvite(id) {
+          if (!id) return;
+          try {
+              const res = await fetch(`/invites/cancel/${id}`, { 
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+              });
+              const j = await res.json();
+              if (!res.ok) {
+                  document.getElementById('invite-feedback').textContent = j.error || 'Failed to cancel invite';
+              } else {
+                  document.getElementById('invite-feedback').textContent = 'Invite canceled.';
+                  await refreshModalData();
+              }
+          } catch (err) {
+              console.error(err);
+              document.getElementById('invite-feedback').textContent = 'Network error';
+          }
+      }
 
     let tagSuggestions = [];
     let currentInputElement = null;

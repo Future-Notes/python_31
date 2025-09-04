@@ -5237,7 +5237,8 @@ def get_group_notes(group_id):
     if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
-    notes = Note.query.filter_by(group_id=group_id).all()
+    # Order notes by newest first (descending id or created_at if available)
+    notes = Note.query.filter_by(group_id=group_id).order_by(Note.id.desc()).all()
 
     def attachments_for_note(n):
         rows = NoteUpload.query.filter_by(note_id=n.id).all()
@@ -7603,7 +7604,8 @@ def manage_notes():
 
         return jsonify({"message": "Note added successfully!"}), 201
     else:
-        notes = Note.query.filter_by(user_id=g.user_id).all()
+        # Order by newest first (descending id)
+        notes = Note.query.filter_by(user_id=g.user_id).order_by(Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
             # fetch attachments
