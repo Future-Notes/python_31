@@ -224,6 +224,8 @@ class User(db.Model):
     suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
+    has_username_protection = db.Column(db.Boolean, default=False, nullable=False)
+    has_unlimited_storage = db.Column(db.Boolean, default=False, nullable=False)
 
     base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
     storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
@@ -2389,9 +2391,14 @@ def allowed_extension(filename):
 def get_user_quota_bytes(user):
     """
     Return quota in bytes.
+    If user.has_unlimited_storage is True, return float('inf') to indicate no limit.
     If user.base_storage_mb is None -> default to 10 MB.
     Coerce strings to int safely; on failure fall back to 10.
     """
+    # Check for unlimited storage
+    if getattr(user, "has_unlimited_storage", False):
+        return float("inf")
+
     default_mb = 10
     try:
         base_mb = user.base_storage_mb
@@ -2474,8 +2481,12 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
 
     # Check user storage quota
     quota = get_user_quota_bytes(user)
-    if (user.storage_used_bytes or 0) + size > quota:
-        return False, "User storage quota exceeded."
+
+    # Treat infinite quota as no limit
+    if quota != float("inf"):
+        if (user.storage_used_bytes or 0) + size > quota:
+            return False, "User storage quota exceeded."
+
 
     # Determine mimetype
     mimetype = file.mimetype or ''
@@ -2819,6 +2830,10 @@ def privacy_policy():
 def version_management():
     return render_template("version_management.html")
 
+@app.route('/why-protected-usernames')
+def why_protected_usernames():
+    return render_template("why_protected_usernames.html")
+
 #---------------------------------API routes--------------------------------
 
 # Flow routes:
@@ -2859,14 +2874,41 @@ def invites_status():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-      # storage
-    try:
-        used_bytes = int(user.storage_used_bytes or 0)
-    except (ValueError, TypeError):
+    # ---- STORAGE ----
+    raw_quota = get_user_quota_bytes(user)
+    unlimited = raw_quota == float('inf')
+
+    raw_used = getattr(user, 'storage_used_bytes', None)
+    persist_null_to_zero = True
+
+    if raw_used is None:
         used_bytes = 0
-    total_mb = int(user.base_storage_mb or 0)
-    used_mb = round(used_bytes / 1024 / 1024, 2)
-    # invites sent today
+        if persist_null_to_zero:
+            try:
+                user.storage_used_bytes = 0
+                db.session.add(user)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+    else:
+        try:
+            used_bytes = int(raw_used)
+        except (ValueError, TypeError):
+            # sanitize: keep digits only
+            s = re.sub(r'\D', '', str(raw_used or ''))
+            used_bytes = int(s) if s else 0
+
+    if unlimited:
+        total_mb = None
+        used_mb = None
+        storage_message = "Unlimited storage"
+    else:
+        total_bytes = int(raw_quota)
+        total_mb = round(total_bytes / 1024 / 1024, 2)
+        used_mb = round(used_bytes / 1024 / 1024, 2)
+        storage_message = None
+
+    # ---- INVITES SENT TODAY ----
     start, now = _today_utc_range()
     sent_today = InviteReferral.query.filter(
         InviteReferral.inviter_id == user.id,
@@ -2875,8 +2917,9 @@ def invites_status():
     per_day_limit = 3
     remaining_today = max(per_day_limit - sent_today, 0)
 
-    # pending invites
-    pending = InviteReferral.query.filter_by(inviter_id=user.id, claimed=False).order_by(InviteReferral.created_at.desc()).all()
+    # ---- PENDING INVITES ----
+    pending = InviteReferral.query.filter_by(inviter_id=user.id, claimed=False)\
+        .order_by(InviteReferral.created_at.desc()).all()
     pending_list = [{
         "id": inv.id,
         "email": inv.invited_email,
@@ -2887,6 +2930,7 @@ def invites_status():
     return jsonify({
         "used_mb": used_mb,
         "total_mb": total_mb,
+        "storage_message": storage_message,
         "sent_today": sent_today,
         "remaining_today": remaining_today,
         "per_day_limit": per_day_limit,
@@ -3905,7 +3949,74 @@ def contact():
         return jsonify({"success": "Message received successfully!"}), 201
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
-    
+
+@app.route('/username-check/<string:username>', methods=['GET'])
+def check_username(username):
+    # Block impersonation of reserved names (case-insensitive, normalized, similar)
+    reserved_names = ["admin", "administrator", "moderator", "mod", "support", "staff", "root", "system"]
+    norm_input = re.sub(r'[_\-]', '', username.lower())
+
+    # Direct reserved name match
+    for reserved in reserved_names:
+        norm_reserved = re.sub(r'[_\-]', '', reserved.lower())
+        # Case-insensitive and normalized match
+        if username.lower() == reserved or norm_input == norm_reserved:
+            return jsonify({"exists": False, "protected": True, "reason": "Reserved name"}), 200
+        # Levenshtein similarity
+        def levenshtein(a, b):
+            if a == b:
+                return 0
+            if len(a) < len(b):
+                return levenshtein(b, a)
+            if len(b) == 0:
+                return len(a)
+            previous_row = range(len(b) + 1)
+            for i, c1 in enumerate(a):
+                current_row = [i + 1]
+                for j, c2 in enumerate(b):
+                    insertions = previous_row[j + 1] + 1
+                    deletions = current_row[j] + 1
+                    substitutions = previous_row[j] + (c1 != c2)
+                    current_row.append(min(insertions, deletions, substitutions))
+                previous_row = current_row
+            return previous_row[-1]
+        if levenshtein(norm_input, norm_reserved) <= 1:
+            return jsonify({"exists": False, "protected": True, "reason": "Reserved name similarity"}), 200
+        # Regex: block substrings or extra digits/letters
+        pattern = re.compile(rf"^{re.escape(reserved)}[\d\w\-_.]*$", re.IGNORECASE)
+        if pattern.match(username):
+            return jsonify({"exists": False, "protected": True, "reason": "Reserved name regex similarity"}), 200
+
+    # Check for exact match in database
+    user = User.query.filter_by(username=username).first()
+    if user:
+        return jsonify({"exists": True, "protected": False}), 200
+
+    # Check for similarity to protected usernames in DB
+    protected_users = User.query.filter_by(has_username_protection=True).all()
+    for protected_user in protected_users:
+        protected_name = protected_user.username
+
+        # Case-insensitive match
+        if username.lower() == protected_name.lower():
+            return jsonify({"exists": False, "protected": True, "reason": "Case-insensitive match"}), 200
+
+        # Remove underscores/dashes and compare
+        norm_protected = re.sub(r'[_\-]', '', protected_name.lower())
+        if norm_input == norm_protected:
+            return jsonify({"exists": False, "protected": True, "reason": "Normalized match"}), 200
+
+        # Levenshtein distance <= 1 (very similar)
+        if levenshtein(username.lower(), protected_name.lower()) <= 1:
+            return jsonify({"exists": False, "protected": True, "reason": "Levenshtein similarity"}), 200
+
+        # Regex: block usernames that are substrings or have extra digits/letters at the end
+        pattern = re.compile(rf"^{re.escape(protected_name)}[\d\w\-_.]*$", re.IGNORECASE)
+        if pattern.match(username):
+            return jsonify({"exists": False, "protected": True, "reason": "Regex similarity"}), 200
+
+    # If no match found
+    return jsonify({"exists": False, "protected": False}), 200
 
 # User info
 
@@ -7668,13 +7779,11 @@ def get_user_storage():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    total_bytes = int(get_user_quota_bytes(user) or 0)
+    raw_quota = get_user_quota_bytes(user)
+    unlimited = raw_quota == float('inf')
 
-    # ---- handle storage_used_bytes (NULL, strings, garbage) ----
+    # Handle storage_used_bytes (NULL, strings, garbage)
     raw_used = getattr(user, 'storage_used_bytes', None)
-
-    # If explicit NULL in DB => treat as 0 and persist that (so next time it's not null).
-    # If you don't want to persist, set persist_null_to_zero=False below.
     persist_null_to_zero = True
 
     if raw_used is None:
@@ -7685,24 +7794,33 @@ def get_user_storage():
                 db.session.add(user)
                 db.session.commit()
             except Exception:
-                # don't crash on commit issues; rollback and proceed with used_bytes=0
                 db.session.rollback()
     else:
-        # raw_used might be int-like string, or it might be something messy.
         try:
             used_bytes = int(raw_used)
         except (ValueError, TypeError):
-            # attempt a best-effort sanitize: keep digits only
+            # sanitize: keep digits only
             s = re.sub(r'\D', '', str(raw_used or ''))
             used_bytes = int(s) if s else 0
 
-    remaining_bytes = max(total_bytes - used_bytes, 0)
+    # Compute remaining storage
+    if unlimited:
+        total_bytes = None          # None indicates unlimited
+        remaining_bytes = None
+    else:
+        total_bytes = int(raw_quota)
+        remaining_bytes = max(total_bytes - used_bytes, 0)
 
-    return jsonify({
+    # Special message for frontend if unlimited
+    response = {
         "total_bytes": total_bytes,
         "used_bytes": used_bytes,
-        "remaining_bytes": remaining_bytes
-    }), 200
+        "remaining_bytes": remaining_bytes,
+        "unlimited": unlimited,
+        "message": "Unlimited storage" if unlimited else None
+    }
+
+    return jsonify(response), 200
 
 
 # Update sanitize_html function

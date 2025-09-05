@@ -13,8 +13,12 @@
         const isFullPage = /<!DOCTYPE\s+html|<html/i.test(message);
         let displayMessage = message;
 
-        if (!isFullPage && message.length > MAX_CHARS) {
-            displayMessage = message.slice(0, MAX_CHARS) + "…";
+        if (!isFullPage) {
+            if (typeof message !== "string" || message.trim() === "") {
+                displayMessage = "<i>No message provided.</i>";
+            } else if (message.length > MAX_CHARS) {
+                displayMessage = message.slice(0, MAX_CHARS) + "…";
+            }
         }
 
         const wrapper = document.createElement("div");
