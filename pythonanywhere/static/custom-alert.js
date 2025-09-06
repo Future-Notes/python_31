@@ -32,7 +32,7 @@
             maxHeight: "200px",
             display: "flex",
             flexDirection: "column",
-            background: "var(--bg-color)",
+            background: getComputedStyle(document.documentElement).getPropertyValue('--bg-color')?.trim() || "#2e2e2e",
             fontFamily: "Arial, sans-serif",
             color: "white"
         });
@@ -113,12 +113,36 @@
         }
 
         let hideTimer;
-        if (effectiveTimeout !== null && effectiveTimeout !== undefined) {
-            hideTimer = setTimeout(remove, effectiveTimeout);
+        let isHovered = false;
+
+        function startTimeout() {
+            if (effectiveTimeout !== null && effectiveTimeout !== undefined) {
+                hideTimer = setTimeout(remove, effectiveTimeout);
+            }
         }
 
+        function clearTimeoutIfAny() {
+            if (hideTimer) {
+                clearTimeout(hideTimer);
+                hideTimer = null;
+            }
+        }
+
+        // Start initial timeout
+        startTimeout();
+
+        wrapper.addEventListener("mouseenter", () => {
+            isHovered = true;
+            clearTimeoutIfAny();
+        });
+
+        wrapper.addEventListener("mouseleave", () => {
+            isHovered = false;
+            startTimeout();
+        });
+
         function remove() {
-            if (hideTimer) clearTimeout(hideTimer);
+            clearTimeoutIfAny();
             wrapper.style.transition = "opacity 0.3s ease";
             wrapper.style.opacity = "0";
             setTimeout(() => wrapper.remove(), 300);
