@@ -14,3 +14,4 @@ autopyexeconfigv1.json
 wsgi.py
 manager.py
 **/backups
+**/.vscode
