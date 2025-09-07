@@ -3027,19 +3027,29 @@ def invite_accept():
     if not invite:
         return "Invalid or expired invite link", 400
 
-    # create referral session record
-    ref = ReferralSession(
+    # Check if a ReferralSession already exists for this invite and email
+    existing_ref = ReferralSession.query.filter_by(
         invite_id=invite.id,
-        inviter_id=invite.inviter_id,
         invited_email=invite.invited_email
-    )
-    db.session.add(ref)
-    db.session.commit()
+    ).first()
+
+    if existing_ref:
+        ref = existing_ref
+    else:
+        # create referral session record
+        ref = ReferralSession(
+            invite_id=invite.id,
+            inviter_id=invite.inviter_id,
+            invited_email=invite.invited_email
+        )
+        db.session.add(ref)
+        db.session.commit()
 
     # Set cookie (non-httponly so front-end can inspect if needed; but we only need backend)
     resp = redirect("/signup_page")
     # cookie name "referral_session"
-    resp.set_cookie("referral_session", ref.id, httponly=True, secure=False, samesite="Lax", max_age=60*60)  # 1 hour
+    # Set a longer expiration (e.g., 7 days) so user can sign up later
+    resp.set_cookie("referral_session", ref.id, httponly=True, secure=False, samesite="Lax", max_age=60*60*24*7)
     return resp
 
 
