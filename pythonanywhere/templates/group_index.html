@@ -185,7 +185,7 @@
             animation: fadeIn 0.5s forwards 0.3s;
         }
 
-        #notes-list li {
+        #notes-list > li {
             background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
@@ -201,6 +201,10 @@
             overflow: hidden;
             opacity: 0;
             animation: fadeIn 1s forwards;
+        }
+
+        ul ul {
+            list-style-type: disc !important; /* frick you user agent stylesheet! */
         }
 
         #notes-list li h3 {
@@ -227,7 +231,7 @@
             border-bottom-right-radius: 15px;
         }
 
-        #notes-list li:hover {
+        #notes-list > li:hover {
             background-color: #4a4a4a;
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
         }
