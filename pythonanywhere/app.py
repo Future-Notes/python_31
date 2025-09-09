@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-import imghdr
+import filetype
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
@@ -2415,41 +2415,80 @@ def get_user_quota_bytes(user):
 
     return int(base_mb) * 1024 * 1024
 
-def verify_file_content(file_path, mimetype):
+def verify_file_content(file_path: str, mimetype: str) -> bool:
     """
-    Light-weight content verification:
-      - For images: verify actual file is an image via imghdr
-      - For text/pdf/zip: trust mimetype but you could add extra checks
-    Returns True if content seems OK, False otherwise.
+    Stronger file verification:
+      - Uses Pillow for images
+      - Adds safer checks for text, pdf, and zip
+      - Falls back to filetype lib for extra validation
+    Returns True if content matches declared mimetype.
     """
-    # image verification
-    if mimetype and mimetype.startswith('image/'):
-        img_type = imghdr.what(file_path)
-        return img_type is not None  # jpeg/png/gif etc.
-    # For text files, try reading small chunk
-    if mimetype == 'text/plain':
+
+    # --- IMAGES ---
+    if mimetype and mimetype.startswith("image/"):
         try:
-            with open(file_path, 'rb') as f:
-                chunk = f.read(512)
-                # If the data has null bytes it's probably not plain text
-                if b'\x00' in chunk:
+            with Image.open(file_path) as img:
+                img.verify()  # check integrity
+                format_to_mime = {
+                    "JPEG": "image/jpeg",
+                    "PNG": "image/png",
+                    "GIF": "image/gif",
+                    "WEBP": "image/webp"
+                }
+                detected_mime = format_to_mime.get(img.format)
+                return detected_mime == mimetype
+        except Exception:
+            return False
+
+    # --- TEXT ---
+    if mimetype == "text/plain":
+        try:
+            with open(file_path, "rb") as f:
+                chunk = f.read(2048)  # read more for confidence
+                if b"\x00" in chunk:
                     return False
+                # crude encoding check
+                chunk.decode("utf-8", errors="strict")
             return True
         except Exception:
             return False
-    # For pdf/zip we could add more checks (e.g., header bytes), but for now:
-    if mimetype in ('application/pdf', 'application/zip'):
-        # quick header check
+
+    # --- PDF ---
+    if mimetype == "application/pdf":
         try:
-            with open(file_path, 'rb') as f:
-                hdr = f.read(8)
-                if mimetype == 'application/pdf':
-                    return hdr.startswith(b'%PDF')
-                if mimetype == 'application/zip':
-                    return hdr.startswith(b'PK')
+            with open(file_path, "rb") as f:
+                header = f.read(5)
+                if not header.startswith(b"%PDF"):
+                    return False
+                f.seek(-7, 2)  # near EOF
+                trailer = f.read().strip()
+                return trailer.startswith(b"%%EOF")
         except Exception:
             return False
-    # If unknown mimetype, be conservative and reject
+
+    # --- ZIP ---
+    if mimetype == "application/zip":
+        try:
+            with open(file_path, "rb") as f:
+                header = f.read(4)
+                if header != b"PK\x03\x04":
+                    return False
+            # optionally: inspect zipfile content
+            import zipfile
+            with zipfile.ZipFile(file_path, "r") as zf:
+                return zf.testzip() is None  # no corrupted entries
+        except Exception:
+            return False
+
+    # --- FALLBACK with filetype ---
+    try:
+        kind = filetype.guess(file_path)
+        if kind and kind.mime == mimetype:
+            return True
+    except Exception:
+        return False
+
+    # --- FINAL fallback ---
     return mimetype in ALLOWED_MIMETYPES
 
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
