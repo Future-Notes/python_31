@@ -204,7 +204,7 @@
             animation: fadeIn 0.5s forwards 0.3s;
         }
 
-        #notes-list > li {
+        #notes-list li {
             background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
@@ -219,10 +219,6 @@
             overflow: hidden;
             opacity: 0;
             animation: fadeIn 1s forwards;
-        }
-
-        ul ul {
-            list-style-type: disc !important; /* frick you user agent stylesheet! */
         }
 
         #notes-list li h3 {
@@ -941,6 +937,7 @@
         }
 
         /* Infinite storage rainbow bar */
+        /* Infinite storage rainbow bar */
         .infinite-storage {
             background-image: linear-gradient(
                 270deg,
@@ -969,99 +966,7 @@
             }
         }
 
-        #top-directory-bar {
-            display: flex;
-            align-items: center;
-            background-color: #e0e0e0;
-            padding: 0.5rem 1rem;
-            border-bottom: 1px solid #d0d0d0;
-        }
-        
-        #breadcrumb {
-            display: flex;
-            align-items: center;
-            flex-grow: 1;
-        }
-        
-        .breadcrumb-item {
-            cursor: pointer;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            margin-right: 0.5rem;
-        }
-        
-        .breadcrumb-item:hover {
-            background-color: #d0d0d0;
-        }
-        
-        #back-button {
-            background-color: #d0d0d0;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 1rem;
-        }
-        
-        #back-button:hover {
-            background-color: #c0c0c0;
-        }
 
-        .folder-item {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem;
-            background-color: #f8f8f8;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            margin-bottom: 0.5rem;
-            cursor: pointer;
-        }
-        
-        .folder-item:hover {
-            background-color: #e8e8e8;
-        }
-        
-        .folder-icon {
-            margin-right: 0.5rem;
-            font-size: 1.2rem;
-        }
-        
-        .folder-name {
-            font-weight: 500;
-        }
-        
-        /* Modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0,0,0,0.5);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .modal-content {
-            background-color: #fff;
-            padding: 2rem;
-            border-radius: 8px;
-            width: 90%;
-            max-width: 600px;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .editor {
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 0.75rem;
-            min-height: 200px;
-            margin-bottom: 1rem;
-        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {

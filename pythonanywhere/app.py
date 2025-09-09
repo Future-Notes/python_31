@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-import filetype
+import imghdr
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
@@ -507,22 +507,12 @@ class PlayerXp(db.Model):
 
     def __repr__(self):
         return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
-    
-class Folder(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
-    
-    # Relationships
-    parent = db.relationship('Folder', remote_side=[id], backref='subfolders')
-    notes = db.relationship('Note', backref='folder', lazy=True)
+
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
-    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     title = db.Column(db.String(100), nullable=True)
     note = db.Column(db.Text, nullable=False)
     tag = db.Column(db.String(100), nullable=True)
@@ -543,7 +533,6 @@ class Draft(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     group_uuid = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
-    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     title = db.Column(db.String(100), nullable=True)
     content = db.Column(db.Text, nullable=False)
     tag = db.Column(db.String(50), nullable=True)
@@ -2426,80 +2415,41 @@ def get_user_quota_bytes(user):
 
     return int(base_mb) * 1024 * 1024
 
-def verify_file_content(file_path: str, mimetype: str) -> bool:
+def verify_file_content(file_path, mimetype):
     """
-    Stronger file verification:
-      - Uses Pillow for images
-      - Adds safer checks for text, pdf, and zip
-      - Falls back to filetype lib for extra validation
-    Returns True if content matches declared mimetype.
+    Light-weight content verification:
+      - For images: verify actual file is an image via imghdr
+      - For text/pdf/zip: trust mimetype but you could add extra checks
+    Returns True if content seems OK, False otherwise.
     """
-
-    # --- IMAGES ---
-    if mimetype and mimetype.startswith("image/"):
+    # image verification
+    if mimetype and mimetype.startswith('image/'):
+        img_type = imghdr.what(file_path)
+        return img_type is not None  # jpeg/png/gif etc.
+    # For text files, try reading small chunk
+    if mimetype == 'text/plain':
         try:
-            with Image.open(file_path) as img:
-                img.verify()  # check integrity
-                format_to_mime = {
-                    "JPEG": "image/jpeg",
-                    "PNG": "image/png",
-                    "GIF": "image/gif",
-                    "WEBP": "image/webp"
-                }
-                detected_mime = format_to_mime.get(img.format)
-                return detected_mime == mimetype
-        except Exception:
-            return False
-
-    # --- TEXT ---
-    if mimetype == "text/plain":
-        try:
-            with open(file_path, "rb") as f:
-                chunk = f.read(2048)  # read more for confidence
-                if b"\x00" in chunk:
+            with open(file_path, 'rb') as f:
+                chunk = f.read(512)
+                # If the data has null bytes it's probably not plain text
+                if b'\x00' in chunk:
                     return False
-                # crude encoding check
-                chunk.decode("utf-8", errors="strict")
             return True
         except Exception:
             return False
-
-    # --- PDF ---
-    if mimetype == "application/pdf":
+    # For pdf/zip we could add more checks (e.g., header bytes), but for now:
+    if mimetype in ('application/pdf', 'application/zip'):
+        # quick header check
         try:
-            with open(file_path, "rb") as f:
-                header = f.read(5)
-                if not header.startswith(b"%PDF"):
-                    return False
-                f.seek(-7, 2)  # near EOF
-                trailer = f.read().strip()
-                return trailer.startswith(b"%%EOF")
+            with open(file_path, 'rb') as f:
+                hdr = f.read(8)
+                if mimetype == 'application/pdf':
+                    return hdr.startswith(b'%PDF')
+                if mimetype == 'application/zip':
+                    return hdr.startswith(b'PK')
         except Exception:
             return False
-
-    # --- ZIP ---
-    if mimetype == "application/zip":
-        try:
-            with open(file_path, "rb") as f:
-                header = f.read(4)
-                if header != b"PK\x03\x04":
-                    return False
-            # optionally: inspect zipfile content
-            import zipfile
-            with zipfile.ZipFile(file_path, "r") as zf:
-                return zf.testzip() is None  # no corrupted entries
-        except Exception:
-            return False
-
-    # --- FALLBACK with filetype ---
-    try:
-        kind = filetype.guess(file_path)
-        if kind and kind.mime == mimetype:
-            return True
-    except Exception:
-        return False
-
-    # --- FINAL fallback ---
+    # If unknown mimetype, be conservative and reject
     return mimetype in ALLOWED_MIMETYPES
 
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
@@ -2876,13 +2826,9 @@ def tos():
 def privacy_policy():
     return render_template("privacy-policy.html")
 
-# Deprecated
 @app.route('/version-management')
 def version_management():
-    if check("version_management", "Nee") == "Ja":
-        return render_template("version_management.html")
-    else:
-        abort(404)
+    return render_template("version_management.html")
 
 @app.route('/why-protected-usernames')
 def why_protected_usernames():
@@ -7748,15 +7694,10 @@ def manage_notes():
     if request.method == 'POST':
         data = request.json
         note_html = data['note']
+        # sanitize
         note_html = sanitize_html(note_html)
-        
-        # Validate folder if provided
-        folder_id = data.get('folder_id')
-        if folder_id:
-            folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-            if not folder:
-                return jsonify({"error": "Invalid folder"}), 400
-        
+
+        # optional attachments: list of upload ids
         attachments = data.get('attachments') or []
         valid_attachments = []
         if attachments:
@@ -7770,12 +7711,12 @@ def manage_notes():
             user_id=g.user_id, 
             title=data.get('title'), 
             note=note_html,
-            tag=data.get('tag'),
-            folder_id=folder_id
+            tag=data.get('tag')
         )
         db.session.add(new_note)
         db.session.commit()
 
+        # Optionally store attachments association in another table note_uploads
         if valid_attachments:
             for uid in valid_attachments:
                 nu = NoteUpload(note_id=new_note.id, upload_id=uid)
@@ -7784,21 +7725,11 @@ def manage_notes():
 
         return jsonify({"message": "Note added successfully!"}), 201
     else:
-        # Get folder filter if provided
-        folder_id = request.args.get('folder_id')
-        
-        # Build query with optional folder filter
-        query = Note.query.filter_by(user_id=g.user_id)
-        if folder_id:
-            query = query.filter_by(folder_id=folder_id)
-        else:
-            # If no folder specified, get notes without folder
-            query = query.filter_by(folder_id=None)
-            
-        notes = query.order_by(Note.id.desc()).all()
-        
+        # Order by newest first (descending id)
+        notes = Note.query.filter_by(user_id=g.user_id).order_by(Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
+            # fetch attachments
             attachments = []
             for nu in NoteUpload.query.filter_by(note_id=note.id).all():
                 uploads_row = Upload.query.get(nu.upload_id)
@@ -7814,7 +7745,6 @@ def manage_notes():
                 "title": note.title,
                 "note": note.note,
                 "tag": note.tag,
-                "folder_id": note.folder_id,
                 "attachments": attachments
             })
         return jsonify(sanitized_notes)
@@ -7926,127 +7856,6 @@ def sanitize_html(html):
         strip=True
     )
 
-@app.route('/folders', methods=['GET', 'POST', 'PUT', 'DELETE'])
-@require_session_key
-def manage_folders():
-    if request.method == 'GET':
-        # Get all folders for the user
-        folders = Folder.query.filter_by(user_id=g.user_id).all()
-        
-        # Build folder tree structure
-        def build_folder_tree(folders, parent_id=None):
-            result = []
-            for folder in folders:
-                if folder.parent_id == parent_id:
-                    children = build_folder_tree(folders, folder.id)
-                    result.append({
-                        "id": folder.id,
-                        "name": folder.name,
-                        "parent_id": folder.parent_id,
-                        "children": children
-                    })
-            return result
-        
-        folder_tree = build_folder_tree(folders)
-        return jsonify(folder_tree)
-    
-    elif request.method == 'POST':
-        # Create a new folder
-        data = request.json
-        name = data.get('name')
-        parent_id = data.get('parent_id')
-        
-        if not name:
-            return jsonify({"error": "Folder name is required"}), 400
-        
-        # Validate parent folder if provided
-        if parent_id:
-            parent = Folder.query.filter_by(id=parent_id, user_id=g.user_id).first()
-            if not parent:
-                return jsonify({"error": "Invalid parent folder"}), 400
-        
-        new_folder = Folder(
-            user_id=g.user_id,
-            name=name,
-            parent_id=parent_id
-        )
-        db.session.add(new_folder)
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Folder created successfully",
-            "folder": {
-                "id": new_folder.id,
-                "name": new_folder.name,
-                "parent_id": new_folder.parent_id
-            }
-        }), 201
-    
-    elif request.method == 'PUT':
-        # Update a folder
-        data = request.json
-        folder_id = data.get('id')
-        name = data.get('name')
-        parent_id = data.get('parent_id')
-        
-        if not folder_id:
-            return jsonify({"error": "Folder ID is required"}), 400
-        
-        folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-        if not folder:
-            return jsonify({"error": "Folder not found"}), 404
-        
-        # Check for circular reference
-        if parent_id:
-            current_parent_id = parent_id
-            while current_parent_id:
-                if current_parent_id == folder_id:
-                    return jsonify({"error": "Cannot create circular folder reference"}), 400
-                parent_folder = Folder.query.get(current_parent_id)
-                current_parent_id = parent_folder.parent_id if parent_folder else None
-        
-        if name:
-            folder.name = name
-        if parent_id is not None:  # Allow setting to null
-            folder.parent_id = parent_id
-        
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Folder updated successfully",
-            "folder": {
-                "id": folder.id,
-                "name": folder.name,
-                "parent_id": folder.parent_id
-            }
-        }), 200
-    
-    elif request.method == 'DELETE':
-        # Delete a folder
-        folder_id = request.args.get('id')
-        
-        if not folder_id:
-            return jsonify({"error": "Folder ID is required"}), 400
-        
-        folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-        if not folder:
-            return jsonify({"error": "Folder not found"}), 404
-        
-        # Check if folder has subfolders
-        subfolders = Folder.query.filter_by(parent_id=folder_id).count()
-        if subfolders > 0:
-            return jsonify({"error": "Cannot delete folder with subfolders"}), 400
-        
-        # Check if folder has notes
-        notes_count = Note.query.filter_by(folder_id=folder_id).count()
-        if notes_count > 0:
-            return jsonify({"error": "Cannot delete folder with notes"}), 400
-        
-        db.session.delete(folder)
-        db.session.commit()
-        
-        return jsonify({"message": "Folder deleted successfully"}), 200
-
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
 def update_delete_note(note_id):
@@ -8064,14 +7873,6 @@ def update_delete_note(note_id):
         note.title = data.get('title')
         note.note = sanitize_html(data.get('note', note.note))
         note.tag = data.get('tag')
-
-        folder_id = data.get('folder_id')
-        if folder_id is not None:  # Allow setting to null
-            if folder_id:
-                folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-                if not folder:
-                    return jsonify({"error": "Invalid folder"}), 400
-            note.folder_id = folder_id
 
         # Handle attachments (expected to be a list of upload ids)
         requested_attachments = set(data.get('attachments') or [])
@@ -8142,12 +7943,11 @@ def update_delete_note(note_id):
 @require_session_key
 def handle_draft():
     group_uuid = request.args.get('group_uuid')
-    folder_id = request.args.get('folder_id')  # Add folder_id support for drafts
     
+    # Always include group_uuid in filter (set to None for personal drafts)
     filter_criteria = {
         'user_id': g.user_id,
-        'group_uuid': group_uuid if group_uuid else None,
-        'folder_id': folder_id if folder_id else None
+        'group_uuid': group_uuid if group_uuid else None
     }
     
     if request.method == 'POST':
@@ -8157,6 +7957,8 @@ def handle_draft():
     elif request.method == 'DELETE':
         return clear_draft(filter_criteria)
 
+# The rest of the functions remain unchanged
+
 def save_draft(filter_criteria):
     data = request.get_json()
     draft = Draft.query.filter_by(**filter_criteria).first()
@@ -8165,7 +7967,6 @@ def save_draft(filter_criteria):
         draft = Draft(
             user_id=g.user_id,
             group_uuid=filter_criteria.get('group_uuid'),
-            folder_id=filter_criteria.get('folder_id'),
             title=data.get('title'),
             content=data.get('content'),
             tag=data.get('tag')
@@ -8185,8 +7986,7 @@ def get_draft(filter_criteria):
         return jsonify({
             'title': draft.title,
             'content': draft.content,
-            'tag': draft.tag,
-            'folder_id': draft.folder_id
+            'tag': draft.tag
         })
     return jsonify(None)
 
