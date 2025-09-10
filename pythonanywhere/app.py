@@ -49,6 +49,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import requests
+import cohere
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -71,6 +72,9 @@ app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
 app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
+MAX_NOTE_LENGTH = 3000
+COHERE_API_KEY = "qeLaZAnc8R6ljslvDUhHspgWyheKC5mgOIbFXpcw"
+co = cohere.ClientV2(COHERE_API_KEY)
 # Jinja setup (point at your templates/)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = Environment(
@@ -507,22 +511,12 @@ class PlayerXp(db.Model):
 
     def __repr__(self):
         return f'<PlayerXp user_id={self.user_id} xp={self.xp}>'
-    
-class Folder(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
-    
-    # Relationships
-    parent = db.relationship('Folder', remote_side=[id], backref='subfolders')
-    notes = db.relationship('Note', backref='folder', lazy=True)
+
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
-    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     title = db.Column(db.String(100), nullable=True)
     note = db.Column(db.Text, nullable=False)
     tag = db.Column(db.String(100), nullable=True)
@@ -543,7 +537,6 @@ class Draft(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     group_uuid = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
-    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     title = db.Column(db.String(100), nullable=True)
     content = db.Column(db.Text, nullable=False)
     tag = db.Column(db.String(50), nullable=True)
@@ -738,6 +731,78 @@ def remove_upload_if_orphan(upload_id):
     user = User.query.get(upload.user_id)
     ok, msg = delete_upload(upload_id, user)
     return ok, msg
+
+
+def _extract_text_from_cohere_response(response) -> str:
+    """
+    Try to robustly extract text from the SDK response object.
+    The SDK response structure can vary; this handles strings, lists of chunks,
+    dict-like chunks, and attribute-based chunks.
+    """
+    text_out = ""
+
+    print(response)
+
+    # Try attribute access for response.message.content
+    content = None
+    try:
+        if hasattr(response, "message"):
+            # response.message might be a dict-like or object
+            msg = response.message
+            if isinstance(msg, dict):
+                content = msg.get("content")
+            else:
+                content = getattr(msg, "content", None)
+    except Exception:
+        content = None
+
+    # If not found, try other common paths (some SDK versions use 'output' or 'response')
+    if content is None:
+        try:
+            if hasattr(response, "output"):
+                out = response.output
+                if isinstance(out, dict):
+                    content = out.get("content")
+                else:
+                    content = getattr(out, "content", None)
+        except Exception:
+            content = None
+
+    # If content is a plain string
+    if isinstance(content, str):
+        return content.strip()
+
+    # If content is a list of chunks, extract text from each chunk
+    if isinstance(content, list):
+        for chunk in content:
+            # chunk could be dict-like or object
+            val = None
+            if isinstance(chunk, dict):
+                for k in ("text", "content", "value"):
+                    if k in chunk and isinstance(chunk[k], str):
+                        val = chunk[k]
+                        break
+            else:
+                for attr in ("text", "content", "value"):
+                    if hasattr(chunk, attr):
+                        cand = getattr(chunk, attr)
+                        if isinstance(cand, str):
+                            val = cand
+                            break
+            if val is None:
+                # last resort: string conversion
+                try:
+                    val = str(chunk)
+                except Exception:
+                    val = ""
+            text_out += val
+        return text_out.strip()
+
+    # Fallback: maybe response itself is string-like
+    try:
+        return str(response).strip()
+    except Exception:
+        return ""
 
 
 def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_run=None):
@@ -2876,13 +2941,9 @@ def tos():
 def privacy_policy():
     return render_template("privacy-policy.html")
 
-# Deprecated
 @app.route('/version-management')
 def version_management():
-    if check("version_management", "Nee") == "Ja":
-        return render_template("version_management.html")
-    else:
-        abort(404)
+    return render_template("version_management.html")
 
 @app.route('/why-protected-usernames')
 def why_protected_usernames():
@@ -7748,15 +7809,10 @@ def manage_notes():
     if request.method == 'POST':
         data = request.json
         note_html = data['note']
+        # sanitize
         note_html = sanitize_html(note_html)
-        
-        # Validate folder if provided
-        folder_id = data.get('folder_id')
-        if folder_id:
-            folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-            if not folder:
-                return jsonify({"error": "Invalid folder"}), 400
-        
+
+        # optional attachments: list of upload ids
         attachments = data.get('attachments') or []
         valid_attachments = []
         if attachments:
@@ -7770,12 +7826,12 @@ def manage_notes():
             user_id=g.user_id, 
             title=data.get('title'), 
             note=note_html,
-            tag=data.get('tag'),
-            folder_id=folder_id
+            tag=data.get('tag')
         )
         db.session.add(new_note)
         db.session.commit()
 
+        # Optionally store attachments association in another table note_uploads
         if valid_attachments:
             for uid in valid_attachments:
                 nu = NoteUpload(note_id=new_note.id, upload_id=uid)
@@ -7784,21 +7840,11 @@ def manage_notes():
 
         return jsonify({"message": "Note added successfully!"}), 201
     else:
-        # Get folder filter if provided
-        folder_id = request.args.get('folder_id')
-        
-        # Build query with optional folder filter
-        query = Note.query.filter_by(user_id=g.user_id)
-        if folder_id:
-            query = query.filter_by(folder_id=folder_id)
-        else:
-            # If no folder specified, get notes without folder
-            query = query.filter_by(folder_id=None)
-            
-        notes = query.order_by(Note.id.desc()).all()
-        
+        # Order by newest first (descending id)
+        notes = Note.query.filter_by(user_id=g.user_id).order_by(Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
+            # fetch attachments
             attachments = []
             for nu in NoteUpload.query.filter_by(note_id=note.id).all():
                 uploads_row = Upload.query.get(nu.upload_id)
@@ -7814,7 +7860,6 @@ def manage_notes():
                 "title": note.title,
                 "note": note.note,
                 "tag": note.tag,
-                "folder_id": note.folder_id,
                 "attachments": attachments
             })
         return jsonify(sanitized_notes)
@@ -7926,126 +7971,116 @@ def sanitize_html(html):
         strip=True
     )
 
-@app.route('/folders', methods=['GET', 'POST', 'PUT', 'DELETE'])
+#AIIIIIIII
+
+@app.route("/api/notes/<int:note_id>/improve", methods=["POST"])
 @require_session_key
-def manage_folders():
-    if request.method == 'GET':
-        # Get all folders for the user
-        folders = Folder.query.filter_by(user_id=g.user_id).all()
-        
-        # Build folder tree structure
-        def build_folder_tree(folders, parent_id=None):
-            result = []
-            for folder in folders:
-                if folder.parent_id == parent_id:
-                    children = build_folder_tree(folders, folder.id)
-                    result.append({
-                        "id": folder.id,
-                        "name": folder.name,
-                        "parent_id": folder.parent_id,
-                        "children": children
-                    })
-            return result
-        
-        folder_tree = build_folder_tree(folders)
-        return jsonify(folder_tree)
-    
-    elif request.method == 'POST':
-        # Create a new folder
-        data = request.json
-        name = data.get('name')
-        parent_id = data.get('parent_id')
-        
-        if not name:
-            return jsonify({"error": "Folder name is required"}), 400
-        
-        # Validate parent folder if provided
-        if parent_id:
-            parent = Folder.query.filter_by(id=parent_id, user_id=g.user_id).first()
-            if not parent:
-                return jsonify({"error": "Invalid parent folder"}), 400
-        
-        new_folder = Folder(
-            user_id=g.user_id,
-            name=name,
-            parent_id=parent_id
+def improve_note(note_id):
+    note = Note.query.filter_by(id=note_id, user_id=g.user_id).first()
+    if not note:
+        return jsonify({"error": "Note not found or not owned by user"}), 404
+
+    if len(note.note) > MAX_NOTE_LENGTH:
+        return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that improves user-submitted HTML notes. "
+                "Only return the improved HTML. "
+                "Do not include any instructions, explanations, or extra text. "
+                "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
+                "Do not use checkboxes or unsupported tags."
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it."
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability."
+                "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
+            )
+        },
+        {
+            "role": "user",
+            "content": note.note
+        }
+    ]
+
+    try:
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400
         )
-        db.session.add(new_folder)
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Folder created successfully",
-            "folder": {
-                "id": new_folder.id,
-                "name": new_folder.name,
-                "parent_id": new_folder.parent_id
-            }
-        }), 201
-    
-    elif request.method == 'PUT':
-        # Update a folder
-        data = request.json
-        folder_id = data.get('id')
-        name = data.get('name')
-        parent_id = data.get('parent_id')
-        
-        if not folder_id:
-            return jsonify({"error": "Folder ID is required"}), 400
-        
-        folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-        if not folder:
-            return jsonify({"error": "Folder not found"}), 404
-        
-        # Check for circular reference
-        if parent_id:
-            current_parent_id = parent_id
-            while current_parent_id:
-                if current_parent_id == folder_id:
-                    return jsonify({"error": "Cannot create circular folder reference"}), 400
-                parent_folder = Folder.query.get(current_parent_id)
-                current_parent_id = parent_folder.parent_id if parent_folder else None
-        
-        if name:
-            folder.name = name
-        if parent_id is not None:  # Allow setting to null
-            folder.parent_id = parent_id
-        
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Folder updated successfully",
-            "folder": {
-                "id": folder.id,
-                "name": folder.name,
-                "parent_id": folder.parent_id
-            }
-        }), 200
-    
-    elif request.method == 'DELETE':
-        # Delete a folder
-        folder_id = request.args.get('id')
-        
-        if not folder_id:
-            return jsonify({"error": "Folder ID is required"}), 400
-        
-        folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-        if not folder:
-            return jsonify({"error": "Folder not found"}), 404
-        
-        # Check if folder has subfolders
-        subfolders = Folder.query.filter_by(parent_id=folder_id).count()
-        if subfolders > 0:
-            return jsonify({"error": "Cannot delete folder with subfolders"}), 400
-        
-        # Check if folder has notes
-        notes_count = Note.query.filter_by(folder_id=folder_id).count()
-        if notes_count > 0:
-            return jsonify({"error": "Cannot delete folder with notes"}), 400
-        
-        db.session.delete(folder)
-        db.session.commit()
-        
-        return jsonify({"message": "Folder deleted successfully"}), 200
+
+        improved_html = _extract_text_from_cohere_response(response)
+
+        if not improved_html:
+            # include a tiny bit of response for debugability
+            return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
+
+    # sanitize HTML
+    improved_text = sanitize_html(improved_html)
+
+    return jsonify({
+        "id": note.id,
+        "title": note.title,
+        "original": note.note,
+        "improved": improved_text
+    })
+
+
+@app.route("/api/notes/improve-temp", methods=["POST"])
+def improve_temp_note():
+    data = request.get_json() or {}
+    note_html = data.get("note", "")
+
+    if not isinstance(note_html, str) or not note_html.strip():
+        return jsonify({"error": "Empty note"}), 400
+
+    if len(note_html) > MAX_NOTE_LENGTH:
+        return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that improves user-submitted HTML notes. "
+                "Only return the improved HTML. "
+                "Do not include any instructions, explanations, or extra text. "
+                "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
+                "Do not use checkboxes or unsupported tags."
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it."
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability."
+                "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
+            )
+        },
+        {
+            "role": "user",
+            "content": note_html
+        }
+    ]
+
+    try:
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400
+        )
+
+        improved_html = _extract_text_from_cohere_response(response)
+
+        if not improved_html:
+            return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
+
+    improved_html = sanitize_html(improved_html)
+
+    return jsonify({"improved": improved_html})
 
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
@@ -8064,14 +8099,6 @@ def update_delete_note(note_id):
         note.title = data.get('title')
         note.note = sanitize_html(data.get('note', note.note))
         note.tag = data.get('tag')
-
-        folder_id = data.get('folder_id')
-        if folder_id is not None:  # Allow setting to null
-            if folder_id:
-                folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-                if not folder:
-                    return jsonify({"error": "Invalid folder"}), 400
-            note.folder_id = folder_id
 
         # Handle attachments (expected to be a list of upload ids)
         requested_attachments = set(data.get('attachments') or [])
@@ -8142,12 +8169,11 @@ def update_delete_note(note_id):
 @require_session_key
 def handle_draft():
     group_uuid = request.args.get('group_uuid')
-    folder_id = request.args.get('folder_id')  # Add folder_id support for drafts
     
+    # Always include group_uuid in filter (set to None for personal drafts)
     filter_criteria = {
         'user_id': g.user_id,
-        'group_uuid': group_uuid if group_uuid else None,
-        'folder_id': folder_id if folder_id else None
+        'group_uuid': group_uuid if group_uuid else None
     }
     
     if request.method == 'POST':
@@ -8157,6 +8183,8 @@ def handle_draft():
     elif request.method == 'DELETE':
         return clear_draft(filter_criteria)
 
+# The rest of the functions remain unchanged
+
 def save_draft(filter_criteria):
     data = request.get_json()
     draft = Draft.query.filter_by(**filter_criteria).first()
@@ -8165,7 +8193,6 @@ def save_draft(filter_criteria):
         draft = Draft(
             user_id=g.user_id,
             group_uuid=filter_criteria.get('group_uuid'),
-            folder_id=filter_criteria.get('folder_id'),
             title=data.get('title'),
             content=data.get('content'),
             tag=data.get('tag')
@@ -8185,8 +8212,7 @@ def get_draft(filter_criteria):
         return jsonify({
             'title': draft.title,
             'content': draft.content,
-            'tag': draft.tag,
-            'folder_id': draft.folder_id
+            'tag': draft.tag
         })
     return jsonify(None)
 
