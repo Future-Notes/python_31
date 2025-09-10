@@ -966,33 +966,6 @@
             }
         }
 
-        /* Make editor a reliable positioning context (overrides if needed) */
-        .rich-text-editor {
-        position: relative !important;          /* required so absolute children fit */
-        box-sizing: border-box;
-        }
-
-        /* AI button: half in / half out, compact and unobtrusive */
-        .ai-improve-btn {
-        position: absolute;
-        top: 12px;                   /* aligns with editor padding */
-        right: -22px;                /* sticks out half */
-        z-index: 60;
-        width: 44px;
-        height: 44px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-        line-height: 1;
-        padding: 0;
-        background: linear-gradient(180deg,#3b3b3b,#2b2b2b);
-        border: 1px solid rgba(255,255,255,0.04);
-        box-shadow: 0 8px 18px rgba(0,0,0,0.45);
-        cursor: pointer;
-        transition: transform .12s ease, box-shadow .12s;
-        }
         .ai-improve-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.55); }
 
         /* if layout pushes button off-screen on very small screens, fallback inside */
@@ -1576,6 +1549,31 @@
         }
 
         /* ------- Updated improveNoteFrontend: shows improved preview overlay instead of inline red/green block ------- */
+        /* ------- Helper: try to find the current note id from several reliable places ------- */
+        function resolveNoteIdForEditor(menu, editor) {
+        // 1) prefer global variable if your app sets it
+        if (window.currentNoteId) return window.currentNoteId;
+
+        // 2) walk up from the editor and look for an ancestor with data-note-id
+        let el = editor;
+        while (el) {
+            if (el.dataset && el.dataset.noteId) return el.dataset.noteId;
+            el = el.parentElement;
+        }
+
+        // 3) commonly the list item will have a 'selected' or 'active' class
+        const sel = document.querySelector('li[data-note-id].selected, li[data-note-id].active');
+        if (sel) return sel.dataset.noteId;
+
+        // 4) fallback: first note in DOM (use only if you absolutely want a fallback)
+        const first = document.querySelector('li[data-note-id]');
+        if (first) return first.dataset.noteId;
+
+        // nothing found
+        return null;
+        }
+
+        /* ------- Updated improveNoteFrontend (only changed portion is noteId resolution) ------- */
         async function improveNoteFrontend(menu) {
         let noteId = null;
         let editorId = '';
@@ -1583,13 +1581,12 @@
         let diffId = '';
         let applyBtnId = '';
 
-        if(menu === 'update') {
-            noteId = window.currentNoteId;
+        if (menu === 'update') {
             editorId = 'update-note-text';
             loadingId = 'ai-loading-update';
             diffId = 'ai-diff-update';
             applyBtnId = 'apply-ai-update';
-        } else if(menu === 'add') {
+        } else if (menu === 'add') {
             editorId = 'note-text';
             loadingId = 'ai-loading-add';
             diffId = 'ai-diff-add';
@@ -1597,35 +1594,48 @@
         }
 
         const editor = document.getElementById(editorId);
+        if (!editor) {
+            alert('Editor not found.');
+            return;
+        }
+
+        // Resolve noteId *after* we have the editor element so we can walk its ancestors
+        if (menu === 'update') {
+            noteId = resolveNoteIdForEditor(menu, editor);
+            if (!noteId) {
+            alert('Could not determine note id. Make sure the note element has data-note-id or window.currentNoteId is set.');
+            return;
+            }
+        }
+
         const originalHtml = editor.innerHTML;
 
         document.getElementById(loadingId).style.display = 'block';
-        document.getElementById(diffId).style.display = 'none';
-        document.getElementById(applyBtnId).style.display = 'none';
+        // hide any existing preview
+        const existingDiff = document.getElementById(diffId);
+        if (existingDiff) existingDiff.style.display = 'none';
+        const applyBtnEl = document.getElementById(applyBtnId);
+        if (applyBtnEl) applyBtnEl.style.display = 'none';
 
         try {
             const response = await fetch(menu === 'update'
-                ? `/api/notes/${noteId}/improve`
-                : '/api/notes/improve-temp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ note: originalHtml })
+            ? `/api/notes/${encodeURIComponent(noteId)}/improve`
+            : '/api/notes/improve-temp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: originalHtml })
             });
 
             const data = await response.json();
-            if(response.ok) {
+            if (response.ok) {
             aiImprovedHtml[menu] = data.improved;
 
-            // Render a full overlay side-by-side diff inside ai-diff container.
-            // We position the ai-diff container absolutely inside the editor wrapper
-            // so ensure the parent of editor is position:relative; if not, we add it.
             const editorParent = editor.parentNode;
             if (getComputedStyle(editorParent).position === 'static') {
                 editorParent.style.position = 'relative';
             }
 
             const diffIdFull = `ai-diff-${menu}`;
-            // Put the preview container INSIDE the editor parent to overlay the editor.
             let container = document.getElementById(diffIdFull);
             if (!container) {
                 container = document.createElement('div');
@@ -1634,30 +1644,28 @@
                 editorParent.appendChild(container);
             }
 
-            // --- after you create/append container to editorParent (inside improveNoteFrontend) ---
-            // auto-compact based on editor inner height (tweak threshold as desired)
+            // compact mode based on editor size
             const editorHeight = editor.clientHeight || editor.scrollHeight || 240;
             if (editorHeight < 260) container.classList.add('compact');
             else container.classList.remove('compact');
 
-            // Ensure the overlay is inside the editor's parent and sits above content
             container.style.pointerEvents = 'auto';
-            container.style.display = 'block'; // show it (renderHtmlDiff also sets display but keep it safe)
+            container.style.display = 'block';
 
             renderHtmlDiff(originalHtml, data.improved, diffIdFull);
 
-            // Show apply button below overlay (optional)
-            document.getElementById(applyBtnId).style.display = 'inline-block';
+            if (applyBtnEl) applyBtnEl.style.display = 'inline-block';
             } else {
             alert(data.error || 'Failed to improve note.');
             }
-        } catch(err) {
+        } catch (err) {
             console.error(err);
             alert('Error improving note.');
         } finally {
             document.getElementById(loadingId).style.display = 'none';
         }
         }
+
 
 
 
