@@ -49,6 +49,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import requests
+import cohere
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -71,6 +72,9 @@ app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
 app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
+MAX_NOTE_LENGTH = 3000
+COHERE_API_KEY = "qeLaZAnc8R6ljslvDUhHspgWyheKC5mgOIbFXpcw"
+co = cohere.ClientV2(COHERE_API_KEY)
 # Jinja setup (point at your templates/)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = Environment(
@@ -727,6 +731,78 @@ def remove_upload_if_orphan(upload_id):
     user = User.query.get(upload.user_id)
     ok, msg = delete_upload(upload_id, user)
     return ok, msg
+
+
+def _extract_text_from_cohere_response(response) -> str:
+    """
+    Try to robustly extract text from the SDK response object.
+    The SDK response structure can vary; this handles strings, lists of chunks,
+    dict-like chunks, and attribute-based chunks.
+    """
+    text_out = ""
+
+    print(response)
+
+    # Try attribute access for response.message.content
+    content = None
+    try:
+        if hasattr(response, "message"):
+            # response.message might be a dict-like or object
+            msg = response.message
+            if isinstance(msg, dict):
+                content = msg.get("content")
+            else:
+                content = getattr(msg, "content", None)
+    except Exception:
+        content = None
+
+    # If not found, try other common paths (some SDK versions use 'output' or 'response')
+    if content is None:
+        try:
+            if hasattr(response, "output"):
+                out = response.output
+                if isinstance(out, dict):
+                    content = out.get("content")
+                else:
+                    content = getattr(out, "content", None)
+        except Exception:
+            content = None
+
+    # If content is a plain string
+    if isinstance(content, str):
+        return content.strip()
+
+    # If content is a list of chunks, extract text from each chunk
+    if isinstance(content, list):
+        for chunk in content:
+            # chunk could be dict-like or object
+            val = None
+            if isinstance(chunk, dict):
+                for k in ("text", "content", "value"):
+                    if k in chunk and isinstance(chunk[k], str):
+                        val = chunk[k]
+                        break
+            else:
+                for attr in ("text", "content", "value"):
+                    if hasattr(chunk, attr):
+                        cand = getattr(chunk, attr)
+                        if isinstance(cand, str):
+                            val = cand
+                            break
+            if val is None:
+                # last resort: string conversion
+                try:
+                    val = str(chunk)
+                except Exception:
+                    val = ""
+            text_out += val
+        return text_out.strip()
+
+    # Fallback: maybe response itself is string-like
+    try:
+        return str(response).strip()
+    except Exception:
+        return ""
 
 
 def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_run=None):
@@ -7894,6 +7970,117 @@ def sanitize_html(html):
         attributes=allowed_attributes,
         strip=True
     )
+
+#AIIIIIIII
+
+@app.route("/api/notes/<int:note_id>/improve", methods=["POST"])
+@require_session_key
+def improve_note(note_id):
+    note = Note.query.filter_by(id=note_id, user_id=g.user_id).first()
+    if not note:
+        return jsonify({"error": "Note not found or not owned by user"}), 404
+
+    if len(note.note) > MAX_NOTE_LENGTH:
+        return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that improves user-submitted HTML notes. "
+                "Only return the improved HTML. "
+                "Do not include any instructions, explanations, or extra text. "
+                "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
+                "Do not use checkboxes or unsupported tags."
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it."
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability."
+                "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
+            )
+        },
+        {
+            "role": "user",
+            "content": note.note
+        }
+    ]
+
+    try:
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400
+        )
+
+        improved_html = _extract_text_from_cohere_response(response)
+
+        if not improved_html:
+            # include a tiny bit of response for debugability
+            return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
+
+    # sanitize HTML
+    improved_text = sanitize_html(improved_html)
+
+    return jsonify({
+        "id": note.id,
+        "title": note.title,
+        "original": note.note,
+        "improved": improved_text
+    })
+
+
+@app.route("/api/notes/improve-temp", methods=["POST"])
+def improve_temp_note():
+    data = request.get_json() or {}
+    note_html = data.get("note", "")
+
+    if not isinstance(note_html, str) or not note_html.strip():
+        return jsonify({"error": "Empty note"}), 400
+
+    if len(note_html) > MAX_NOTE_LENGTH:
+        return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that improves user-submitted HTML notes. "
+                "Only return the improved HTML. "
+                "Do not include any instructions, explanations, or extra text. "
+                "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
+                "Do not use checkboxes or unsupported tags."
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it."
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability."
+                "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
+            )
+        },
+        {
+            "role": "user",
+            "content": note_html
+        }
+    ]
+
+    try:
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400
+        )
+
+        improved_html = _extract_text_from_cohere_response(response)
+
+        if not improved_html:
+            return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
+
+    improved_html = sanitize_html(improved_html)
+
+    return jsonify({"improved": improved_html})
 
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
