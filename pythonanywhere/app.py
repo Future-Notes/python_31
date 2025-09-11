@@ -7991,9 +7991,10 @@ def improve_note(note_id):
                 "Only return the improved HTML. "
                 "Do not include any instructions, explanations, or extra text. "
                 "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
-                "Do not use checkboxes or unsupported tags."
-                "If the note contains an existing structure (like headings or lists), preserve and enhance it."
-                "If the note does not contain any structure, add appropriate HTML structure to improve readability."
+                "Do not use checkboxes or unsupported tags. "
+                "You must not use any previous notes or memory; always use only the provided note as input. "
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it. "
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability. "
                 "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
             )
         },
@@ -8014,13 +8015,11 @@ def improve_note(note_id):
         improved_html = _extract_text_from_cohere_response(response)
 
         if not improved_html:
-            # include a tiny bit of response for debugability
             return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
 
     except Exception as e:
         return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
 
-    # sanitize HTML
     improved_text = sanitize_html(improved_html)
 
     return jsonify({
@@ -8050,9 +8049,10 @@ def improve_temp_note():
                 "Only return the improved HTML. "
                 "Do not include any instructions, explanations, or extra text. "
                 "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
-                "Do not use checkboxes or unsupported tags."
-                "If the note contains an existing structure (like headings or lists), preserve and enhance it."
-                "If the note does not contain any structure, add appropriate HTML structure to improve readability."
+                "Do not use checkboxes or unsupported tags. "
+                "You must not use any previous notes or memory; always use only the provided note as input. "
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it. "
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability. "
                 "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
             )
         },
