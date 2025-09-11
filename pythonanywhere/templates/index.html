@@ -1551,27 +1551,55 @@
         /* ------- Updated improveNoteFrontend: shows improved preview overlay instead of inline red/green block ------- */
         /* ------- Helper: try to find the current note id from several reliable places ------- */
         function resolveNoteIdForEditor(menu, editor) {
-        // 1) prefer global variable if your app sets it
-        if (window.currentNoteId) return window.currentNoteId;
+    // 1) direct dataset on editor (most reliable for modals)
+    if (editor && editor.dataset && editor.dataset.noteId) {
+        return String(editor.dataset.noteId);
+    }
 
-        // 2) walk up from the editor and look for an ancestor with data-note-id
-        let el = editor;
-        while (el) {
-            if (el.dataset && el.dataset.noteId) return el.dataset.noteId;
-            el = el.parentElement;
+    // 2) explicit global you already set in showViewMenu
+    if (window.currentNoteId) {
+        return String(window.currentNoteId);
+    }
+
+    // 3) if the editor sits inside either menu, check those containers
+    const container = editor && editor.closest ? editor.closest('#update-menu, #view-menu') : null;
+    if (container && container.dataset && container.dataset.noteId) {
+        return String(container.dataset.noteId);
+    }
+
+    // 4) try to find an actively selected/listed note element (but don't fall back to first)
+    const sel = document.querySelector('li[data-note-id].selected, li[data-note-id].active, .note-item[data-note-id].selected, .note-item[data-note-id].active');
+    if (sel && sel.dataset && sel.dataset.noteId) {
+        return String(sel.dataset.noteId);
+    }
+
+    // 5) last-ditch: try to uniquely match editor content to a note in memory (only if unique)
+    try {
+        const html = (editor && editor.innerHTML || '').trim();
+        if (html) {
+            const matches = allNotes.filter(n => ((n.note || '').trim() === html));
+            if (matches.length === 1) return String(matches[0].id);
+
+            // also try comparing visible text (strip HTML) and require unique match
+            const parser = new DOMParser();
+            const editorText = (parser.parseFromString(html, 'text/html').body.textContent || '').trim();
+            if (editorText) {
+                const textMatches = allNotes.filter(n => {
+                    const noteText = (parser.parseFromString(n.note || '', 'text/html').body.textContent || '').trim();
+                    return noteText === editorText;
+                });
+                if (textMatches.length === 1) return String(textMatches[0].id);
+            }
         }
+    } catch (e) {
+        // ignore parsing errors — we don't want to break the flow
+        console.warn('resolveNoteIdForEditor content-match attempt failed', e);
+    }
 
-        // 3) commonly the list item will have a 'selected' or 'active' class
-        const sel = document.querySelector('li[data-note-id].selected, li[data-note-id].active');
-        if (sel) return sel.dataset.noteId;
+    // Nothing reliable found — return null so caller can show an error instead of guessing.
+    return null;
+}
 
-        // 4) fallback: first note in DOM (use only if you absolutely want a fallback)
-        const first = document.querySelector('li[data-note-id]');
-        if (first) return first.dataset.noteId;
-
-        // nothing found
-        return null;
-        }
 
         /* ------- Updated improveNoteFrontend (only changed portion is noteId resolution) ------- */
         async function improveNoteFrontend(menu) {
