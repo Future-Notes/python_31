@@ -1344,12 +1344,10 @@ def rollback_transaction(transaction_id):
 
 @app.before_request
 def capture_utm_params():
-    # Extract UTM parameters from the query string
     utm_source = request.args.get('utm_source')
     utm_medium = request.args.get('utm_medium')
     utm_campaign = request.args.get('utm_campaign')
 
-    # Store them in the session if provided, keeping previous values if they already exist
     if utm_source:
         session['utm_source'] = utm_source
     if utm_medium:
@@ -1357,13 +1355,16 @@ def capture_utm_params():
     if utm_campaign:
         session['utm_campaign'] = utm_campaign
 
-    # Optionally, log the UTM data to the database on each visit that has UTM parameters.
+    # Get the real client IP (PythonAnywhere sets X-Forwarded-For)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip()  # In case there are multiple IPs
+
     if utm_source or utm_medium or utm_campaign:
         tracking = UTMTracking(
             utm_source=utm_source,
             utm_medium=utm_medium,
             utm_campaign=utm_campaign,
-            ip=request.remote_addr
+            ip=ip
         )
         db.session.add(tracking)
         db.session.commit()
