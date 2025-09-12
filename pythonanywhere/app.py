@@ -8026,6 +8026,15 @@ def improve_note(note_id):
 
     if len(note.note) > MAX_NOTE_LENGTH:
         return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+    
+    if check("ai_notes_development_return_input", "Nee") == "Ja":
+        print("AI Notes Development Mode: returning input as output")
+        return jsonify({
+            "id": note.id,
+            "title": note.title,
+            "original": note.note,
+            "improved": note.note + " (development mode, no changes made)"
+        })
 
     messages = [
         {
@@ -8084,6 +8093,12 @@ def improve_temp_note():
 
     if len(note_html) > MAX_NOTE_LENGTH:
         return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+    
+    if check("ai_notes_development_return_input", "Nee") == "Ja":
+        print("AI Notes Development Mode: returning input as output")
+        return jsonify({
+            "improved": note_html + " (development mode, no changes made)"
+        })
 
     messages = [
         {
@@ -8796,4 +8811,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=False, host='0.0.0.0')

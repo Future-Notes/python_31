@@ -1289,7 +1289,9 @@
             <button type="button" class="ai-improve-btn" title="Improve Note" onclick="improveNoteFrontend('add')">
                 🖊️ AI
             </button>
-            <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
+            <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note...">
+                <div class="ai-diff-preview" id="ai-diff-add" style="display:none;"></div>
+            </div>
         </div>
         
         <input type="text" id="note-tag" placeholder="Tag (optional)">
@@ -1300,7 +1302,6 @@
         <div id="add-file-list" class="attachment-list"></div>
 
         <div class="ai-loading" id="ai-loading-add" style="display:none;">Improving note... ⏳</div>
-        <div class="ai-diff-preview" id="ai-diff-add" style="display:none;"></div>
         <button type="button" id="apply-ai-add" style="display:none;" onclick="applyAIDiff('add')">
             Apply AI Changes
         </button>
@@ -2689,6 +2690,17 @@
             document.getElementById("view-menu").style.display = "none";
             document.getElementById("update-menu").style.display = "block";
             document.getElementById("floating-add-button").style.display = "none";
+
+            document.addEventListener('keydown', function(e) {
+                if (
+                    (e.ctrlKey || e.metaKey) &&
+                    e.key.toLowerCase() === 's' &&
+                    document.getElementById('update-menu').style.display === 'block'
+                ) {
+                    e.preventDefault();
+                    updateNote();
+                }
+            });
         }
 
         function closeUpdateMenu() {
@@ -2791,6 +2803,17 @@
                     }
                 })
                 .catch(console.error);
+
+            document.addEventListener('keydown', function(e) {
+                if (
+                    (e.ctrlKey || e.metaKey) &&
+                    e.key.toLowerCase() === 's' &&
+                    document.getElementById('add-menu').style.display === 'block'
+                ) {
+                    e.preventDefault();
+                    addNote();
+                }
+            });
         }
 
         function closeAddMenu() {
