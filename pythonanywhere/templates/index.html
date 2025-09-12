@@ -1069,7 +1069,51 @@
         /* scrollbars for overlay columns (only visible when needed) */
         .diff-column::-webkit-scrollbar { height: 8px; width: 8px; }
 
+        .button-row-menu {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+        }
 
+        #add-file-input, #update-file-input {
+            width: 95% !important;
+        }
+
+        #delete-button {
+            background-color: #b33a3a !important;
+        }
+        #delete-button:hover {
+            background-color: #cc4a4a !important;
+        }
+
+        .ai-improve-btn {
+            position: absolute;
+            top: 73px;
+            right: -10px;
+            z-index: 10;
+            background: linear-gradient(90deg, #00c6fb 0%, #005bea 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 16px;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0, 198, 251, 0.15);
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+            outline: none;
+            width: 40px !important;
+            height: 40px !important;
+            padding: 0px !important;
+            margin: 0px !important;
+        }
+
+        .ai-improve-btn:hover {
+            background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%);
+            box-shadow: 0 4px 16px rgba(67, 233, 123, 0.18);
+            transform: translateY(-2px) scale(1.04);
+        }
 
 
     </style>
@@ -1216,7 +1260,7 @@
         <h3>Update Note</h3>
         <input type="text" id="update-note-title" placeholder="Title (optional)">
         
-        <div style="display: flex; flex-direction: column;">
+        <div style="display: flex; flex-direction: column; position: relative;">
             <div class="toolbar">
                 <button type="button" onclick="formatText('bold', 'update-note-text')" title="Bold"><b>B</b></button>
                 <button type="button" onclick="formatText('italic', 'update-note-text')" title="Italic"><i>I</i></button>
@@ -1229,10 +1273,12 @@
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
                 <button type="button" onclick="toggleCheckboxList('update-note-text')" title="Checkbox List">☑</button>
             </div>
+            <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text">
+                <div class="ai-diff-preview" id="ai-diff-update" style="display:none;"></div>
+            </div>
             <button type="button" class="ai-improve-btn" title="Improve Note" onclick="improveNoteFrontend('update')">
-                🖊️ AI
+                AI
             </button>
-            <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text"></div>
         </div>
         
         <input type="text" id="update-note-tag" placeholder="Tag (optional)">
@@ -1244,13 +1290,14 @@
         <div id="update-existing-attachments" class="attachment-list"></div>
 
         <div class="ai-loading" id="ai-loading-update" style="display:none;">Improving note... ⏳</div>
-        <div class="ai-diff-preview" id="ai-diff-update" style="display:none;"></div>
         <button type="button" id="apply-ai-update" style="display:none;" onclick="applyAIDiff('update')">
             Apply AI Changes
         </button>
-        <button id="save-note-button">Save</button>
-        <button id="delete-button" onclick="deleteNote(currentNoteId)">Delete</button>
-        <button id="back-button">Back</button>
+        <div class="button-row-menu">
+            <button id="save-note-button">Save</button>
+            <button id="delete-button" onclick="deleteNote(currentNoteId)">Delete</button>
+            <button id="back-button">Back</button>
+        </div>
     </div>
 
     <div id="modal-overlay">
@@ -1272,7 +1319,7 @@
         <h3>Add Note</h3>
         <input type="text" id="note-title" placeholder="Title (optional)">
         
-        <div style="display: flex; flex-direction: column;">
+        <div style="display: flex; flex-direction: column; position: relative;">
             <div class="toolbar">
                 <button type="button" onclick="formatText('bold', 'note-text')" title="Bold"><b>B</b></button>
                 <button type="button" onclick="formatText('italic', 'note-text')" title="Italic"><i>I</i></button>
@@ -1286,12 +1333,12 @@
                 <button type="button" onclick="toggleCheckboxList('note-text')" title="Checkbox List">☑</button>
             </div>
             <!-- AI Improve button -->
-            <button type="button" class="ai-improve-btn" title="Improve Note" onclick="improveNoteFrontend('add')">
-                🖊️ AI
-            </button>
             <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note...">
                 <div class="ai-diff-preview" id="ai-diff-add" style="display:none;"></div>
             </div>
+            <button type="button" class="ai-improve-btn" title="Improve Note" onclick="improveNoteFrontend('add')">
+                AI
+            </button>
         </div>
         
         <input type="text" id="note-tag" placeholder="Tag (optional)">
@@ -1302,12 +1349,14 @@
         <div id="add-file-list" class="attachment-list"></div>
 
         <div class="ai-loading" id="ai-loading-add" style="display:none;">Improving note... ⏳</div>
-        <button type="button" id="apply-ai-add" style="display:none;" onclick="applyAIDiff('add')">
-            Apply AI Changes
-        </button>
+        <div class="button-row-menu">
+            <button type="button" id="apply-ai-add" style="display:none;" onclick="applyAIDiff('add')">
+                Apply AI Changes
+            </button>
 
-        <button id="add-note-button">Add Note</button>
-        <button id="cancel-button">Cancel</button>
+            <button id="add-note-button">Add Note</button>
+            <button id="cancel-button">Cancel</button>
+        </div>
         <!-- Add this to your add-menu -->
         <button id="clear-draft-button" class="clear-draft-btn">Clear Draft</button>
     </div>
@@ -1715,6 +1764,7 @@
                     hideModal();
                     fetchNotes();
                     updateStorageCounter();
+                    initSearchingShortcut();
                     return true;
                 }
                 if (res.status === 403) {
@@ -1739,6 +1789,7 @@
                     hideModal();
                     fetchNotes();
                     updateStorageCounter();
+                    initSearchingShortcut();
                     return true;
                 }
                 showModal();
@@ -1754,6 +1805,29 @@
             await attemptAutoLogin();
         }
         });
+
+        function initSearchingShortcut() {
+            document.addEventListener('keydown', (e) => {
+                // Ctrl/Cmd + K shortcut
+                if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    const searchInput = document.getElementById('search-input');
+                    if (searchInput) {
+                        searchInput.focus();
+                        searchInput.select();
+                    }
+                }
+                // Ctrl/Cmd + F shortcut
+                if ((e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    const searchInput = document.getElementById('search-input');
+                    if (searchInput) {
+                        searchInput.focus();
+                        searchInput.select();
+                    }
+                }
+            });
+        }
 
         // Example: update the bar along with the text
         async function updateStorageCounter() {
@@ -2273,6 +2347,10 @@
                         <h3>${escapedTitle}</h3>
                         <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
                         ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+                        <button onclick="event.stopPropagation(); deleteNote(${note.id})" 
+                        class="share-button"
+                        style="z-index:10;" 
+                        title="Delete note">🗑️</button>
                     </li>
                     `;
                 }).join("");
@@ -2286,16 +2364,6 @@
                                 showViewMenu(note.id, note.note, note.tag, note.title);
                             }
                         });
-                        
-                        const shareButton = li.querySelector('.share-button');
-                        if (shareButton) {
-                            shareButton.addEventListener('click', function(e) {
-                                e.stopPropagation();
-                                e.stopImmediatePropagation();
-                                const noteId = parseInt(this.getAttribute('data-note-id'));
-                                showShareModal(noteId);
-                            });
-                        }
                     });
                 }, 0);
             } 
