@@ -3884,13 +3884,44 @@ def update_subscription():
     return jsonify({'success': True}), 200
 
 def generate_device_id(request):
-    """Generate persistent device ID using browser fingerprint"""
-    fingerprint = ''.join([
-        request.headers.get('User-Agent', ''),
-        request.headers.get('Accept-Language', ''),
-        request.remote_addr
+    """
+    Generate a persistent device ID using browser fingerprint, IP, and other headers.
+    More data = more uniqueness, while still respecting privacy.
+    """
+    
+    # Real client IP (behind proxies)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip()
+    
+    # Core browser fingerprinting headers
+    user_agent = request.headers.get('User-Agent', '')
+    accept_language = request.headers.get('Accept-Language', '')
+    encoding = request.headers.get('Accept-Encoding', '')
+    connection = request.headers.get('Connection', '')
+    
+    # Optional headers for added uniqueness
+    dnt = request.headers.get('DNT', '')  # Do Not Track
+    referer = request.headers.get('Referer', '')
+    sec_ch_ua = request.headers.get('Sec-CH-UA', '')
+    sec_ch_ua_platform = request.headers.get('Sec-CH-UA-Platform', '')
+    
+    # Concatenate all data into a single string
+    fingerprint_data = "|".join([
+        ip,
+        user_agent,
+        accept_language,
+        encoding,
+        connection,
+        dnt,
+        referer,
+        sec_ch_ua,
+        sec_ch_ua_platform
     ])
-    return hashlib.sha256(fingerprint.encode()).hexdigest()
+    
+    # Hash to produce a consistent, fixed-length device ID
+    device_id = hashlib.sha256(fingerprint_data.encode()).hexdigest()
+    
+    return device_id
 
 @app.route('/api/vapid_public_key')
 def get_vapid_key():
@@ -5973,6 +6004,8 @@ def allow_sharing():
     
 # Admin
 
+from flask import request, session, jsonify
+
 @app.route('/api/identify', methods=['POST'])
 def identify():
     data = request.get_json() or {}
@@ -5983,16 +6016,21 @@ def identify():
     # Save in session for later linking
     session['visitor_id'] = visitor_id
 
+    # Get real client IP (behind proxies)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip()  # first IP in the list
+
     # Upsert fingerprint record
     fp = FingerPrint.query.filter_by(visitor_id=visitor_id).first()
     if not fp:
         fp = FingerPrint(
             visitor_id=visitor_id,
-            last_ip=request.remote_addr
+            last_ip=ip
         )
         db.session.add(fp)
     else:
-        fp.last_ip = request.remote_addr
+        fp.last_ip = ip
+
     db.session.commit()
 
     return jsonify({'status': 'ok'})
@@ -6992,7 +7030,8 @@ def get_username(user_id):
 def signup():
     data = request.get_json()
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-    user_ip = request.remote_addr
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()  # first IP in the list
 
     cleanup_expired_signup_sessions()
 
@@ -7550,7 +7589,8 @@ def reset_password():
     session_key = generate_session_key(user.id)  # Generate new session key
     
     # Record IP address if new
-    user_ip = request.remote_addr
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()  # first IP in the list
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
     
@@ -7705,7 +7745,8 @@ def login():
         # OK, issue new session_key
         session_key = generate_session_key(user.id)
         # persist any new IP
-        user_ip = request.remote_addr
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_ip = user_ip.split(',')[0].strip()  # first IP in the list
         if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
             db.session.add(IpAddres(user_id=user.id, ip=user_ip))
             db.session.commit()
@@ -7745,7 +7786,9 @@ def login():
 
     session_key = generate_session_key(user.id)
     # record IP
-    user_ip = request.remote_addr
+    # If running behind PythonAnywhere, get the real client IP from X-Forwarded-For
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()  # In case there are multiple IPs
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
         db.session.commit()
