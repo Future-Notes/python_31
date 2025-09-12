@@ -836,8 +836,28 @@ def load_secrets():
 def ensure_secrets_loaded():
     load_secrets()
 
+import ipaddress
+
 def _is_local_request():
-    return request.remote_addr in ('127.0.0.1', '::1', 'localhost')
+    client_ip = request.remote_addr
+
+    # Step 1: Define what "local" means
+    # Includes localhost + LAN subnets (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+    local_subnets = [
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("::1/128"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+    ]
+
+    try:
+        ip_obj = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False  # invalid IP
+
+    return any(ip_obj in subnet for subnet in local_subnets)
+
 
 def _today_utc_range():
     """Return (start_of_today_utc, now_utc) as timezone-aware datetimes."""
@@ -7761,13 +7781,15 @@ def login():
         resp = make_response(jsonify(payload), 200)
         resp.set_cookie(
             "session_key", session_key,
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
             max_age=60*60*24
         )
         # already have lasting_key cookie set on signup; refresh its expiration
         resp.set_cookie(
             "lasting_key", user.lasting_key,
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True, secure=not _is_local_request(), samesite="Strict",
             max_age=60*60*24*30
         )
         return resp
@@ -7809,13 +7831,13 @@ def login():
     resp = make_response(jsonify(payload), 200)
     resp.set_cookie(
         "session_key", session_key,
-        httponly=True, secure=True, samesite="Strict",
+        httponly=True, secure=not _is_local_request(), samesite="Strict",
         max_age=60*60*24
     )
     if data.get('keep_login'):
         resp.set_cookie(
             "lasting_key", user.lasting_key,
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True, secure=not _is_local_request(), samesite="Strict",
             max_age=60*60*24*30
         )
     return resp
@@ -8811,4 +8833,4 @@ def validate_pin():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(debug=False, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0')
