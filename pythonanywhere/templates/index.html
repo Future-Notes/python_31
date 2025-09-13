@@ -1115,6 +1115,12 @@
             transform: translateY(-2px) scale(1.04);
         }
 
+        #top-directory-bar-path {
+            font-size: 14px;
+            color: #ccc;
+            margin-bottom: 10px;
+            user-select: none;
+        }
 
     </style>
     <script>
@@ -1194,6 +1200,7 @@
 
     <main>
         <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
+        <div id="top-directory-bar-path"></div>
         <input type="text" id="search-input" placeholder="Search notes...">
         <ul id="notes-list"></ul>
     </main>
@@ -1363,6 +1370,8 @@
 
     <script>
         let allNotes = [];
+        let allFolders = [];
+        let currentFolderId = null;
         let currentNoteId = null;
         let addPendingFiles = [];         // File objects selected in Add UI
         let addUploadedIds = [];         // upload_ids returned from /uploads for add
@@ -1763,6 +1772,7 @@
                 if (res.status === 200) {
                     hideModal();
                     fetchNotes();
+                    fetchFolders();
                     updateStorageCounter();
                     initSearchingShortcut();
                     return true;
@@ -1788,6 +1798,7 @@
                     console.log("Auto-login successful");
                     hideModal();
                     fetchNotes();
+                    fetchFolders();
                     updateStorageCounter();
                     initSearchingShortcut();
                     return true;
@@ -2318,8 +2329,15 @@
         }
 
         async function fetchNotes() {
+
+            const folderToFetch = currentFolderId ? `?folder_id=${currentFolderId}` : '';
             try {
-            const response = await fetch("/notes", {});
+            const response = await fetch("/notes" + folderToFetch, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+            });
             if (!response.ok && response.status !== 401) {
                 throw new Error(`Failed to fetch notes: ${response.status}`);
             } else if (response.status === 401) {
@@ -2371,6 +2389,117 @@
             console.error("Error fetching notes:", error);
             alert("There was an error fetching your notes. Please try again.");
         }
+        }
+
+        async function fetchFolders() {
+            try {
+                // Fetch folders with the parent_id parameter, if currentFolderId is set, use it, otherwise fetch top-level folders (parent_id=null)
+                const response = await fetch("/folders", {
+                    method: "GET",
+                });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch folders: ${response.status}`);
+                }
+
+                const folders = await response.json();
+                const foldersList = document.getElementById("notes-list"); // Used the notes list container because the folders need to be populated in the same container as the notes
+                allFolders = folders;
+                // Then, display the folders
+                folders.forEach(folder => {
+                    const folderItem = document.createElement("li");
+                    folderItem.innerHTML = `
+                        <h3>${escapeHTML(folder.name)}</h3>
+                    `;
+                    folderItem.addEventListener('click', () => {
+                        navigateToFolder(folder.id);
+                    });
+                    foldersList.appendChild(folderItem);
+                });
+            } catch (error) {
+                console.error("Error fetching folders:", error);
+                alert("There was an error fetching your folders. Please try again.");
+            }
+        }
+
+        async function createFolder(folderName) {
+            try {
+                const response = await fetch("/folders", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ name: folderName }),
+                    credentials: 'same-origin'
+                });
+                if (!response.ok && response.status !== 401) {
+                    throw new Error("Failed to create folder");
+                } else if (response.status === 401) {
+                    showModal();
+                    return;
+                }
+
+                // Successfully created folder
+                closeFolderModal();
+                fetchFolders();
+            } catch (error) {
+                console.error("Error creating folder:", error);
+                alert("There was an error creating the folder. Please try again.");
+            }
+        }
+
+        async function navigateToFolder(folderId) {
+            currentFolderId = folderId;
+            // Fetch notes in this folder
+            fetchNotes();
+        }
+
+        function showCreateFolderModal() {
+            // Build the full html to show the folder creation modal, including cancel and create button. The create button should call the createFolder function
+            const modalOverlay = document.getElementById("overlay");
+            modalOverlay.style.display = "block";
+            const folderModal = document.createElement("div");
+            folderModal.id = "create-folder-modal";
+            folderModal.style = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: var(--bg-color);
+                padding: 30px;
+                border-radius: 15px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                z-index: 1003;
+                width: 80%;
+                max-width: 400px;
+                opacity: 0;
+                animation: fadeIn 0.2s forwards 0.2s;
+            `;
+
+            folderModal.innerHTML = `
+                <h3>Create New Folder</h3>
+                <input type="text" id="new-folder-name" placeholder="Folder Name">
+                <button id="create-folder-button">Create</button>
+                <button id="cancel-folder-button">Cancel</button>
+            `;
+
+            document.body.appendChild(folderModal);
+
+            document.getElementById("create-folder-button").addEventListener("click", () => {
+                const folderName = document.getElementById("new-folder-name").value.trim();
+                if (folderName) {
+                    createFolder(folderName);
+                }
+            });
+
+            document.getElementById("cancel-folder-button").addEventListener("click", closeFolderModal);
+        }
+
+        function closeFolderModal() {
+            const folderModal = document.getElementById("create-folder-modal");
+            document.getElementById("overlay").style.display = "none";
+            if (folderModal) {
+                folderModal.remove();
+            }
         }
 
         function showShareModal(noteId) {
@@ -3141,10 +3270,56 @@
             window.location.href = "/account_page";
         }
 
+        function showFolderOrAddMenu() {
+            // Build the html to show 2 buttons above the floating button, one to show the folder add menu, the other to show the note add menu
+            const folderOrAddMenu = document.createElement("div");
+            folderOrAddMenu.innerHTML = `
+                <button id="add-folder-button">➕ Add Folder</button>
+                <button id="add-note-button">➕ Add Note</button>
+            `;
+
+            // Reset the floating-add-button to not show the menu again if clicked, but instead hide the buttons and reset to its original state
+            folderOrAddMenu.id = "folder-or-add-menu";
+            folderOrAddMenu.style.position = "fixed";
+            folderOrAddMenu.style.bottom = "80px";
+            folderOrAddMenu.style.right = "20px";
+            folderOrAddMenu.style.display = "flex";
+            folderOrAddMenu.style.flexDirection = "column";
+            folderOrAddMenu.style.gap = "10px";
+            folderOrAddMenu.style.zIndex = "1001";
+            folderOrAddMenu.style.backgroundColor = "var(--ctr-color)";
+            folderOrAddMenu.style.padding = "10px";
+            folderOrAddMenu.style.borderRadius = "8px";
+            folderOrAddMenu.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)";
+
+            document.getElementById("floating-add-button").addEventListener("click", closeFolderOrAddMenu);
+            document.getElementById("floating-add-button").removeEventListener("click", showFolderOrAddMenu);
+
+            //Wire up the buttons
+            folderOrAddMenu.querySelector("#add-folder-button").addEventListener("click", () => {
+                showCreateFolderModal();
+                closeFolderOrAddMenu();
+            });
+            folderOrAddMenu.querySelector("#add-note-button").addEventListener("click", () => {
+                showAddMenu();
+                closeFolderOrAddMenu();
+            });
+            document.body.appendChild(folderOrAddMenu);
+        }
+
+        function closeFolderOrAddMenu() {
+            const menu = document.getElementById("folder-or-add-menu");
+            if (menu) {
+                menu.remove();
+            }
+            document.getElementById("floating-add-button").addEventListener("click", showFolderOrAddMenu);
+        }
+
         document.getElementById("overlay").addEventListener("click", closeAddMenu);
+        document.getElementById("overlay").addEventListener("click", closeFolderModal);
         document.getElementById("profile-pic").addEventListener("click", showAccountMenu);
 
-        document.getElementById("floating-add-button").addEventListener("click", showAddMenu);
+        document.getElementById("floating-add-button").addEventListener("click", showFolderOrAddMenu);
         document.getElementById("add-note-button").addEventListener("click", addNote);
         document.getElementById("cancel-button").addEventListener("click", closeAddMenu);
 
