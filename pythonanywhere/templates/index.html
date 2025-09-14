@@ -1121,7 +1121,7 @@
 
         /* Breadcrumb container */
         #top-directory-bar-path {
-            display: flex;
+            display: none;
             align-items: center;
             gap: 12px; /* spacing between back button and path */
             background-color: var(--ctr-color);
@@ -1218,7 +1218,7 @@
         }
 
         .delete-confirm-modal {
-            background: #fff;
+            background: var(--bg-color);
             border-radius: 8px;
             padding: 18px;
             width: 100%;
@@ -1267,6 +1267,115 @@
             border: 1px solid #e0e0e0;
         }
 
+        /* Keep same card shape */
+        #folders-list li.folder-card {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* Big folder icon */
+        .folder-icon {
+            font-size: 60px;  /* adjust size */
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+
+        /* Folder name under icon */
+        #folders-list li.folder-card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f0f0;
+        }
+
+        /* Options button top-right (like notes delete button) */
+        .folder-options-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            color: #ddd;
+            cursor: pointer;
+        }
+        .folder-options-btn:hover {
+            color: #fff;
+        }
+
+        .prompt-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .prompt-modal {
+            background: var(--bg-color);
+            border: 1px solid var(--ctr-color);
+            border-radius: 10px;
+            padding: 20px;
+            width: 300px;
+            max-width: 90%;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .prompt-modal h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        .prompt-input {
+            width: 94%;
+            padding: 8px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: 1px solid var(--ctr-color);
+            background: #333;
+            color: #fff;
+        }
+
+        .prompt-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .prompt-buttons button {
+            flex: 1;
+            padding: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .prompt-ok {
+            background: var(--btn-color);
+            color: #fff;
+        }
+
+        .prompt-ok:hover {
+            background: #45a049;
+        }
+
+        .prompt-cancel {
+            background: #b33a3a;
+            color: #fff;
+        }
+
+        .prompt-cancel:hover {
+            background: #cc4a4a;
+        }
 
     </style>
     <script>
@@ -2556,15 +2665,20 @@
                 foldersList.innerHTML = ""; // Clear existing folders
                 folders.forEach(folder => {
                     const folderItem = document.createElement("li");
+                    folderItem.classList.add("folder-card");
                     folderItem.innerHTML = `
+                        <div class="folder-icon">📁</div>
                         <h3>${escapeHTML(folder.name)}</h3>
-                        <button onclick="event.stopPropagation(); showFolderOptions(${folder.id})" style="z-index: 15;">...</button>
+                        <button onclick="event.stopPropagation(); showFolderOptions(${folder.id})" 
+                            class="folder-options-btn" 
+                            title="Options">⋮</button>
                     `;
                     folderItem.addEventListener('click', () => {
                         navigateToFolder(folder.id);
                     });
                     foldersList.appendChild(folderItem);
                 });
+
 
                 // Fetch and display parent folders for breadcrumb navigation
                 // If currentFolderId is null, we are at the top level, so no need to fetch parents
@@ -2695,12 +2809,63 @@
             renameButton.innerText = "Rename";
             renameButton.onclick = (e) => {
                 e.stopPropagation();
-                const newName = prompt("Enter new folder name:");
-                if (newName) {
-                    renameFolder(folderId, newName);
-                    folderOptionsMenu.remove();
-                }
+                folderOptionsMenu.remove();
+                showRenamePrompt(folderId);
             };
+
+            function showRenamePrompt(folderId) {
+                // remove existing prompt if open
+                const existing = document.getElementById("rename-prompt");
+                if (existing) existing.remove();
+
+                // overlay
+                const overlay = document.createElement("div");
+                overlay.id = "rename-prompt";
+                overlay.className = "prompt-overlay";
+
+                // modal
+                const modal = document.createElement("div");
+                modal.className = "prompt-modal";
+
+                const title = document.createElement("h3");
+                title.innerText = "Rename Folder";
+
+                const input = document.createElement("input");
+                input.type = "text";
+                input.placeholder = "Enter new folder name";
+                input.className = "prompt-input";
+
+                const btnRow = document.createElement("div");
+                btnRow.className = "prompt-buttons";
+
+                const okBtn = document.createElement("button");
+                okBtn.innerText = "Save";
+                okBtn.className = "prompt-ok";
+                okBtn.onclick = () => {
+                    const newName = input.value.trim();
+                    if (newName) {
+                        renameFolder(folderId, newName);
+                        overlay.remove();
+                    }
+                };
+
+                const cancelBtn = document.createElement("button");
+                cancelBtn.innerText = "Cancel";
+                cancelBtn.className = "prompt-cancel";
+                cancelBtn.onclick = () => overlay.remove();
+
+                btnRow.appendChild(okBtn);
+                btnRow.appendChild(cancelBtn);
+
+                modal.appendChild(title);
+                modal.appendChild(input);
+                modal.appendChild(btnRow);
+
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+
+                input.focus();
+            }
 
             const deleteButton = document.createElement("button");
             deleteButton.className = "folder-menu-btn danger";
@@ -2929,7 +3094,7 @@
                     headers: {
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({ name: newName }),
+                    body: JSON.stringify({ name: newName, parent_id: currentFolderId }),
                     credentials: 'same-origin'
                 });
                 if (!response.ok && response.status !== 401) {
