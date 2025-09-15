@@ -1225,7 +1225,7 @@
             max-width: 520px;
             box-shadow: 0 12px 40px rgba(0,0,0,0.14);
             font-family: system-ui, sans-serif;
-            color: #222;
+            color: #fff;
         }
 
         .delete-confirm-modal h3 {
@@ -1235,7 +1235,7 @@
 
         .delete-confirm-modal p {
             margin: 0 0 14px 0;
-            color: #444;
+            color: #fff;
         }
 
         .delete-confirm-actions {
@@ -1249,7 +1249,7 @@
             padding: 8px 12px;
             border-radius: 6px;
             border: 1px solid #cfcfcf;
-            background: #f7f7f7;
+            background: var(--btn-color);
             cursor: pointer;
             font-size: 14px;
         }
@@ -1257,7 +1257,7 @@
         .btn:hover { filter: brightness(0.98); }
 
         .btn.danger {
-            background: #feecec;
+            background: var(--btn-color);
             border-color: #f1c0c0;
             color: #8f1515;
         }
@@ -2611,27 +2611,26 @@
                 notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
             } else {
                 notesList.innerHTML = notes.map(note => {
-                    const escapedTitle = escapeHTML(note.title || 'Untitled');
-                    const escapedTag = escapeHTML(note.tag || '');
-                    const escapedNote = escapeHTML(note.note || '');
-                    const plainTextPreview = htmlToPlainText(note.note || '').substring(0, 100);
+                const escapedTitle = escapeHTML(note.title || 'Untitled');
+                const escapedTag = escapeHTML(note.tag || '');
+                const plainTextPreview = htmlToPlainText(note.note || '').substring(0, 100);
 
-                    return `
-                    <li data-note-id="${note.id}">
-                        <h3>${escapedTitle}</h3>
-                        <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
-                        ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
-                        <button onclick="event.stopPropagation(); deleteNote(${note.id})" 
+                return `
+                <li data-note-id="${note.id}">
+                    <h3>${escapedTitle}</h3>
+                    <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
+                    ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+                    <button onclick="event.stopPropagation(); showNoteOptions(${note.id})" 
                         class="share-button"
                         style="z-index:10;" 
-                        title="Delete note">🗑️</button>
-                    </li>
-                    `;
-                }).join("");
-                
-                setTimeout(() => {
-                    document.querySelectorAll('#notes-list li').forEach(li => {
-                        li.addEventListener('click', function() {
+                        title="Options">⋮</button>
+                </li>
+                `;
+            }).join("");
+
+            setTimeout(() => {
+                document.querySelectorAll('#notes-list li').forEach(li => {
+                    li.addEventListener('click', function() {
                             const noteId = parseInt(this.getAttribute('data-note-id'));
                             const note = allNotes.find(n => n.id === noteId);
                             if (note) {
@@ -2776,6 +2775,327 @@
             }
         }
 
+        /* ---------- Move modal (works for both notes & folders) ---------- */
+
+        /**
+         * openMoveModal({ type: 'note'|'folder', id: Number, name?: String, currentParentId?: Number|null })
+         */
+        let _moveModalState = null;
+
+        async function openMoveModal({ type, id, name, currentParentId = null }) {
+            // normalize name fallback
+            name = name || (type === 'note' ? `Note ${id}` : `Folder ${id}`);
+
+            // compute descendants if moving a folder to prevent cycles
+            const forbiddenIds = new Set();
+            if (type === 'folder') {
+                try {
+                    const desc = await getDescendantFolderIds(id);
+                    desc.forEach(x => forbiddenIds.add(x));
+                    forbiddenIds.add(id); // also cannot move into itself
+                } catch (e) {
+                    console.warn("Failed to fetch descendants:", e);
+                }
+            }
+
+            // modal state
+            _moveModalState = {
+                type,
+                id,
+                name,
+                currentParentId,
+                selectedDest: null, // null => root
+                forbiddenIds
+            };
+
+            // build modal DOM
+            const existing = document.getElementById('move-modal');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'move-modal';
+            overlay.className = 'prompt-overlay'; // re-use style if you have one, else style below
+
+            const modal = document.createElement('div');
+            modal.className = 'move-modal';
+
+            // left: item card
+            const left = document.createElement('div');
+            left.className = 'move-left';
+            left.innerHTML = `
+                <h3>Move ${escapeHTML(type)}</h3>
+                <div class="move-item">
+                    <div class="move-item-type">${type === 'folder' ? '📁 Folder' : '📝 Note'}</div>
+                    <div class="move-item-name">${escapeHTML(name)}</div>
+                    <div class="move-item-meta">ID: ${id}</div>
+                </div>
+            `;
+
+            // right: folder picker
+            const right = document.createElement('div');
+            right.className = 'move-right';
+            right.innerHTML = `
+                <div class="move-picker">
+                    <div class="picker-header">Select Destination</div>
+                    <div class="picker-list" id="move-picker-list"></div>
+                </div>
+            `;
+
+            // bottom bar
+            const bottom = document.createElement('div');
+            bottom.className = 'move-bottom';
+            bottom.innerHTML = `
+                <div class="selected-dest" id="move-selected-dest">Destination: <em>Root</em></div>
+                <div class="move-buttons">
+                    <button id="move-confirm-btn" class="prompt-ok" disabled>Select</button>
+                    <button id="move-cancel-btn" class="prompt-cancel">Cancel</button>
+                </div>
+            `;
+
+            modal.appendChild(left);
+            modal.appendChild(right);
+            modal.appendChild(bottom);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // wire buttons
+            document.getElementById('move-cancel-btn').onclick = () => overlay.remove();
+            document.getElementById('move-confirm-btn').onclick = () => performMove();
+
+            // load top-level folders (root)
+            const listEl = document.getElementById('move-picker-list');
+            listEl.innerHTML = ''; // clear
+            // Add a "Root" entry
+            const rootItem = createFolderListItem({ id: null, name: 'Root' }, 0, _moveModalState);
+            listEl.appendChild(rootItem);
+
+            // lazy-load top-level folders
+            await appendFolderChildren(listEl, null, 0, _moveModalState);
+
+            // highlight current parent if present
+            if (currentParentId !== null) {
+                setSelectedDestination(currentParentId);
+            } else {
+                setSelectedDestination(null);
+            }
+
+            // helper: close if click outside modal
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) overlay.remove();
+            });
+        }
+
+        /** create a simple folder row (expandable) */
+        function createFolderListItem(folder, level = 0, state) {
+            const row = document.createElement('div');
+            row.className = 'picker-row';
+            row.style.paddingLeft = (12 + level * 12) + 'px';
+            row.dataset.folderId = folder.id === null ? '' : String(folder.id);
+
+            // disabled if folder id in forbidden set
+            const isForbidden = folder.id !== null && state.forbiddenIds && state.forbiddenIds.has(folder.id);
+
+            const expander = document.createElement('button');
+            expander.className = 'expander';
+            expander.innerText = '▶';
+            expander.onclick = async (e) => {
+                e.stopPropagation();
+                // load children into a sub-container
+                if (row._loaded) {
+                    // toggle
+                    const sub = row.querySelector('.subrows');
+                    if (sub) sub.style.display = sub.style.display === 'none' ? 'block' : 'none';
+                    expander.innerText = sub && sub.style.display === 'block' ? '▼' : '▶';
+                    return;
+                }
+                expander.innerText = '⌛';
+                const sub = document.createElement('div');
+                sub.className = 'subrows';
+                sub.style.marginTop = '6px';
+                row.appendChild(sub);
+                await appendFolderChildren(sub, folder.id, level + 1, state);
+                row._loaded = true;
+                expander.innerText = '▼';
+            };
+
+            const label = document.createElement('div');
+            label.className = 'picker-label';
+            label.innerText = folder.name || `Folder ${folder.id}`;
+
+            if (folder.id === null) { // root: no expander
+                expander.style.visibility = 'hidden';
+            }
+
+            // clickable selection
+            row.onclick = (e) => {
+                e.stopPropagation();
+                if (isForbidden) {
+                    // optional: show toast
+                    flashMessage("Cannot move into a child of this folder.", 2500);
+                    return;
+                }
+                const fid = folder.id === null ? null : folder.id;
+                setSelectedDestination(fid);
+            };
+
+            // grey out forbidden
+            if (isForbidden) {
+                row.style.opacity = '0.5';
+                row.title = "Cannot move into this folder (would create a circular parent).";
+            }
+
+            row.appendChild(expander);
+            row.appendChild(label);
+            return row;
+        }
+
+        /** append children for a parent_id into container (uses /folders?parent_id=...) */
+        async function appendFolderChildren(container, parentId, level, state) {
+            try {
+                const param = parentId === null ? '' : `?parent_id=${parentId}`;
+                const resp = await fetch('/folders' + param, { method: 'GET' });
+                if (!resp.ok) {
+                    console.warn("Failed to fetch folders for parent", parentId, resp.status);
+                    return;
+                }
+                const folders = await resp.json();
+                // sort by name for nicer UI
+                folders.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+                for (const f of folders) {
+                    const node = createFolderListItem({ id: f.id, name: f.name }, level, state);
+                    container.appendChild(node);
+                }
+            } catch (e) {
+                console.error("Error loading folder children:", e);
+            }
+        }
+
+        /** set the currently selected destination (id or null) and update UI */
+        async function setSelectedDestination(folderId) {
+            _moveModalState.selectedDest = folderId;
+            const display = document.getElementById('move-selected-dest');
+            if (folderId === null) {
+                display.innerHTML = 'Destination: <em>Root</em>';
+            } else {
+                // fetch parent chain for nice path (reuse your fetchParentFolders if available)
+                try {
+                    const parents = await fetchParentFolders(folderId); // existing function in your code
+                    const path = parents.map(p => escapeHTML(p.name)).join(' › ');
+                    display.innerHTML = `Destination: <strong>${path}</strong>`;
+                } catch (e) {
+                    display.innerHTML = `Destination: <strong>Folder ${folderId}</strong>`;
+                }
+            }
+
+            // enable confirm button if selection changed (and not selecting same parent for folder -> allow though)
+            const btn = document.getElementById('move-confirm-btn');
+            if (btn) {
+                // enable unless selecting same as current parent for notes or folder (still allowed but pointless)
+                const same = (_moveModalState.type === 'note' && _moveModalState.currentParentId === folderId)
+                        || (_moveModalState.type === 'folder' && _moveModalState.currentParentId === folderId);
+                btn.disabled = false; // allow even if same (user can confirm). If you prefer, set to !same
+            }
+        }
+
+        /** perform the API call to move the item */
+        async function performMove() {
+            const st = _moveModalState;
+            if (!st) return;
+            const destination = st.selectedDest; // null allowed
+
+            const payload = st.type === 'note' ? { folder_id: destination } : { parent_id: destination };
+
+            const url = st.type === 'note' ? `/notes/${st.id}` : `/folders/${st.id}`;
+            try {
+                const resp = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!resp.ok) {
+                    const body = await resp.json().catch(()=>null);
+                    const msg = (body && body.error) ? body.error : `Server returned ${resp.status}`;
+                    flashMessage(`Move failed: ${msg}`, 4000);
+                    return;
+                }
+                flashMessage("Moved successfully!", 1500);
+                // close modal
+                const modal = document.getElementById('move-modal');
+                if (modal) modal.remove();
+
+                // refresh UI
+                fetchFolders();
+                fetchNotes();
+            } catch (e) {
+                console.error("Error performing move:", e);
+                flashMessage("Network error while moving item.", 3000);
+            }
+        }
+
+        /** recursively get descendant folder ids (used to prevent cycles). returns Set */
+        async function getDescendantFolderIds(rootId) {
+            const ids = new Set();
+            async function recurse(parentId) {
+                const resp = await fetch(`/folders?parent_id=${parentId}`, { method: 'GET' });
+                if (!resp.ok) return;
+                const children = await resp.json();
+                for (const c of children) {
+                    if (!ids.has(c.id)) {
+                        ids.add(c.id);
+                        await recurse(c.id);
+                    }
+                }
+            }
+            await recurse(rootId);
+            return ids;
+        }
+
+        /** small helper to show ephemeral messages */
+        function flashMessage(msg, ms=2000) {
+            let el = document.getElementById('flash-msg');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'flash-msg';
+                el.style.position = 'fixed';
+                el.style.right = '20px';
+                el.style.bottom = '20px';
+                el.style.background = 'rgba(0,0,0,0.85)';
+                el.style.color = 'white';
+                el.style.padding = '10px 14px';
+                el.style.borderRadius = '8px';
+                el.style.zIndex = 20000;
+                document.body.appendChild(el);
+            }
+            el.innerText = msg;
+            el.style.opacity = '1';
+            setTimeout(()=>{ el.style.opacity = '0'; }, ms);
+        }
+
+        /* Minimal styling so modal isn't invisible (you can move to CSS) */
+        (function injectMoveModalStyling(){
+            if (document.getElementById('move-modal-style')) return;
+            const s = document.createElement('style');
+            s.id = 'move-modal-style';
+            s.innerText = `
+            .prompt-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; z-index:20000; }
+            .move-modal { width: 840px; max-width: 95%; background: var(--bg-color); border-radius:8px; display:flex; gap:16px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); }
+            .move-left { width: 280px; border-right:1px solid #eee; padding-right:12px; }
+            .move-right { flex:1; }
+            .move-item { border:1px dashed #ddd; padding:10px; border-radius:6px; }
+            .picker-list { max-height: 420px; overflow:auto; border:1px solid #eee; padding:8px; border-radius:6px; }
+            .picker-row { display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px 4px; }
+            .picker-row:hover { background: var(--ctr-color) }
+            .expander { width:28px; height:28px; border-radius:4px; border:1px solid #ddd; background:transparent; cursor:pointer; }
+            .move-bottom { position: absolute; bottom: 28px; left: 0; right: 0; display:flex; justify-content:space-between; align-items:center; padding:0 28px; pointer-events:none; }
+            .move-buttons { pointer-events:auto; }
+            .move-buttons .prompt-ok, .move-buttons .prompt-cancel { margin-left:8px; padding:8px 12px; }
+            .subrows { margin-left:8px; }
+            `;
+            document.head.appendChild(s);
+        })();
+
         /* ---------- Folder options menu & delete flow ---------- */
 
         /**
@@ -2881,6 +3201,23 @@
             folderOptionsMenu.appendChild(deleteButton);
             document.body.appendChild(folderOptionsMenu);
 
+            // inside showFolderOptions(folderId, ev) after creating folderOptionsMenu:
+
+            const moveButton = document.createElement("button");
+            moveButton.className = "folder-menu-btn";
+            moveButton.innerText = "Move";
+            moveButton.onclick = (e) => {
+                e.stopPropagation();
+                folderOptionsMenu.remove();
+                // try to find folder name/current parent from in-memory allFolders or request server fallback
+                const folderObj = allFolders && allFolders.find(f => f.id === folderId);
+                const folderName = folderObj ? folderObj.name : `Folder ${folderId}`;
+                const currentParentId = folderObj ? folderObj.parent_id : null;
+                openMoveModal({ type: 'folder', id: folderId, name: folderName, currentParentId });
+            };
+
+            folderOptionsMenu.appendChild(moveButton);
+
             // Close menu if clicking outside
             const onDocClick = (e) => {
                 if (!folderOptionsMenu.contains(e.target)) {
@@ -2890,6 +3227,69 @@
             };
             setTimeout(() => document.addEventListener("click", onDocClick), 0);
         }
+
+        function showNoteOptions(noteId, ev) {
+            const event = ev || window.event;
+            if (event && event.stopPropagation) event.stopPropagation();
+
+            // remove existing folder or note menu
+            const existing = document.querySelector(".folder-options-menu, .note-options-menu");
+            if (existing) existing.remove();
+
+            // Create menu and reuse folder-options-menu class to match styling exactly
+            const menu = document.createElement('div');
+            menu.className = 'folder-options-menu'; // REUSE folder styles
+            menu.setAttribute('role', 'menu');
+            menu.style.position = 'fixed';
+            menu.style.zIndex = 10000;
+
+            // position near mouse if available, else near top-right
+            const x = event && event.clientX ? event.clientX : window.innerWidth - 160;
+            const y = event && event.clientY ? event.clientY : 60;
+            menu.style.left = Math.min(x, window.innerWidth - 180) + 'px';
+            menu.style.top = Math.min(y, window.innerHeight - 60) + 'px';
+
+            // Move button
+            const moveBtn = document.createElement('button');
+            moveBtn.className = "folder-menu-btn";
+            moveBtn.innerText = 'Move';
+            moveBtn.onclick = (e) => {
+                e.stopPropagation();
+                menu.remove();
+                const noteObj = allNotes && allNotes.find(n => n.id === noteId);
+                const name = noteObj ? (noteObj.title || `Note ${noteId}`) : `Note ${noteId}`;
+                const currentFolderId = noteObj ? noteObj.folder_id : null;
+                openMoveModal({ type: 'note', id: noteId, name, currentParentId: currentFolderId });
+            };
+
+            // Delete button
+            const delBtn = document.createElement('button');
+            delBtn.className = "folder-menu-btn danger";
+            delBtn.innerText = 'Delete';
+            delBtn.onclick = (e) => {
+                e.stopPropagation();
+                menu.remove();
+                deleteNote(noteId);
+            };
+
+            // Append buttons to menu
+            menu.appendChild(moveBtn);
+            menu.appendChild(delBtn);
+
+            document.body.appendChild(menu);
+
+            // close on outside click
+            const onDocClick = (e) => {
+                if (!menu.contains(e.target)) {
+                    menu.remove();
+                    document.removeEventListener('click', onDocClick);
+                }
+            };
+            // defer adding listener to avoid immediate removal (same pattern used elsewhere)
+            setTimeout(() => document.addEventListener('click', onDocClick), 0);
+        }
+
+
 
         /**
          * Primary delete starter:
