@@ -3563,27 +3563,7 @@
 
     // Trigger a notification for a given appointment.
     function triggerNotification(appointment) {
-      const title = "Upcoming Task: " + appointment.title;
-      const options = {
-        body: "Your task is starting in 15 minutes.",
-        icon: "/static/notification-icon.jpg" // Update with your icon path
-      };
-      console.log("Triggering notification for appointment:", appointment.title);
-      console.log("Notification options:", options);
-
-      // Use the service worker registration to show the notification if available.
-      if (navigator.serviceWorker) {
-        navigator.serviceWorker.getRegistration().then(registration => {
-          if (registration) {
-            registration.showNotification(title, options);
-          } else {
-            // Fallback if registration is unavailable.
-            new Notification(title, options);
-          }
-        });
-      } else {
-        new Notification(title, options);
-      }
+      console.log("Removed functionality used at: triggerNotification");
     }
 
 

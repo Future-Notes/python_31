@@ -802,7 +802,7 @@
                 row.innerHTML = `
                     <td>${message.id}</td>
                     <td>${message.email}</td>
-                    <td>${message.message}</td>
+                    <td>${sanitizeHTML(message.message)}</td>
                     <td>
                         <button onclick="deleteMessage(${message.id})">Delete</button>
                     </td>
@@ -814,6 +814,12 @@
                 row.innerHTML = `<td colspan="4" style="text-align:center;color:#aaa;">No messages found.</td>`;
                 tableBody.appendChild(row);
             }
+        }
+
+        function sanitizeHTML(str) {
+            const temp = document.createElement('div');
+            temp.textContent = str;
+            return temp.innerHTML;
         }
 
         function populateUsersTable(users) {
@@ -831,7 +837,7 @@
                 const row = document.createElement("tr");
                 row.innerHTML = `
                     <td>${user.id}</td>
-                    <td>${user.username}</td>
+                    <td>${sanitizeHTML(user.username)}</td>
                     <td>${user.profile_picture || "N/A"}</td>
                     <td>${user.allows_sharing ? "Yes" : "No"}</td>
                     <td>
