@@ -193,7 +193,7 @@
             color: #e0e0e0;
         }
 
-        #notes-list {
+        #notes-list, #folders-list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
@@ -204,7 +204,11 @@
             animation: fadeIn 0.5s forwards 0.3s;
         }
 
-        #notes-list li {
+        #notes-list {
+            margin-top: 30px;
+        }
+
+        #notes-list li, #folders-list li {
             background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
@@ -221,7 +225,7 @@
             animation: fadeIn 1s forwards;
         }
 
-        #notes-list li h3 {
+        #notes-list li h3, #folders-list li h3 {
             margin: 0;
             font-size: 18px;
             font-weight: bold;
@@ -231,7 +235,7 @@
             z-index: 2;
         }
 
-        #notes-list li span {
+        #notes-list li span, #folders-list li span {
             margin: 0px auto;
             max-width: 30%;
             white-space: nowrap;
@@ -245,17 +249,17 @@
             border-bottom-right-radius: 15px;
         }
 
-        #notes-list li:hover {
+        #notes-list li:hover, #folders-list li:hover {
             background-color: #4a4a4a;
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
         }
 
-        #notes-list li.empty-note {
+        #notes-list li.empty-note, #folders-list li.empty-note {
             font-style: italic;
             color: #b0b0b0;
         }
 
-        #notes-list li button {
+        #notes-list li button, #folders-list li button {
             position: absolute;
             top: 10px;
             right: 10px;
@@ -267,7 +271,7 @@
             transition: background-color 0.3s ease;
         }
 
-        #notes-list li button:hover {
+        #notes-list li button:hover, #folders-list li button:hover {
             background-color: #cc4a4a;
         }
 
@@ -1115,6 +1119,263 @@
             transform: translateY(-2px) scale(1.04);
         }
 
+        /* Breadcrumb container */
+        #top-directory-bar-path {
+            display: none;
+            align-items: center;
+            gap: 12px; /* spacing between back button and path */
+            background-color: var(--ctr-color);
+            border-bottom: 1px solid #ccc;
+            padding: 6px 12px;
+            font-family: system-ui, sans-serif;
+            font-size: 14px;
+            color: #333;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        /* Back button */
+        #top-directory-bar-path .breadcrumb-back {
+            background: var(--btn-color);
+            border: none;
+            border-radius: 4px;
+            padding: 3px 6px; /* smaller padding for compact button */
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1;
+            transition: background 0.2s;
+        }
+
+        #top-directory-bar-path .breadcrumb-back:hover {
+            background: #ccc;
+        }
+
+        /* Breadcrumb links */
+        #top-directory-bar-path a {
+            color: #0073e6;
+            text-decoration: none;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        #top-directory-bar-path a:hover {
+            color: #005bb5;
+        }
+
+        /* Separator between folders */
+        #top-directory-bar-path .separator {
+            color: #888;
+            margin: 0 4px; /* small spacing around the › */
+        }
+
+        /* Current folder (plain text) */
+        #top-directory-bar-path .current-folder {
+            color: #333;
+            font-weight: 500;
+        }
+
+        /* folder options menu (small context menu) */
+        .folder-options-menu {
+            min-width: 140px;
+            background: var(--bg-color, #ffffff);
+            border: 1px solid var(--ctr-color, #d0d0d0);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+            border-radius: 6px;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .folder-options-menu .folder-menu-btn {
+            background: transparent;
+            border: none;
+            text-align: left;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 13px;
+            border-radius: 4px;
+        }
+
+        .folder-options-menu .folder-menu-btn:hover {
+            background: rgba(0,0,0,0.04);
+        }
+
+        .folder-options-menu .folder-menu-btn.danger {
+            color: #b00020;
+        }
+
+        /* delete confirmation overlay + modal */
+        .delete-confirm-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20000;
+            padding: 20px;
+        }
+
+        .delete-confirm-modal {
+            background: var(--bg-color);
+            border-radius: 8px;
+            padding: 18px;
+            width: 100%;
+            max-width: 520px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.14);
+            font-family: system-ui, sans-serif;
+            color: #222;
+        }
+
+        .delete-confirm-modal h3 {
+            margin: 0 0 8px 0;
+            font-size: 18px;
+        }
+
+        .delete-confirm-modal p {
+            margin: 0 0 14px 0;
+            color: #444;
+        }
+
+        .delete-confirm-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #cfcfcf;
+            background: #f7f7f7;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn:hover { filter: brightness(0.98); }
+
+        .btn.danger {
+            background: #feecec;
+            border-color: #f1c0c0;
+            color: #8f1515;
+        }
+
+        .btn.secondary {
+            background: transparent;
+            border: 1px solid #e0e0e0;
+        }
+
+        /* Keep same card shape */
+        #folders-list li.folder-card {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* Big folder icon */
+        .folder-icon {
+            font-size: 60px;  /* adjust size */
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+
+        /* Folder name under icon */
+        #folders-list li.folder-card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f0f0;
+        }
+
+        /* Options button top-right (like notes delete button) */
+        .folder-options-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            color: #ddd;
+            cursor: pointer;
+        }
+        .folder-options-btn:hover {
+            color: #fff;
+        }
+
+        .prompt-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .prompt-modal {
+            background: var(--bg-color);
+            border: 1px solid var(--ctr-color);
+            border-radius: 10px;
+            padding: 20px;
+            width: 300px;
+            max-width: 90%;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .prompt-modal h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        .prompt-input {
+            width: 94%;
+            padding: 8px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: 1px solid var(--ctr-color);
+            background: #333;
+            color: #fff;
+        }
+
+        .prompt-buttons {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .prompt-buttons button {
+            flex: 1;
+            padding: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .prompt-ok {
+            background: var(--btn-color);
+            color: #fff;
+        }
+
+        .prompt-ok:hover {
+            background: #45a049;
+        }
+
+        .prompt-cancel {
+            background: #b33a3a;
+            color: #fff;
+        }
+
+        .prompt-cancel:hover {
+            background: #cc4a4a;
+        }
 
     </style>
     <script>
@@ -1194,7 +1455,9 @@
 
     <main>
         <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
+        <div id="top-directory-bar-path"></div>
         <input type="text" id="search-input" placeholder="Search notes...">
+        <ul id="folders-list"></ul>
         <ul id="notes-list"></ul>
     </main>
 
@@ -1363,6 +1626,8 @@
 
     <script>
         let allNotes = [];
+        let allFolders = [];
+        let currentFolderId = null;
         let currentNoteId = null;
         let addPendingFiles = [];         // File objects selected in Add UI
         let addUploadedIds = [];         // upload_ids returned from /uploads for add
@@ -1763,6 +2028,7 @@
                 if (res.status === 200) {
                     hideModal();
                     fetchNotes();
+                    fetchFolders();
                     updateStorageCounter();
                     initSearchingShortcut();
                     return true;
@@ -1788,6 +2054,7 @@
                     console.log("Auto-login successful");
                     hideModal();
                     fetchNotes();
+                    fetchFolders();
                     updateStorageCounter();
                     initSearchingShortcut();
                     return true;
@@ -2318,8 +2585,15 @@
         }
 
         async function fetchNotes() {
+
+            const folderToFetch = currentFolderId ? `?folder_id=${currentFolderId}` : '';
             try {
-            const response = await fetch("/notes", {});
+            const response = await fetch("/notes" + folderToFetch, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+            });
             if (!response.ok && response.status !== 401) {
                 throw new Error(`Failed to fetch notes: ${response.status}`);
             } else if (response.status === 401) {
@@ -2371,6 +2645,554 @@
             console.error("Error fetching notes:", error);
             alert("There was an error fetching your notes. Please try again.");
         }
+        }
+
+        async function fetchFolders() {
+            try {
+                // Fetch folders with the parent_id parameter, if currentFolderId is set, use it, otherwise fetch top-level folders (parent_id=null)
+                const folderParam = currentFolderId ? `?parent_id=${currentFolderId}` : '';
+                const response = await fetch("/folders" + folderParam, {
+                    method: "GET",
+                });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch folders: ${response.status}`);
+                }
+
+                const folders = await response.json();
+                const foldersList = document.getElementById("folders-list"); // Used the notes list container because the folders need to be populated in the same container as the notes
+                allFolders = folders;
+                // Then, display the folders
+                foldersList.innerHTML = ""; // Clear existing folders
+                folders.forEach(folder => {
+                    const folderItem = document.createElement("li");
+                    folderItem.classList.add("folder-card");
+                    folderItem.innerHTML = `
+                        <div class="folder-icon">📁</div>
+                        <h3>${escapeHTML(folder.name)}</h3>
+                        <button onclick="event.stopPropagation(); showFolderOptions(${folder.id})" 
+                            class="folder-options-btn" 
+                            title="Options">⋮</button>
+                    `;
+                    folderItem.addEventListener('click', () => {
+                        navigateToFolder(folder.id);
+                    });
+                    foldersList.appendChild(folderItem);
+                });
+
+
+                // Fetch and display parent folders for breadcrumb navigation
+                // If currentFolderId is null, we are at the top level, so no need to fetch parents
+                if (!currentFolderId) {
+                    document.getElementById("top-directory-bar-path").style.display = "none";
+                    return;
+                }
+                const parentFolders = await fetchParentFolders(currentFolderId);
+                const breadcrumb = document.getElementById("top-directory-bar-path");
+                breadcrumb.innerHTML = "";
+
+                // Show back button if not in root
+                if (currentFolderId !== null) {
+                    const backButton = document.createElement("button");
+                    backButton.innerText = "⬅ Back";
+                    backButton.className = "breadcrumb-back";
+                    backButton.addEventListener("click", () => {
+                        // Step up: second-to-last element in chain, or null for root
+                        const parent = parentFolders.length > 1 
+                            ? parentFolders[parentFolders.length - 2]
+                            : null;
+                        if (parent) {
+                            navigateToFolder(parent.id);
+                        } else {
+                            currentFolderId = null; // back to root
+                            fetchFolders();
+                            fetchNotes();
+                        }
+                    });
+                    breadcrumb.appendChild(backButton);
+                }
+
+                // Always show root link
+                const rootLink = document.createElement("a");
+                rootLink.href = "#";
+                rootLink.innerText = "Root";
+                rootLink.addEventListener("click", () => {
+                    currentFolderId = null; // reset to root
+                    fetchFolders();
+                    fetchNotes();
+                });
+                breadcrumb.appendChild(rootLink);
+
+                // Loop through parents and current folder
+                parentFolders.forEach((folder, index) => {
+                    if (index === 0) return; // skip root, already added
+
+                    const sep = document.createElement("span");
+                    sep.className = "separator";
+                    sep.innerText = "›";
+                    breadcrumb.appendChild(sep);
+
+                    if (index < parentFolders.length - 1) {
+                        // clickable parent folders
+                        const folderLink = document.createElement("a");
+                        folderLink.href = "#";
+                        folderLink.innerText = escapeHTML(folder.name);
+                        folderLink.addEventListener("click", () => {
+                            navigateToFolder(folder.id);
+                        });
+                        breadcrumb.appendChild(folderLink);
+                    } else {
+                        // current folder (plain text)
+                        const current = document.createElement("span");
+                        current.className = "current-folder";
+                        current.innerText = escapeHTML(folder.name);
+                        breadcrumb.appendChild(current);
+                    }
+                });
+
+                breadcrumb.style.display = "flex";
+
+
+            } catch (error) {
+                console.error("Error fetching folders:", error);
+                alert("There was an error fetching your folders. Please try again.");
+            }
+        }
+
+        async function fetchParentFolders(folderId) {
+            try {
+                const response = await fetch(`/folders/${folderId}/parents`, {
+                    method: "GET",
+                });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch parent folders: ${response.status}`);
+                }
+
+                const parentFolders = await response.json();
+                return parentFolders;
+            } catch (error) {
+                console.error("Error fetching parent folders:", error);
+                alert("There was an error fetching the folder hierarchy. Please try again.");
+                return [];
+            }
+        }
+
+        /* ---------- Folder options menu & delete flow ---------- */
+
+        /**
+         * Show a small context menu for folder actions.
+         * Works if caller passes event as second arg or relies on window.event.
+         *
+         * Usage: showFolderOptions(folderId, event)
+         */
+        function showFolderOptions(folderId, ev) {
+            const event = ev || window.event;
+            if (event && event.stopPropagation) event.stopPropagation();
+
+            // Remove any existing menu
+            const existingMenu = document.querySelector(".folder-options-menu");
+            if (existingMenu) existingMenu.remove();
+
+            // Create menu
+            const folderOptionsMenu = document.createElement("div");
+            folderOptionsMenu.className = "folder-options-menu";
+            // Position safely (if no coordinates, center near top-right)
+            const x = event && event.clientX ? event.clientX : window.innerWidth - 160;
+            const y = event && event.clientY ? event.clientY : 60;
+            folderOptionsMenu.style.top = Math.min(y, window.innerHeight - 10) + "px";
+            folderOptionsMenu.style.left = Math.min(x, window.innerWidth - 180) + "px";
+            folderOptionsMenu.style.position = "fixed";
+            folderOptionsMenu.style.zIndex = 10000;
+
+            // Buttons
+            const renameButton = document.createElement("button");
+            renameButton.className = "folder-menu-btn";
+            renameButton.innerText = "Rename";
+            renameButton.onclick = (e) => {
+                e.stopPropagation();
+                folderOptionsMenu.remove();
+                showRenamePrompt(folderId);
+            };
+
+            function showRenamePrompt(folderId) {
+                // remove existing prompt if open
+                const existing = document.getElementById("rename-prompt");
+                if (existing) existing.remove();
+
+                // overlay
+                const overlay = document.createElement("div");
+                overlay.id = "rename-prompt";
+                overlay.className = "prompt-overlay";
+
+                // modal
+                const modal = document.createElement("div");
+                modal.className = "prompt-modal";
+
+                const title = document.createElement("h3");
+                title.innerText = "Rename Folder";
+
+                const input = document.createElement("input");
+                input.type = "text";
+                input.placeholder = "Enter new folder name";
+                input.className = "prompt-input";
+
+                const btnRow = document.createElement("div");
+                btnRow.className = "prompt-buttons";
+
+                const okBtn = document.createElement("button");
+                okBtn.innerText = "Save";
+                okBtn.className = "prompt-ok";
+                okBtn.onclick = () => {
+                    const newName = input.value.trim();
+                    if (newName) {
+                        renameFolder(folderId, newName);
+                        overlay.remove();
+                    }
+                };
+
+                const cancelBtn = document.createElement("button");
+                cancelBtn.innerText = "Cancel";
+                cancelBtn.className = "prompt-cancel";
+                cancelBtn.onclick = () => overlay.remove();
+
+                btnRow.appendChild(okBtn);
+                btnRow.appendChild(cancelBtn);
+
+                modal.appendChild(title);
+                modal.appendChild(input);
+                modal.appendChild(btnRow);
+
+                overlay.appendChild(modal);
+                document.body.appendChild(overlay);
+
+                input.focus();
+            }
+
+            const deleteButton = document.createElement("button");
+            deleteButton.className = "folder-menu-btn danger";
+            deleteButton.innerText = "Delete";
+            deleteButton.onclick = (e) => {
+                e.stopPropagation();
+                // Start the safe delete flow (this will show confirmation if needed)
+                deleteFolder(folderId);
+                folderOptionsMenu.remove();
+            };
+
+            folderOptionsMenu.appendChild(renameButton);
+            folderOptionsMenu.appendChild(deleteButton);
+            document.body.appendChild(folderOptionsMenu);
+
+            // Close menu if clicking outside
+            const onDocClick = (e) => {
+                if (!folderOptionsMenu.contains(e.target)) {
+                    folderOptionsMenu.remove();
+                    document.removeEventListener("click", onDocClick);
+                }
+            };
+            setTimeout(() => document.addEventListener("click", onDocClick), 0);
+        }
+
+        /**
+         * Primary delete starter:
+         * - calls DELETE /folders/:id with no action to get the summary
+         * - if server says safe to delete -> proceeds automatically
+         * - otherwise renders a confirmation modal with choices
+         */
+        async function deleteFolder(folderId) {
+            try {
+                const resp = await fetch(`/folders/${folderId}`, {
+                    method: "DELETE",
+                    credentials: "same-origin",
+                    headers: { "Accept": "application/json" }
+                });
+
+                if (!resp.ok && resp.status !== 401) {
+                    // If server returned 400/500 with body, try to show it
+                    let errText;
+                    try { errText = await resp.json(); } catch(e) { errText = null; }
+                    const msg = errText && errText.error ? errText.error : `Failed to delete folder (${resp.status})`;
+                    throw new Error(msg);
+                } else if (resp.status === 401) {
+                    showModal();
+                    return;
+                }
+
+                const data = await resp.json();
+
+                // Case: completely empty and safe to delete immediately
+                if (data.can_delete_direct || data.can_delete_empty_stack) {
+                    // Perform actual deletion (server requires action for actual delete)
+                    await performDeleteAction(folderId, "delete_all");
+                    return;
+                }
+
+                // Case: requires confirmation because there are notes in the subtree
+                if (data.requires_confirmation) {
+                    // Show modal with provided counts so user chooses
+                    showDeleteConfirmationModal(folderId, data);
+                    return;
+                }
+
+                // If server returned a generic success message (older behaviour), just refresh
+                if (data.message) {
+                    // fallback - refresh UI
+                    await postDeleteUiUpdate(folderId);
+                    return;
+                }
+
+                // Fallback
+                alert("Unexpected server response. See console for details.");
+                console.log("deleteFolder unexpected response:", data);
+
+            } catch (err) {
+                console.error("Error deleting folder:", err);
+                alert(`Error deleting folder: ${err.message || err}`);
+            }
+        }
+
+        /**
+         * Performs the concrete action by calling DELETE with ?action=...
+         * action: "move_up" or "delete_all"
+         */
+        async function performDeleteAction(folderId, action) {
+            try {
+                // Determine parent fallback for restoring currentFolderId after deletion
+                const parents = await fetchParentFolders(folderId);
+                const previousParent = (parents && parents.length > 1) ? parents[parents.length - 2] : null;
+
+                const resp = await fetch(`/folders/${folderId}?action=${encodeURIComponent(action)}`, {
+                    method: "DELETE",
+                    credentials: "same-origin",
+                    headers: { "Accept": "application/json" }
+                });
+
+                if (!resp.ok && resp.status !== 401) {
+                    let errJson;
+                    try { errJson = await resp.json(); } catch(e) { errJson = null; }
+                    const msg = errJson && errJson.error ? errJson.error : `Failed action ${action} (${resp.status})`;
+                    throw new Error(msg);
+                } else if (resp.status === 401) {
+                    showModal();
+                    return;
+                }
+
+                const result = await resp.json();
+                // success -> update UI
+                await postDeleteUiUpdate(folderId, previousParent);
+                return result;
+            } catch (err) {
+                console.error("performDeleteAction error:", err);
+                alert(`Error: ${err.message || err}`);
+            }
+        }
+
+        /**
+         * After a successful deletion we need to:
+         * - adjust currentFolderId if we deleted the current folder (go to parent or root)
+         * - refresh folders and notes
+         */
+        async function postDeleteUiUpdate(deletedFolderId, previousParentObj = null) {
+            if (currentFolderId === deletedFolderId) {
+                if (previousParentObj && previousParentObj.id) {
+                    currentFolderId = previousParentObj.id;
+                } else {
+                    currentFolderId = null; // back to root
+                }
+            }
+            await fetchFolders();
+            await fetchNotes();
+        }
+
+        /* ---------------- Confirmation modal ---------------- */
+
+        /**
+         * Create and show an inline modal that prompts the user to choose between:
+         * - delete_all
+         * - move_up
+         * - cancel
+         *
+         * data: { notes_count, folders_count, message, ... }
+         */
+        function showDeleteConfirmationModal(folderId, data) {
+            // Remove any existing modal
+            const existing = document.querySelector(".delete-confirm-modal");
+            if (existing) existing.remove();
+
+            const overlay = document.createElement("div");
+            overlay.className = "delete-confirm-overlay";
+
+            const modal = document.createElement("div");
+            modal.className = "delete-confirm-modal";
+            modal.setAttribute("role", "dialog");
+            modal.setAttribute("aria-modal", "true");
+
+            // Header / message
+            const h = document.createElement("h3");
+            h.innerText = "Folder contains notes";
+            modal.appendChild(h);
+
+            const p = document.createElement("p");
+            p.innerText = data.message || `This folder subtree contains ${data.notes_count || 0} notes and ${data.folders_count || 0} folders. What do you want to do?`;
+            modal.appendChild(p);
+
+            // Buttons container
+            const btnRow = document.createElement("div");
+            btnRow.className = "delete-confirm-actions";
+
+            const killBtn = document.createElement("button");
+            killBtn.className = "btn danger";
+            killBtn.innerText = `Delete everything (${data.notes_count || 0} notes)`;
+            killBtn.onclick = async (e) => {
+                e.preventDefault();
+                setConfirmButtonsDisabled(true);
+                await performDeleteAction(folderId, "delete_all");
+                overlay.remove();
+            };
+
+            const moveBtn = document.createElement("button");
+            moveBtn.className = "btn";
+            moveBtn.innerText = `Delete folder, move children up`;
+            moveBtn.onclick = async (e) => {
+                e.preventDefault();
+                setConfirmButtonsDisabled(true);
+                await performDeleteAction(folderId, "move_up");
+                overlay.remove();
+            };
+
+            const cancelBtn = document.createElement("button");
+            cancelBtn.className = "btn secondary";
+            cancelBtn.innerText = "Cancel";
+            cancelBtn.onclick = () => overlay.remove();
+
+            btnRow.appendChild(killBtn);
+            btnRow.appendChild(moveBtn);
+            btnRow.appendChild(cancelBtn);
+
+            modal.appendChild(btnRow);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Utilities
+            function setConfirmButtonsDisabled(v) {
+                killBtn.disabled = v;
+                moveBtn.disabled = v;
+                cancelBtn.disabled = v;
+            }
+
+            // Close on ESC
+            const onKey = (ev) => {
+                if (ev.key === "Escape") overlay.remove();
+            };
+            document.addEventListener("keydown", onKey);
+            overlay.addEventListener("remove", () => document.removeEventListener("keydown", onKey));
+        }
+
+
+        async function renameFolder(folderId, newName) {
+            try {
+                const response = await fetch(`/folders/${folderId}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ name: newName, parent_id: currentFolderId }),
+                    credentials: 'same-origin'
+                });
+                if (!response.ok && response.status !== 401) {
+                    throw new Error("Failed to rename folder");
+                } else if (response.status === 401) {
+                    showModal();
+                    return;
+                }
+
+                // Successfully renamed folder
+                fetchFolders();
+            } catch (error) {
+                console.error("Error renaming folder:", error);
+                alert("There was an error renaming the folder. Please try again.");
+            }
+        }
+
+        async function createFolder(folderName) {
+            try {
+                const response = await fetch("/folders", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ name: folderName, parent_id: currentFolderId }),
+                    credentials: 'same-origin'
+                });
+                if (!response.ok && response.status !== 401) {
+                    throw new Error("Failed to create folder");
+                } else if (response.status === 401) {
+                    showModal();
+                    return;
+                }
+
+                // Successfully created folder
+                closeFolderModal();
+                fetchFolders();
+                fetchNotes();
+            } catch (error) {
+                console.error("Error creating folder:", error);
+                alert("There was an error creating the folder. Please try again.");
+            }
+        }
+
+        async function navigateToFolder(folderId) {
+            currentFolderId = folderId;
+            // Fetch notes and sub-folders in this folder
+            fetchNotes();
+            fetchFolders();
+        }
+
+        function showCreateFolderModal() {
+            // Build the full html to show the folder creation modal, including cancel and create button. The create button should call the createFolder function
+            const modalOverlay = document.getElementById("overlay");
+            modalOverlay.style.display = "block";
+            const folderModal = document.createElement("div");
+            folderModal.id = "create-folder-modal";
+            folderModal.style = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: var(--bg-color);
+                padding: 30px;
+                border-radius: 15px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                z-index: 1003;
+                width: 80%;
+                max-width: 400px;
+                opacity: 0;
+                animation: fadeIn 0.2s forwards 0.2s;
+            `;
+
+            folderModal.innerHTML = `
+                <h3>Create New Folder</h3>
+                <input type="text" id="new-folder-name" placeholder="Folder Name">
+                <button id="create-folder-button">Create</button>
+                <button id="cancel-folder-button">Cancel</button>
+            `;
+
+            document.body.appendChild(folderModal);
+
+            document.getElementById("create-folder-button").addEventListener("click", () => {
+                const folderName = document.getElementById("new-folder-name").value.trim();
+                if (folderName) {
+                    createFolder(folderName);
+                }
+            });
+
+            document.getElementById("cancel-folder-button").addEventListener("click", closeFolderModal);
+        }
+
+        function closeFolderModal() {
+            const folderModal = document.getElementById("create-folder-modal");
+            document.getElementById("overlay").style.display = "none";
+            if (folderModal) {
+                folderModal.remove();
+            }
         }
 
         function showShareModal(noteId) {
@@ -2478,7 +3300,8 @@
                     title: noteTitle || null,
                     note: noteText,
                     tag: noteTag || null,
-                    attachments: addUploadedIds  // backend expects list of upload ids
+                    attachments: addUploadedIds,  // backend expects list of upload ids
+                    folder_id: currentFolderId || null
                 };
 
                 const response = await fetch("/notes", {
@@ -2505,6 +3328,7 @@
                     renderFileList('add-file-list', addPendingFiles, false);
                 }
                 fetchNotes();
+                fetchFolders();
                 updateStorageCounter();
                 document.getElementById("note-title").value = '';
                 document.getElementById("note-text").innerHTML = '';
@@ -2577,6 +3401,7 @@
                 currentNoteId = null;
                 closeUpdateMenu();
                 fetchNotes();
+                fetchFolders();
                 updateStorageCounter();
             } catch (error) {
                 console.error("Error updating note:", error);
@@ -2604,6 +3429,7 @@
 
                 closeUpdateMenu();
                 fetchNotes();
+                fetchFolders();
                 updateStorageCounter();
             } catch (error) {
                 console.error("Error deleting note:", error);
@@ -3141,10 +3967,56 @@
             window.location.href = "/account_page";
         }
 
+        function showFolderOrAddMenu() {
+            // Build the html to show 2 buttons above the floating button, one to show the folder add menu, the other to show the note add menu
+            const folderOrAddMenu = document.createElement("div");
+            folderOrAddMenu.innerHTML = `
+                <button id="add-folder-button">➕ Add Folder</button>
+                <button id="add-note-button">➕ Add Note</button>
+            `;
+
+            // Reset the floating-add-button to not show the menu again if clicked, but instead hide the buttons and reset to its original state
+            folderOrAddMenu.id = "folder-or-add-menu";
+            folderOrAddMenu.style.position = "fixed";
+            folderOrAddMenu.style.bottom = "80px";
+            folderOrAddMenu.style.right = "20px";
+            folderOrAddMenu.style.display = "flex";
+            folderOrAddMenu.style.flexDirection = "column";
+            folderOrAddMenu.style.gap = "10px";
+            folderOrAddMenu.style.zIndex = "1001";
+            folderOrAddMenu.style.backgroundColor = "var(--ctr-color)";
+            folderOrAddMenu.style.padding = "10px";
+            folderOrAddMenu.style.borderRadius = "8px";
+            folderOrAddMenu.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.2)";
+
+            document.getElementById("floating-add-button").addEventListener("click", closeFolderOrAddMenu);
+            document.getElementById("floating-add-button").removeEventListener("click", showFolderOrAddMenu);
+
+            //Wire up the buttons
+            folderOrAddMenu.querySelector("#add-folder-button").addEventListener("click", () => {
+                showCreateFolderModal();
+                closeFolderOrAddMenu();
+            });
+            folderOrAddMenu.querySelector("#add-note-button").addEventListener("click", () => {
+                showAddMenu();
+                closeFolderOrAddMenu();
+            });
+            document.body.appendChild(folderOrAddMenu);
+        }
+
+        function closeFolderOrAddMenu() {
+            const menu = document.getElementById("folder-or-add-menu");
+            if (menu) {
+                menu.remove();
+            }
+            document.getElementById("floating-add-button").addEventListener("click", showFolderOrAddMenu);
+        }
+
         document.getElementById("overlay").addEventListener("click", closeAddMenu);
+        document.getElementById("overlay").addEventListener("click", closeFolderModal);
         document.getElementById("profile-pic").addEventListener("click", showAccountMenu);
 
-        document.getElementById("floating-add-button").addEventListener("click", showAddMenu);
+        document.getElementById("floating-add-button").addEventListener("click", showFolderOrAddMenu);
         document.getElementById("add-note-button").addEventListener("click", addNote);
         document.getElementById("cancel-button").addEventListener("click", closeAddMenu);
 
