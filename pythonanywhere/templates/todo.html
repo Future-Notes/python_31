@@ -1400,6 +1400,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       return text.split(/\s+/).slice(0, n).join(' ') + (text.split(/\s+/).length > n ? '…' : '');
     }
 
+    function sanitizeHtml(str) {
+      const temp = document.createElement('div');
+      temp.textContent = str;
+      return temp.innerHTML;
+    }
+
     // Populate a list of cards
     function populateList(containerEl, items, type) {
       containerEl.innerHTML = '';
@@ -1442,7 +1448,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const snippet = `<div class="snippet">${firstWords(item.note, 10)}</div>`;
         card.innerHTML = tag + title + snippet;
       } else {
-        const title   = `<div class="title">${item.title}</div>`;
+        const title   = `<div class="title">${item.sanitizeHtml(title)}</div>`;
         const endDt   = new Date(item.end_datetime).toLocaleString();
         const snippet = `<div class="snippet">Ends: ${endDt}</div>`;
         card.innerHTML = title + snippet;
