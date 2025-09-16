@@ -8064,8 +8064,7 @@ def update_delete_note(note_id):
             if not folder:
                 return jsonify({"error": "Folder not found or access denied"}), 400
             note.folder_id = folder_id
-        else:
-            note.folder_id = None
+        # Niet verwijderen als leeg, alleen als er een nieuwe folder_id is meegegeven
 
         requested_attachments = set(data.get('attachments') or [])
         existing_attachments = current_attachment_ids(note.id)
