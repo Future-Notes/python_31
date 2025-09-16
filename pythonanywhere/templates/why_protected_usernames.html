@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Why Some Usernames Are Protected | Future Notes</title>
+  <meta name="description" content="Learn why certain usernames are protected on our platform. We prevent impersonation of admins and ensure respect for community leaders." />
+  <meta name="robots" content="index, follow" />
+
+  <!-- Open Graph (for social sharing) -->
+  <meta property="og:title" content="Why Some Usernames Are Protected" />
+  <meta property="og:description" content="We protect certain usernames to prevent impersonation and maintain respect for admins." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://bosbes.eu.pythonanywhere.com/why-protected-usernames" />
+  <meta property="og:image" content="https://bosbes.eu.pythonanywhere.com/static/android-chrome-512x512.png" />
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f9fafc;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    header {
+      background: #2c3e50;
+      color: #fff;
+      padding: 2rem 1rem;
+      text-align: center;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 2rem;
+    }
+
+    main {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    section {
+      margin-bottom: 2rem;
+    }
+
+    h2 {
+      color: #2c3e50;
+      font-size: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    p {
+      margin: 0.75rem 0;
+    }
+
+    .info-box {
+      background: #e9f5ff;
+      border-left: 4px solid #3498db;
+      padding: 1rem;
+      border-radius: 4px;
+      margin: 1rem 0;
+    }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      background: #ecf0f1;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    .back-btn {
+      display: inline-block;
+      position: absolute;
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      background: #3498db;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 4px;
+      transition: background 0.3s ease;
+      left: 40px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/signup_page" class="back-btn">← Back</a>
+    <h1>Why Some Usernames Are Protected</h1>
+  </header>
+
+  <main>
+    <section>
+      <p>
+        You may have noticed that certain usernames on our platform are marked as <strong>protected</strong>. 
+        This is intentional, and it’s all about keeping the community safe, fair, and respectful.
+      </p>
+    </section>
+
+    <section>
+      <h2>1. Preventing Impersonation</h2>
+      <p>
+        Protected usernames ensure that no one can pretend to be an admin, moderator, or other trusted role.
+        This reduces the risk of confusion, scams, or abuse.
+      </p>
+      <div class="info-box">
+        Example: A username like <em>“Admin”</em> or <em>“Moderator”</em> is reserved so regular users can’t take it.
+      </div>
+      <br />
+      <div class="info-box">
+        Apart from just those specific names, some admins and staff members have their usernames protected too, to prevent impersonation.
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Respect for Admins & Staff</h2>
+      <p>
+        Admins and staff members work hard to support the community. 
+        Reserving certain usernames shows respect for their roles and avoids diluting their identity.
+      </p>
+    </section>
+
+    <section>
+      <h2>3. A Clearer Community Experience</h2>
+      <p>
+        When usernames are unique and authentic, it’s easier to trust who you’re talking to. 
+        This helps maintain a positive atmosphere where everyone knows who’s who.
+      </p>
+      <div class="info-box">
+        Note: Admins will also have an admin badge next to their username, so you can easily identify them.
+      </div>
+    </section>
+
+    <section>
+      <h2>How It Works</h2>
+      <p>
+        Our system automatically blocks attempts to register usernames that are too similar to protected ones. 
+        This includes case differences, added numbers, or small misspellings.
+      </p>
+      <p>
+        If you accidentally run into this restriction, don’t worry—just try a different username that reflects you personally.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    &copy; <span id="year"></span> Future Notes. All rights reserved.
+  </footer>
+
+  <script>
+    // Update footer year dynamically
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

@@ -1,5 +1,4 @@
 (function () {
-    // 1) Inject FontAwesome if missing
     const FA_CSS = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css";
     if (!document.querySelector(`link[href^="${FA_CSS}"]`)) {
         const link = document.createElement("link");
@@ -8,13 +7,31 @@
         document.head.appendChild(link);
     }
 
+    const MAX_VISIBLE = 3;
+    const GAP = 10;
+    const activeAlerts = [];
+    const alertQueue = [];
+
     window.alert = function (message, type = "info", timeout = 5000) {
+        const alertConfig = { message, type, timeout };
+        if (activeAlerts.length < MAX_VISIBLE) {
+            showAlert(alertConfig);
+        } else {
+            alertQueue.push(alertConfig);
+        }
+    };
+
+    function showAlert({ message, type, timeout }) {
         const MAX_CHARS = 5000;
         const isFullPage = /<!DOCTYPE\s+html|<html/i.test(message);
         let displayMessage = message;
 
-        if (!isFullPage && message.length > MAX_CHARS) {
-            displayMessage = message.slice(0, MAX_CHARS) + "…";
+        if (!isFullPage) {
+            if (typeof message !== "string" || message.trim() === "") {
+                displayMessage = "<i>No message provided.</i>";
+            } else if (message.length > MAX_CHARS) {
+                displayMessage = message.slice(0, MAX_CHARS) + "…";
+            }
         }
 
         const wrapper = document.createElement("div");
@@ -25,12 +42,13 @@
             borderRadius: "6px",
             overflow: "hidden",
             maxWidth: "400px",
-            maxHeight: "200px",
             display: "flex",
             flexDirection: "column",
-            background: "var(--bg-color)",
+            background: getComputedStyle(document.documentElement).getPropertyValue('--bg-color')?.trim() || "#2e2e2e",
             fontFamily: "Arial, sans-serif",
-            color: "white"
+            color: "white",
+            right: "-420px", // start completely off-screen
+            transition: "right 0.3s ease, top 0.3s ease"
         });
 
         const icons = {
@@ -69,7 +87,6 @@
             fontSize: "16px",
             cursor: "pointer"
         });
-        closeBtn.onclick = remove;
         header.appendChild(closeBtn);
 
         let content;
@@ -95,29 +112,54 @@
         wrapper.appendChild(content);
         document.body.appendChild(wrapper);
 
-        if (isFullPage) {
-            Object.assign(wrapper.style, {
-                top: "20px",
-                left: "50%",
-                transform: "translateX(-50%)"
-            });
-        } else {
-            Object.assign(wrapper.style, {
-                top: "20px",
-                right: "20px"
-            });
-        }
+        // Set initial top position
+        wrapper.style.top = `${20 + activeAlerts.reduce((acc, el) => acc + el.offsetHeight + GAP, 0)}px`;
+
+        // Trigger slide-in animation (next frame)
+        requestAnimationFrame(() => wrapper.style.right = "20px");
+
+        activeAlerts.push(wrapper);
 
         let hideTimer;
-        if (effectiveTimeout !== null && effectiveTimeout !== undefined) {
-            hideTimer = setTimeout(remove, effectiveTimeout);
+        function startTimeout() {
+            if (effectiveTimeout !== null && effectiveTimeout !== undefined) {
+                hideTimer = setTimeout(remove, effectiveTimeout);
+            }
         }
 
-        function remove() {
-            if (hideTimer) clearTimeout(hideTimer);
-            wrapper.style.transition = "opacity 0.3s ease";
-            wrapper.style.opacity = "0";
-            setTimeout(() => wrapper.remove(), 300);
+        function clearTimeoutIfAny() {
+            if (hideTimer) {
+                clearTimeout(hideTimer);
+                hideTimer = null;
+            }
         }
-    };
+
+        wrapper.addEventListener("mouseenter", clearTimeoutIfAny);
+        wrapper.addEventListener("mouseleave", startTimeout);
+
+        closeBtn.onclick = remove;
+        startTimeout();
+
+        function remove() {
+            clearTimeoutIfAny();
+            wrapper.style.right = "-420px"; // slide back out
+            setTimeout(() => {
+                wrapper.remove();
+                const index = activeAlerts.indexOf(wrapper);
+                if (index !== -1) activeAlerts.splice(index, 1);
+                repositionAlerts();
+                if (alertQueue.length > 0) {
+                    showAlert(alertQueue.shift());
+                }
+            }, 300);
+        }
+    }
+
+    function repositionAlerts() {
+        let currentTop = 20;
+        activeAlerts.forEach(alert => {
+            alert.style.top = `${currentTop}px`;
+            currentTop += alert.offsetHeight + GAP;
+        });
+    }
 })();

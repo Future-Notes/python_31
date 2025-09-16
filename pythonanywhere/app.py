@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-import imghdr
+import filetype
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
@@ -22,6 +22,7 @@ import json
 import uuid
 import random
 import string
+from collections import deque
 import time
 from datetime import timezone, datetime, timedelta
 import glob
@@ -49,6 +50,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import requests
+import cohere
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -71,6 +73,9 @@ app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
 app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
+MAX_NOTE_LENGTH = 3000
+COHERE_API_KEY = "qeLaZAnc8R6ljslvDUhHspgWyheKC5mgOIbFXpcw"
+co = cohere.ClientV2(COHERE_API_KEY)
 # Jinja setup (point at your templates/)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
 jinja_env = Environment(
@@ -224,6 +229,8 @@ class User(db.Model):
     suspended = db.Column(db.Boolean, default=False, nullable=False)
     startpage = db.Column(db.String(20), nullable=False, default="/index")
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
+    has_username_protection = db.Column(db.Boolean, default=False, nullable=False)
+    has_unlimited_storage = db.Column(db.Boolean, default=False, nullable=False)
 
     base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
     storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
@@ -517,12 +524,35 @@ class Note(db.Model):
 
     group = db.relationship("Group", backref="notes")
 
+    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+
     def to_dict(self):
         return {
             "id": self.id,
             "title": self.title,
             "note": self.note,
             "tag": self.tag,
+            "user_id": self.user_id,
+            "group_id": self.group_id,
+            "folder_id": self.folder_id
+        }
+    
+class Folder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
+    parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+    name = db.Column(db.String(100), nullable=False)
+    
+    # Self-referential relationship for subfolders
+    parent = db.relationship('Folder', remote_side=[id], backref='subfolders')
+    notes = db.relationship('Note', backref='folder', lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "parent_id": self.parent_id,
             "user_id": self.user_id,
             "group_id": self.group_id
         }
@@ -727,6 +757,78 @@ def remove_upload_if_orphan(upload_id):
     return ok, msg
 
 
+def _extract_text_from_cohere_response(response) -> str:
+    """
+    Try to robustly extract text from the SDK response object.
+    The SDK response structure can vary; this handles strings, lists of chunks,
+    dict-like chunks, and attribute-based chunks.
+    """
+    text_out = ""
+
+    print(response)
+
+    # Try attribute access for response.message.content
+    content = None
+    try:
+        if hasattr(response, "message"):
+            # response.message might be a dict-like or object
+            msg = response.message
+            if isinstance(msg, dict):
+                content = msg.get("content")
+            else:
+                content = getattr(msg, "content", None)
+    except Exception:
+        content = None
+
+    # If not found, try other common paths (some SDK versions use 'output' or 'response')
+    if content is None:
+        try:
+            if hasattr(response, "output"):
+                out = response.output
+                if isinstance(out, dict):
+                    content = out.get("content")
+                else:
+                    content = getattr(out, "content", None)
+        except Exception:
+            content = None
+
+    # If content is a plain string
+    if isinstance(content, str):
+        return content.strip()
+
+    # If content is a list of chunks, extract text from each chunk
+    if isinstance(content, list):
+        for chunk in content:
+            # chunk could be dict-like or object
+            val = None
+            if isinstance(chunk, dict):
+                for k in ("text", "content", "value"):
+                    if k in chunk and isinstance(chunk[k], str):
+                        val = chunk[k]
+                        break
+            else:
+                for attr in ("text", "content", "value"):
+                    if hasattr(chunk, attr):
+                        cand = getattr(chunk, attr)
+                        if isinstance(cand, str):
+                            val = cand
+                            break
+            if val is None:
+                # last resort: string conversion
+                try:
+                    val = str(chunk)
+                except Exception:
+                    val = ""
+            text_out += val
+        return text_out.strip()
+
+    # Fallback: maybe response itself is string-like
+    try:
+        return str(response).strip()
+    except Exception:
+        return ""
+
+
 def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_run=None):
     """
     Schedule a new task (or update an existing one).
@@ -758,8 +860,28 @@ def load_secrets():
 def ensure_secrets_loaded():
     load_secrets()
 
+import ipaddress
+
 def _is_local_request():
-    return request.remote_addr in ('127.0.0.1', '::1', 'localhost')
+    client_ip = request.remote_addr
+
+    # Step 1: Define what "local" means
+    # Includes localhost + LAN subnets (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+    local_subnets = [
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("::1/128"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+    ]
+
+    try:
+        ip_obj = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False  # invalid IP
+
+    return any(ip_obj in subnet for subnet in local_subnets)
+
 
 def _today_utc_range():
     """Return (start_of_today_utc, now_utc) as timezone-aware datetimes."""
@@ -1266,12 +1388,10 @@ def rollback_transaction(transaction_id):
 
 @app.before_request
 def capture_utm_params():
-    # Extract UTM parameters from the query string
     utm_source = request.args.get('utm_source')
     utm_medium = request.args.get('utm_medium')
     utm_campaign = request.args.get('utm_campaign')
 
-    # Store them in the session if provided, keeping previous values if they already exist
     if utm_source:
         session['utm_source'] = utm_source
     if utm_medium:
@@ -1279,13 +1399,16 @@ def capture_utm_params():
     if utm_campaign:
         session['utm_campaign'] = utm_campaign
 
-    # Optionally, log the UTM data to the database on each visit that has UTM parameters.
+    # Get the real client IP (PythonAnywhere sets X-Forwarded-For)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip()  # In case there are multiple IPs
+
     if utm_source or utm_medium or utm_campaign:
         tracking = UTMTracking(
             utm_source=utm_source,
             utm_medium=utm_medium,
             utm_campaign=utm_campaign,
-            ip=request.remote_addr
+            ip=ip
         )
         db.session.add(tracking)
         db.session.commit()
@@ -2386,12 +2509,90 @@ def allowed_extension(filename):
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     return ext in ALLOWED_EXTENSIONS
 
+def get_recursive_folder_tree(root_folder):
+    """
+    Return a list of Folder objects in post-order (children first, then parent).
+    This ensures safe deletion order.
+    """
+    result = []
+    def recurse(folder):
+        children = Folder.query.filter_by(parent_id=folder.id, user_id=g.user_id).all()
+        for c in children:
+            recurse(c)
+        result.append(folder)
+    recurse(root_folder)
+    return result  # post-order objects
+
+def collect_all_folder_ids(root_folder):
+    """Return list of folder ids for root + its recursive subfolders (pre-order)."""
+    ids = []
+    q = deque([root_folder])
+    while q:
+        f = q.popleft()
+        ids.append(f.id)
+        children = Folder.query.filter_by(parent_id=f.id, user_id=g.user_id).all()
+        for c in children:
+            q.append(c)
+    return ids
+
+def collect_note_ids_in_folders(folder_ids):
+    """Return list of Note objects that are in folder_ids."""
+    if not folder_ids:
+        return []
+    notes = Note.query.filter(Note.folder_id.in_(folder_ids), Note.user_id == g.user_id).all()
+    return notes
+
+def delete_notes_and_attachments(note_objs, user):
+    """
+    Given a list of Note objects to delete:
+      - gather their upload ids from NoteUpload
+      - remove NoteUpload rows for these notes
+      - delete note rows
+      - for each upload id: if it has no remaining NoteUpload references, call delete_upload(upload_id, user)
+    Returns (True, msg) on success or (False, "error") on failure.
+    """
+    try:
+        note_ids = [n.id for n in note_objs]
+        # gather uploads
+        note_upload_rows = NoteUpload.query.filter(NoteUpload.note_id.in_(note_ids)).all()
+        upload_ids = {nu.upload_id for nu in note_upload_rows}
+
+        # delete NoteUpload rows for these notes
+        if note_ids:
+            NoteUpload.query.filter(NoteUpload.note_id.in_(note_ids)).delete(synchronize_session=False)
+
+        # delete notes
+        if note_ids:
+            Note.query.filter(Note.id.in_(note_ids), Note.user_id == g.user_id).delete(synchronize_session=False)
+
+        # For each upload id, delete the upload if it has no remaining references
+        for uid in upload_ids:
+            other_ref = NoteUpload.query.filter_by(upload_id=uid).first()
+            if not other_ref:
+                ok, msg = delete_upload(uid, user)
+                if not ok:
+                    # If delete_upload fails due to permission or DB issue, rollback and return error.
+                    db.session.rollback()
+                    return False, f"Failed deleting upload {uid}: {msg}"
+
+        db.session.flush()  # flush intermediate changes
+        return True, "Notes and attachments deleted."
+    except Exception as e:
+        app.logger.exception("Error deleting notes and attachments: %s", e)
+        db.session.rollback()
+        return False, "Server error while deleting notes."
+
 def get_user_quota_bytes(user):
     """
     Return quota in bytes.
+    If user.has_unlimited_storage is True, return float('inf') to indicate no limit.
     If user.base_storage_mb is None -> default to 10 MB.
     Coerce strings to int safely; on failure fall back to 10.
     """
+    # Check for unlimited storage
+    if getattr(user, "has_unlimited_storage", False):
+        return float("inf")
+
     default_mb = 10
     try:
         base_mb = user.base_storage_mb
@@ -2408,41 +2609,80 @@ def get_user_quota_bytes(user):
 
     return int(base_mb) * 1024 * 1024
 
-def verify_file_content(file_path, mimetype):
+def verify_file_content(file_path: str, mimetype: str) -> bool:
     """
-    Light-weight content verification:
-      - For images: verify actual file is an image via imghdr
-      - For text/pdf/zip: trust mimetype but you could add extra checks
-    Returns True if content seems OK, False otherwise.
+    Stronger file verification:
+      - Uses Pillow for images
+      - Adds safer checks for text, pdf, and zip
+      - Falls back to filetype lib for extra validation
+    Returns True if content matches declared mimetype.
     """
-    # image verification
-    if mimetype and mimetype.startswith('image/'):
-        img_type = imghdr.what(file_path)
-        return img_type is not None  # jpeg/png/gif etc.
-    # For text files, try reading small chunk
-    if mimetype == 'text/plain':
+
+    # --- IMAGES ---
+    if mimetype and mimetype.startswith("image/"):
         try:
-            with open(file_path, 'rb') as f:
-                chunk = f.read(512)
-                # If the data has null bytes it's probably not plain text
-                if b'\x00' in chunk:
+            with Image.open(file_path) as img:
+                img.verify()  # check integrity
+                format_to_mime = {
+                    "JPEG": "image/jpeg",
+                    "PNG": "image/png",
+                    "GIF": "image/gif",
+                    "WEBP": "image/webp"
+                }
+                detected_mime = format_to_mime.get(img.format)
+                return detected_mime == mimetype
+        except Exception:
+            return False
+
+    # --- TEXT ---
+    if mimetype == "text/plain":
+        try:
+            with open(file_path, "rb") as f:
+                chunk = f.read(2048)  # read more for confidence
+                if b"\x00" in chunk:
                     return False
+                # crude encoding check
+                chunk.decode("utf-8", errors="strict")
             return True
         except Exception:
             return False
-    # For pdf/zip we could add more checks (e.g., header bytes), but for now:
-    if mimetype in ('application/pdf', 'application/zip'):
-        # quick header check
+
+    # --- PDF ---
+    if mimetype == "application/pdf":
         try:
-            with open(file_path, 'rb') as f:
-                hdr = f.read(8)
-                if mimetype == 'application/pdf':
-                    return hdr.startswith(b'%PDF')
-                if mimetype == 'application/zip':
-                    return hdr.startswith(b'PK')
+            with open(file_path, "rb") as f:
+                header = f.read(5)
+                if not header.startswith(b"%PDF"):
+                    return False
+                f.seek(-7, 2)  # near EOF
+                trailer = f.read().strip()
+                return trailer.startswith(b"%%EOF")
         except Exception:
             return False
-    # If unknown mimetype, be conservative and reject
+
+    # --- ZIP ---
+    if mimetype == "application/zip":
+        try:
+            with open(file_path, "rb") as f:
+                header = f.read(4)
+                if header != b"PK\x03\x04":
+                    return False
+            # optionally: inspect zipfile content
+            import zipfile
+            with zipfile.ZipFile(file_path, "r") as zf:
+                return zf.testzip() is None  # no corrupted entries
+        except Exception:
+            return False
+
+    # --- FALLBACK with filetype ---
+    try:
+        kind = filetype.guess(file_path)
+        if kind and kind.mime == mimetype:
+            return True
+    except Exception:
+        return False
+
+    # --- FINAL fallback ---
     return mimetype in ALLOWED_MIMETYPES
 
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
@@ -2474,8 +2714,12 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
 
     # Check user storage quota
     quota = get_user_quota_bytes(user)
-    if (user.storage_used_bytes or 0) + size > quota:
-        return False, "User storage quota exceeded."
+
+    # Treat infinite quota as no limit
+    if quota != float("inf"):
+        if (user.storage_used_bytes or 0) + size > quota:
+            return False, "User storage quota exceeded."
+
 
     # Determine mimetype
     mimetype = file.mimetype or ''
@@ -2819,6 +3063,10 @@ def privacy_policy():
 def version_management():
     return render_template("version_management.html")
 
+@app.route('/why-protected-usernames')
+def why_protected_usernames():
+    return render_template("why_protected_usernames.html")
+
 #---------------------------------API routes--------------------------------
 
 # Flow routes:
@@ -2859,14 +3107,41 @@ def invites_status():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-      # storage
-    try:
-        used_bytes = int(user.storage_used_bytes or 0)
-    except (ValueError, TypeError):
+    # ---- STORAGE ----
+    raw_quota = get_user_quota_bytes(user)
+    unlimited = raw_quota == float('inf')
+
+    raw_used = getattr(user, 'storage_used_bytes', None)
+    persist_null_to_zero = True
+
+    if raw_used is None:
         used_bytes = 0
-    total_mb = int(user.base_storage_mb or 0)
-    used_mb = round(used_bytes / 1024 / 1024, 2)
-    # invites sent today
+        if persist_null_to_zero:
+            try:
+                user.storage_used_bytes = 0
+                db.session.add(user)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+    else:
+        try:
+            used_bytes = int(raw_used)
+        except (ValueError, TypeError):
+            # sanitize: keep digits only
+            s = re.sub(r'\D', '', str(raw_used or ''))
+            used_bytes = int(s) if s else 0
+
+    if unlimited:
+        total_mb = None
+        used_mb = None
+        storage_message = "Unlimited storage"
+    else:
+        total_bytes = int(raw_quota)
+        total_mb = round(total_bytes / 1024 / 1024, 2)
+        used_mb = round(used_bytes / 1024 / 1024, 2)
+        storage_message = None
+
+    # ---- INVITES SENT TODAY ----
     start, now = _today_utc_range()
     sent_today = InviteReferral.query.filter(
         InviteReferral.inviter_id == user.id,
@@ -2875,8 +3150,9 @@ def invites_status():
     per_day_limit = 3
     remaining_today = max(per_day_limit - sent_today, 0)
 
-    # pending invites
-    pending = InviteReferral.query.filter_by(inviter_id=user.id, claimed=False).order_by(InviteReferral.created_at.desc()).all()
+    # ---- PENDING INVITES ----
+    pending = InviteReferral.query.filter_by(inviter_id=user.id, claimed=False)\
+        .order_by(InviteReferral.created_at.desc()).all()
     pending_list = [{
         "id": inv.id,
         "email": inv.invited_email,
@@ -2887,6 +3163,7 @@ def invites_status():
     return jsonify({
         "used_mb": used_mb,
         "total_mb": total_mb,
+        "storage_message": storage_message,
         "sent_today": sent_today,
         "remaining_today": remaining_today,
         "per_day_limit": per_day_limit,
@@ -2983,19 +3260,29 @@ def invite_accept():
     if not invite:
         return "Invalid or expired invite link", 400
 
-    # create referral session record
-    ref = ReferralSession(
+    # Check if a ReferralSession already exists for this invite and email
+    existing_ref = ReferralSession.query.filter_by(
         invite_id=invite.id,
-        inviter_id=invite.inviter_id,
         invited_email=invite.invited_email
-    )
-    db.session.add(ref)
-    db.session.commit()
+    ).first()
+
+    if existing_ref:
+        ref = existing_ref
+    else:
+        # create referral session record
+        ref = ReferralSession(
+            invite_id=invite.id,
+            inviter_id=invite.inviter_id,
+            invited_email=invite.invited_email
+        )
+        db.session.add(ref)
+        db.session.commit()
 
     # Set cookie (non-httponly so front-end can inspect if needed; but we only need backend)
     resp = redirect("/signup_page")
     # cookie name "referral_session"
-    resp.set_cookie("referral_session", ref.id, httponly=True, secure=False, samesite="Lax", max_age=60*60)  # 1 hour
+    # Set a longer expiration (e.g., 7 days) so user can sign up later
+    resp.set_cookie("referral_session", ref.id, httponly=True, secure=False, samesite="Lax", max_age=60*60*24*7)
     return resp
 
 
@@ -3714,13 +4001,44 @@ def update_subscription():
     return jsonify({'success': True}), 200
 
 def generate_device_id(request):
-    """Generate persistent device ID using browser fingerprint"""
-    fingerprint = ''.join([
-        request.headers.get('User-Agent', ''),
-        request.headers.get('Accept-Language', ''),
-        request.remote_addr
+    """
+    Generate a persistent device ID using browser fingerprint, IP, and other headers.
+    More data = more uniqueness, while still respecting privacy.
+    """
+    
+    # Real client IP (behind proxies)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip()
+    
+    # Core browser fingerprinting headers
+    user_agent = request.headers.get('User-Agent', '')
+    accept_language = request.headers.get('Accept-Language', '')
+    encoding = request.headers.get('Accept-Encoding', '')
+    connection = request.headers.get('Connection', '')
+    
+    # Optional headers for added uniqueness
+    dnt = request.headers.get('DNT', '')  # Do Not Track
+    referer = request.headers.get('Referer', '')
+    sec_ch_ua = request.headers.get('Sec-CH-UA', '')
+    sec_ch_ua_platform = request.headers.get('Sec-CH-UA-Platform', '')
+    
+    # Concatenate all data into a single string
+    fingerprint_data = "|".join([
+        ip,
+        user_agent,
+        accept_language,
+        encoding,
+        connection,
+        dnt,
+        referer,
+        sec_ch_ua,
+        sec_ch_ua_platform
     ])
-    return hashlib.sha256(fingerprint.encode()).hexdigest()
+    
+    # Hash to produce a consistent, fixed-length device ID
+    device_id = hashlib.sha256(fingerprint_data.encode()).hexdigest()
+    
+    return device_id
 
 @app.route('/api/vapid_public_key')
 def get_vapid_key():
@@ -3905,7 +4223,74 @@ def contact():
         return jsonify({"success": "Message received successfully!"}), 201
     except Exception as e:
         return jsonify({"error": f"Message not received {e}"}), 400
-    
+
+@app.route('/username-check/<string:username>', methods=['GET'])
+def check_username(username):
+    # Block impersonation of reserved names (case-insensitive, normalized, similar)
+    reserved_names = ["admin", "administrator", "moderator", "mod", "support", "staff", "root", "system"]
+    norm_input = re.sub(r'[_\-]', '', username.lower())
+
+    # Direct reserved name match
+    for reserved in reserved_names:
+        norm_reserved = re.sub(r'[_\-]', '', reserved.lower())
+        # Case-insensitive and normalized match
+        if username.lower() == reserved or norm_input == norm_reserved:
+            return jsonify({"exists": False, "protected": True, "reason": "Reserved name"}), 200
+        # Levenshtein similarity
+        def levenshtein(a, b):
+            if a == b:
+                return 0
+            if len(a) < len(b):
+                return levenshtein(b, a)
+            if len(b) == 0:
+                return len(a)
+            previous_row = range(len(b) + 1)
+            for i, c1 in enumerate(a):
+                current_row = [i + 1]
+                for j, c2 in enumerate(b):
+                    insertions = previous_row[j + 1] + 1
+                    deletions = current_row[j] + 1
+                    substitutions = previous_row[j] + (c1 != c2)
+                    current_row.append(min(insertions, deletions, substitutions))
+                previous_row = current_row
+            return previous_row[-1]
+        if levenshtein(norm_input, norm_reserved) <= 1:
+            return jsonify({"exists": False, "protected": True, "reason": "Reserved name similarity"}), 200
+        # Regex: block substrings or extra digits/letters
+        pattern = re.compile(rf"^{re.escape(reserved)}[\d\w\-_.]*$", re.IGNORECASE)
+        if pattern.match(username):
+            return jsonify({"exists": False, "protected": True, "reason": "Reserved name regex similarity"}), 200
+
+    # Check for exact match in database
+    user = User.query.filter_by(username=username).first()
+    if user:
+        return jsonify({"exists": True, "protected": False}), 200
+
+    # Check for similarity to protected usernames in DB
+    protected_users = User.query.filter_by(has_username_protection=True).all()
+    for protected_user in protected_users:
+        protected_name = protected_user.username
+
+        # Case-insensitive match
+        if username.lower() == protected_name.lower():
+            return jsonify({"exists": False, "protected": True, "reason": "Case-insensitive match"}), 200
+
+        # Remove underscores/dashes and compare
+        norm_protected = re.sub(r'[_\-]', '', protected_name.lower())
+        if norm_input == norm_protected:
+            return jsonify({"exists": False, "protected": True, "reason": "Normalized match"}), 200
+
+        # Levenshtein distance <= 1 (very similar)
+        if levenshtein(username.lower(), protected_name.lower()) <= 1:
+            return jsonify({"exists": False, "protected": True, "reason": "Levenshtein similarity"}), 200
+
+        # Regex: block usernames that are substrings or have extra digits/letters at the end
+        pattern = re.compile(rf"^{re.escape(protected_name)}[\d\w\-_.]*$", re.IGNORECASE)
+        if pattern.match(username):
+            return jsonify({"exists": False, "protected": True, "reason": "Regex similarity"}), 200
+
+    # If no match found
+    return jsonify({"exists": False, "protected": False}), 200
 
 # User info
 
@@ -5736,6 +6121,8 @@ def allow_sharing():
     
 # Admin
 
+from flask import request, session, jsonify
+
 @app.route('/api/identify', methods=['POST'])
 def identify():
     data = request.get_json() or {}
@@ -5746,16 +6133,21 @@ def identify():
     # Save in session for later linking
     session['visitor_id'] = visitor_id
 
+    # Get real client IP (behind proxies)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ip = ip.split(',')[0].strip()  # first IP in the list
+
     # Upsert fingerprint record
     fp = FingerPrint.query.filter_by(visitor_id=visitor_id).first()
     if not fp:
         fp = FingerPrint(
             visitor_id=visitor_id,
-            last_ip=request.remote_addr
+            last_ip=ip
         )
         db.session.add(fp)
     else:
-        fp.last_ip = request.remote_addr
+        fp.last_ip = ip
+
     db.session.commit()
 
     return jsonify({'status': 'ok'})
@@ -6755,7 +7147,8 @@ def get_username(user_id):
 def signup():
     data = request.get_json()
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-    user_ip = request.remote_addr
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()  # first IP in the list
 
     cleanup_expired_signup_sessions()
 
@@ -7313,7 +7706,8 @@ def reset_password():
     session_key = generate_session_key(user.id)  # Generate new session key
     
     # Record IP address if new
-    user_ip = request.remote_addr
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()  # first IP in the list
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
     
@@ -7468,7 +7862,8 @@ def login():
         # OK, issue new session_key
         session_key = generate_session_key(user.id)
         # persist any new IP
-        user_ip = request.remote_addr
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_ip = user_ip.split(',')[0].strip()  # first IP in the list
         if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
             db.session.add(IpAddres(user_id=user.id, ip=user_ip))
             db.session.commit()
@@ -7483,13 +7878,15 @@ def login():
         resp = make_response(jsonify(payload), 200)
         resp.set_cookie(
             "session_key", session_key,
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
             max_age=60*60*24
         )
         # already have lasting_key cookie set on signup; refresh its expiration
         resp.set_cookie(
             "lasting_key", user.lasting_key,
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True, secure=not _is_local_request(), samesite="Strict",
             max_age=60*60*24*30
         )
         return resp
@@ -7508,7 +7905,9 @@ def login():
 
     session_key = generate_session_key(user.id)
     # record IP
-    user_ip = request.remote_addr
+    # If running behind PythonAnywhere, get the real client IP from X-Forwarded-For
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()  # In case there are multiple IPs
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
         db.session.commit()
@@ -7529,13 +7928,13 @@ def login():
     resp = make_response(jsonify(payload), 200)
     resp.set_cookie(
         "session_key", session_key,
-        httponly=True, secure=True, samesite="Strict",
+        httponly=True, secure=not _is_local_request(), samesite="Strict",
         max_age=60*60*24
     )
     if data.get('keep_login'):
         resp.set_cookie(
             "lasting_key", user.lasting_key,
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True, secure=not _is_local_request(), samesite="Strict",
             max_age=60*60*24*30
         )
     return resp
@@ -7573,10 +7972,15 @@ def manage_notes():
     if request.method == 'POST':
         data = request.json
         note_html = data['note']
-        # sanitize
         note_html = sanitize_html(note_html)
+        
+        # Validate folder_id if provided
+        folder_id = data.get('folder_id')
+        if folder_id:
+            folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
+            if not folder:
+                return jsonify({"error": "Folder not found or access denied"}), 400
 
-        # optional attachments: list of upload ids
         attachments = data.get('attachments') or []
         valid_attachments = []
         if attachments:
@@ -7590,12 +7994,12 @@ def manage_notes():
             user_id=g.user_id, 
             title=data.get('title'), 
             note=note_html,
-            tag=data.get('tag')
+            tag=data.get('tag'),
+            folder_id=folder_id
         )
         db.session.add(new_note)
         db.session.commit()
 
-        # Optionally store attachments association in another table note_uploads
         if valid_attachments:
             for uid in valid_attachments:
                 nu = NoteUpload(note_id=new_note.id, upload_id=uid)
@@ -7604,11 +8008,19 @@ def manage_notes():
 
         return jsonify({"message": "Note added successfully!"}), 201
     else:
-        # Order by newest first (descending id)
-        notes = Note.query.filter_by(user_id=g.user_id).order_by(Note.id.desc()).all()
+        # Get folder_id from query parameter
+        folder_id = request.args.get('folder_id')
+        query = Note.query.filter_by(user_id=g.user_id)
+        
+        if folder_id:
+            query = query.filter_by(folder_id=folder_id)
+        else:
+            # If no folder_id specified, get notes without a folder (root level)
+            query = query.filter_by(folder_id=None)
+            
+        notes = query.order_by(Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
-            # fetch attachments
             attachments = []
             for nu in NoteUpload.query.filter_by(note_id=note.id).all():
                 uploads_row = Upload.query.get(nu.upload_id)
@@ -7624,9 +8036,263 @@ def manage_notes():
                 "title": note.title,
                 "note": note.note,
                 "tag": note.tag,
+                "folder_id": note.folder_id,
                 "attachments": attachments
             })
         return jsonify(sanitized_notes)
+
+@app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
+@require_session_key
+def update_delete_note(note_id):
+    note = Note.query.get(note_id)
+    if not note or note.user_id != g.user_id:
+        return jsonify({"error": "Note not found"}), 404
+
+    def current_attachment_ids(note_id):
+        return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
+
+    if request.method == 'PUT':
+        data = request.json
+        note.title = data.get('title')
+        note.note = sanitize_html(data.get('note', note.note))
+        note.tag = data.get('tag')
+        
+        # Handle folder_id update
+        folder_id = data.get('folder_id')
+        if folder_id:
+            folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
+            if not folder:
+                return jsonify({"error": "Folder not found or access denied"}), 400
+            note.folder_id = folder_id
+        # Niet verwijderen als leeg, alleen als er een nieuwe folder_id is meegegeven
+
+        requested_attachments = set(data.get('attachments') or [])
+        existing_attachments = current_attachment_ids(note.id)
+
+        to_add = requested_attachments - existing_attachments
+        to_remove = existing_attachments - requested_attachments
+
+        for uid in list(to_add):
+            up = Upload.query.get(uid)
+            if not up or up.user_id != g.user_id or up.deleted:
+                return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
+
+        try:
+            for uid in to_add:
+                nu = NoteUpload(note_id=note.id, upload_id=uid)
+                db.session.add(nu)
+
+            for uid in to_remove:
+                nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
+                if nu_row:
+                    db.session.delete(nu_row)
+                    
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": "Database error on updating note attachments."}), 500
+
+        for uid in to_remove:
+            try:
+                ok, msg = remove_upload_if_orphan(uid)
+            except Exception:
+                pass
+
+        return jsonify({"message": "Note updated successfully!"}), 200
+
+    elif request.method == 'DELETE':
+        existing_attachments = current_attachment_ids(note.id)
+        try:
+            NoteUpload.query.filter_by(note_id=note.id).delete()
+            db.session.delete(note)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": "Database error on deleting note."}), 500
+
+        for uid in existing_attachments:
+            try:
+                ok, msg = remove_upload_if_orphan(uid)
+            except Exception:
+                pass
+
+        return jsonify({"message": "Note deleted successfully."}), 200
+    
+@app.route('/folders', methods=['GET', 'POST'])
+@require_session_key
+def manage_folders():
+    if request.method == 'POST':
+        data = request.json
+        name = data.get('name')
+        parent_id = data.get('parent_id')
+        
+        if not name:
+            return jsonify({"error": "Folder name is required"}), 400
+            
+        # Validate parent folder if provided
+        if parent_id:
+            parent = Folder.query.filter_by(id=parent_id, user_id=g.user_id).first()
+            if not parent:
+                return jsonify({"error": "Parent folder not found or access denied"}), 400
+
+        new_folder = Folder(
+            user_id=g.user_id,
+            name=name,
+            parent_id=parent_id
+        )
+        db.session.add(new_folder)
+        db.session.commit()
+        
+        return jsonify({"message": "Folder created successfully!", "folder": new_folder.to_dict()}), 201
+    else:
+        parent_id = request.args.get("parent_id", type=int)
+        query = Folder.query.filter_by(user_id=g.user_id)
+
+        if parent_id is None:
+            query = query.filter(Folder.parent_id == None)  # top-level
+        else:
+            query = query.filter(Folder.parent_id == parent_id)
+
+        folders = query.all()
+        return jsonify([folder.to_dict() for folder in folders])
+
+@app.route('/folders/<int:folder_id>/parents', methods=['GET'])
+@require_session_key
+def get_parent_folders(folder_id):
+    folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
+    if not folder:
+        return jsonify({"error": "Folder not found"}), 404
+
+    # Build chain from current folder upwards
+    chain = []
+    while folder:
+        chain.append(folder.to_dict())
+        if not folder.parent_id:
+            break
+        folder = Folder.query.filter_by(id=folder.parent_id, user_id=g.user_id).first()
+    
+    # Reverse so it goes Root → … → Current
+    return jsonify(chain[::-1]), 200
+
+@app.route('/folders/<int:folder_id>', methods=['PUT', 'DELETE'])
+@require_session_key
+def update_delete_folder(folder_id):
+    folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
+    if not folder:
+        return jsonify({"error": "Folder not found"}), 404
+
+    if request.method == 'PUT':
+        data = request.json
+        name = data.get('name')
+        parent_id = data.get('parent_id')
+        
+        if name:
+            folder.name = name
+            
+        if parent_id:
+            # Prevent circular references
+            if parent_id == folder_id:
+                return jsonify({"error": "Cannot set folder as its own parent"}), 400
+                
+            parent = Folder.query.filter_by(id=parent_id, user_id=g.user_id).first()
+            if not parent:
+                return jsonify({"error": "Parent folder not found or access denied"}), 400
+            folder.parent_id = parent_id
+        else:
+            folder.parent_id = None
+
+        db.session.commit()
+        return jsonify({"message": "Folder updated successfully!", "folder": folder.to_dict()}), 200
+
+    elif request.method == 'DELETE':
+        # Ensure g.user is populated for delete_upload calls
+        if not hasattr(g, 'user'):
+            g.user = User.query.get(g.user_id)
+
+        action = request.args.get('action')  # possible values: None, "move_up", "delete_all"
+
+        # Collect all folder ids under this folder (including itself)
+        all_folder_ids = collect_all_folder_ids(folder)
+        # Collect all notes in those folders
+        notes = collect_note_ids_in_folders(all_folder_ids)
+
+        # If no action specified, return summary for frontend decision
+        if not action:
+            has_subfolders = len(all_folder_ids) > 1
+            notes_count = len(notes)
+            if not has_subfolders and notes_count == 0:
+                # completely empty folder - can delete directly
+                return jsonify({
+                    "can_delete_direct": True,
+                    "message": "Folder is empty and can be deleted immediately."
+                }), 200
+
+            if notes_count == 0:
+                # has subfolders but none of them contain notes -> can safely delete the entire subtree
+                return jsonify({
+                    "can_delete_empty_stack": True,
+                    "message": "Folder and subfolders contain no notes and can be deleted."
+                }), 200
+
+            # notes exist somewhere in subtree -> require user decision
+            return jsonify({
+                "requires_confirmation": True,
+                "notes_count": notes_count,
+                "folders_count": len(all_folder_ids),
+                "message": "Folder subtree contains notes. Choose action: move_up or delete_all."
+            }), 200
+
+        # If action is provided, perform it
+        if action == "move_up":
+            try:
+                parent_id = folder.parent_id  # may be None
+
+                # Move immediate child folders up one level (their parent becomes folder.parent_id)
+                children = Folder.query.filter_by(parent_id=folder.id, user_id=g.user_id).all()
+                for c in children:
+                    c.parent_id = parent_id
+
+                # Move notes directly inside the folder to parent_id
+                direct_notes = Note.query.filter_by(folder_id=folder.id, user_id=g.user_id).all()
+                for n in direct_notes:
+                    n.folder_id = parent_id  # `None` if parent is root
+
+                # Now delete the folder itself
+                db.session.delete(folder)
+                db.session.commit()
+                return jsonify({"message": "Folder removed and children moved up successfully."}), 200
+            except Exception as e:
+                app.logger.exception("Error moving children up: %s", e)
+                db.session.rollback()
+                return jsonify({"error": "Error while moving children up."}), 500
+
+        elif action == "delete_all":
+            # delete all notes and attachments in subtree, then delete folders in post-order
+            try:
+                # 1) delete notes and attachments
+                ok, msg = delete_notes_and_attachments(notes, g.user)
+                if not ok:
+                    return jsonify({"error": msg}), 500
+
+                # 2) delete folders in post-order to avoid FK issues (children first)
+                post_order_folders = get_recursive_folder_tree(folder)
+                # post_order_folders is a list of Folder objects in order children->parent
+                for f in post_order_folders:
+                    # double-check f belongs to user
+                    if f.user_id != g.user_id:
+                        # Shouldn't happen, but guard
+                        db.session.rollback()
+                        return jsonify({"error": "Permission error while deleting folders."}), 403
+                    db.session.delete(f)
+
+                db.session.commit()
+                return jsonify({"message": "Folder and all subfolders and notes deleted."}), 200
+            except Exception as e:
+                app.logger.exception("Error deleting subtree: %s", e)
+                db.session.rollback()
+                return jsonify({"error": "Server error while deleting subtree."}), 500
+        else:
+            return jsonify({"error": "Unknown action."}), 400
     
 @app.route('/uploads', methods=['POST'])
 @require_session_key
@@ -7668,13 +8334,11 @@ def get_user_storage():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    total_bytes = int(get_user_quota_bytes(user) or 0)
+    raw_quota = get_user_quota_bytes(user)
+    unlimited = raw_quota == float('inf')
 
-    # ---- handle storage_used_bytes (NULL, strings, garbage) ----
+    # Handle storage_used_bytes (NULL, strings, garbage)
     raw_used = getattr(user, 'storage_used_bytes', None)
-
-    # If explicit NULL in DB => treat as 0 and persist that (so next time it's not null).
-    # If you don't want to persist, set persist_null_to_zero=False below.
     persist_null_to_zero = True
 
     if raw_used is None:
@@ -7685,24 +8349,33 @@ def get_user_storage():
                 db.session.add(user)
                 db.session.commit()
             except Exception:
-                # don't crash on commit issues; rollback and proceed with used_bytes=0
                 db.session.rollback()
     else:
-        # raw_used might be int-like string, or it might be something messy.
         try:
             used_bytes = int(raw_used)
         except (ValueError, TypeError):
-            # attempt a best-effort sanitize: keep digits only
+            # sanitize: keep digits only
             s = re.sub(r'\D', '', str(raw_used or ''))
             used_bytes = int(s) if s else 0
 
-    remaining_bytes = max(total_bytes - used_bytes, 0)
+    # Compute remaining storage
+    if unlimited:
+        total_bytes = None          # None indicates unlimited
+        remaining_bytes = None
+    else:
+        total_bytes = int(raw_quota)
+        remaining_bytes = max(total_bytes - used_bytes, 0)
 
-    return jsonify({
+    # Special message for frontend if unlimited
+    response = {
         "total_bytes": total_bytes,
         "used_bytes": used_bytes,
-        "remaining_bytes": remaining_bytes
-    }), 200
+        "remaining_bytes": remaining_bytes,
+        "unlimited": unlimited,
+        "message": "Unlimited storage" if unlimited else None
+    }
+
+    return jsonify(response), 200
 
 
 # Update sanitize_html function
@@ -7728,88 +8401,132 @@ def sanitize_html(html):
         strip=True
     )
 
-@app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
+#AIIIIIIII
+
+@app.route("/api/notes/<int:note_id>/improve", methods=["POST"])
 @require_session_key
-def update_delete_note(note_id):
-    note = Note.query.get(note_id)
-    if not note or note.user_id != g.user_id:
-        return jsonify({"error": "Note not found"}), 404
+def improve_note(note_id):
+    note = Note.query.filter_by(id=note_id, user_id=g.user_id).first()
+    if not note:
+        return jsonify({"error": "Note not found or not owned by user"}), 404
 
-    # Helper: load current attachments set for the note (upload ids)
-    def current_attachment_ids(note_id):
-        return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
+    if len(note.note) > MAX_NOTE_LENGTH:
+        return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+    
+    if check("ai_notes_development_return_input", "Nee") == "Ja":
+        print("AI Notes Development Mode: returning input as output")
+        return jsonify({
+            "id": note.id,
+            "title": note.title,
+            "original": note.note,
+            "improved": note.note + " (development mode, no changes made)"
+        })
 
-    if request.method == 'PUT':
-        data = request.json
-        # sanitize incoming HTML
-        note.title = data.get('title')
-        note.note = sanitize_html(data.get('note', note.note))
-        note.tag = data.get('tag')
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that improves user-submitted HTML notes. "
+                "Only return the improved HTML. "
+                "Do not include any instructions, explanations, or extra text. "
+                "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
+                "Do not use checkboxes or unsupported tags. "
+                "You must not use any previous notes or memory; always use only the provided note as input. "
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it. "
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability. "
+                "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
+            )
+        },
+        {
+            "role": "user",
+            "content": note.note
+        }
+    ]
 
-        # Handle attachments (expected to be a list of upload ids)
-        requested_attachments = set(data.get('attachments') or [])
-        existing_attachments = current_attachment_ids(note.id)
+    try:
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400
+        )
 
-        # Determine additions and removals
-        to_add = requested_attachments - existing_attachments
-        to_remove = existing_attachments - requested_attachments
+        improved_html = _extract_text_from_cohere_response(response)
 
-        # Validate additions: uploads must exist, belong to user, and not be deleted
-        for uid in list(to_add):
-            up = Upload.query.get(uid)
-            if not up or up.user_id != g.user_id or up.deleted:
-                return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
+        if not improved_html:
+            return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
 
-        try:
-            # Add new associations
-            for uid in to_add:
-                nu = NoteUpload(note_id=note.id, upload_id=uid)
-                db.session.add(nu)
+    except Exception as e:
+        return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
 
-            # Remove skipped attachments (and possibly delete files if orphaned)
-            for uid in to_remove:
-                nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
-                if nu_row:
-                    db.session.delete(nu_row)
-            # commit note changes + association changes
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"error": "Database error on updating note attachments."}), 500
+    improved_text = sanitize_html(improved_html)
 
-        # After commit, try to remove orphaned uploads (non-blocking for the note update)
-        # These call delete_upload which will check ownership etc.
-        for uid in to_remove:
-            try:
-                ok, msg = remove_upload_if_orphan(uid)
-                # We don't fail the whole request if removal fails; just log (or return message)
-                # If you want stricter behavior, return an error here instead
-            except Exception:
-                pass
+    return jsonify({
+        "id": note.id,
+        "title": note.title,
+        "original": note.note,
+        "improved": improved_text
+    })
 
-        return jsonify({"message": "Note updated successfully!"}), 200
 
-    elif request.method == 'DELETE':
-        # Delete the note and clean up attachments that become orphaned
-        existing_attachments = current_attachment_ids(note.id)
-        try:
-            # Delete NoteUpload associations first
-            NoteUpload.query.filter_by(note_id=note.id).delete()
-            # Delete the note itself
-            db.session.delete(note)
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"error": "Database error on deleting note."}), 500
+@app.route("/api/notes/improve-temp", methods=["POST"])
+def improve_temp_note():
+    data = request.get_json() or {}
+    note_html = data.get("note", "")
 
-        # Post-commit: try to delete any orphaned uploads
-        for uid in existing_attachments:
-            try:
-                ok, msg = remove_upload_if_orphan(uid)
-            except Exception:
-                pass
+    if not isinstance(note_html, str) or not note_html.strip():
+        return jsonify({"error": "Empty note"}), 400
 
-        return jsonify({"message": "Note deleted successfully."}), 200
+    if len(note_html) > MAX_NOTE_LENGTH:
+        return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
+    
+    if check("ai_notes_development_return_input", "Nee") == "Ja":
+        print("AI Notes Development Mode: returning input as output")
+        return jsonify({
+            "improved": note_html + " (development mode, no changes made)"
+        })
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI assistant that improves user-submitted HTML notes. "
+                "Only return the improved HTML. "
+                "Do not include any instructions, explanations, or extra text. "
+                "Use only these HTML tags: <p>, <b>, <i>, <u>, <ul>, <ol>, <li>, <h1>, <h2>, <h3>. "
+                "Do not use checkboxes or unsupported tags. "
+                "You must not use any previous notes or memory; always use only the provided note as input. "
+                "If the note contains an existing structure (like headings or lists), preserve and enhance it. "
+                "If the note does not contain any structure, add appropriate HTML structure to improve readability. "
+                "If the note is very short (e.g., a single sentence), enhance it by adding relevant details or context to make it more informative, but only if you have the necessary context to do so."
+            )
+        },
+        {
+            "role": "user",
+            "content": note_html
+        }
+    ]
+
+    try:
+        response = co.chat(
+            model="command-a-03-2025",
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400
+        )
+
+        improved_html = _extract_text_from_cohere_response(response)
+
+        if not improved_html:
+            return jsonify({"error": f"Cohere Chat SDK returned empty output", "debug": str(response)}), 500
+
+    except Exception as e:
+        return jsonify({"error": f"Cohere request failed: {str(e)}"}), 500
+
+    improved_html = sanitize_html(improved_html)
+
+    return jsonify({"improved": improved_html})
+
     
 @app.route('/draft', methods=['POST', 'GET', 'DELETE'])
 @require_session_key

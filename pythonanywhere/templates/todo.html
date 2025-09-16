@@ -578,6 +578,37 @@
           background: linear-gradient(90deg, #ffb74d , #e53935);
       }
 
+      /* Infinite storage rainbow bar */
+    /* Infinite storage rainbow bar */
+        .infinite-storage {
+            background-image: linear-gradient(
+                270deg,
+                #ff0000,
+                #ff7f00,
+                #ffff00,
+                #00ff00,
+                #0000ff,
+                #4b0082,
+                #8f00ff
+            ) !important;
+            background-size: 1400% 1400% !important;
+            background-position: 0% 50% !important;
+            animation: rainbowSlide 5s linear infinite !important;
+        }
+
+        @keyframes rainbowSlide {
+            0% {
+                background-position: 0% 50% !important;
+            }
+            50% {
+                background-position: 100% 50% !important;
+            }
+            100% {
+                background-position: 0% 50% !important;
+            }
+        }
+
+
 
   </style>
   <script src="static/admin.js"></script>
@@ -837,13 +868,26 @@ document.addEventListener("DOMContentLoaded", async () => {
               if (!res.ok) throw new Error("Failed to fetch storage info");
               const data = await res.json();
 
-              const usedMB = (data.used_bytes / 1024 / 1024).toFixed(2);
-              const totalMB = (data.total_bytes / 1024 / 1024).toFixed(2);
-              const percentUsed = Math.min((data.used_bytes / data.total_bytes) * 100, 100);
+              const barHeader = document.getElementById('storage-bar-fill');
 
-              document.getElementById('storage-counter').textContent = `${usedMB} / ${totalMB} MB`;
+              let usedText, totalText, percentUsed;
+
+              if (data.unlimited) {
+                  usedText = "∞";
+                  totalText = "Unlimited";
+                  percentUsed = 100; // fill bar fully for effect
+                  barHeader.classList.add('infinite-storage');
+              } else {
+                  usedText = (data.used_bytes / 1024 / 1024).toFixed(2);
+                  totalText = (data.total_bytes / 1024 / 1024).toFixed(2);
+                  percentUsed = Math.min((data.used_bytes / data.total_bytes) * 100, 100);
+                  barHeader.classList.remove('infinite-storage');
+              }
+
+              document.getElementById('storage-counter').textContent = `${usedText} / ${totalText} MB`;
               document.getElementById('storage-bar-fill').style.width = `${percentUsed}%`;
-              if (percentUsed > 90) {
+
+              if (percentUsed > 90 && !data.unlimited) {
                   document.getElementById('storage-bar-fill').classList.add('almost-full');
               } else {
                   document.getElementById('storage-bar-fill').classList.remove('almost-full');
@@ -852,6 +896,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               console.error(err);
           }
       }
+
 
       document.getElementById('storage-container').style.cursor = 'pointer';
       document.getElementById('storage-container').addEventListener('click', openStorageModal);
@@ -869,40 +914,62 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById('invite-feedback').textContent = '';
       }
 
-      async function refreshModalData(){
-      try {
-          const res = await fetch('/invites/status');
-          if (!res.ok) throw new Error('Failed to load status');
-          const data = await res.json();
+      async function refreshModalData() {
+        try {
+            const res = await fetch('/invites/status');
+            if (!res.ok) throw new Error('Failed to load status');
+            const data = await res.json();
 
-          document.getElementById('storage-counter-modal').textContent = `${data.used_mb} / ${data.total_mb} MB`;
-          const percent = Math.min((data.used_mb / Math.max(data.total_mb, 1)) * 100, 100);
-          document.getElementById('storage-bar-fill-modal').style.width = percent + '%';
-          if (percent > 90) document.getElementById('storage-bar-fill-modal').classList.add('almost-full');
-          else document.getElementById('storage-bar-fill-modal').classList.remove('almost-full');
+            const barModal = document.getElementById('storage-bar-fill-modal');
 
-          document.getElementById('remaining-today').textContent = data.remaining_today;
-          document.getElementById('sent-today').textContent = data.sent_today;
-          document.getElementById('per-day-limit').textContent = data.per_day_limit;
+            let usedText, totalText, percent;
 
-          const pendingList = document.getElementById('pending-invites-list');
-          pendingList.innerHTML = '';
-          if (!data.pending_invites || data.pending_invites.length === 0) {
-          pendingList.innerHTML = '<div style="opacity:0.6">No pending invites</div>';
-          } else {
-          for (const p of data.pending_invites) {
-              const el = document.createElement('div');
-              el.style.padding = '8px';
-              el.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-              el.innerHTML = `<div style="font-weight:700">${p.email}</div><div style="opacity:0.6; font-size:12px">Sent ${new Date(p.created_at).toLocaleString()}</div><button onclick="cancelInvite('${p.id}')" class="cancel-invite-btn">Cancel</button>`;
-              pendingList.appendChild(el);
-          }
-          }
-      } catch (err) {
-          console.error(err);
-          document.getElementById('invite-feedback').textContent = 'Could not load invite status.';
-      }
-      }
+            if (data.total_mb === null || data.storage_message) {
+                usedText = "∞";
+                totalText = "Unlimited";
+                percent = 100; // fill bar fully for effect
+                barModal.classList.add('infinite-storage');
+            } else {
+                usedText = data.used_mb.toFixed(2);
+                totalText = data.total_mb.toFixed(2);
+                percent = Math.min((data.used_mb / Math.max(data.total_mb, 1)) * 100, 100);
+                barModal.classList.remove('infinite-storage');
+            }
+
+            document.getElementById('storage-counter-modal').textContent = `${usedText} / ${totalText} MB`;
+            document.getElementById('storage-bar-fill-modal').style.width = percent + '%';
+
+            if (percent > 90 && !(data.total_mb === null || data.storage_message)) {
+                barModal.classList.add('almost-full');
+            } else {
+                barModal.classList.remove('almost-full');
+            }
+
+            document.getElementById('remaining-today').textContent = data.remaining_today;
+            document.getElementById('sent-today').textContent = data.sent_today;
+            document.getElementById('per-day-limit').textContent = data.per_day_limit;
+
+            const pendingList = document.getElementById('pending-invites-list');
+            pendingList.innerHTML = '';
+            if (!data.pending_invites || data.pending_invites.length === 0) {
+                pendingList.innerHTML = '<div style="opacity:0.6">No pending invites</div>';
+            } else {
+                for (const p of data.pending_invites) {
+                    const el = document.createElement('div');
+                    el.style.padding = '8px';
+                    el.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                    el.innerHTML = `<div style="font-weight:700">${p.email}</div>
+                                    <div style="opacity:0.6; font-size:12px">Sent ${new Date(p.created_at).toLocaleString()}</div>
+                                    <button onclick="cancelInvite('${p.id}')" class="cancel-invite-btn">Cancel</button>`;
+                    pendingList.appendChild(el);
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            document.getElementById('invite-feedback').textContent = 'Could not load invite status.';
+        }
+    }
+
 
       async function sendInvite(){
       const email = document.getElementById('invite-email').value.trim();
@@ -1333,6 +1400,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       return text.split(/\s+/).slice(0, n).join(' ') + (text.split(/\s+/).length > n ? '…' : '');
     }
 
+    function sanitizeHtml(str) {
+      const temp = document.createElement('div');
+      temp.textContent = str;
+      return temp.innerHTML;
+    }
+
     // Populate a list of cards
     function populateList(containerEl, items, type) {
       containerEl.innerHTML = '';
@@ -1375,7 +1448,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const snippet = `<div class="snippet">${firstWords(item.note, 10)}</div>`;
         card.innerHTML = tag + title + snippet;
       } else {
-        const title   = `<div class="title">${item.title}</div>`;
+        const title   = `<div class="title">${item.sanitizeHtml(title)}</div>`;
         const endDt   = new Date(item.end_datetime).toLocaleString();
         const snippet = `<div class="snippet">Ends: ${endDt}</div>`;
         card.innerHTML = title + snippet;

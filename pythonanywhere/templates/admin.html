@@ -728,17 +728,27 @@
             if (!confirm("Are you sure you want to delete this backup? This cannot be undone.")) {
                 return;
             }
-            const resp = await fetch('/backup/delete', {
-                method: 'DELETE', 
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filename})
-            });
-            const result = await resp.json();
-            if(resp.ok) {
-                alert(result.status);
-                location.reload();
-            } else {
-                alert(`Deletion failed: ${result.error}`)
+            try {
+                const resp = await fetch('/backup/delete', {
+                    method: 'DELETE', 
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({filename})
+                });
+                let result = {};
+                try {
+                    result = await resp.json();
+                } catch (e) {
+                    result = { error: "Server returned invalid response." };
+                }
+                if(resp.ok) {
+                    alert(result.status || "Backup deleted successfully.");
+                    fetchBackups();
+                } else {
+                    alert(`Deletion failed: ${result.error || resp.statusText}`);
+                }
+            } catch (err) {
+                alert("Network error or server unreachable.");
+                console.error(err);
             }
         }
 
@@ -792,7 +802,7 @@
                 row.innerHTML = `
                     <td>${message.id}</td>
                     <td>${message.email}</td>
-                    <td>${message.message}</td>
+                    <td>${sanitizeHTML(message.message)}</td>
                     <td>
                         <button onclick="deleteMessage(${message.id})">Delete</button>
                     </td>
@@ -804,6 +814,12 @@
                 row.innerHTML = `<td colspan="4" style="text-align:center;color:#aaa;">No messages found.</td>`;
                 tableBody.appendChild(row);
             }
+        }
+
+        function sanitizeHTML(str) {
+            const temp = document.createElement('div');
+            temp.textContent = str;
+            return temp.innerHTML;
         }
 
         function populateUsersTable(users) {
@@ -821,7 +837,7 @@
                 const row = document.createElement("tr");
                 row.innerHTML = `
                     <td>${user.id}</td>
-                    <td>${user.username}</td>
+                    <td>${sanitizeHTML(user.username)}</td>
                     <td>${user.profile_picture || "N/A"}</td>
                     <td>${user.allows_sharing ? "Yes" : "No"}</td>
                     <td>
