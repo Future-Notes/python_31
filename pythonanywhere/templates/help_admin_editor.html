@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Editor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.css">
+<style>
+  :root{
+    --page-bg: linear-gradient(180deg,#f7fbff,#ffffff);
+    --panel:#ffffff;
+    --muted:#6b7280;
+    --text:#0f172a;
+    --accent:#0b78ff;
+    --container:1200px;
+    --radius:12px;
+    --shadow: 0 30px 70px rgba(10,20,40,0.06);
+  }
+  [data-theme="dark"]{
+    --page-bg: linear-gradient(180deg,#031018,#021018);
+    --panel: rgba(255,255,255,0.02);
+    --muted:#9aa7b6;
+    --text:#e6eef8;
+    --accent:#6fc0ff;
+    --shadow: 0 40px 90px rgba(2,6,23,0.6);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--page-bg);color:var(--text);padding:22px;display:flex;justify-content:center}
+  .wrap{width:100%;max-width:var(--container)}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .btn{background:linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.9));padding:10px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:700;box-shadow:var(--shadow)}
+  [data-theme="dark"] .btn{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); color: var(--accent);}
+  .grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+  .panel{background:var(--panel);border-radius:12px;padding:14px;box-shadow:var(--shadow);border:1px solid rgba(0,0,0,0.04)}
+  [data-theme="dark"] .panel{border:1px solid rgba(255,255,255,0.03)}
+  label{display:block;font-weight:600;margin-top:6px}
+  input[type="text"], textarea, select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(0,0,0,0.06);margin-top:6px;background:transparent}
+  [data-theme="dark"] input[type=text] {color: var(--accent)}
+  .muted{color:var(--muted);font-size:13px}
+  .save-row{margin-top:12px;display:flex;gap:10px}
+  @media (max-width:980px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="wrap" id="app" data-theme="light">
+    <header>
+      <div>
+        <h2 id="headerTitle">New Article</h2>
+        <div class="muted">Compose in Markdown. Save to DB. Slug auto-generated from title.</div>
+      </div>
+      <div>
+        <button id="themeBtn" class="btn">Theme</button>
+        <a class="btn" href="/help/admin">Back</a>
+      </div>
+    </header>
+
+    <div class="grid">
+      <main>
+        <div class="panel">
+          <label>Title</label>
+          <input id="title" type="text" placeholder="A concise title"/>
+          <label>Slug (optional)</label>
+          <input id="slug" type="text" placeholder="custom-slug-if-you-want"/>
+          <label>Excerpt (short summary)</label>
+          <input id="excerpt" type="text" placeholder="One-line summary"/>
+          <label>Tags (comma separated)</label>
+          <input id="tags" type="text" placeholder="woodworking, shelf, measurement"/>
+          <label style="margin-top:12px">Content (Markdown)</label>
+          <textarea id="md" rows="12"></textarea>
+
+          <div class="save-row">
+            <label style="align-items:center;display:flex;gap:8px"><input id="published" type="checkbox" checked /> Published</label>
+            <div style="flex:1"></div>
+            <button id="saveBtn" class="btn">Save</button>
+            <button id="previewBtn" class="btn">Preview</button>
+          </div>
+        </div>
+      </main>
+
+      <aside>
+        <div class="panel">
+          <strong>Preview</strong>
+          <div id="previewArea" style="margin-top:10px;color:var(--muted);min-height:160px">No preview</div>
+        </div>
+
+        <div class="panel" style="margin-top:12px">
+          <strong>Quick Tips</strong>
+          <ul style="margin-top:8px;color:var(--muted)">
+            <li>Use clear step headings: <code>## Step 1</code>.</li>
+            <li>Include image attachments for tricky steps.</li>
+            <li>Keep steps short and actionable.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/custom-alert.js"></script>
+<script>
+  // patch fetch credentials
+  if (!window.__fetchPatched) {
+    const _f = window.fetch;
+    window.fetch = (url, opts = {}) => { opts = opts || {}; opts.credentials = 'include'; return _f(url, opts); };
+    window.__fetchPatched = true;
+  }
+
+  (function () {
+    const STORE_KEY = 'hc_theme';
+    const META_SELECTOR = 'meta[name="theme-color"]';
+
+    function applyTheme(theme) {
+        // Global attribute on <html> so all pages/components respond
+        const html = document.documentElement;
+        html.setAttribute('data-theme', theme);            // css: html[data-theme="dark"] { ... }
+        if (theme === 'dark') html.classList.add('theme-dark'); else html.classList.remove('theme-dark');
+
+        // persist
+        localStorage.setItem(STORE_KEY, theme);
+
+        // update mobile bar color (optional)
+        let meta = document.querySelector(META_SELECTOR);
+        if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'theme-color';
+        document.head.appendChild(meta);
+        }
+        meta.content = (theme === 'dark') ? '#041018' : '#ffffff';
+
+        // optional: swap images that declare data-theme-src-light / data-theme-src-dark
+        document.querySelectorAll('[data-theme-src-light], [data-theme-src-dark]').forEach(img => {
+        const light = img.getAttribute('data-theme-src-light');
+        const dark = img.getAttribute('data-theme-src-dark');
+        if (theme === 'dark' && dark) img.src = dark;
+        else if (theme === 'light' && light) img.src = light;
+        });
+    }
+
+    function toggleTheme() {
+        const cur = localStorage.getItem(STORE_KEY) ||
+                    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+        console.log("Theme toggle button pressed!");
+    }
+
+    // init on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+        const saved = localStorage.getItem(STORE_KEY);
+        const defaultTheme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(defaultTheme);
+
+        // wire up theme toggle button by id
+        const btn = document.getElementById('themeBtn');
+        if (btn) {
+        btn.addEventListener('click', toggleTheme);
+        }
+
+    });
+
+    // expose a function if you want to call it manually
+    window.hcTheme = { applyTheme, toggleTheme };
+    })();
+
+  const params = new URLSearchParams(window.location.search);
+  const editingId = params.get('id');
+
+  const simplemde = new SimpleMDE({ element: document.getElementById("md"), spellChecker:false, autosave: { enabled: false } });
+
+  async function loadArticleForEdit(id){
+    const res = await fetch('/api/article/'+id);
+    if(!res.ok) return;
+    const data = await res.json();
+    document.getElementById('headerTitle').textContent = 'Edit Article';
+    document.getElementById('title').value = data.title;
+    document.getElementById('slug').value = data.slug;
+    document.getElementById('excerpt').value = data.excerpt || '';
+    document.getElementById('tags').value = (data.tags || []).join(', ');
+    document.getElementById('published').checked = !!data.published;
+    simplemde.value(data.content || '');
+  }
+
+  async function saveArticle(){
+    const payload = {
+      title: document.getElementById('title').value.trim(),
+      slug: document.getElementById('slug').value.trim(),
+      excerpt: document.getElementById('excerpt').value.trim(),
+      tags: document.getElementById('tags').value.split(',').map(s=>s.trim()).filter(Boolean),
+      content: simplemde.value(),
+      published: document.getElementById('published').checked
+    };
+    if(!payload.title){ alert('Title required'); return; }
+
+    if(editingId){
+      const res = await fetch('/api/admin/article/'+editingId, {
+        method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      if(res.ok){ alert('Saved'); window.location.href='/help/admin'; }
+      else { alert('Failed to save'); }
+    } else {
+      const res = await fetch('/api/admin/article', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      if(res.ok){ alert('Created'); window.location.href='/help/admin'; }
+      else { const txt = await res.text(); alert('Failed to create: '+txt); }
+    }
+  }
+
+  document.getElementById('saveBtn').addEventListener('click', saveArticle);
+  document.getElementById('previewBtn').addEventListener('click', ()=>{
+    const md = simplemde.value();
+    document.getElementById('previewArea').innerHTML = marked.parse(md || 'Nothing to preview');
+  });
+
+  // auto-login flow
+  async function validateSession() {
+    try {
+      const res = await fetch("/test-session", { method: "GET" });
+      if (res.status === 200) {
+        if(editingId) await loadArticleForEdit(editingId);
+        return true;
+      }
+      if (res.status === 403) {
+        window.location.href = '/login_page?suspended=true';
+        return false;
+      }
+      return false;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async function attemptAutoLogin() {
+    try {
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        if(editingId) await loadArticleForEdit(editingId);
+        return true;
+      }
+      alert('Auto-login failed. Please sign in manually.');
+      return false;
+    } catch (err) {
+      alert('Auto-login error.');
+      return false;
+    }
+  }
+
+  (async ()=>{
+    const ok = await validateSession();
+    if(!ok) await attemptAutoLogin();
+  })();
+</script>
+</body>
+</html>

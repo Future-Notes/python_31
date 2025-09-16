@@ -1448,7 +1448,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const snippet = `<div class="snippet">${firstWords(item.note, 10)}</div>`;
         card.innerHTML = tag + title + snippet;
       } else {
-        const title   = `<div class="title">${item.sanitizeHtml(title)}</div>`;
+        const title   = `<div class="title">${item.sanitizeHtml(item.title)}</div>`;
         const endDt   = new Date(item.end_datetime).toLocaleString();
         const snippet = `<div class="snippet">Ends: ${endDt}</div>`;
         card.innerHTML = title + snippet;

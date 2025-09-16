@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Help Centre Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page-bg: linear-gradient(180deg,#f4f7fb,#f8fbff);
+    --panel:#ffffff;
+    --muted:#6b7280;
+    --text:#0f172a;
+    --accent:#0b78ff;
+    --container:1200px;
+    --radius:12px;
+    --shadow: 0 30px 70px rgba(10,20,40,0.06);
+  }
+  [data-theme="dark"]{
+    --page-bg: linear-gradient(180deg,#041018,#021018);
+    --panel: rgba(255,255,255,0.02);
+    --muted:#9aa7b6;
+    --text:#e6eef8;
+    --accent:#6fc0ff;
+    --shadow: 0 40px 90px rgba(2,6,23,0.6);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--page-bg);color:var(--text);padding:26px;display:flex;justify-content:center}
+  .wrap{width:100%;max-width:var(--container)}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+  h2{margin:0}
+  .muted{color:var(--muted)}
+  .toolbar{display:flex;gap:10px;align-items:center}
+  .btn{background:linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.9));padding:10px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:700;box-shadow:var(--shadow)}
+  [data-theme="dark"] .btn {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  color: var(--accent);
+}
+  .grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+  @media (max-width:980px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border-radius:12px;padding:14px;box-shadow:var(--shadow);border:1px solid rgba(0,0,0,0.04)}
+  [data-theme="dark"] .panel{border:1px solid rgba(255,255,255,0.03)}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px;border-bottom:1px solid rgba(0,0,0,0.04);text-align:left}
+  .muted-small{color:var(--muted);font-size:13px}
+</style>
+<script src="/static/custom-alert.js"></script>
+</head>
+<body>
+  <div class="wrap" id="app" data-theme="light">
+    <header>
+      <div>
+        <h2>Admin — Help Centre</h2>
+        <div class="muted">Manage articles, drafts and metadata</div>
+      </div>
+      <div class="toolbar">
+        <button id="themeBtn" class="btn">Theme</button>
+        <a class="btn" href="/help">View site</a>
+        <a class="btn" href="/help/admin/editor">New article</a>
+        <button id="logoutBtn" class="btn">Logout</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <main>
+        <div class="panel">
+          <table id="articlesTable">
+            <thead><tr><th>Title</th><th>Category</th><th>Updated</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody><tr><td colspan="4" class="muted-small">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </main>
+
+      <aside>
+        <div class="panel">
+          <strong>Admin actions</strong>
+          <p class="muted-small" style="margin-top:8px">Auto-login via <code>lasting_key</code> cookie is attempted when the page loads.</p>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button id="reloadBtn" class="btn">Reload</button>
+            <a class="btn" href="/help/admin/editor">Add</a>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:12px">
+          <strong>Useful</strong>
+          <ul style="margin-top:8px;color:var(--muted)">
+            <li>Use drafts (unpublish) to stage edits.</li>
+            <li>Click the article title to open live page.</li>
+            <li>Editing opens the unified editor.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+<script>
+  // patch fetch to include cookies
+  if (!window.__fetchPatched) {
+    const _f = window.fetch;
+    window.fetch = (url, opts = {}) => { opts = opts || {}; opts.credentials = 'include'; return _f(url, opts); };
+    window.__fetchPatched = true;
+  }
+
+  // theme
+    (function () {
+    const STORE_KEY = 'hc_theme';
+    const META_SELECTOR = 'meta[name="theme-color"]';
+
+    function applyTheme(theme) {
+        // Global attribute on <html> so all pages/components respond
+        const html = document.documentElement;
+        html.setAttribute('data-theme', theme);            // css: html[data-theme="dark"] { ... }
+        if (theme === 'dark') html.classList.add('theme-dark'); else html.classList.remove('theme-dark');
+
+        // persist
+        localStorage.setItem(STORE_KEY, theme);
+
+        // update mobile bar color (optional)
+        let meta = document.querySelector(META_SELECTOR);
+        if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'theme-color';
+        document.head.appendChild(meta);
+        }
+        meta.content = (theme === 'dark') ? '#041018' : '#ffffff';
+
+        // optional: swap images that declare data-theme-src-light / data-theme-src-dark
+        document.querySelectorAll('[data-theme-src-light], [data-theme-src-dark]').forEach(img => {
+        const light = img.getAttribute('data-theme-src-light');
+        const dark = img.getAttribute('data-theme-src-dark');
+        if (theme === 'dark' && dark) img.src = dark;
+        else if (theme === 'light' && light) img.src = light;
+        });
+    }
+
+    function toggleTheme() {
+        const cur = localStorage.getItem(STORE_KEY) ||
+                    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+    }
+
+    // init on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+        const saved = localStorage.getItem(STORE_KEY);
+        const defaultTheme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(defaultTheme);
+
+        // wire up theme toggle button by id
+        const btn = document.getElementById('themeBtn');
+        if (btn) {
+        btn.addEventListener('click', toggleTheme);
+        }
+
+    });
+
+    // expose a function if you want to call it manually
+    window.hcTheme = { applyTheme, toggleTheme };
+    })();
+
+  async function fetchAdminArticles(){
+    const res = await fetch('/api/admin/articles');
+    if(!res.ok) throw new Error('unauthorized');
+    return await res.json();
+  }
+
+  function renderAdminOverview(list){
+    const body = document.querySelector('#articlesTable tbody');
+    body.innerHTML = '';
+    if(!list.length) { body.innerHTML = '<tr><td colspan="4" class="muted-small">No articles</td></tr>'; return; }
+    list.forEach(a=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><a href="/help/article/${a.slug}" target="_blank" style="font-weight:600">${a.title}</a><div class="muted-small">${a.excerpt||''}</div></td>
+        <td>${a.category || ''}</td>
+        <td>${new Date(a.updated_at).toLocaleString()}</td>
+        <td style="text-align:right">
+          <a class="btn" href="/help/admin/editor?id=${a.id}">Edit</a>
+          <button class="btn" data-id="${a.id}" style="margin-left:8px">Delete</button>
+        </td>
+      `;
+      body.appendChild(tr);
+
+      tr.querySelector('button[data-id]')?.addEventListener('click', async (ev)=>{
+        if(!confirm('Delete this article?')) return;
+        const id = ev.currentTarget.getAttribute('data-id');
+        const dres = await fetch('/api/admin/article/'+id, {method:'DELETE'});
+        if(dres.ok) {
+          loadAndRenderAdmin();
+        } else {
+          alert('Failed to delete');
+        }
+      });
+    });
+  }
+
+  async function loadAndRenderAdmin(){
+    try {
+      const list = await fetchAdminArticles();
+      renderAdminOverview(list);
+    } catch(e) {
+      console.error('fetchAdminArticles failed', e);
+      if(confirm('Not logged in. Try auto-login?')) {
+        const ok = await attemptAutoLogin();
+        if(ok) { await loadAndRenderAdmin(); }
+        else window.location.href = '/login_page?from=admin';
+      }
+    }
+  }
+
+  document.getElementById('reloadBtn').addEventListener('click', loadAndRenderAdmin);
+  document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+    await fetch('/logout', {method:'POST'});
+    location.reload();
+  });
+
+  async function validateSession() {
+    try {
+      const res = await fetch("/test-session", { method: "GET" });
+      if (res.status === 200) { await loadAndRenderAdmin(); return true; }
+      if (res.status === 403) { window.location.href = '/login_page?suspended=true'; return false; }
+      return false;
+    } catch (err) { return false; }
+  }
+
+  async function attemptAutoLogin() {
+    try {
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      if (res.ok) { await loadAndRenderAdmin(); return true; }
+      alert('Auto-login failed. Please sign in manually.');
+      return false;
+    } catch (err) { alert('Auto-login error.'); return false; }
+  }
+
+  (async ()=>{
+    const ok = await validateSession();
+    if(!ok) await attemptAutoLogin();
+  })();
+</script>
+</body>
+</html>
