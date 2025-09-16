@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Article</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page-bg: linear-gradient(180deg,#fbfdff,#f4f8fb);
+    --surface: #ffffff;
+    --panel: #ffffff;
+    --text:#0f172a;
+    --muted:#6b7280;
+    --accent: #0b78ff;
+    --radius:14px;
+    --container:760px;
+    --shadow: 0 18px 50px rgba(12,18,31,0.06);
+  }
+  [data-theme="dark"]{
+    --page-bg: linear-gradient(180deg,#04101a,#031018);
+    --surface: rgba(255,255,255,0.02);
+    --panel: rgba(255,255,255,0.02);
+    --text:#e6eef8;
+    --muted:#9aa7b6;
+    --accent:#6fc0ff;
+    --shadow: 0 30px 80px rgba(2,6,23,0.6);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--page-bg);color:var(--text);-webkit-font-smoothing:antialiased;padding:28px;display:flex;justify-content:center}
+  .wrap{width:100%;max-width:var(--container)}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+  .btn{background:linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.8));padding:8px 12px;border-radius:10px;border:0;cursor:pointer;box-shadow:var(--shadow);font-weight:600}
+  [data-theme="dark"] .btn{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); color: var(--accent)}
+  .card{background:var(--surface);padding:22px;border-radius:12px;box-shadow:var(--shadow);border:1px solid rgba(0,0,0,0.04)}
+  [data-theme="dark"] .card{border:1px solid rgba(255,255,255,0.03)}
+
+  h2{margin:0 0 8px 0}
+  .meta{color:var(--muted);font-size:14px;margin-bottom:12px}
+  .content{line-height:1.65;color:var(--text)}
+  .content img{max-width:100%;border-radius:8px}
+  pre{background:rgba(0,0,0,0.06);padding:12px;border-radius:8px;overflow:auto}
+  [data-theme="dark"] pre{background:rgba(255,255,255,0.03)}
+  .meta-actions{display:flex;gap:8px;align-items:center}
+  .edit-link{font-weight:700;color:var(--accent);text-decoration:none}
+  @media (max-width:700px){body{padding:12px}}
+</style>
+</head>
+<body>
+  <div class="wrap" id="app" data-theme="light">
+    <div class="top">
+      <div style="display:flex;gap:10px;align-items:center">
+        <a class="btn" href="/help">← Back</a>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="themeBtn" class="btn">Theme</button>
+      </div>
+    </div>
+
+    <div id="articleArea" class="card">
+      <h2 id="title">Loading…</h2>
+      <div class="meta" id="meta"> </div>
+      <div class="content" id="content">Fetching content…</div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/custom-alert.js"></script>
+<script>
+  // theme
+  (function () {
+    const STORE_KEY = 'hc_theme';
+    const META_SELECTOR = 'meta[name="theme-color"]';
+
+    function applyTheme(theme) {
+        // Global attribute on <html> so all pages/components respond
+        const html = document.documentElement;
+        html.setAttribute('data-theme', theme);            // css: html[data-theme="dark"] { ... }
+        if (theme === 'dark') html.classList.add('theme-dark'); else html.classList.remove('theme-dark');
+
+        // persist
+        localStorage.setItem(STORE_KEY, theme);
+
+        // update mobile bar color (optional)
+        let meta = document.querySelector(META_SELECTOR);
+        if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'theme-color';
+        document.head.appendChild(meta);
+        }
+        meta.content = (theme === 'dark') ? '#041018' : '#ffffff';
+
+        // optional: swap images that declare data-theme-src-light / data-theme-src-dark
+        document.querySelectorAll('[data-theme-src-light], [data-theme-src-dark]').forEach(img => {
+        const light = img.getAttribute('data-theme-src-light');
+        const dark = img.getAttribute('data-theme-src-dark');
+        if (theme === 'dark' && dark) img.src = dark;
+        else if (theme === 'light' && light) img.src = light;
+        });
+    }
+
+    function toggleTheme() {
+        const cur = localStorage.getItem(STORE_KEY) ||
+                    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(cur === 'dark' ? 'light' : 'dark');
+    }
+
+    // init on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+        const saved = localStorage.getItem(STORE_KEY);
+        const defaultTheme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        applyTheme(defaultTheme);
+
+        // wire up theme toggle button by id
+        const btn = document.getElementById('themeBtn');
+        if (btn) {
+        btn.addEventListener('click', toggleTheme);
+        }
+
+    });
+
+    // expose a function if you want to call it manually
+    window.hcTheme = { applyTheme, toggleTheme };
+    })();
+
+  const slug = "{{ slug }}";
+  async function load(){
+    try{
+      const res = await fetch('/api/article/'+encodeURIComponent(slug));
+      if(res.status===404){
+        document.getElementById('title').textContent = 'Article not found';
+        document.getElementById('content').textContent = '';
+        return;
+      }
+      const data = await res.json();
+      document.getElementById('title').textContent = data.title;
+      document.getElementById('meta').textContent = (data.category ? data.category + ' • ' : '') + (data.excerpt || '') + ' • ' + (data.view_count||0) + ' views';
+      document.getElementById('content').innerHTML = marked.parse(data.content || '');
+    }catch(e){
+      document.getElementById('content').textContent = 'Failed to load article';
+    }
+  }
+  load();
+</script>
+</body>
+</html>

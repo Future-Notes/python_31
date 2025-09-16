@@ -216,6 +216,57 @@ class Version(db.Model):
     commit_sha = db.Column(db.String(40), nullable=False)
     is_production = db.Column(db.Boolean, default=False)
 
+class Article(db.Model):
+    __tablename__ = 'articles'
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(255), unique=True, nullable=False, index=True)  # url-friendly
+    title = db.Column(db.String(255), nullable=False)                        # shown on homepage
+    category = db.Column(db.String(128), nullable=True)                      # optional
+    content = db.Column(db.Text, nullable=False)                             # full markdown content
+    excerpt = db.Column(db.String(512), nullable=True)                       # short summary
+    tags_json = db.Column(db.Text, nullable=True)                            # JSON list of tags
+    published = db.Column(db.Boolean, default=True, nullable=False)          # published or draft
+    author = db.Column(db.String(128), nullable=True)                        # last editor/author
+    view_count = db.Column(db.Integer, default=0, nullable=False)            # views
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_edited_by = db.Column(db.String(128), nullable=True)
+
+    def tags(self):
+        try:
+            return json.loads(self.tags_json) if self.tags_json else []
+        except Exception:
+            return []
+
+    def to_dict(self, full=False):
+        base = {
+            "id": self.id,
+            "slug": self.slug,
+            "title": self.title,
+            "category": self.category,
+            "excerpt": self.excerpt,
+            "tags": self.tags(),
+            "published": self.published,
+            "author": self.author,
+            "view_count": self.view_count,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "last_edited_by": self.last_edited_by
+        }
+        if full:
+            base["content"] = self.content
+        return base
+
+# -------------------------
+# DB helper
+# -------------------------
+def slugify(s):
+    s = s.lower().strip()
+    s = re.sub(r'[^a-z0-9\s-]', '', s)
+    s = re.sub(r'\s+', '-', s)
+    s = re.sub(r'-+', '-', s)
+    return s[:200]
+
 class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
@@ -3067,7 +3118,153 @@ def version_management():
 def why_protected_usernames():
     return render_template("why_protected_usernames.html")
 
+# Homepage / Overview (search & listing)
+@app.route("/help")
+def help_homepage():
+    return render_template("help.html")
+
+# Article detail page
+@app.route("/help/article/<string:slug>")
+def help_article(slug):
+    return render_template("help_article.html", slug=slug)
+
+# Admin overview page (serves the admin UI; UI will auto-login)
+@app.route("/help/admin")
+def help_admin():
+    return render_template("help_admin.html")
+
+# Add/Edit page (admin editor). If editing you can pass ?id=#
+@app.route("/help/admin/editor")
+def help_editor():
+    return render_template("help_admin_editor.html")
+
 #---------------------------------API routes--------------------------------
+
+# -------------------------
+# Public API routes (no auth)
+# -------------------------
+@app.route("/api/articles", methods=["GET"])
+def api_list_articles():
+    # supports search q=, category=, page/limit (simple)
+    q = request.args.get("q", "").strip()
+    category = request.args.get("category")
+    page = int(request.args.get("page", 1))
+    limit = int(request.args.get("limit", 20))
+    qry = Article.query.filter_by(published=True)
+    if category:
+        qry = qry.filter(Article.category == category)
+    if q:
+        like = f"%{q}%"
+        qry = qry.filter((Article.title.ilike(like)) | (Article.content.ilike(like)) | (Article.excerpt.ilike(like)))
+    total = qry.count()
+    items = qry.order_by(Article.updated_at.desc()).offset((page-1)*limit).limit(limit).all()
+    return jsonify({
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "articles": [a.to_dict(full=False) for a in items]
+    })
+
+@app.route("/api/article/<string:slug_or_id>", methods=["GET"])
+def api_get_article(slug_or_id):
+    a = None
+    if slug_or_id.isdigit():
+        a = Article.query.get(int(slug_or_id))
+    else:
+        a = Article.query.filter_by(slug=slug_or_id).first()
+    if not a:
+        return jsonify({"error": "not_found"}), 404
+    # increment view count (non-blocking-ish)
+    try:
+        a.view_count = Article.view_count + 1 if hasattr(Article, 'view_count') else a.view_count + 1
+        a.view_count += 0  # no-op to silence editors
+        a.view_count = a.view_count + 1
+        db.session.commit()
+    except:
+        db.session.rollback()
+    return jsonify(a.to_dict(full=True))
+
+# -------------------------
+# Admin API routes (protected)
+# -------------------------
+@app.route("/api/admin/articles", methods=["GET"])
+@require_session_key
+@require_admin
+def api_admin_list_articles():
+    # return all (for admin)
+    items = Article.query.order_by(Article.updated_at.desc()).all()
+    return jsonify([a.to_dict(full=False) for a in items])
+
+@app.route("/api/admin/article", methods=["POST"])
+@require_session_key
+@require_admin
+def api_admin_create_article():
+    data = request.get_json() or {}
+    title = data.get("title")
+    if not title:
+        return jsonify({"error": "title_required"}), 400
+    content = data.get("content", "")
+    category = data.get("category")
+    excerpt = data.get("excerpt")
+    tags = data.get("tags", [])
+    published = bool(data.get("published", True))
+    author = session.get("user", "admin")
+    slug_candidate = slugify(data.get("slug") or title)
+    # ensure unique slug
+    base = slug_candidate
+    i = 1
+    while Article.query.filter_by(slug=slug_candidate).first():
+        slug_candidate = f"{base}-{i}"
+        i += 1
+    a = Article(
+        title=title,
+        slug=slug_candidate,
+        content=content,
+        category=category,
+        excerpt=excerpt,
+        tags_json=json.dumps(tags),
+        published=published,
+        author=author,
+        last_edited_by=author
+    )
+    db.session.add(a)
+    db.session.commit()
+    return jsonify(a.to_dict(full=True)), 201
+
+@app.route("/api/admin/article/<int:aid>", methods=["PUT"])
+@require_session_key
+@require_admin
+def api_admin_update_article(aid):
+    a = Article.query.get(aid)
+    if not a:
+        return jsonify({"error": "not_found"}), 404
+    data = request.get_json() or {}
+    a.title = data.get("title", a.title)
+    maybe_slug = data.get("slug")
+    if maybe_slug:
+        s = slugify(maybe_slug)
+        if s != a.slug and Article.query.filter_by(slug=s).first():
+            return jsonify({"error": "slug_conflict"}), 400
+        a.slug = s
+    a.content = data.get("content", a.content)
+    a.category = data.get("category", a.category)
+    a.excerpt = data.get("excerpt", a.excerpt)
+    a.tags_json = json.dumps(data.get("tags", a.tags()))
+    a.published = bool(data.get("published", a.published))
+    a.last_edited_by = session.get("user", "admin")
+    db.session.commit()
+    return jsonify(a.to_dict(full=True))
+
+@app.route("/api/admin/article/<int:aid>", methods=["DELETE"])
+@require_session_key
+@require_admin
+def api_admin_delete_article(aid):
+    a = Article.query.get(aid)
+    if not a:
+        return jsonify({"error": "not_found"}), 404
+    db.session.delete(a)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 # Flow routes:
 
@@ -7212,8 +7409,8 @@ def create_user_from_signup_session(signup_session, skip_email=False):
         # Send welcome notification
         send_notification(
             user.id, "Welcome!",
-            "Thank you for creating an account on Future Notes! Click for a quick guide.",
-            "/guide_page"
+            "Thank you for creating an account on Future Notes! Need some help? Visit our help centre by clicking on this notification",
+            "/help"
         )
 
         # after commit and ip_record saved

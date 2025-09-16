@@ -159,6 +159,14 @@
             box-shadow: var(--shadow-sm);
         }
 
+        .nav-links .btn-secondary {
+            background: transparent;
+            border: 2px solid var(--primary);
+            padding: 0.5rem 1.2rem;
+            border-radius: var(--border-radius);
+            transition: var(--transition-fast);
+        }
+
         .nav-links .btn:hover {
             background: var(--primary-light);
             transform: translateY(-2px);
@@ -739,7 +747,6 @@
         .contact {
             padding: 6rem 5%;
             position: relative;
-            background: var(--dark-surface);
         }
 
         .contact-container {
@@ -1107,7 +1114,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255, 255, 255, 0.9);
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
             display: flex;
             justify-content: center;
             align-items: center;
@@ -1124,7 +1131,7 @@
         
         .loading-content {
             text-align: center;
-            background: gray;
+            background: var(--dark-surface);
             padding: 40px;
             border-radius: 12px;
             box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
@@ -1217,6 +1224,7 @@
             <a href="#features">Features</a>
             <a href="#story">Project Story</a>
             <a href="#contact">Contact</a>
+            <a href="/help" class="btn-secondary">Support <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
             <a href="/login_page" class="btn">Login</a>
             <a href="/signup_page" class="btn">Sign Up</a>
         </nav>
