@@ -8250,18 +8250,27 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
-        note.title = data.get('title')
-        note.note = sanitize_html(data.get('note', note.note))
-        note.tag = data.get('tag')
         
-        # Handle folder_id update
-        folder_id = data.get('folder_id')
-        if folder_id:
-            folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
-            if not folder:
-                return jsonify({"error": "Folder not found or access denied"}), 400
-            note.folder_id = folder_id
-        # Niet verwijderen als leeg, alleen als er een nieuwe folder_id is meegegeven
+        # Only update fields that are provided in the request
+        if 'title' in data:
+            note.title = data.get('title')
+        if 'note' in data:
+            note.note = sanitize_html(data.get('note', note.note))
+        if 'tag' in data:
+            note.tag = data.get('tag')
+        
+        # Handle folder_id update - explicitly check for presence in request
+        if 'folder_id' in data:
+            folder_id = data.get('folder_id')
+            if folder_id is not None:  # Explicit null check
+                folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
+                if not folder:
+                    return jsonify({"error": "Folder not found or access denied"}), 400
+                note.folder_id = folder_id
+            else:
+                # Explicitly set to None to move to root
+                note.folder_id = None
+        # If folder_id is not in data, don't change the existing value
 
         requested_attachments = set(data.get('attachments') or [])
         existing_attachments = current_attachment_ids(note.id)

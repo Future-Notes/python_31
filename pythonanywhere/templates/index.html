@@ -2814,47 +2814,102 @@
 
             const overlay = document.createElement('div');
             overlay.id = 'move-modal';
-            overlay.className = 'prompt-overlay'; // re-use style if you have one, else style below
+            overlay.className = 'prompt-overlay';
 
             const modal = document.createElement('div');
             modal.className = 'move-modal';
 
-            // left: item card
-            const left = document.createElement('div');
-            left.className = 'move-left';
-            left.innerHTML = `
-                <h3>Move ${escapeHTML(type)}</h3>
-                <div class="move-item">
-                    <div class="move-item-type">${type === 'folder' ? '📁 Folder' : '📝 Note'}</div>
-                    <div class="move-item-name">${escapeHTML(name)}</div>
-                    <div class="move-item-meta">ID: ${id}</div>
-                </div>
+            // Header
+            const header = document.createElement('div');
+            header.className = 'modal-header';
+            header.innerHTML = `
+                <span>Move Item</span>
+                <button onclick="document.getElementById('move-modal').remove()">×</button>
             `;
 
-            // right: folder picker
-            const right = document.createElement('div');
-            right.className = 'move-right';
-            right.innerHTML = `
-                <div class="move-picker">
-                    <div class="picker-header">Select Destination</div>
-                    <div class="picker-list" id="move-picker-list"></div>
-                </div>
+            // Content area
+            const content = document.createElement('div');
+            content.className = 'modal-content';
+
+            // Left panel - folder tree
+            const treePanel = document.createElement('div');
+            treePanel.className = 'tree-panel';
+            
+            const treeHeader = document.createElement('div');
+            treeHeader.className = 'tree-header';
+            treeHeader.textContent = 'Folders';
+            
+            const treeContainer = document.createElement('div');
+            treeContainer.className = 'tree-container';
+            treeContainer.id = 'move-picker-list';
+
+            treePanel.appendChild(treeHeader);
+            treePanel.appendChild(treeContainer);
+
+            // Right panel - details
+            const detailsPanel = document.createElement('div');
+            detailsPanel.className = 'details-panel';
+            
+            const detailsHeader = document.createElement('div');
+            detailsHeader.className = 'details-header';
+            detailsHeader.textContent = 'Details';
+            
+            const itemDetails = document.createElement('div');
+            itemDetails.className = 'item-details';
+            
+            const icon = document.createElement('div');
+            icon.className = 'item-icon';
+            icon.innerHTML = type === 'folder' ? '📁' : '📄';
+            
+            const detailName = document.createElement('div');
+            detailName.className = 'detail-row';
+            detailName.innerHTML = `
+                <div class="detail-label">Name:</div>
+                <div class="detail-value">${escapeHTML(name)}</div>
+            `;
+            
+            const detailType = document.createElement('div');
+            detailType.className = 'detail-row';
+            detailType.innerHTML = `
+                <div class="detail-label">Type:</div>
+                <div class="detail-value">${type === 'folder' ? 'Folder' : 'Note'}</div>
+            `;
+            
+            const detailId = document.createElement('div');
+            detailId.className = 'detail-row';
+            detailId.innerHTML = `
+                <div class="detail-label">ID:</div>
+                <div class="detail-value">${id}</div>
+            `;
+            
+            const destinationInfo = document.createElement('div');
+            destinationInfo.className = 'destination-info';
+            destinationInfo.id = 'move-selected-dest';
+            destinationInfo.innerHTML = 'Destination: <em>Root</em>';
+
+            itemDetails.appendChild(icon);
+            itemDetails.appendChild(detailName);
+            itemDetails.appendChild(detailType);
+            itemDetails.appendChild(detailId);
+            itemDetails.appendChild(destinationInfo);
+
+            detailsPanel.appendChild(detailsHeader);
+            detailsPanel.appendChild(itemDetails);
+
+            content.appendChild(treePanel);
+            content.appendChild(detailsPanel);
+
+            // Footer with buttons
+            const footer = document.createElement('div');
+            footer.className = 'modal-footer';
+            footer.innerHTML = `
+                <button id="move-cancel-btn" class="cancel">Cancel</button>
+                <button id="move-confirm-btn" class="primary" disabled>Move</button>
             `;
 
-            // bottom bar
-            const bottom = document.createElement('div');
-            bottom.className = 'move-bottom';
-            bottom.innerHTML = `
-                <div class="selected-dest" id="move-selected-dest">Destination: <em>Root</em></div>
-                <div class="move-buttons">
-                    <button id="move-confirm-btn" class="prompt-ok" disabled>Select</button>
-                    <button id="move-cancel-btn" class="prompt-cancel">Cancel</button>
-                </div>
-            `;
-
-            modal.appendChild(left);
-            modal.appendChild(right);
-            modal.appendChild(bottom);
+            modal.appendChild(header);
+            modal.appendChild(content);
+            modal.appendChild(footer);
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
@@ -2865,6 +2920,7 @@
             // load top-level folders (root)
             const listEl = document.getElementById('move-picker-list');
             listEl.innerHTML = ''; // clear
+            
             // Add a "Root" entry
             const rootItem = createFolderListItem({ id: null, name: 'Root' }, 0, _moveModalState);
             listEl.appendChild(rootItem);
@@ -2888,16 +2944,19 @@
         /** create a simple folder row (expandable) */
         function createFolderListItem(folder, level = 0, state) {
             const row = document.createElement('div');
-            row.className = 'picker-row';
-            row.style.paddingLeft = (12 + level * 12) + 'px';
+            row.className = 'tree-item';
+            row.style.paddingLeft = (12 + level * 16) + 'px';
             row.dataset.folderId = folder.id === null ? '' : String(folder.id);
 
             // disabled if folder id in forbidden set
             const isForbidden = folder.id !== null && state.forbiddenIds && state.forbiddenIds.has(folder.id);
+            if (isForbidden) {
+                row.classList.add('disabled');
+            }
 
-            const expander = document.createElement('button');
-            expander.className = 'expander';
-            expander.innerText = '▶';
+            const expander = document.createElement('div');
+            expander.className = 'tree-expander';
+            expander.innerHTML = '▶';
             expander.onclick = async (e) => {
                 e.stopPropagation();
                 // load children into a sub-container
@@ -2905,21 +2964,25 @@
                     // toggle
                     const sub = row.querySelector('.subrows');
                     if (sub) sub.style.display = sub.style.display === 'none' ? 'block' : 'none';
-                    expander.innerText = sub && sub.style.display === 'block' ? '▼' : '▶';
+                    expander.innerHTML = sub && sub.style.display === 'block' ? '▼' : '▶';
                     return;
                 }
-                expander.innerText = '⌛';
+                expander.innerHTML = '⌛';
                 const sub = document.createElement('div');
                 sub.className = 'subrows';
-                sub.style.marginTop = '6px';
+                sub.style.marginLeft = '16px';
                 row.appendChild(sub);
                 await appendFolderChildren(sub, folder.id, level + 1, state);
                 row._loaded = true;
-                expander.innerText = '▼';
+                expander.innerHTML = '▼';
             };
 
+            const icon = document.createElement('div');
+            icon.className = 'tree-icon';
+            icon.innerHTML = '📁';
+
             const label = document.createElement('div');
-            label.className = 'picker-label';
+            label.className = 'tree-label';
             label.innerText = folder.name || `Folder ${folder.id}`;
 
             if (folder.id === null) { // root: no expander
@@ -2936,15 +2999,21 @@
                 }
                 const fid = folder.id === null ? null : folder.id;
                 setSelectedDestination(fid);
+                
+                // Update selection UI
+                document.querySelectorAll('.tree-item.selected').forEach(el => {
+                    el.classList.remove('selected');
+                });
+                row.classList.add('selected');
             };
 
             // grey out forbidden
             if (isForbidden) {
-                row.style.opacity = '0.5';
                 row.title = "Cannot move into this folder (would create a circular parent).";
             }
 
             row.appendChild(expander);
+            row.appendChild(icon);
             row.appendChild(label);
             return row;
         }
@@ -3003,7 +3072,26 @@
             if (!st) return;
             const destination = st.selectedDest; // null allowed
 
-            const payload = st.type === 'note' ? { folder_id: destination } : { parent_id: destination };
+            // For notes, we need to include all current fields to prevent data loss
+            let payload;
+            if (st.type === 'note') {
+                // Find the current note to preserve its data
+                const note = allNotes.find(n => n.id === st.id);
+                if (!note) {
+                    flashMessage("Error: Note not found in local data", 3000);
+                    return;
+                }
+                
+                payload = {
+                    title: note.title,
+                    note: note.note,
+                    tag: note.tag,
+                    folder_id: destination  // This is the only field we're changing
+                };
+            } else {
+                // For folders, we only need to send parent_id
+                payload = { parent_id: destination };
+            }
 
             const url = st.type === 'note' ? `/notes/${st.id}` : `/folders/${st.id}`;
             try {
@@ -3014,13 +3102,15 @@
                     },
                     body: JSON.stringify(payload)
                 });
+                
                 if (!resp.ok) {
-                    const body = await resp.json().catch(()=>null);
+                    const body = await resp.json().catch(() => null);
                     const msg = (body && body.error) ? body.error : `Server returned ${resp.status}`;
                     flashMessage(`Move failed: ${msg}`, 4000);
                     return;
                 }
-                flashMessage("Moved successfully!", 1500);
+                
+                flashMessage("Moved successfully!", "success");
                 // close modal
                 const modal = document.getElementById('move-modal');
                 if (modal) modal.remove();
@@ -3030,7 +3120,7 @@
                 fetchNotes();
             } catch (e) {
                 console.error("Error performing move:", e);
-                flashMessage("Network error while moving item.", 3000);
+                alert("Network error while moving item.", "error");
             }
         }
 
@@ -3079,19 +3169,227 @@
             const s = document.createElement('style');
             s.id = 'move-modal-style';
             s.innerText = `
-            .prompt-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; z-index:20000; }
-            .move-modal { width: 840px; max-width: 95%; background: var(--bg-color); border-radius:8px; display:flex; gap:16px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2); }
-            .move-left { width: 280px; border-right:1px solid #eee; padding-right:12px; }
-            .move-right { flex:1; }
-            .move-item { border:1px dashed #ddd; padding:10px; border-radius:6px; }
-            .picker-list { max-height: 420px; overflow:auto; border:1px solid #eee; padding:8px; border-radius:6px; }
-            .picker-row { display:flex; align-items:center; gap:8px; cursor:pointer; padding:6px 4px; }
-            .picker-row:hover { background: var(--ctr-color) }
-            .expander { width:28px; height:28px; border-radius:4px; border:1px solid #ddd; background:transparent; cursor:pointer; }
-            .move-bottom { position: absolute; bottom: 28px; left: 0; right: 0; display:flex; justify-content:space-between; align-items:center; padding:0 28px; pointer-events:none; }
-            .move-buttons { pointer-events:auto; }
-            .move-buttons .prompt-ok, .move-buttons .prompt-cancel { margin-left:8px; padding:8px 12px; }
-            .subrows { margin-left:8px; }
+            :root {
+                --window-bg: #2d2d2d;
+                --header-bg: #3a3a3a;
+                --border-color: #555555;
+                --selected-bg: #4a4a4a;
+                --hover-bg: #444444;
+                --button-bg: #404040;
+                --button-hover: #4c4c4c;
+                --button-active: #525252;
+                --text-color: #e0e0e0;
+                --text-muted: #aaaaaa;
+                --accent-color: #666666;
+                --shadow-color: rgba(0, 0, 0, 0.3);
+            }
+
+            .prompt-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 20000;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }
+
+            .move-modal {
+                width: 700px;
+                height: 500px;
+                background: var(--window-bg);
+                border: 1px solid var(--border-color);
+                border-radius: 2px;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .modal-header {
+                background: var(--header-bg);
+                padding: 10px 15px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-weight: 600;
+            }
+
+            .modal-header button {
+                background: none;
+                border: none;
+                font-size: 16px;
+                cursor: pointer;
+            }
+
+            .modal-content {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+            }
+
+            .tree-panel {
+                width: 40%;
+                border-right: 1px solid var(--border-color);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .tree-header {
+                padding: 8px 15px;
+                background: var(--header-bg);
+                border-bottom: 1px solid var(--border-color);
+                font-weight: 600;
+                font-size: 13px;
+            }
+
+            .tree-container {
+                flex: 1;
+                overflow: auto;
+                padding: 5px 0;
+            }
+
+            .tree-item {
+                display: flex;
+                align-items: center;
+                padding: 4px 15px 4px 5px;
+                cursor: pointer;
+                user-select: none;
+                white-space: nowrap;
+            }
+
+            .tree-item:hover {
+                background: var(--hover-bg);
+            }
+
+            .tree-item.selected {
+                background: var(--selected-bg);
+            }
+
+            .tree-item.disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .tree-expander {
+                width: 16px;
+                height: 16px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-right: 2px;
+                cursor: pointer;
+            }
+
+            .tree-icon {
+                width: 16px;
+                height: 16px;
+                margin-right: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .details-panel {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .details-header {
+                padding: 8px 15px;
+                background: var(--header-bg);
+                border-bottom: 1px solid var(--border-color);
+                font-weight: 600;
+                font-size: 13px;
+            }
+
+            .item-details {
+                padding: 15px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .detail-row {
+                display: flex;
+                align-items: center;
+            }
+
+            .detail-label {
+                width: 100px;
+                font-weight: 600;
+                font-size: 13px;
+            }
+
+            .detail-value {
+                flex: 1;
+            }
+
+            .destination-info {
+                margin-top: 10px;
+                padding: 10px;
+                background: var(--btn-color);
+                border: 1px solid var(--border-color);
+                border-radius: 3px;
+                font-size: 13px;
+            }
+
+            .destination-info strong {
+                color: var(--accent-color);
+            }
+
+            .modal-footer {
+                padding: 15px;
+                display: flex;
+                justify-content: flex-end;
+                gap: 8px;
+                border-top: 1px solid var(--border-color);
+                background: var(--header-bg);
+            }
+
+            .modal-footer button {
+                padding: 6px 14px;
+                border: 1px solid var(--border-color);
+                border-radius: 2px;
+                background: var(--button-bg);
+                cursor: pointer;
+                font-family: inherit;
+                min-width: 80px;
+            }
+
+            .modal-footer button:hover {
+                background: var(--button-hover);
+            }
+
+            .modal-footer button.primary {
+                background: var(--accent-color);
+                color: white;
+                border-color: var(--accent-color);
+            }
+
+            .modal-footer button.primary:hover {
+                background: #0066c0;
+            }
+
+            .modal-footer button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            .item-icon {
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                margin-right: 10px;
+            }
             `;
             document.head.appendChild(s);
         })();
