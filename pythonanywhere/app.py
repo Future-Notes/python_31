@@ -8612,13 +8612,43 @@ def sanitize_html(html):
 @app.route("/api/notes/<int:note_id>/improve", methods=["POST"])
 @require_session_key
 def improve_note(note_id):
-    note = Note.query.filter_by(id=note_id, user_id=g.user_id).first()
+    # load the note regardless of ownership, then enforce access control
+    note = Note.query.filter_by(id=note_id).first()
     if not note:
-        return jsonify({"error": "Note not found or not owned by user"}), 404
+        return jsonify({"error": "Note not found"}), 404
+
+    user_id = g.user_id
+    can_access = False
+
+    # direct owner
+    if getattr(note, "user_id", None) == user_id:
+        can_access = True
+    else:
+        # group-owned note -> check membership
+        group_id = getattr(note, "group_id", None)
+        if group_id:
+            # Try the most common pattern: GroupMember model with group_id and user_id
+
+            if GroupMember:
+                membership = GroupMember.query.filter_by(group_id=group_id, user_id=user_id).first()
+                if membership:
+                    can_access = True
+            else:
+                # fallback: maybe Group has owner/admins; check owner as a last-resort convenience
+                try:
+                    group = Group.query.filter_by(id=group_id).first()
+                    if group and getattr(group, "owner_id", None) == user_id:
+                        can_access = True
+                except Exception:
+                    # couldn't check group membership - deny by default
+                    can_access = False
+
+    if not can_access:
+        return jsonify({"error": "Note not found or you don't have access to it"}), 404
 
     if len(note.note) > MAX_NOTE_LENGTH:
         return jsonify({"error": f"Note too long (max {MAX_NOTE_LENGTH} characters)"}), 400
-    
+
     if check("ai_notes_development_return_input", "Nee") == "Ja":
         print("AI Notes Development Mode: returning input as output")
         return jsonify({

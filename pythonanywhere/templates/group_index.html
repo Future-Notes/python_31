@@ -1123,6 +1123,155 @@
             }
         }
 
+        .ai-improve-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.55); }
+
+        /* if layout pushes button off-screen on very small screens, fallback inside */
+        @media (max-width:480px) {
+        .ai-improve-btn { right: 8px; top: -22px; }
+        }
+
+        /* Overlay: smaller and centered within the editor parent (not full bleed) */
+        .ai-diff-preview {
+        position: absolute;
+        top: 18px;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        z-index: 100;
+        display: none;
+        background: rgba(6,6,6,0.68);
+        border-radius: 8px;
+        padding: 12px;
+        box-sizing: border-box;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 18px 48px rgba(0,0,0,0.6);
+        color: #e8e8e8;
+        font-size: 14px;
+        }
+
+        /* compact overlay for small editors */
+        .ai-diff-preview.compact {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        padding: 8px;
+        font-size: 13px;
+        }
+
+        /* toolbar and actions */
+        .ai-diff-toolbar{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        margin-bottom:8px;
+        }
+        .ai-diff-toolbar .left { font-weight:600; color:#f3f3f3; font-size:13px; }
+        .ai-diff-toolbar .actions { display:flex; gap:8px; align-items:center; }
+
+        /* smaller buttons */
+        .ai-apply-btn, .ai-decline-btn, .ai-close-btn {
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-size: 13px;
+        box-shadow: none;
+        }
+        .ai-apply-btn { background: linear-gradient(180deg,#2e7d32,#1b5e20); color: #fff; }
+        .ai-decline-btn { background: linear-gradient(180deg,#7d2e2e,#5e1b1b); color: #fff; }
+        .ai-close-btn { background: linear-gradient(180deg,#555,#3f3f3f); color:#fff; }
+
+        /* columns layout tightened and responsive */
+        .diff-columns {
+        display:flex;
+        gap:10px;
+        height: calc(100% - 44px);
+        align-items: stretch;
+        }
+        .diff-column {
+        flex:1;
+        overflow:auto;
+        background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+        border-radius:6px;
+        padding:10px;
+        box-sizing:border-box;
+        border: 1px solid rgba(255,255,255,0.04);
+        min-width: 0; /* important for flexboxes */
+        }
+        .diff-column h4 { margin:0 0 8px 0; font-size:12px; color:#ddd; }
+
+        /* highlights are translucent so text remains readable */
+        .diff-removed {
+        background-color: rgba(220,75,75,0.16);
+        box-shadow: inset 0 0 0 1px rgba(220,75,75,0.06);
+        border-radius: 3px;
+        padding: 0 2px;
+        color: inherit;
+        }
+        .diff-added {
+        background-color: rgba(110,220,120,0.14);
+        box-shadow: inset 0 0 0 1px rgba(110,220,120,0.05);
+        border-radius: 3px;
+        padding: 0 2px;
+        color: inherit;
+        }
+
+        /* ensure text color preserved (in case editor uses strong color rules) */
+        .ai-diff-preview, .ai-diff-preview .diff-column, .ai-diff-preview .diff-column * {
+        color: inherit !important;
+        }
+
+        /* scrollbars for overlay columns (only visible when needed) */
+        .diff-column::-webkit-scrollbar { height: 8px; width: 8px; }
+
+        .button-row-menu {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        #add-file-input, #update-file-input {
+            width: 95% !important;
+        }
+
+        #delete-button {
+            background-color: #b33a3a !important;
+        }
+        #delete-button:hover {
+            background-color: #cc4a4a !important;
+        }
+
+        .ai-improve-btn {
+            position: absolute;
+            top: 73px;
+            right: -10px;
+            z-index: 10;
+            background: linear-gradient(90deg, #00c6fb 0%, #005bea 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 16px;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0, 198, 251, 0.15);
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+            outline: none;
+            width: 40px !important;
+            height: 40px !important;
+            padding: 0px !important;
+            margin: 0px !important;
+        }
+
+        .ai-improve-btn:hover {
+            background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%);
+            box-shadow: 0 4px 16px rgba(67, 233, 123, 0.18);
+            transform: translateY(-2px) scale(1.04);
+        }
+
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -1168,6 +1317,7 @@
     </script>
 </head>
 <body>
+    <script src="https://cdn.jsdelivr.net/npm/diff@5/dist/diff.min.js"></script>
     <header>
         <div class="mobile-header">
             <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
@@ -1297,7 +1447,8 @@
     <div id="update-menu">
         <h3>Update Note</h3>
         <input type="text" id="update-note-title" placeholder="Title (optional)">
-        <div style="display: flex; flex-direction: column;">
+        
+        <div style="display: flex; flex-direction: column; position: relative;">
             <div class="toolbar">
                 <button type="button" onclick="formatText('bold', 'update-note-text')" title="Bold"><b>B</b></button>
                 <button type="button" onclick="formatText('italic', 'update-note-text')" title="Italic"><i>I</i></button>
@@ -1308,21 +1459,33 @@
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
-                <button type="button" onclick="toggleCheckboxList('note-text')" title="Checkbox List">☑</button>
+                <button type="button" onclick="toggleCheckboxList('update-note-text')" title="Checkbox List">☑</button>
             </div>
-            <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text"></div>
+            <div id="update-note-text" class="rich-text-editor" contenteditable="true" placeholder="Updated note text">
+                <div class="ai-diff-preview" id="ai-diff-update" style="display:none;"></div>
+            </div>
+            <button type="button" class="ai-improve-btn" title="Improve Note" onclick="improveNoteFrontend('update')">
+                AI
+            </button>
         </div>
+        
         <input type="text" id="update-note-tag" placeholder="Tag (optional)">
         <label for="update-file-input" class="file-label">Attach files</label>
         <input id="update-file-input" type="file" multiple>
         <div id="update-file-list" class="attachment-list"></div>
-
-        <!-- existing attachments for this note (editable) -->
         <h4 id="existing-attachments-title" style="margin-top:12px; margin-bottom:6px;">Existing attachments</h4>
+        <!-- show existing attachments -->
         <div id="update-existing-attachments" class="attachment-list"></div>
-        <button id="save-note-button">Save</button>
-        <button id="delete-button">Delete</button>
-        <button id="back-button">Back</button>
+
+        <div class="ai-loading" id="ai-loading-update" style="display:none;">Improving note... ⏳</div>
+        <button type="button" id="apply-ai-update" style="display:none;" onclick="applyAIDiff('update')">
+            Apply AI Changes
+        </button>
+        <div class="button-row-menu">
+            <button id="save-note-button">Save</button>
+            <button id="delete-button" onclick="deleteNote(currentNoteId)">Delete</button>
+            <button id="back-button">Back</button>
+        </div>
     </div>
 
     <div id="modal-overlay">
@@ -1338,7 +1501,8 @@
     <div id="add-menu">
         <h3>Add Note</h3>
         <input type="text" id="note-title" placeholder="Title (optional)">
-        <div style="display: flex; flex-direction: column;">
+        
+        <div style="display: flex; flex-direction: column; position: relative;">
             <div class="toolbar">
                 <button type="button" onclick="formatText('bold', 'note-text')" title="Bold"><b>B</b></button>
                 <button type="button" onclick="formatText('italic', 'note-text')" title="Italic"><i>I</i></button>
@@ -1349,16 +1513,34 @@
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h1>')" title="Heading 1">H1</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h2>')" title="Heading 2">H2</button>
                 <button type="button" onclick="formatText('formatBlock', 'update-note-text', '<h3>')" title="Heading 3">H3</button>
-                <button type="button" onclick="toggleCheckboxList('update-note-text')" title="Checkbox List">☑</button>
+                <button type="button" onclick="toggleCheckboxList('note-text')" title="Checkbox List">☑</button>
             </div>
-            <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note..."></div>
+            <!-- AI Improve button -->
+            <div id="note-text" class="rich-text-editor" contenteditable="true" placeholder="Write a note...">
+                <div class="ai-diff-preview" id="ai-diff-add" style="display:none;"></div>
+            </div>
+            <button type="button" class="ai-improve-btn" title="Improve Note" onclick="improveNoteFrontend('add')">
+                AI
+            </button>
         </div>
+        
         <input type="text" id="note-tag" placeholder="Tag (optional)">
+
+        <!-- inside add-menu, below note-tag -->
         <label for="add-file-input" class="file-label">Attach files</label>
         <input id="add-file-input" type="file" multiple>
         <div id="add-file-list" class="attachment-list"></div>
-        <button id="add-note-button">Add Note</button>
-        <button id="cancel-button">Cancel</button>
+
+        <div class="ai-loading" id="ai-loading-add" style="display:none;">Improving note... ⏳</div>
+        <div class="button-row-menu">
+            <button type="button" id="apply-ai-add" style="display:none;" onclick="applyAIDiff('add')">
+                Apply AI Changes
+            </button>
+
+            <button id="add-note-button">Add Note</button>
+            <button id="cancel-button">Cancel</button>
+        </div>
+        <!-- Add this to your add-menu -->
         <button id="clear-draft-button" class="clear-draft-btn">Clear Draft</button>
     </div>
 
@@ -1391,6 +1573,361 @@
             const div = document.createElement('div');
             div.textContent = html;
             return div.innerHTML;
+        }
+
+        let aiImprovedHtml = { add: '', update: '' };
+
+        /* ------- Helper: create element from HTML string ------- */
+        function parseHtmlFragment(html) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html || '';
+        return wrapper;
+        }
+
+        /* ------- Build a character-aligned parts list from Diff ------- */
+        function computeDiffParts(oldHtml, newHtml) {
+        // use textContent so Diff works on visible text
+        const tmpOld = parseHtmlFragment(oldHtml).textContent || '';
+        const tmpNew = parseHtmlFragment(newHtml).textContent || '';
+        const parts = Diff.diffWordsWithSpace(tmpOld, tmpNew);
+        return parts;
+        }
+
+        /* ------- Turn diff parts into left/right part arrays ------- */
+        function splitPartsForSides(parts) {
+        // left should contain everything except added parts (show removed with flag)
+        // right contains everything except removed parts (show added with flag)
+        const left = [];
+        const right = [];
+        for (const p of parts) {
+            if (p.added) {
+            // new-only: include in right
+            right.push({ value: p.value, added: true, removed: false });
+            } else if (p.removed) {
+            // old-only: include in left
+            left.push({ value: p.value, added: false, removed: true });
+            } else {
+            // unchanged: present in both
+            left.push({ value: p.value, added: false, removed: false });
+            right.push({ value: p.value, added: false, removed: false });
+            }
+        }
+        return { left, right };
+        }
+
+        /* ------- Replace text nodes of a cloned element according to parts while preserving markup ------- */
+        function applyPartsToElementKeepingHtml(rootEl, parts, markType) {
+        // rootEl is an element whose TEXT nodes we will replace with nodes (spans or text nodes).
+        // markType is function(part) => 'diff-removed' | 'diff-added' | null
+        const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+        let partIndex = 0;
+        let partOffset = 0;
+
+        // For each text node, produce a set of replacement nodes fragment
+        for (let i = 0; i < textNodes.length; i++) {
+            const tnode = textNodes[i];
+            const text = tnode.nodeValue || '';
+            if (text.length === 0) continue;
+
+            const frag = document.createDocumentFragment();
+            let remaining = text.length;
+
+            while (remaining > 0 && partIndex < parts.length) {
+            const part = parts[partIndex];
+            const partRemain = part.value.length - partOffset;
+            const take = Math.min(remaining, partRemain);
+
+            const segmentText = part.value.substr(partOffset, take);
+            if (segmentText.length === 0) break;
+
+            if (part.added && part.removed) {
+                // shouldn't happen
+                frag.appendChild(document.createTextNode(segmentText));
+            } else {
+                const cssClass = markType(part); // may be 'diff-added', 'diff-removed', or null
+                if (cssClass) {
+                const span = document.createElement('span');
+                span.className = cssClass;
+                span.textContent = segmentText;
+                frag.appendChild(span);
+                } else {
+                frag.appendChild(document.createTextNode(segmentText));
+                }
+            }
+
+            remaining -= take;
+            partOffset += take;
+            if (partOffset >= part.value.length) {
+                partIndex++;
+                partOffset = 0;
+            }
+            }
+
+            // If there are leftover characters in the text node but no diff parts left,
+            // simply append the remaining raw text.
+            if (remaining > 0) {
+            const start = text.length - remaining;
+            frag.appendChild(document.createTextNode(text.substr(start)));
+            }
+
+            // replace original text node with fragment
+            tnode.parentNode.replaceChild(frag, tnode);
+        }
+        }
+
+        /* ------- Render the two-column overlay into the containerId (ai-diff-*) ------- */
+        function renderHtmlDiff(oldHtml, newHtml, containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        // Make the container an overlay inside the editor wrapper if it's not already
+        container.style.display = 'block';
+        container.classList.add('ai-diff-preview');
+
+        // compute diff parts from plain text
+        const allParts = computeDiffParts(oldHtml, newHtml);
+        const { left: leftParts, right: rightParts } = splitPartsForSides(allParts);
+
+        // build DOM fragments for left (original) and right (improved)
+        const leftWrapper = parseHtmlFragment(oldHtml);
+        const rightWrapper = parseHtmlFragment(newHtml);
+
+        // clone so we don't modify originals
+        const leftClone = leftWrapper.cloneNode(true);
+        const rightClone = rightWrapper.cloneNode(true);
+
+        // apply highlights while preserving markup
+        applyPartsToElementKeepingHtml(leftClone, leftParts, (p) => p.removed ? 'diff-removed' : null);
+        applyPartsToElementKeepingHtml(rightClone, rightParts, (p) => p.added ? 'diff-added' : null);
+
+        // Compose overlay content
+        container.innerHTML = `
+            <div class="ai-diff-toolbar">
+            <div class="left">Preview changes</div>
+            <div class="actions">
+                <button type="button" class="ai-close-btn">Close</button>
+                <button type="button" class="ai-decline-btn">Decline</button>
+                <button type="button" class="ai-apply-btn">Apply</button>
+            </div>
+            </div>
+            <div class="diff-columns" role="region" aria-label="AI diff preview">
+            <div class="diff-column" id="${containerId}-left">
+                <h4>Original</h4>
+            </div>
+            <div class="diff-column" id="${containerId}-right">
+                <h4>AI suggestion</h4>
+            </div>
+            </div>
+        `;
+
+        // append clones' innerHTML into columns (they already have spans inserted)
+        const leftCol = container.querySelector(`#${containerId}-left`);
+        const rightCol = container.querySelector(`#${containerId}-right`);
+        // Append content while preserving top-level nodes
+        Array.from(leftClone.childNodes).forEach(n => leftCol.appendChild(n.cloneNode(true)));
+        Array.from(rightClone.childNodes).forEach(n => rightCol.appendChild(n.cloneNode(true)));
+
+        // hook up buttons
+        container.querySelector('.ai-apply-btn').onclick = () => {
+            // containerId is like ai-diff-add or ai-diff-update -> map to 'add'/'update'
+            const menu = containerId.includes('update') ? 'update' : 'add';
+            applyAIDiff(menu);
+        };
+        container.querySelector('.ai-decline-btn').onclick = () => {
+            const menu = containerId.includes('update') ? 'update' : 'add';
+            declineAIDiff(menu);
+        };
+        container.querySelector('.ai-close-btn').onclick = () => {
+            container.style.display = 'none';
+        };
+        }
+
+        /* ------- Decline AI changes (clears preview and state) ------- */
+        function declineAIDiff(menu) {
+        aiImprovedHtml[menu] = '';
+        const diffEl = document.getElementById(`ai-diff-${menu}`);
+        if (diffEl) diffEl.style.display = 'none';
+        const applyBtn = document.getElementById(`apply-ai-${menu}`);
+        if (applyBtn) applyBtn.style.display = 'none';
+        // Optionally show a small decline notice
+        const editorId = menu === 'update' ? 'update-note-text' : 'note-text';
+        const editor = document.getElementById(editorId);
+        if (editor) {
+            const n = document.createElement('span');
+            n.textContent = 'AI changes declined ✖';
+            n.style.color = 'salmon';
+            n.style.marginLeft = '8px';
+            editor.parentNode.appendChild(n);
+            setTimeout(() => n.remove(), 2400);
+        }
+        }
+
+        /* ------- Apply AI changes to the editor (same as before but hides overlay) ------- */
+        function applyAIDiff(menu) {
+        const editorId = menu === 'update' ? 'update-note-text' : 'note-text';
+        document.getElementById(editorId).innerHTML = aiImprovedHtml[menu] || document.getElementById(editorId).innerHTML;
+
+        document.getElementById(`ai-diff-${menu}`).style.display = 'none';
+        document.getElementById(`apply-ai-${menu}`).style.display = 'none';
+
+        // small applied notice
+        const notice = document.createElement('span');
+        notice.textContent = 'AI changes applied ✅';
+        notice.style.color = '#90ee90';
+        notice.style.marginLeft = '8px';
+        document.getElementById(editorId).parentNode.appendChild(notice);
+        setTimeout(() => notice.remove(), 3000);
+        // clear improved html cache so subsequent previews are fresh
+        aiImprovedHtml[menu] = '';
+        }
+
+        /* ------- Updated improveNoteFrontend: shows improved preview overlay instead of inline red/green block ------- */
+        /* ------- Helper: try to find the current note id from several reliable places ------- */
+        function resolveNoteIdForEditor(menu, editor) {
+    // 1) direct dataset on editor (most reliable for modals)
+    if (editor && editor.dataset && editor.dataset.noteId) {
+        return String(editor.dataset.noteId);
+    }
+
+    // 2) explicit global you already set in showViewMenu
+    if (window.currentNoteId) {
+        return String(window.currentNoteId);
+    }
+
+    // 3) if the editor sits inside either menu, check those containers
+    const container = editor && editor.closest ? editor.closest('#update-menu, #view-menu') : null;
+    if (container && container.dataset && container.dataset.noteId) {
+        return String(container.dataset.noteId);
+    }
+
+    // 4) try to find an actively selected/listed note element (but don't fall back to first)
+    const sel = document.querySelector('li[data-note-id].selected, li[data-note-id].active, .note-item[data-note-id].selected, .note-item[data-note-id].active');
+    if (sel && sel.dataset && sel.dataset.noteId) {
+        return String(sel.dataset.noteId);
+    }
+
+    // 5) last-ditch: try to uniquely match editor content to a note in memory (only if unique)
+    try {
+        const html = (editor && editor.innerHTML || '').trim();
+        if (html) {
+            const matches = allNotes.filter(n => ((n.note || '').trim() === html));
+            if (matches.length === 1) return String(matches[0].id);
+
+            // also try comparing visible text (strip HTML) and require unique match
+            const parser = new DOMParser();
+            const editorText = (parser.parseFromString(html, 'text/html').body.textContent || '').trim();
+            if (editorText) {
+                const textMatches = allNotes.filter(n => {
+                    const noteText = (parser.parseFromString(n.note || '', 'text/html').body.textContent || '').trim();
+                    return noteText === editorText;
+                });
+                if (textMatches.length === 1) return String(textMatches[0].id);
+            }
+        }
+    } catch (e) {
+        // ignore parsing errors — we don't want to break the flow
+        console.warn('resolveNoteIdForEditor content-match attempt failed', e);
+    }
+
+    // Nothing reliable found — return null so caller can show an error instead of guessing.
+    return null;
+}
+
+
+        /* ------- Updated improveNoteFrontend (only changed portion is noteId resolution) ------- */
+        async function improveNoteFrontend(menu) {
+        let noteId = null;
+        let editorId = '';
+        let loadingId = '';
+        let diffId = '';
+        let applyBtnId = '';
+
+        if (menu === 'update') {
+            editorId = 'update-note-text';
+            loadingId = 'ai-loading-update';
+            diffId = 'ai-diff-update';
+            applyBtnId = 'apply-ai-update';
+        } else if (menu === 'add') {
+            editorId = 'note-text';
+            loadingId = 'ai-loading-add';
+            diffId = 'ai-diff-add';
+            applyBtnId = 'apply-ai-add';
+        }
+
+        const editor = document.getElementById(editorId);
+        if (!editor) {
+            alert('Editor not found.');
+            return;
+        }
+
+        // Resolve noteId *after* we have the editor element so we can walk its ancestors
+        if (menu === 'update') {
+            noteId = resolveNoteIdForEditor(menu, editor);
+            if (!noteId) {
+            alert('Could not determine note id. Make sure the note element has data-note-id or window.currentNoteId is set.');
+            return;
+            }
+        }
+
+        const originalHtml = editor.innerHTML;
+
+        document.getElementById(loadingId).style.display = 'block';
+        // hide any existing preview
+        const existingDiff = document.getElementById(diffId);
+        if (existingDiff) existingDiff.style.display = 'none';
+        const applyBtnEl = document.getElementById(applyBtnId);
+        if (applyBtnEl) applyBtnEl.style.display = 'none';
+
+        try {
+            const response = await fetch(menu === 'update'
+            ? `/api/notes/${encodeURIComponent(noteId)}/improve`
+            : '/api/notes/improve-temp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: originalHtml })
+            });
+
+            const data = await response.json();
+            if (response.ok) {
+            aiImprovedHtml[menu] = data.improved;
+
+            const editorParent = editor.parentNode;
+            if (getComputedStyle(editorParent).position === 'static') {
+                editorParent.style.position = 'relative';
+            }
+
+            const diffIdFull = `ai-diff-${menu}`;
+            let container = document.getElementById(diffIdFull);
+            if (!container) {
+                container = document.createElement('div');
+                container.id = diffIdFull;
+                container.className = 'ai-diff-preview';
+                editorParent.appendChild(container);
+            }
+
+            // compact mode based on editor size
+            const editorHeight = editor.clientHeight || editor.scrollHeight || 240;
+            if (editorHeight < 260) container.classList.add('compact');
+            else container.classList.remove('compact');
+
+            container.style.pointerEvents = 'auto';
+            container.style.display = 'block';
+
+            renderHtmlDiff(originalHtml, data.improved, diffIdFull);
+
+            if (applyBtnEl) applyBtnEl.style.display = 'inline-block';
+            } else {
+            alert(data.error || 'Failed to improve note.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error improving note.');
+        } finally {
+            document.getElementById(loadingId).style.display = 'none';
+        }
         }
 
         // ---------- Render file lists ----------
