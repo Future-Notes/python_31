@@ -21,19 +21,123 @@
         }
     };
 
-    function showAlert({ message, type, timeout }) {
+    // Requires: `activeAlerts`, `GAP`, `alertQueue` exist in outer scope (as in your original code).
+    // Optional but recommended: include DOMPurify in your page for best results:
+    // <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+
+    function showAlert({ message, type = "info", timeout } = {}) {
         const MAX_CHARS = 5000;
-        const isFullPage = /<!DOCTYPE\s+html|<html/i.test(message);
+        const isFullPage = /<!DOCTYPE\s+html|<html/i.test(String(message || ""));
         let displayMessage = message;
 
-        if (!isFullPage) {
-            if (typeof message !== "string" || message.trim() === "") {
-                displayMessage = "<i>No message provided.</i>";
-            } else if (message.length > MAX_CHARS) {
-                displayMessage = message.slice(0, MAX_CHARS) + "…";
+        // -----------------------
+        // Sanitization helpers
+        // -----------------------
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, ch => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;"
+            })[ch]);
+        }
+
+        // Safe link filter for fallback (ensures href starts with http(s) or mailto)
+        function safeHref(href) {
+            try {
+                // Allow http(s), mailto only
+                const trimmed = String(href).trim();
+                if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed;
+            } catch (e) {}
+            return null;
+        }
+
+        // Sanitize input. Uses DOMPurify if present, otherwise falls back to a conservative escape.
+        function sanitizeForAlert(input) {
+            input = input == null ? "" : String(input);
+
+            // If DOMPurify is available, use it with a tight whitelist.
+            if (typeof DOMPurify !== "undefined") {
+                // Allow a small set of tags and safe attributes. No styles, no event handlers.
+                // Note: DOMPurify will remove dangerous attributes and scripts.
+                const clean = DOMPurify.sanitize(input, {
+                    ALLOWED_TAGS: ["a", "b", "strong", "i", "em", "u", "br", "p", "ul", "ol", "li", "code", "pre", "span"],
+                    ALLOWED_ATTR: ["href", "title", "target", "rel"],
+                    // Force anchors to have rel="noopener noreferrer" and only safe protocols:
+                    FORBID_ATTR: ["style"],
+                    RETURN_TRUSTED_TYPE: false
+                });
+
+                // Post-process links: add rel/noopener and strip unsafe hrefs (DOMPurify may allow them by config).
+                // We'll use a temporary DOM node to adjust anchors.
+                const tmp = document.createElement("div");
+                tmp.innerHTML = clean;
+                const anchors = tmp.querySelectorAll("a[href]");
+                anchors.forEach(a => {
+                    const safe = safeHref(a.getAttribute("href"));
+                    if (!safe) {
+                        // replace with text node of the href
+                        const text = document.createTextNode(a.textContent || a.getAttribute("href") || "");
+                        a.parentNode.replaceChild(text, a);
+                    } else {
+                        a.setAttribute("href", safe);
+                        a.setAttribute("rel", "noopener noreferrer");
+                        // target is allowed but not required; if you want links to open in new tab:
+                        // a.setAttribute("target", "_blank");
+                    }
+                });
+                return tmp.innerHTML;
+            }
+
+            // Fallback: no DOMPurify — extremely conservative: escape everything to text.
+            // This avoids any injection via attrs or tags.
+            return escapeHtml(input);
+        }
+
+        // Truncate logic: we want to cap the *plain text* length to MAX_CHARS so we don't cut tags mid-way.
+        function truncatePreservingSafety(htmlOrText, maxChars) {
+            // If DOMPurify is available, we'll create a sanitized DOM, take its textContent,
+            // and if it's over limit, return escaped truncated text (losing markup but staying safe).
+            if (typeof DOMPurify !== "undefined") {
+                const sanitized = DOMPurify.sanitize(String(htmlOrText));
+                const tmp = document.createElement("div");
+                tmp.innerHTML = sanitized;
+                const plain = tmp.textContent || tmp.innerText || "";
+                if (plain.length > maxChars) {
+                    return escapeHtml(plain.slice(0, maxChars) + "…");
+                }
+                // safe to return sanitized HTML
+                return sanitized;
+            } else {
+                // fallback: plain text escape and truncate
+                const plain = String(htmlOrText || "");
+                if (plain.length > maxChars) {
+                    return escapeHtml(plain.slice(0, maxChars) + "…");
+                }
+                return escapeHtml(plain);
             }
         }
 
+        // -----------------------
+        // Validate / prepare message
+        // -----------------------
+        if (!isFullPage) {
+            if (typeof message !== "string" || message.trim() === "") {
+                displayMessage = "<i>No message provided.</i>";
+            } else {
+                // sanitize and truncate safely
+                displayMessage = truncatePreservingSafety(message, MAX_CHARS);
+            }
+        } else {
+            // If full page (you said you won't allow this), still sanitize and be strict.
+            // IMPORTANT: Do NOT include allow-scripts or allow-same-origin in the sandbox for untrusted content.
+            displayMessage = typeof message === "string" ? message : "";
+        }
+
+        // -----------------------
+        // Build wrapper and UI
+        // -----------------------
         const wrapper = document.createElement("div");
         Object.assign(wrapper.style, {
             position: "fixed",
@@ -47,7 +151,7 @@
             background: getComputedStyle(document.documentElement).getPropertyValue('--bg-color')?.trim() || "#2e2e2e",
             fontFamily: "Arial, sans-serif",
             color: "white",
-            right: "-420px", // start completely off-screen
+            right: "-420px",
             transition: "right 0.3s ease, top 0.3s ease"
         });
 
@@ -56,10 +160,10 @@
             success: "fa-check-circle",
             error: "fa-exclamation-circle"
         };
-        const iconClass = icons[type.toLowerCase()] || icons.info;
+        const iconClass = icons[(type || "info").toLowerCase()] || icons.info;
 
         let effectiveTimeout = timeout;
-        switch (type.toLowerCase()) {
+        switch ((type || "info").toLowerCase()) {
             case "success":
                 wrapper.style.borderTop = "5px solid #4CAF50";
                 if (timeout === undefined) effectiveTimeout = 7000;
@@ -92,19 +196,42 @@
         let content;
         if (isFullPage) {
             content = document.createElement("iframe");
-            content.setAttribute("sandbox", "allow-scripts allow-same-origin");
-            content.srcdoc = displayMessage;
+            // SECURITY: don't allow scripts or same-origin on untrusted HTML.
+            // If you must allow scripts, you MUST ensure the HTML is fully trusted.
+            content.setAttribute("sandbox", ""); // fully sandboxed iframe: no scripts, no same-origin
+            // If you do want to allow forms/popups, add specific tokens like "allow-popups" only.
+            // Avoid allow-scripts and allow-same-origin for untrusted input.
+            // If you plan to render arbitrary HTML that contains scripts, reconsider entirely.
+            // To be safe: use sanitized HTML instead of letting arbitrary scripts run.
+            content.srcdoc = sanitizeForAlert(displayMessage);
             Object.assign(content.style, {
                 border: "none",
-                flex: "1 1 auto"
+                flex: "1 1 auto",
+                minHeight: "100px"
             });
         } else {
             content = document.createElement("div");
-            content.innerHTML = `<i class="fa ${iconClass}" aria-hidden="true" style="margin-right:8px;"></i>${displayMessage}`;
+            // Build icon element and append sanitized HTML separately
+            const iconEl = document.createElement("i");
+            iconEl.className = `fa ${iconClass}`;
+            iconEl.setAttribute("aria-hidden", "true");
+            iconEl.style.marginRight = "8px";
+            // Use a container for the message
+            const msgWrap = document.createElement("span");
+
+            // If our sanitizer returned pure escaped text (fallback), we still can set innerHTML safely.
+            // sanitizeForAlert ensures safety either with DOMPurify or escapeHtml fallback.
+            msgWrap.innerHTML = sanitizeForAlert(displayMessage);
+
+            content.appendChild(iconEl);
+            content.appendChild(msgWrap);
+
             Object.assign(content.style, {
                 padding: "15px 20px",
                 overflow: "auto",
-                flex: "1 1 auto"
+                flex: "1 1 auto",
+                display: "flex",
+                alignItems: "flex-start"
             });
         }
 
@@ -113,12 +240,12 @@
         document.body.appendChild(wrapper);
 
         // Set initial top position
-        wrapper.style.top = `${20 + activeAlerts.reduce((acc, el) => acc + el.offsetHeight + GAP, 0)}px`;
+        wrapper.style.top = `${20 + (typeof activeAlerts !== "undefined" ? activeAlerts.reduce((acc, el) => acc + el.offsetHeight + (typeof GAP !== "undefined" ? GAP : 8), 0) : 0)}px`;
 
         // Trigger slide-in animation (next frame)
         requestAnimationFrame(() => wrapper.style.right = "20px");
 
-        activeAlerts.push(wrapper);
+        if (typeof activeAlerts !== "undefined") activeAlerts.push(wrapper);
 
         let hideTimer;
         function startTimeout() {
@@ -145,15 +272,19 @@
             wrapper.style.right = "-420px"; // slide back out
             setTimeout(() => {
                 wrapper.remove();
-                const index = activeAlerts.indexOf(wrapper);
-                if (index !== -1) activeAlerts.splice(index, 1);
-                repositionAlerts();
-                if (alertQueue.length > 0) {
+                if (typeof activeAlerts !== "undefined") {
+                    const index = activeAlerts.indexOf(wrapper);
+                    if (index !== -1) activeAlerts.splice(index, 1);
+                }
+                // repositionAlerts is expected to exist (your original code)
+                if (typeof repositionAlerts === "function") repositionAlerts();
+                if (typeof alertQueue !== "undefined" && alertQueue.length > 0) {
                     showAlert(alertQueue.shift());
                 }
             }, 300);
         }
     }
+
 
     function repositionAlerts() {
         let currentTop = 20;

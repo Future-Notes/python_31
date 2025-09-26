@@ -2623,40 +2623,65 @@ def get_recursive_folder_tree(root_folder):
     dfs(root_folder)
     return result
 
-def delete_notes_and_attachments(note_objs, user):
+def delete_notes_and_attachments(note_objs_or_ids, user, owner_group_id=None):
     """
-    Given a list of Note objects to delete:
-      - gather their upload ids from NoteUpload
-      - remove NoteUpload rows for these notes
-      - delete note rows
-      - for each upload id: if it has no remaining NoteUpload references, call delete_upload(upload_id, user)
-    Returns (True, msg) on success or (False, "error") on failure.
+    Delete notes and their uploads. Accepts either:
+      - list of Note objects
+      - list of note IDs (ints)
+
+    If owner_group_id is given, only deletes notes with that group_id.
     """
     try:
-        note_ids = [n.id for n in note_objs]
-        # gather uploads
+        if not note_objs_or_ids:
+            app.logger.debug("delete_notes_and_attachments: nothing to delete")
+            return True, "Nothing to delete."
+
+        # normalize
+        if all(isinstance(x, int) for x in note_objs_or_ids):
+            note_ids = list(note_objs_or_ids)
+        elif all(hasattr(x, "id") for x in note_objs_or_ids):
+            note_ids = [int(x.id) for x in note_objs_or_ids]
+        else:
+            app.logger.warning("delete_notes_and_attachments: mixed or unexpected input types: %r", note_objs_or_ids[:5])
+            # try to coerce any ints or objects
+            note_ids = []
+            for x in note_objs_or_ids:
+                if isinstance(x, int):
+                    note_ids.append(x)
+                elif hasattr(x, "id"):
+                    note_ids.append(int(x.id))
+            if not note_ids:
+                return True, "Nothing to delete."
+
+        # ensure unique ints
+        note_ids = list({int(n) for n in note_ids})
+
+        # gather upload ids referenced by these notes
         note_upload_rows = NoteUpload.query.filter(NoteUpload.note_id.in_(note_ids)).all()
         upload_ids = {nu.upload_id for nu in note_upload_rows}
 
-        # delete NoteUpload rows for these notes
+        # delete NoteUpload rows
         if note_ids:
             NoteUpload.query.filter(NoteUpload.note_id.in_(note_ids)).delete(synchronize_session=False)
 
-        # delete notes
+        # delete notes, honoring ownership (group or user)
         if note_ids:
-            Note.query.filter(Note.id.in_(note_ids), Note.user_id == g.user_id).delete(synchronize_session=False)
+            if owner_group_id is not None:
+                deleted = Note.query.filter(Note.id.in_(note_ids), Note.group_id == owner_group_id).delete(synchronize_session=False)
+            else:
+                deleted = Note.query.filter(Note.id.in_(note_ids), Note.user_id == g.user_id).delete(synchronize_session=False)
+            app.logger.debug("delete_notes_and_attachments: deleted %s notes", deleted)
 
-        # For each upload id, delete the upload if it has no remaining references
+        # handle actual upload deletion where no remaining NoteUpload refs exist
         for uid in upload_ids:
             other_ref = NoteUpload.query.filter_by(upload_id=uid).first()
             if not other_ref:
                 ok, msg = delete_upload(uid, user)
                 if not ok:
-                    # If delete_upload fails due to permission or DB issue, rollback and return error.
                     db.session.rollback()
                     return False, f"Failed deleting upload {uid}: {msg}"
 
-        db.session.flush()  # flush intermediate changes
+        db.session.flush()
         return True, "Notes and attachments deleted."
     except Exception as e:
         app.logger.exception("Error deleting notes and attachments: %s", e)
@@ -6206,7 +6231,7 @@ def update_delete_group_folder(group_id, folder_id):
 
         elif action == "delete_all":
             try:
-                ok, msg = delete_notes_and_attachments(notes, g.user)
+                ok, msg = delete_notes_and_attachments(notes, g.user, owner_group_id=group_id)
                 if not ok:
                     return jsonify({"error": msg}), 500
 
@@ -6710,29 +6735,25 @@ def send_notification_to_all():
 @require_session_key
 @require_admin
 def send_notification_to_user():
-    data = request.json
-    user_id = data.user_id
-
+    data = request.json or {}
     
-    title = data.get("title")
+    user_id = data.get("user_id")
+    title   = data.get("title")
     message = data.get("message")
-    module = data.get("module")
-
-    user = User.query.get(user_id)
+    module  = data.get("module")
 
     if not user_id or not message or not title or not module:
         return jsonify({"error": "All fields are required."}), 400
-    
+
     if not module.startswith("/"):
         return jsonify({"error": "Module must start with a slash (/)"}), 400
 
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found!"}), 404
-    
-    send_notification(user_id, title, message, module)
 
-    return jsonify({"message": f"Notification sent to {user.username} ({user_id})"}), 200
+    send_notification(user_id, title, message, module)
+    return jsonify({"message": f"Notification sent to {bleach.clean(user.username)} ({user_id})"}), 200 # dit kan echt niet op sensitive pages
 
 @app.route('/create_backup', methods=['POST'])
 @require_session_key
