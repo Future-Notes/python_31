@@ -590,7 +590,7 @@ class Note(db.Model):
     
 class Folder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     name = db.Column(db.String(100), nullable=False)
@@ -2560,38 +2560,68 @@ def allowed_extension(filename):
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     return ext in ALLOWED_EXTENSIONS
 
-def get_recursive_folder_tree(root_folder):
+def folder_belongs_to_owner(folder_obj, owner_user_id=None, owner_group_id=None):
     """
-    Return a list of Folder objects in post-order (children first, then parent).
-    This ensures safe deletion order.
+    Return True if folder_obj belongs to the provided owner user_id or group_id.
+    Exactly one of owner_user_id or owner_group_id should be non-None when called.
     """
-    result = []
-    def recurse(folder):
-        children = Folder.query.filter_by(parent_id=folder.id, user_id=g.user_id).all()
-        for c in children:
-            recurse(c)
-        result.append(folder)
-    recurse(root_folder)
-    return result  # post-order objects
+    if owner_user_id is not None:
+        return folder_obj.user_id == owner_user_id and folder_obj.group_id is None
+    if owner_group_id is not None:
+        return folder_obj.group_id == owner_group_id and folder_obj.user_id is None
+    return False
 
 def collect_all_folder_ids(root_folder):
-    """Return list of folder ids for root + its recursive subfolders (pre-order)."""
-    ids = []
-    q = deque([root_folder])
-    while q:
-        f = q.popleft()
-        ids.append(f.id)
-        children = Folder.query.filter_by(parent_id=f.id, user_id=g.user_id).all()
-        for c in children:
-            q.append(c)
+    """
+    Returns a set of folder ids for the whole subtree starting from root_folder (includes root_folder.id).
+    Traversal respects owner: user_id or group_id on the root folder.
+    """
+    owner_user_id = root_folder.user_id
+    owner_group_id = root_folder.group_id
+
+    ids = set()
+    stack = [root_folder]
+    while stack:
+        f = stack.pop()
+        ids.add(f.id)
+        # children must share the same owner type (user or group)
+        if owner_user_id is not None:
+            children = Folder.query.filter_by(parent_id=f.id, user_id=owner_user_id).all()
+        else:
+            children = Folder.query.filter_by(parent_id=f.id, group_id=owner_group_id).all()
+        stack.extend(children)
     return ids
 
-def collect_note_ids_in_folders(folder_ids):
-    """Return list of Note objects that are in folder_ids."""
-    if not folder_ids:
-        return []
-    notes = Note.query.filter(Note.folder_id.in_(folder_ids), Note.user_id == g.user_id).all()
-    return notes
+def collect_note_ids_in_folders(folder_ids, owner_user_id=None, owner_group_id=None):
+    """
+    Return list of Note ids that are in folder_ids and belong to the same owner (user or group).
+    If owner_user_id provided, we filter Note.user_id==owner_user_id; if owner_group_id provided, Note.group_id==owner_group_id.
+    """
+    if owner_user_id is not None:
+        notes = Note.query.filter(Note.folder_id.in_(list(folder_ids)), Note.user_id == owner_user_id).all()
+    else:
+        notes = Note.query.filter(Note.folder_id.in_(list(folder_ids)), Note.group_id == owner_group_id).all()
+    return [n.id for n in notes]
+
+def get_recursive_folder_tree(root_folder):
+    """
+    Return list of Folder objects in post-order (children first, then parent) for deletion.
+    Keeps the same owner constraint as root_folder.
+    """
+    owner_user_id = root_folder.user_id
+    owner_group_id = root_folder.group_id
+
+    result = []
+    def dfs(folder):
+        if owner_user_id is not None:
+            children = Folder.query.filter_by(parent_id=folder.id, user_id=owner_user_id).all()
+        else:
+            children = Folder.query.filter_by(parent_id=folder.id, group_id=owner_group_id).all()
+        for c in children:
+            dfs(c)
+        result.append(folder)
+    dfs(root_folder)
+    return result
 
 def delete_notes_and_attachments(note_objs, user):
     """
@@ -5808,19 +5838,31 @@ def delete_group():
 
 # Group notes
 
+# -----------------------
+# Group notes routes (updated to support folders)
+# -----------------------
 @app.route('/groups/<string:group_id>/notes', methods=['GET'])
 @require_session_key
 def get_group_notes(group_id):
-    user = User.query.get(g.user_id)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    # must be a group member
-    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
+    # membership check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
-    # Order notes by newest first (descending id or created_at if available)
-    notes = Note.query.filter_by(group_id=group_id).order_by(Note.id.desc()).all()
+    # optional folder filter (query param)
+    folder_id = request.args.get('folder_id', type=int)
+    query = Note.query.filter_by(group_id=group_id)
+
+    if folder_id is not None:
+        # ensure folder exists and belongs to this group
+        folder = Folder.query.filter_by(id=folder_id, group_id=group_id).first()
+        if not folder:
+            return jsonify({"error": "Folder not found or does not belong to this group"}), 400
+        query = query.filter_by(folder_id=folder_id)
+    else:
+        # if folder_id not specified, return notes in root (folder_id is None)
+        query = query.filter_by(folder_id=None)
+
+    notes = query.order_by(Note.id.desc()).all()
 
     def attachments_for_note(n):
         rows = NoteUpload.query.filter_by(note_id=n.id).all()
@@ -5841,22 +5883,16 @@ def get_group_notes(group_id):
         "title": note.title,
         "note": note.note,
         "tag": note.tag,
+        "folder_id": note.folder_id,
         "attachments": attachments_for_note(note)
     } for note in notes]), 200
 
 
-# -----------------------
-# POST add group note (attachments allowed)
-# -----------------------
 @app.route('/groups/<string:group_id>/notes', methods=['POST'])
 @require_session_key
 def add_group_note(group_id):
-    user = User.query.get(g.user_id)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    # must be a group member
-    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
+    # membership check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
         return jsonify({"error": "Not a member of this group"}), 403
 
     data = request.json or {}
@@ -5865,16 +5901,21 @@ def add_group_note(group_id):
 
     sanitized_note = sanitize_html(data['note'])
 
+    # validate folder_id if provided
+    folder_id = data.get('folder_id')
+    if folder_id is not None:
+        folder = Folder.query.filter_by(id=folder_id, group_id=group_id).first()
+        if not folder:
+            return jsonify({"error": "Folder not found or does not belong to this group"}), 400
+
     attachments = data.get('attachments') or []
     valid_attachments = []
 
-    # Validate attachments: allow uploads by any user, but ensure upload exists, not deleted,
-    # and is not already attached to another note.
+    # Validate attachments: ensure they exist and are not deleted and not already attached
     for uid in attachments:
         up = Upload.query.get(uid)
         if not up or up.deleted:
             return jsonify({"error": f"Invalid or deleted attachment id: {uid}"}), 400
-        # runtime check that the upload isn't already attached to another note
         if NoteUpload.query.filter_by(upload_id=uid).first():
             return jsonify({"error": f"Attachment {uid} is already attached to a note."}), 400
         valid_attachments.append(up.id)
@@ -5884,7 +5925,8 @@ def add_group_note(group_id):
         group_id=group_id,
         title=data.get('title'),
         note=sanitized_note,
-        tag=data.get('tag')
+        tag=data.get('tag'),
+        folder_id=folder_id
     )
     db.session.add(new_note)
     db.session.commit()
@@ -5902,29 +5944,39 @@ def add_group_note(group_id):
     return jsonify({"message": "Group note added successfully!", "id": new_note.id}), 201
 
 
-# -----------------------
-# PUT / DELETE group note (attachments editable by any member)
-# -----------------------
 @app.route('/groups/<string:group_id>/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
 def update_delete_group_note(group_id, note_id):
-    user = User.query.get(g.user_id)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
+    # membership check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+        return jsonify({"error": "Not a member of this group"}), 403
 
     note = Note.query.filter_by(id=note_id, group_id=group_id).first()
     if not note:
         return jsonify({"error": "Note not found"}), 404
 
-    # must be a group member
-    if not GroupMember.query.filter_by(user_id=user.id, group_id=group_id).first():
-        return jsonify({"error": "Not a member of this group"}), 403
-
     if request.method == 'PUT':
         data = request.json or {}
-        note.title = data.get('title')
-        note.note = sanitize_html(data.get('note', note.note))
-        note.tag = data.get('tag')
+
+        # update fields if present
+        if 'title' in data:
+            note.title = data.get('title')
+        if 'note' in data:
+            note.note = sanitize_html(data.get('note', note.note))
+        if 'tag' in data:
+            note.tag = data.get('tag')
+
+        # folder_id handling (same semantics as personal notes)
+        if 'folder_id' in data:
+            folder_id = data.get('folder_id')
+            if folder_id is not None:
+                folder = Folder.query.filter_by(id=folder_id, group_id=group_id).first()
+                if not folder:
+                    return jsonify({"error": "Folder not found or does not belong to this group"}), 400
+                note.folder_id = folder_id
+            else:
+                note.folder_id = None
+        # if not present, don't change folder
 
         requested_attachments = set(data.get('attachments') or [])
         existing_attachments = {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note.id).all()}
@@ -5932,7 +5984,7 @@ def update_delete_group_note(group_id, note_id):
         to_add = requested_attachments - existing_attachments
         to_remove = existing_attachments - requested_attachments
 
-        # Validate additions: ensure each upload exists, not deleted, and not already attached
+        # Validate additions
         for uid in list(to_add):
             up = Upload.query.get(uid)
             if not up or up.deleted:
@@ -5954,9 +6006,10 @@ def update_delete_group_note(group_id, note_id):
             return jsonify({"error": "Database error updating attachments"}), 500
 
         # Force-delete any removed attachments (owned by anyone)
+        actor_user = User.query.get(g.user_id)
         for uid in to_remove:
             try:
-                ok, msg = force_delete_upload(uid, actor_user=user)
+                ok, msg = force_delete_upload(uid, actor_user=actor_user)
                 if not ok:
                     app.logger.warning("Failed to force-delete upload %s: %s", uid, msg)
             except Exception:
@@ -5967,7 +6020,6 @@ def update_delete_group_note(group_id, note_id):
     elif request.method == 'DELETE':
         existing_attachments = {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note.id).all()}
         try:
-            # remove associations and delete the note
             NoteUpload.query.filter_by(note_id=note.id).delete()
             db.session.delete(note)
             db.session.commit()
@@ -5976,16 +6028,203 @@ def update_delete_group_note(group_id, note_id):
             app.logger.exception("DB error deleting group note: %s", e)
             return jsonify({"error": "Database error deleting note"}), 500
 
-        # Force-delete attached uploads
+        actor_user = User.query.get(g.user_id)
         for uid in existing_attachments:
             try:
-                ok, msg = force_delete_upload(uid, actor_user=user)
+                ok, msg = force_delete_upload(uid, actor_user=actor_user)
                 if not ok:
                     app.logger.warning("Failed to force-delete upload %s on note delete: %s", uid, msg)
             except Exception:
                 app.logger.exception("Failed to force-delete upload %s on note delete", uid)
 
         return jsonify({"message": "Group note deleted successfully."}), 200
+    
+# -----------------------
+# Group folder management (mirrors /folders but for groups)
+# -----------------------
+@app.route('/groups/<string:group_id>/folders', methods=['GET', 'POST'])
+@require_session_key
+def manage_group_folders(group_id):
+    # membership check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    if request.method == 'POST':
+        data = request.json or {}
+        name = data.get('name')
+        parent_id = data.get('parent_id')
+
+        if not name:
+            return jsonify({"error": "Folder name is required"}), 400
+
+        # Validate parent folder if provided (must belong to same group)
+        if parent_id is not None:
+            parent = Folder.query.filter_by(id=parent_id, group_id=group_id).first()
+            if not parent:
+                return jsonify({"error": "Parent folder not found or access denied"}), 400
+
+        new_folder = Folder(
+            user_id=None,
+            group_id=group_id,
+            name=name,
+            parent_id=parent_id
+        )
+        db.session.add(new_folder)
+        db.session.commit()
+
+        return jsonify({"message": "Folder created successfully!", "folder": new_folder.to_dict()}), 201
+
+    else:
+        parent_id = request.args.get("parent_id", type=int)
+        query = Folder.query.filter_by(group_id=group_id)
+
+        if parent_id is None:
+            query = query.filter(Folder.parent_id == None)
+        else:
+            query = query.filter(Folder.parent_id == parent_id)
+
+        folders = query.all()
+        return jsonify([folder.to_dict() for folder in folders])
+
+
+@app.route('/groups/<string:group_id>/folders/<int:folder_id>/parents', methods=['GET'])
+@require_session_key
+def get_group_parent_folders(group_id, folder_id):
+    # membership check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    folder = Folder.query.filter_by(id=folder_id, group_id=group_id).first()
+    if not folder:
+        return jsonify({"error": "Folder not found"}), 404
+
+    chain = []
+    while folder:
+        chain.append(folder.to_dict())
+        if not folder.parent_id:
+            break
+        folder = Folder.query.filter_by(id=folder.parent_id, group_id=group_id).first()
+
+    return jsonify(chain[::-1]), 200
+
+
+@app.route('/groups/<string:group_id>/folders/<int:folder_id>', methods=['PUT', 'DELETE'])
+@require_session_key
+def update_delete_group_folder(group_id, folder_id):
+    # membership check
+    if not GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first():
+        return jsonify({"error": "Not a member of this group"}), 403
+
+    folder = Folder.query.filter_by(id=folder_id, group_id=group_id).first()
+    if not folder:
+        return jsonify({"error": "Folder not found"}), 404
+
+    if request.method == 'PUT':
+        data = request.json or {}
+        name = data.get('name')
+        parent_id = data.get('parent_id')
+
+        if name:
+            folder.name = name
+
+        if parent_id is not None:
+            if parent_id == folder_id:
+                return jsonify({"error": "Cannot set folder as its own parent"}), 400
+
+            parent = Folder.query.filter_by(id=parent_id, group_id=group_id).first()
+            if not parent:
+                return jsonify({"error": "Parent folder not found or access denied"}), 400
+
+            # Prevent circular reference: ensure parent is not a child of folder
+            all_child_ids = collect_all_folder_ids(folder)
+            if parent_id in all_child_ids:
+                return jsonify({"error": "Cannot set a descendant as parent"}), 400
+
+            folder.parent_id = parent_id
+        else:
+            folder.parent_id = None
+
+        db.session.commit()
+        return jsonify({"message": "Folder updated successfully!", "folder": folder.to_dict()}), 200
+
+    elif request.method == 'DELETE':
+        # Ensure g.user is populated for delete helpers
+        if not hasattr(g, 'user'):
+            g.user = User.query.get(g.user_id)
+
+        action = request.args.get('action')  # None, "move_up", "delete_all"
+
+        # Collect subtree and notes
+        all_folder_ids = collect_all_folder_ids(folder)
+        notes = collect_note_ids_in_folders(all_folder_ids, owner_group_id=group_id)
+
+        # If no action, return summary
+        if not action:
+            has_subfolders = len(all_folder_ids) > 1
+            notes_count = len(notes)
+            if not has_subfolders and notes_count == 0:
+                return jsonify({
+                    "can_delete_direct": True,
+                    "message": "Folder is empty and can be deleted immediately."
+                }), 200
+
+            if notes_count == 0:
+                return jsonify({
+                    "can_delete_empty_stack": True,
+                    "message": "Folder and subfolders contain no notes and can be deleted."
+                }), 200
+
+            return jsonify({
+                "requires_confirmation": True,
+                "notes_count": notes_count,
+                "folders_count": len(all_folder_ids),
+                "message": "Folder subtree contains notes. Choose action: move_up or delete_all."
+            }), 200
+
+        # Perform action
+        if action == "move_up":
+            try:
+                parent_id = folder.parent_id  # may be None
+
+                # Move immediate children up one level
+                children = Folder.query.filter_by(parent_id=folder.id, group_id=group_id).all()
+                for c in children:
+                    c.parent_id = parent_id
+
+                # Move notes directly in folder to parent_id
+                direct_notes = Note.query.filter_by(folder_id=folder.id, group_id=group_id).all()
+                for n in direct_notes:
+                    n.folder_id = parent_id
+
+                db.session.delete(folder)
+                db.session.commit()
+                return jsonify({"message": "Folder removed and children moved up successfully."}), 200
+            except Exception as e:
+                app.logger.exception("Error moving children up: %s", e)
+                db.session.rollback()
+                return jsonify({"error": "Error while moving children up."}), 500
+
+        elif action == "delete_all":
+            try:
+                ok, msg = delete_notes_and_attachments(notes, g.user)
+                if not ok:
+                    return jsonify({"error": msg}), 500
+
+                post_order_folders = get_recursive_folder_tree(folder)
+                for f in post_order_folders:
+                    if f.group_id != group_id:
+                        db.session.rollback()
+                        return jsonify({"error": "Permission error while deleting folders."}), 403
+                    db.session.delete(f)
+
+                db.session.commit()
+                return jsonify({"message": "Folder and all subfolders and notes deleted."}), 200
+            except Exception as e:
+                app.logger.exception("Error deleting subtree: %s", e)
+                db.session.rollback()
+                return jsonify({"error": "Server error while deleting subtree."}), 500
+        else:
+            return jsonify({"error": "Unknown action."}), 400
     
 @app.route('/uploads/<int:upload_id>/download', methods=['GET'])
 @require_session_key

@@ -2723,7 +2723,7 @@
 
                 // Loop through parents and current folder
                 parentFolders.forEach((folder, index) => {
-                    if (index === 0) return; // skip root, already added
+                    // removed: if (index === 0) return; // <-- this was skipping the real top-level folder
 
                     const sep = document.createElement("span");
                     sep.className = "separator";
@@ -2941,8 +2941,12 @@
             });
         }
 
-        /** create a simple folder row (expandable) */
         function createFolderListItem(folder, level = 0, state) {
+            const node = document.createElement('div');
+            node.className = 'tree-node';
+            node.dataset.folderId = folder.id === null ? '' : String(folder.id);
+
+            // row (the visible line)
             const row = document.createElement('div');
             row.className = 'tree-item';
             row.style.paddingLeft = (12 + level * 16) + 'px';
@@ -2957,23 +2961,64 @@
             const expander = document.createElement('div');
             expander.className = 'tree-expander';
             expander.innerHTML = '▶';
+            // note: expander's click should not trigger row selection
             expander.onclick = async (e) => {
                 e.stopPropagation();
-                // load children into a sub-container
-                if (row._loaded) {
-                    // toggle
-                    const sub = row.querySelector('.subrows');
-                    if (sub) sub.style.display = sub.style.display === 'none' ? 'block' : 'none';
-                    expander.innerHTML = sub && sub.style.display === 'block' ? '▼' : '▶';
+
+                // find the sub container (it may not exist yet)
+                let sub = node.querySelector(':scope > .subrows');
+                if (sub && sub._loaded) {
+                    // toggle visibility
+                    if (sub.style.display === 'none') {
+                        sub.style.display = 'block';
+                        // recompute connector height
+                        const conn = sub.querySelector(':scope > .connector');
+                        if (conn) conn.style.height = sub.scrollHeight + 'px';
+                        expander.innerHTML = '▼';
+                    } else {
+                        sub.style.display = 'none';
+                        expander.innerHTML = '▶';
+                    }
                     return;
                 }
+
+                // If folder is root (null) we still may want to expand top-level; root should have children
                 expander.innerHTML = '⌛';
-                const sub = document.createElement('div');
-                sub.className = 'subrows';
-                sub.style.marginLeft = '16px';
-                row.appendChild(sub);
+                // create sub container as sibling under node
+                if (!sub) {
+                    sub = document.createElement('div');
+                    sub.className = 'subrows';
+                    sub.style.marginLeft = '16px'; // offset children visually
+                    sub.style.position = 'relative'; // so connector absolute inside it aligns correctly
+                    node.appendChild(sub);
+                }
+
+                // create connector (thin vertical line) which will be resized after children load
+                let connector = sub.querySelector(':scope > .connector');
+                if (!connector) {
+                    connector = document.createElement('div');
+                    connector.className = 'connector';
+                    connector.style.position = 'absolute';
+                    connector.style.left = '8px'; // small left offset inside subrows, adjust to taste
+                    connector.style.top = '0';
+                    connector.style.width = '1px';
+                    connector.style.background = 'var(--border-color)';
+                    connector.style.opacity = '0.7';
+                    connector.style.borderRadius = '1px';
+                    connector.style.pointerEvents = 'none';
+                    connector.style.zIndex = '0';
+                    sub.appendChild(connector);
+                }
+
+                // load children into sub
                 await appendFolderChildren(sub, folder.id, level + 1, state);
-                row._loaded = true;
+                sub._loaded = true;
+
+                // connector height should cover all children inside sub
+                connector.style.height = sub.scrollHeight + 'px';
+
+                // show the children
+                sub.style.display = 'block';
                 expander.innerHTML = '▼';
             };
 
@@ -2985,11 +3030,11 @@
             label.className = 'tree-label';
             label.innerText = folder.name || `Folder ${folder.id}`;
 
-            if (folder.id === null) { // root: no expander
+            if (folder.id === null) { // root: no expander visually
                 expander.style.visibility = 'hidden';
             }
 
-            // clickable selection
+            // clickable selection (on the row)
             row.onclick = (e) => {
                 e.stopPropagation();
                 if (isForbidden) {
@@ -3015,7 +3060,9 @@
             row.appendChild(expander);
             row.appendChild(icon);
             row.appendChild(label);
-            return row;
+            node.appendChild(row);
+
+            return node;
         }
 
         /** append children for a parent_id into container (uses /folders?parent_id=...) */
@@ -3033,6 +3080,18 @@
                 for (const f of folders) {
                     const node = createFolderListItem({ id: f.id, name: f.name }, level, state);
                     container.appendChild(node);
+                }
+
+                // after appending children, if this container is a subrows (not the root list),
+                // ensure its connector (if any) spans the newly added children.
+                if (container.classList && container.classList.contains('subrows')) {
+                    const conn = container.querySelector(':scope > .connector');
+                    if (conn) {
+                        // small delay to ensure DOM layout settled
+                        requestAnimationFrame(() => {
+                            conn.style.height = container.scrollHeight + 'px';
+                        });
+                    }
                 }
             } catch (e) {
                 console.error("Error loading folder children:", e);
@@ -3155,7 +3214,7 @@
                 el.style.color = 'white';
                 el.style.padding = '10px 14px';
                 el.style.borderRadius = '8px';
-                el.style.zIndex = 20000;
+                el.style.zIndex = 999;
                 document.body.appendChild(el);
             }
             el.innerText = msg;
@@ -3252,6 +3311,13 @@
                 padding: 5px 0;
             }
 
+            /* NEW: tree-node wraps the row and its children so children appear under parent */
+            .tree-node {
+                display: block;
+                position: relative;
+                z-index: 1;
+            }
+
             .tree-item {
                 display: flex;
                 align-items: center;
@@ -3259,6 +3325,8 @@
                 cursor: pointer;
                 user-select: none;
                 white-space: nowrap;
+                position: relative; /* keep above connector */
+                z-index: 2;
             }
 
             .tree-item:hover {
@@ -3282,6 +3350,7 @@
                 justify-content: center;
                 margin-right: 2px;
                 cursor: pointer;
+                flex: 0 0 16px;
             }
 
             .tree-icon {
@@ -3389,6 +3458,28 @@
                 justify-content: center;
                 font-size: 24px;
                 margin-right: 10px;
+            }
+
+            /* subrows contains the children; connector element sits inside and draws a thin vertical line */
+            .subrows {
+                display: block;
+                margin-top: 2px;
+                margin-bottom: 4px;
+                padding-left: 0;
+                position: relative;
+            }
+
+            .connector {
+                /* style is set in JS too; keep defaults here */
+                position: absolute;
+                left: 8px;
+                top: 0;
+                width: 1px;
+                background: var(--border-color);
+                opacity: 0.7;
+                border-radius: 1px;
+                pointer-events: none;
+                z-index: 0;
             }
             `;
             document.head.appendChild(s);
