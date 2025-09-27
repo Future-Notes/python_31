@@ -6753,7 +6753,7 @@ def send_notification_to_user():
         return jsonify({"error": "User not found!"}), 404
 
     send_notification(user_id, title, message, module)
-    return jsonify({"message": f"Notification sent to {bleach.clean(user.username)} ({user_id})"}), 200 # dit kan echt niet op sensitive pages
+    return jsonify({"message": f"Notification sent to {bleach.clean(user.username)} ({user_id})"}), 200 # dit moet echt gecleaned worden op een admin pagina
 
 @app.route('/create_backup', methods=['POST'])
 @require_session_key
