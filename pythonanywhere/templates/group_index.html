@@ -174,7 +174,7 @@
             margin-bottom: 20px;
         }
 
-        #notes-list, #folders-list {
+        #items-list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
@@ -184,11 +184,8 @@
             opacity: 0;
             animation: fadeIn 0.5s forwards 0.3s;
         }
-        #notes-list {
-            margin-top: 30px;
-        }
 
-        #notes-list li, #folders-list li {
+        #items-list li {
             background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
@@ -206,7 +203,7 @@
             animation: fadeIn 1s forwards;
         }
 
-        #notes-list li h3, #folders-list li h3 {
+        #items-list li h3 {
             margin: 0;
             font-size: 18px;
             font-weight: bold;
@@ -216,7 +213,7 @@
             z-index: 2;
         }
 
-        #notes-list li span, #folders-list li span {
+        #items-list li span {
             margin: 0px auto;
             max-width: 30%;
             white-space: nowrap;
@@ -230,17 +227,17 @@
             border-bottom-right-radius: 15px;
         }
 
-        #notes-list li:hover, #folders-list li:hover {
+        #items-list li:hover {
             background-color: #4a4a4a;
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
         }
 
-        #notes-list li.empty-note, #folders-list li.empty-note {
+        #items-list li.empty-note {
             font-style: italic;
             color: #b0b0b0;
         }
 
-        #notes-list li button, #folders-list li button {
+        #items-list li button {
             position: absolute;
             top: 10px;
             right: 10px;
@@ -250,9 +247,10 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background-color 0.3s ease;
+            z-index: 50;
         }
 
-        #notes-list li button:hover, #folders-list li button:hover {
+        #items-list li button:hover {
             background-color: #cc4a4a;
         }
 
@@ -1616,8 +1614,7 @@
         <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
         <div id="top-directory-bar-path"></div>
         <input type="text" id="search-input" placeholder="Search notes...">
-        <ul id="folders-list"></ul>
-        <ul id="notes-list"></ul>
+        <ul id="items-list"></ul>
         <div id="floating-add-button">+</div>
     </main>
 
@@ -3068,8 +3065,7 @@
             document.getElementById("note-tag").value = '';
             document.getElementById("clear-draft-button").style.display = 'none';
 
-            fetchNotes(groupId);
-            fetchFolders(groupId);
+            fetchAndRenderGroupItems(groupId);
             fetchGroupInfo(groupId);
         }
 
@@ -3441,196 +3437,218 @@
             }
         }
 
-        // Fetch group notes (group-aware version that mirrors personal fetchNotes behavior)
-        // Expects a global `currentFolderId` (or you can pass folder selection another way).
-        // If groupId param is omitted it will try window.groupId or window.currentGroupId.
-        async function fetchNotes(groupId) {
-            // resolve group id from param or globals
-            const gid = groupId || window.groupId || window.currentGroupId || null;
-            if (!gid) {
-                console.error("fetchNotes called without a groupId (pass groupId or set window.groupId/currentGroupId).");
-                return;
-            }
+        /* -------------------------
+        Group: data fetch helpers
+        ------------------------- */
 
-            // build folder query param (root if currentFolderId is falsy)
-            const folderToFetch = (typeof currentFolderId !== "undefined" && currentFolderId !== null)
-                ? `?folder_id=${encodeURIComponent(currentFolderId)}`
-                : '';
-
-            try {
-                const response = await fetch(`/groups/${encodeURIComponent(gid)}/notes${folderToFetch}`, {
-                    method: "GET",
-                    credentials: "same-origin",
-                    headers: { "Accept": "application/json" }
-                });
-
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        showModal();
-                        return;
-                    }
-                    throw new Error(`Failed to fetch notes: ${response.status}`);
-                }
-
-                const notes = await response.json();
-                allNotes = notes; // keep global for showUpdateMenu/showViewMenu
-
-                const notesList = document.getElementById("notes-list");
-                if (!notesList) return;
-
-                if (notes.length === 0) {
-                    notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
-                } else {
-                    notesList.innerHTML = notes.map(note => {
-                        const escapedTitle = escapeHTML(note.title || 'Untitled');
-                        const escapedTag = escapeHTML(note.tag || '');
-                        // keep HTML in preview like personal version (commented: use htmlToPlainText for text-only preview)
-                        // const plainTextPreview = htmlToPlainText(note.note || '').substring(0, 100);
-
-                        return `
-                            <li data-note-id="${note.id}">
-                                <h3>${escapedTitle}</h3>
-                                <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
-                                ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
-                                <button onclick="event.stopPropagation(); showNoteOptions(${note.id})" 
-                                    class="share-button"
-                                    style="z-index:10;" 
-                                    title="Options">⋮</button>
-                            </li>
-                        `;
-                    }).join("");
-
-                    // Add click listeners to open view menu; use == for id coercion like before
-                    setTimeout(() => {
-                        document.querySelectorAll('#notes-list li').forEach(li => {
-                            li.addEventListener('click', function() {
-                                const noteId = this.getAttribute('data-note-id');
-                                const note = allNotes.find(n => n.id == noteId);
-                                if (note) {
-                                    // pass attachments if present
-                                    showViewMenu(note.id, note.note, note.tag, note.title, note.attachments || []);
-                                }
-                            });
-                        });
-                    }, 0);
-                }
-            } catch (error) {
-                console.error("Error fetching group notes:", error);
-                alert("There was an error fetching the group's notes. Please try again.");
-            }
+        // Fetch folders for a group (returns array)
+        async function fetchGroupFoldersData(groupId) {
+        try {
+            if (!groupId) throw new Error("fetchGroupFoldersData requires groupId");
+            const basePath = `/groups/${encodeURIComponent(groupId)}/folders`;
+            const folderParam = currentFolderId ? `?parent_id=${encodeURIComponent(currentFolderId)}` : '';
+            const res = await fetch(basePath + folderParam, { method: "GET", credentials: "same-origin" });
+            if (!res.ok) throw new Error(`Failed to fetch folders: ${res.status}`);
+            const folders = await res.json();
+            allFolders = folders;
+            return folders;
+        } catch (err) {
+            console.error("Error fetching group folders:", err);
+            alert("There was an error fetching the group's folders. Please try again.");
+            return [];
+        }
         }
 
-
-        // Group-only folder fetchers for the group notes page.
-        // Assumes:
-        // - let currentFolderId = null;        // existing global for current folder (or change to param)
-        // - functions escapeHTML, showFolderOptions, navigateToFolder, fetchNotes exist as before
-
-        async function fetchFolders(groupId) {
-            try {
-                if (!groupId) {
-                    throw new Error("fetchFolders called without a groupId");
-                }
-
-                const basePath = `/groups/${encodeURIComponent(groupId)}/folders`;
-                const folderParam = currentFolderId ? `?parent_id=${currentFolderId}` : '';
-                const response = await fetch(basePath + folderParam, { method: "GET" });
-
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch folders: ${response.status}`);
-                }
-
-                const folders = await response.json();
-                const foldersList = document.getElementById("folders-list");
-                allFolders = folders;
-
-                // Render folder cards
-                foldersList.innerHTML = "";
-                folders.forEach(folder => {
-                    const folderItem = document.createElement("li");
-                    folderItem.classList.add("folder-card");
-                    folderItem.innerHTML = `
-                        <div class="folder-icon">📁</div>
-                        <h3>${escapeHTML(folder.name)}</h3>
-                        <button onclick="event.stopPropagation(); showFolderOptions(${folder.id})" 
-                            class="folder-options-btn" 
-                            title="Options">⋮</button>
-                    `;
-                    folderItem.addEventListener('click', () => {
-                        navigateToFolder(folder.id);
-                    });
-                    foldersList.appendChild(folderItem);
-                });
-
-                // Breadcrumbs / parents
-                if (!currentFolderId) {
-                    document.getElementById("top-directory-bar-path").style.display = "none";
-                    return;
-                }
-
-                const parentFolders = await fetchGroupParentFolders(groupId, currentFolderId);
-                const breadcrumb = document.getElementById("top-directory-bar-path");
-                breadcrumb.innerHTML = "";
-
-                // Back button
-                if (currentFolderId !== null) {
-                    const backButton = document.createElement("button");
-                    backButton.innerText = "⬅ Back";
-                    backButton.className = "breadcrumb-back";
-                    backButton.addEventListener("click", () => {
-                        const parent = parentFolders.length > 1 
-                            ? parentFolders[parentFolders.length - 2]
-                            : null;
-                        if (parent) {
-                            navigateToFolder(parent.id);
-                        } else {
-                            currentFolderId = null;
-                            fetchFolders(groupId);
-                            fetchNotes(groupId); // your group page should ensure fetchNotes fetches group notes
-                        }
-                    });
-                    breadcrumb.appendChild(backButton);
-                }
-
-                // Root link
-                const rootLink = document.createElement("a");
-                rootLink.href = "#";
-                rootLink.innerText = "Root";
-                rootLink.addEventListener("click", () => {
-                    currentFolderId = null;
-                    fetchFolders(groupId);
-                    fetchNotes(groupId);
-                });
-                breadcrumb.appendChild(rootLink);
-
-                // Parent chain
-                parentFolders.forEach((folder, index) => {
-                    // if (index === 0) return; // skip root item (already shown) but this goes wrong
-                    const sep = document.createElement("span");
-                    sep.className = "separator";
-                    sep.innerText = "›";
-                    breadcrumb.appendChild(sep);
-
-                    if (index < parentFolders.length - 1) {
-                        const folderLink = document.createElement("a");
-                        folderLink.href = "#";
-                        folderLink.innerText = escapeHTML(folder.name);
-                        folderLink.addEventListener("click", () => navigateToFolder(folder.id));
-                        breadcrumb.appendChild(folderLink);
-                    } else {
-                        const current = document.createElement("span");
-                        current.className = "current-folder";
-                        current.innerText = escapeHTML(folder.name);
-                        breadcrumb.appendChild(current);
-                    }
-                });
-
-                breadcrumb.style.display = "flex";
-
-            } catch (error) {
-                console.error("Error fetching group folders:", error);
-                alert("There was an error fetching the group's folders. Please try again.");
+        // Fetch notes for a group (returns array)
+        async function fetchGroupNotesData(groupId) {
+        try {
+            const gid = groupId || window.groupId || window.currentGroupId || null;
+            if (!gid) throw new Error("fetchGroupNotesData requires groupId (or set window.groupId/currentGroupId)");
+            const folderToFetch = (typeof currentFolderId !== "undefined" && currentFolderId !== null)
+            ? `?folder_id=${encodeURIComponent(currentFolderId)}`
+            : '';
+            const res = await fetch(`/groups/${encodeURIComponent(gid)}/notes${folderToFetch}`, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" }
+            });
+            if (!res.ok) {
+            if (res.status === 401) { showModal(); return []; }
+            throw new Error(`Failed to fetch notes: ${res.status}`);
             }
+            const notes = await res.json();
+            allNotes = notes; // keep global for other UIs
+            return notes;
+        } catch (err) {
+            console.error("Error fetching group notes:", err);
+            alert("There was an error fetching the group's notes. Please try again.");
+            return [];
+        } finally {
+            hideModal?.();
+        }
+        }
+
+        /* -------------------------
+        Group: render (single container)
+        ------------------------- */
+
+        function renderGroupItems(folders = [], notes = [], groupId) {
+        const list = document.getElementById("items-list");
+        if (!list) {
+            console.error("renderGroupItems: no #items-list in DOM");
+            return;
+        }
+        list.innerHTML = '';
+
+        if ((!folders || folders.length === 0) && (!notes || notes.length === 0)) {
+            list.innerHTML = "<li class='empty-note'>No folders or notes available</li>";
+            return;
+        }
+
+        // FOLDERS first (preserve .folder-card and data attributes)
+        folders.forEach(folder => {
+            const li = document.createElement('li');
+            li.className = 'folder-card';
+            li.setAttribute('data-folder-id', folder.id);
+            li.innerHTML = `
+            <div class="folder-icon">📁</div>
+            <h3>${escapeHTML(folder.name)}</h3>
+            <button class="folder-options-btn" title="Options">⋮</button>
+            `;
+            // navigate on click
+            li.addEventListener('click', () => navigateToFolder(folder.id));
+            // folder options button
+            const optBtn = li.querySelector('.folder-options-btn');
+            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showFolderOptions(folder.id, groupId); });
+            list.appendChild(li);
+        });
+
+        // NOTES second (preserve .note-card and data-note-id)
+        notes.forEach(note => {
+            const li = document.createElement('li');
+            li.className = 'note-card';
+            li.setAttribute('data-note-id', note.id);
+            // Insert note.note as HTML to match your personal implementation (you wanted HTML preview)
+            const escapedTitle = escapeHTML(note.title || 'Untitled');
+            const escapedTag = escapeHTML(note.tag || '');
+            li.innerHTML = `
+            <h3>${escapedTitle}</h3>
+            <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
+            ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+            <button class="share-button" title="Options">⋮</button>
+            `;
+
+            // Click to open — use closure so we don't need to re-find note by id
+            li.addEventListener('click', function(ev) {
+            // If options button was clicked, it will stopPropagation; this handler only fires for the card.
+            showViewMenu(note.id, note.note, note.tag, note.title, note.attachments || []);
+            });
+
+            // options button (stop propagation)
+            const noteOpt = li.querySelector('.share-button');
+            if (noteOpt) noteOpt.addEventListener('click', (ev) => { ev.stopPropagation(); showNoteOptions(note.id, groupId); });
+
+            list.appendChild(li);
+        });
+        }
+
+        /* -------------------------
+        Group: breadcrumb (separate function)
+        ------------------------- */
+
+        function renderGroupBreadcrumb(parentFolders = [], groupId) {
+        const breadcrumb = document.getElementById("top-directory-bar-path");
+        if (!breadcrumb) return;
+
+        if (!currentFolderId || !parentFolders || parentFolders.length === 0) {
+            breadcrumb.style.display = "none";
+            breadcrumb.innerHTML = "";
+            return;
+        }
+
+        breadcrumb.innerHTML = "";
+        breadcrumb.style.display = "flex";
+        breadcrumb.style.alignItems = "center";
+        breadcrumb.style.gap = "8px";
+
+        // Back button
+        if (currentFolderId !== null) {
+            const backButton = document.createElement("button");
+            backButton.innerText = "⬅ Back";
+            backButton.className = "breadcrumb-back";
+            backButton.addEventListener("click", () => {
+            const parent = parentFolders.length > 1 ? parentFolders[parentFolders.length - 2] : null;
+            if (parent) {
+                navigateToFolder(parent.id);
+            } else {
+                currentFolderId = null;
+                // refresh group lists
+                if (typeof fetchAndRenderGroupItems === 'function') fetchAndRenderGroupItems(groupId);
+            }
+            });
+            breadcrumb.appendChild(backButton);
+        }
+
+        // Root link
+        const rootLink = document.createElement("a");
+        rootLink.href = "#";
+        rootLink.innerText = "Root";
+        rootLink.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            currentFolderId = null;
+            if (typeof fetchAndRenderGroupItems === 'function') fetchAndRenderGroupItems(groupId);
+        });
+        breadcrumb.appendChild(rootLink);
+
+        // Parent chain (root -> ... -> current)
+        parentFolders.forEach((folder, index) => {
+            const sep = document.createElement("span");
+            sep.className = "separator";
+            sep.innerText = "›";
+            breadcrumb.appendChild(sep);
+
+            if (index < parentFolders.length - 1) {
+            const folderLink = document.createElement("a");
+            folderLink.href = "#";
+            folderLink.innerText = escapeHTML(folder.name);
+            folderLink.addEventListener("click", (ev) => { ev.preventDefault(); navigateToFolder(folder.id); });
+            breadcrumb.appendChild(folderLink);
+            } else {
+            const current = document.createElement("span");
+            current.className = "current-folder";
+            current.innerText = escapeHTML(folder.name);
+            breadcrumb.appendChild(current);
+            }
+        });
+        }
+
+        /* -------------------------
+        Group: top-level fetch+render
+        ------------------------- */
+
+        async function fetchAndRenderGroupItems(groupId) {
+        const gid = groupId || window.groupId || window.currentGroupId || null;
+        if (!gid) {
+            console.error("fetchAndRenderGroupItems requires groupId (or set window.groupId/currentGroupId)");
+            return;
+        }
+
+        const [folders, notes] = await Promise.all([
+            fetchGroupFoldersData(gid),
+            fetchGroupNotesData(gid)
+        ]);
+        hideModal?.();
+
+        // breadcrumb
+        if (currentFolderId) {
+            const parentFolders = await fetchGroupParentFolders(gid, currentFolderId);
+            renderGroupBreadcrumb(parentFolders, gid);
+        } else {
+            const breadcrumbEl = document.getElementById("top-directory-bar-path");
+            if (breadcrumbEl) breadcrumbEl.style.display = "none";
+        }
+
+        renderGroupItems(folders, notes, gid);
         }
 
         async function fetchGroupParentFolders(groupId, folderId) {
@@ -3661,8 +3679,7 @@
         async function navigateToFolder(folderId) {
             currentFolderId = folderId;
             // Fetch notes and sub-folders in this folder
-            fetchNotes(currentGroupId);
-            fetchFolders(currentGroupId);
+            fetchAndRenderGroupItems(currentGroupId);
         }
 
         /* ---------- Group-only Folder options menu & delete flow ---------- */
@@ -3970,11 +3987,7 @@
                 }
             }
             // refresh group folders and notes
-            await fetchFolders(group);
-            // your group page should ensure fetchNotes is group-aware (or create fetchGroupNotes)
-            if (typeof fetchNotes === "function") {
-                await fetchNotes(sessionStorage.getItem("group_id"));
-            }
+            await fetchAndRenderGroupItems(group);
         }
 
         /* ---------------- Confirmation modal (group) ---------------- */
@@ -4105,8 +4118,7 @@
 
                 // Successfully created folder
                 closeFolderModal && closeFolderModal();
-                await fetchFolders(group);
-                if (typeof fetchNotes === "function") await fetchNotes();
+                await fetchAndRenderGroupItems(group);
             } catch (error) {
                 console.error("Error creating group folder:", error);
                 alert("There was an error creating the folder. Please try again.");
@@ -4587,8 +4599,7 @@
                 if (modal) modal.remove();
 
                 // refresh UI (group-aware)
-                await fetchFolders(group);
-                await fetchNotes(group);
+                await fetchAndRenderGroupItems(group);
             } catch (e) {
                 console.error("Error performing move:", e);
                 alert("Network error while moving item.");
@@ -4953,7 +4964,7 @@
                 renderFileList('add-file-list', addPendingFiles, false);
 
                 // cleanup UI and reload
-                fetchNotes(groupId);
+                fetchAndRenderGroupItems(groupId);
                 const params = new URLSearchParams();
                 params.append('group_uuid', groupId);
                 fetch(`/draft?${params.toString()}`, { method: 'DELETE' }).catch(()=>{});
@@ -5020,7 +5031,7 @@
 
                 currentNoteId = null;
                 closeUpdateMenu();
-                fetchNotes(groupId);
+                fetchAndRenderGroupItems(groupId);
             } catch (error) {
                 console.error("Error updating note:", error);
                 alert("There was an error updating your note. " + error.message);
@@ -5048,7 +5059,7 @@
 
                 if (response.ok) {
                     closeUpdateMenu();
-                    fetchNotes(groupId);
+                    fetchAndRenderGroupItems(groupId);
                 } else if (response.status === 401) {
                     showModal();
                 }

@@ -193,7 +193,8 @@
             color: #e0e0e0;
         }
 
-        #notes-list, #folders-list {
+        /* container (unified) */
+        #items-list {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
@@ -204,11 +205,8 @@
             animation: fadeIn 0.5s forwards 0.3s;
         }
 
-        #notes-list {
-            margin-top: 30px;
-        }
-
-        #notes-list li, #folders-list li {
+        /* individual items (applies to both folders and notes) */
+        #items-list li {
             background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
@@ -225,7 +223,28 @@
             animation: fadeIn 1s forwards;
         }
 
-        #notes-list li h3, #folders-list li h3 {
+        /* Restore folder-only centering without changing note layout */
+        #items-list li.folder-card {
+        /* center children vertically & horizontally for folders only */
+        justify-content: center; /* vertical centering */
+        align-items: center;     /* horizontal centering */
+        text-align: center;      /* center the title text under the icon */
+        }
+
+        /* Ensure the icon itself is centered and doesn't inherit any weird spacing */
+        #items-list li.folder-card .folder-icon {
+        margin: 0 auto;
+        display: block;
+        }
+
+        /* Slight spacing so the folder title sits nicely under the icon */
+        #items-list li.folder-card h3 {
+        margin-top: 10px;
+        }
+
+
+        /* headings inside either folder or note items */
+        #items-list li h3 {
             margin: 0;
             font-size: 18px;
             font-weight: bold;
@@ -235,7 +254,8 @@
             z-index: 2;
         }
 
-        #notes-list li span, #folders-list li span {
+        /* spans inside either folder or note items */
+        #items-list li span {
             margin: 0px auto;
             max-width: 30%;
             white-space: nowrap;
@@ -243,23 +263,27 @@
             z-index: 1;
         }
 
+        /* tag (keeps your existing visual) */
         .note-tag {
             background-color: var(--btn-color);
             border-bottom-left-radius: 15px;
             border-bottom-right-radius: 15px;
         }
 
-        #notes-list li:hover, #folders-list li:hover {
+        /* hover for both */
+        #items-list li:hover {
             background-color: #4a4a4a;
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
         }
 
-        #notes-list li.empty-note, #folders-list li.empty-note {
+        /* empty state (either type) */
+        #items-list li.empty-note {
             font-style: italic;
             color: #b0b0b0;
         }
 
-        #notes-list li button, #folders-list li button {
+        /* option buttons inside either type */
+        #items-list li button {
             position: absolute;
             top: 10px;
             right: 10px;
@@ -269,11 +293,13 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background-color 0.3s ease;
+            z-index: 50;
         }
 
-        #notes-list li button:hover, #folders-list li button:hover {
+        #items-list li button:hover {
             background-color: #cc4a4a;
         }
+
 
         #update-menu {
             display: none;
@@ -1457,8 +1483,9 @@
         <input type="password" name="fake-password" id="fake-password" style="display:none;" autocomplete="new-password" tabindex="-1" aria-hidden="true">
         <div id="top-directory-bar-path"></div>
         <input type="text" id="search-input" placeholder="Search notes...">
-        <ul id="folders-list"></ul>
-        <ul id="notes-list"></ul>
+
+        <!-- single unified container for folders + notes -->
+        <ul id="items-list" class="grid-list"></ul>
     </main>
 
     <div id="storage-modal" role="dialog" aria-hidden="true">
@@ -2027,8 +2054,7 @@
                 const res = await fetch("/test-session", { method: "GET" });
                 if (res.status === 200) {
                     hideModal();
-                    fetchNotes();
-                    fetchFolders();
+                    fetchAndRenderItems();
                     updateStorageCounter();
                     initSearchingShortcut();
                     return true;
@@ -2053,8 +2079,7 @@
                 if (res.ok) {
                     console.log("Auto-login successful");
                     hideModal();
-                    fetchNotes();
-                    fetchFolders();
+                    fetchAndRenderItems();
                     updateStorageCounter();
                     initSearchingShortcut();
                     return true;
@@ -2584,178 +2609,215 @@
             }
         }
 
-        async function fetchNotes() {
+        async function fetchFoldersData() {
+        try {
+            const folderParam = currentFolderId ? `?parent_id=${currentFolderId}` : '';
+            const res = await fetch("/folders" + folderParam, { method: "GET" });
+            if (!res.ok) throw new Error(`Failed to fetch folders: ${res.status}`);
+            const folders = await res.json();
+            allFolders = folders; // keep old behavior
+            return folders;
+        } catch (err) {
+            console.error("Error fetching folders:", err);
+            alert("There was an error fetching your folders. Please try again.");
+            return [];
+        }
+        }
 
-            const folderToFetch = currentFolderId ? `?folder_id=${currentFolderId}` : '';
-            try {
-            const response = await fetch("/notes" + folderToFetch, {
-                method: "GET",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+        // --- helper: fetch notes only (returns array) ---
+        async function fetchNotesData() {
+        const folderToFetch = currentFolderId ? `?folder_id=${currentFolderId}` : '';
+        try {
+            const res = await fetch("/notes" + folderToFetch, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
             });
-            if (!response.ok && response.status !== 401) {
-                throw new Error(`Failed to fetch notes: ${response.status}`);
-            } else if (response.status === 401) {
-                showModal();
-                return;
-            }
-
-            const notes = await response.json();
-            const notesList = document.getElementById("notes-list");
-            hideModal();
-
+            if (!res.ok && res.status !== 401) throw new Error(`Failed to fetch notes: ${res.status}`);
+            if (res.status === 401) { showModal(); return []; }
+            const notes = await res.json();
             allNotes = notes;
-
-            if (notes.length === 0) {
-                notesList.innerHTML = "<li class='empty-note'>No notes available</li>";
-            } else {
-                notesList.innerHTML = notes.map(note => {
-                const escapedTitle = escapeHTML(note.title || 'Untitled');
-                const escapedTag = escapeHTML(note.tag || '');
-                const plainTextPreview = htmlToPlainText(note.note || '').substring(0, 100);
-
-                return `
-                <li data-note-id="${note.id}">
-                    <h3>${escapedTitle}</h3>
-                    <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
-                    ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
-                    <button onclick="event.stopPropagation(); showNoteOptions(${note.id})" 
-                        class="share-button"
-                        style="z-index:10;" 
-                        title="Options">⋮</button>
-                </li>
-                `;
-            }).join("");
-
-            setTimeout(() => {
-                document.querySelectorAll('#notes-list li').forEach(li => {
-                    li.addEventListener('click', function() {
-                            const noteId = parseInt(this.getAttribute('data-note-id'));
-                            const note = allNotes.find(n => n.id === noteId);
-                            if (note) {
-                                showViewMenu(note.id, note.note, note.tag, note.title);
-                            }
-                        });
-                    });
-                }, 0);
-            } 
-        } catch (error) {
-            console.error("Error fetching notes:", error);
+            return notes;
+        } catch (err) {
+            console.error("Error fetching notes:", err);
             alert("There was an error fetching your notes. Please try again.");
+            return [];
+        } finally {
+            hideModal();
         }
         }
 
-        async function fetchFolders() {
-            try {
-                // Fetch folders with the parent_id parameter, if currentFolderId is set, use it, otherwise fetch top-level folders (parent_id=null)
-                const folderParam = currentFolderId ? `?parent_id=${currentFolderId}` : '';
-                const response = await fetch("/folders" + folderParam, {
-                    method: "GET",
-                });
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch folders: ${response.status}`);
+        // --- unified render function ---
+        // render folders and notes into single container #items-list
+        function renderItems(folders = [], notes = []) {
+        const list = document.getElementById("items-list");
+        if (!list) {
+            console.error("No #items-list found in DOM");
+            return;
+        }
+        list.innerHTML = ''; // clear previous
+
+        if ((!folders || folders.length === 0) && (!notes || notes.length === 0)) {
+            list.innerHTML = "<li class='empty-note'>No notes or folders available</li>";
+            return;
+        }
+
+        // FOLDERS first (keep class names and data attributes)
+        folders.forEach(folder => {
+            const li = document.createElement('li');
+            li.className = 'folder-card';           // preserve your class
+            li.setAttribute('data-folder-id', folder.id); // optional, matches your pattern
+            li.innerHTML = `
+            <div class="folder-icon">📁</div>
+            <h3>${escapeHTML(folder.name)}</h3>
+            <button class="folder-options-btn" title="Options">⋮</button>
+            `;
+            li.addEventListener('click', () => navigateToFolder(folder.id));
+            const optBtn = li.querySelector('.folder-options-btn');
+            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showFolderOptions(folder.id); });
+            list.appendChild(li);
+        });
+
+        // NOTES second (keep class names and data attributes)
+        notes.forEach(note => {
+            const li = document.createElement('li');
+            li.className = 'note-card';             // preserve your class
+            li.setAttribute('data-note-id', note.id); // preserve data-note-id
+            const escapedTitle = escapeHTML(note.title || 'Untitled');
+            const escapedTag = escapeHTML(note.tag || '');
+            const preview = htmlToPlainText(note.note || '').substring(0, 100);
+
+            li.innerHTML = `
+            <h3>${escapedTitle}</h3>
+            <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
+            ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+            <button class="share-button" title="Options">⋮</button>
+            `;
+
+            li.addEventListener('click', function() {
+            const noteId = parseInt(this.getAttribute('data-note-id'));
+            const found = allNotes.find(n => n.id === noteId);
+            if (found) showViewMenu(found.id, found.note, found.tag, found.title);
+            });
+
+            const optBtn = li.querySelector('.share-button');
+            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showNoteOptions(note.id); });
+
+            list.appendChild(li);
+        });
+        }
+
+        // --- main function to fetch & render both in parallel ---
+        async function fetchAndRenderItems() {
+        const [folders, notes] = await Promise.all([
+            fetchFoldersData(),
+            fetchNotesData()
+        ]);
+        hideModal();
+        // If breadcrumb logic needs to be refreshed, do it here:
+        if (currentFolderId) {
+            // keep your existing parent folder/breadcrumb flow
+            const parentFolders = await fetchParentFolders(currentFolderId);
+            renderBreadcrumb(parentFolders);
+        } else {
+            document.getElementById("top-directory-bar-path").style.display = "none";
+        }
+
+        renderItems(folders, notes);
+        }
+
+        /**
+         * Renders the breadcrumb into #top-directory-bar-path
+         * - parentFolders: array of folder objects from root -> current (same shape your API returns)
+         * - Uses global currentFolderId, navigateToFolder(), fetchAndRenderItems() (or fetchFolders/fetchNotes)
+         * - Uses escapeHTML() helper from your code
+         */
+        function renderBreadcrumb(parentFolders = []) {
+        const breadcrumb = document.getElementById("top-directory-bar-path");
+        if (!breadcrumb) return;
+
+        // If we're at root or no parents supplied, hide the breadcrumb bar
+        if (!currentFolderId || parentFolders.length === 0) {
+            breadcrumb.style.display = "none";
+            breadcrumb.innerHTML = "";
+            return;
+        }
+
+        breadcrumb.innerHTML = "";
+        breadcrumb.style.display = "flex";
+        breadcrumb.style.alignItems = "center";
+        breadcrumb.style.gap = "8px";
+
+        // BACK button (step up one level)
+        if (currentFolderId !== null) {
+            const backButton = document.createElement("button");
+            backButton.innerText = "⬅ Back";
+            backButton.className = "breadcrumb-back";
+            backButton.addEventListener("click", () => {
+            // pick the parent one step up (or null to root)
+            const parent = parentFolders.length > 1
+                ? parentFolders[parentFolders.length - 2]
+                : null;
+
+            if (parent) {
+                navigateToFolder(parent.id);
+            } else {
+                // go to root
+                currentFolderId = null;
+                // refresh lists (use your unified fetch if available)
+                if (typeof fetchAndRenderItems === 'function') {
+                fetchAndRenderItems();
+                } else {
+                fetchFolders();
+                fetchNotes();
                 }
-
-                const folders = await response.json();
-                const foldersList = document.getElementById("folders-list"); // Used the notes list container because the folders need to be populated in the same container as the notes
-                allFolders = folders;
-                // Then, display the folders
-                foldersList.innerHTML = ""; // Clear existing folders
-                folders.forEach(folder => {
-                    const folderItem = document.createElement("li");
-                    folderItem.classList.add("folder-card");
-                    folderItem.innerHTML = `
-                        <div class="folder-icon">📁</div>
-                        <h3>${escapeHTML(folder.name)}</h3>
-                        <button onclick="event.stopPropagation(); showFolderOptions(${folder.id})" 
-                            class="folder-options-btn" 
-                            title="Options">⋮</button>
-                    `;
-                    folderItem.addEventListener('click', () => {
-                        navigateToFolder(folder.id);
-                    });
-                    foldersList.appendChild(folderItem);
-                });
-
-
-                // Fetch and display parent folders for breadcrumb navigation
-                // If currentFolderId is null, we are at the top level, so no need to fetch parents
-                if (!currentFolderId) {
-                    document.getElementById("top-directory-bar-path").style.display = "none";
-                    return;
-                }
-                const parentFolders = await fetchParentFolders(currentFolderId);
-                const breadcrumb = document.getElementById("top-directory-bar-path");
-                breadcrumb.innerHTML = "";
-
-                // Show back button if not in root
-                if (currentFolderId !== null) {
-                    const backButton = document.createElement("button");
-                    backButton.innerText = "⬅ Back";
-                    backButton.className = "breadcrumb-back";
-                    backButton.addEventListener("click", () => {
-                        // Step up: second-to-last element in chain, or null for root
-                        const parent = parentFolders.length > 1 
-                            ? parentFolders[parentFolders.length - 2]
-                            : null;
-                        if (parent) {
-                            navigateToFolder(parent.id);
-                        } else {
-                            currentFolderId = null; // back to root
-                            fetchFolders();
-                            fetchNotes();
-                        }
-                    });
-                    breadcrumb.appendChild(backButton);
-                }
-
-                // Always show root link
-                const rootLink = document.createElement("a");
-                rootLink.href = "#";
-                rootLink.innerText = "Root";
-                rootLink.addEventListener("click", () => {
-                    currentFolderId = null; // reset to root
-                    fetchFolders();
-                    fetchNotes();
-                });
-                breadcrumb.appendChild(rootLink);
-
-                // Loop through parents and current folder
-                parentFolders.forEach((folder, index) => {
-                    // removed: if (index === 0) return; // <-- this was skipping the real top-level folder
-
-                    const sep = document.createElement("span");
-                    sep.className = "separator";
-                    sep.innerText = "›";
-                    breadcrumb.appendChild(sep);
-
-                    if (index < parentFolders.length - 1) {
-                        // clickable parent folders
-                        const folderLink = document.createElement("a");
-                        folderLink.href = "#";
-                        folderLink.innerText = escapeHTML(folder.name);
-                        folderLink.addEventListener("click", () => {
-                            navigateToFolder(folder.id);
-                        });
-                        breadcrumb.appendChild(folderLink);
-                    } else {
-                        // current folder (plain text)
-                        const current = document.createElement("span");
-                        current.className = "current-folder";
-                        current.innerText = escapeHTML(folder.name);
-                        breadcrumb.appendChild(current);
-                    }
-                });
-
-                breadcrumb.style.display = "flex";
-
-
-            } catch (error) {
-                console.error("Error fetching folders:", error);
-                alert("There was an error fetching your folders. Please try again.");
             }
+            });
+            breadcrumb.appendChild(backButton);
         }
+
+        // ROOT link
+        const rootLink = document.createElement("a");
+        rootLink.href = "#";
+        rootLink.innerText = "Root";
+        rootLink.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            currentFolderId = null;
+            if (typeof fetchAndRenderItems === 'function') {
+            fetchAndRenderItems();
+            } else {
+            fetchFolders();
+            fetchNotes();
+            }
+        });
+        breadcrumb.appendChild(rootLink);
+
+        // Append parent chain: parentFolders is expected to be ordered root -> current
+        parentFolders.forEach((folder, index) => {
+            const sep = document.createElement("span");
+            sep.className = "separator";
+            sep.innerText = "›";
+            breadcrumb.appendChild(sep);
+
+            if (index < parentFolders.length - 1) {
+            // clickable intermediate parent
+            const folderLink = document.createElement("a");
+            folderLink.href = "#";
+            folderLink.innerText = escapeHTML(folder.name);
+            folderLink.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                navigateToFolder(folder.id);
+            });
+            breadcrumb.appendChild(folderLink);
+            } else {
+            // current folder (plain text)
+            const current = document.createElement("span");
+            current.className = "current-folder";
+            current.innerText = escapeHTML(folder.name);
+            breadcrumb.appendChild(current);
+            }
+        });
+        }
+
 
         async function fetchParentFolders(folderId) {
             try {
@@ -3175,8 +3237,7 @@
                 if (modal) modal.remove();
 
                 // refresh UI
-                fetchFolders();
-                fetchNotes();
+                fetchAndRenderItems();
             } catch (e) {
                 console.error("Error performing move:", e);
                 alert("Network error while moving item.", "error");
@@ -3787,8 +3848,7 @@
                     currentFolderId = null; // back to root
                 }
             }
-            await fetchFolders();
-            await fetchNotes();
+            await fetchAndRenderItems();
         }
 
         /* ---------------- Confirmation modal ---------------- */
@@ -3920,8 +3980,7 @@
 
                 // Successfully created folder
                 closeFolderModal();
-                fetchFolders();
-                fetchNotes();
+                fetchAndRenderItems();
             } catch (error) {
                 console.error("Error creating folder:", error);
                 alert("There was an error creating the folder. Please try again.");
@@ -3931,8 +3990,7 @@
         async function navigateToFolder(folderId) {
             currentFolderId = folderId;
             // Fetch notes and sub-folders in this folder
-            fetchNotes();
-            fetchFolders();
+            fetchAndRenderItems();
         }
 
         function showCreateFolderModal() {
@@ -4116,8 +4174,7 @@
                     addUploadedIds = [];
                     renderFileList('add-file-list', addPendingFiles, false);
                 }
-                fetchNotes();
-                fetchFolders();
+                fetchAndRenderItems();
                 updateStorageCounter();
                 document.getElementById("note-title").value = '';
                 document.getElementById("note-text").innerHTML = '';
@@ -4189,8 +4246,7 @@
 
                 currentNoteId = null;
                 closeUpdateMenu();
-                fetchNotes();
-                fetchFolders();
+                fetchAndRenderItems();
                 updateStorageCounter();
             } catch (error) {
                 console.error("Error updating note:", error);
@@ -4217,8 +4273,7 @@
                 }
 
                 closeUpdateMenu();
-                fetchNotes();
-                fetchFolders();
+                fetchAndRenderItems();
                 updateStorageCounter();
             } catch (error) {
                 console.error("Error deleting note:", error);
