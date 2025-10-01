@@ -108,9 +108,24 @@ ALLOWED_EXTENSIONS = {
     'mp3', 'wav', 'ogg', 'mp4', 'mov', 'avi', 'webm', 'mkv'
 }
 ALLOWED_MIMETYPES = {
-    'image/png', 'image/jpeg', 'image/gif',
-    'text/plain', 'application/pdf', 'application/zip',    "application/x-zip-compressed",
-    "application/octet-stream",  # optional, safest fallback
+    # Images
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+
+    # Text / documents
+    'text/plain',
+    'application/pdf',
+    'application/msword',  # .doc
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # .docx
+    'application/vnd.ms-excel',  # .xls
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # .xlsx
+    'application/vnd.ms-powerpoint',  # .ppt
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # .pptx
+
+    # Archives
+    'application/zip', 'application/x-zip-compressed',
+
+    # optional fallback
+    'application/octet-stream',
 }
 # Upload folder
 UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads')
