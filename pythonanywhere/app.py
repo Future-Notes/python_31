@@ -90,7 +90,23 @@ GITHUB_REPO_OWNER = "BosbesplaysYT"
 GITHUB_REPO_NAME = "python_31"
 MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB default (changeable)
 # Allowed extensions and mimetypes
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'txt', 'md', 'pdf', 'zip'}
+ALLOWED_EXTENSIONS = {
+    # Images
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'svg',
+
+    # Documents
+    'txt', 'md', 'pdf', 'doc', 'docx', 'odt', 'rtf',
+    'xls', 'xlsx', 'ods', 'csv', 'ppt', 'pptx', 'odp',
+
+    # Archives
+    'zip', 'tar', 'gz', '7z', 'rar',
+
+    # Code / scripts (if safe for your app)
+    'py', 'js', 'html', 'css', 'json', 'xml', 'yml', 'yaml',
+
+    # Audio / video (if needed)
+    'mp3', 'wav', 'ogg', 'mp4', 'mov', 'avi', 'webm', 'mkv'
+}
 ALLOWED_MIMETYPES = {
     'image/png', 'image/jpeg', 'image/gif',
     'text/plain', 'application/pdf', 'application/zip',    "application/x-zip-compressed",
