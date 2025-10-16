@@ -3101,7 +3101,7 @@
                 e.stopPropagation();
                 if (isForbidden) {
                     // optional: show toast
-                    flashMessage("Cannot move into a child of this folder.", 2500);
+                    alert("Cannot move into a child of this folder.", "error");
                     return;
                 }
                 const fid = folder.id === null ? null : folder.id;
@@ -3199,7 +3199,7 @@
                 // Find the current note to preserve its data
                 const note = allNotes.find(n => n.id === st.id);
                 if (!note) {
-                    flashMessage("Error: Note not found in local data", 3000);
+                    alert("Error: Note not found in local data", "error");
                     return;
                 }
                 
@@ -3227,11 +3227,11 @@
                 if (!resp.ok) {
                     const body = await resp.json().catch(() => null);
                     const msg = (body && body.error) ? body.error : `Server returned ${resp.status}`;
-                    flashMessage(`Move failed: ${msg}`, 4000);
+                    alert(`Move failed: ${msg}`, "error");
                     return;
                 }
                 
-                flashMessage("Moved successfully!", "success");
+                alert("Moved successfully!", "success");
                 // close modal
                 const modal = document.getElementById('move-modal');
                 if (modal) modal.remove();
@@ -3260,27 +3260,6 @@
             }
             await recurse(rootId);
             return ids;
-        }
-
-        /** small helper to show ephemeral messages */
-        function flashMessage(msg, ms=2000) {
-            let el = document.getElementById('flash-msg');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'flash-msg';
-                el.style.position = 'fixed';
-                el.style.right = '20px';
-                el.style.bottom = '20px';
-                el.style.background = 'rgba(0,0,0,0.85)';
-                el.style.color = 'white';
-                el.style.padding = '10px 14px';
-                el.style.borderRadius = '8px';
-                el.style.zIndex = 999;
-                document.body.appendChild(el);
-            }
-            el.innerText = msg;
-            el.style.opacity = '1';
-            setTimeout(()=>{ el.style.opacity = '0'; }, ms);
         }
 
         /* Minimal styling so modal isn't invisible (you can move to CSS) */
