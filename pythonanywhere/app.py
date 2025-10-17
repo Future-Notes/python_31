@@ -1968,6 +1968,10 @@ def delete_user_and_data(user):
         # Delete user colors
         UserColor.query.filter_by(user_id=user_to_delete.id).delete()
 
+        # Delete uploads
+        Upload.query.filter_by(user_id=user_to_delete.id).delete()
+
+
         # Finally, delete the user
         db.session.delete(user_to_delete)
         return True
