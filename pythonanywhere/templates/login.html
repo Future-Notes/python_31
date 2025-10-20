@@ -219,6 +219,71 @@
                 opacity: 1;
             }
         }
+
+        /* 2FA modal styles (modern, minimal) */
+        #twofa-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 10, 12, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        }
+        #twofa-modal {
+        width: 100%;
+        max-width: 420px;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(2,6,23,0.35);
+        padding: 20px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        }
+        #twofa-modal h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        }
+        #twofa-modal p.sub {
+        margin: 0 0 12px;
+        color: #556;
+        font-size: 13px;
+        }
+        #twofa-code-input {
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 16px;
+        padding: 10px 12px;
+        border: 1px solid #d7d7d7;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        }
+        .twofa-row {
+        display:flex;
+        gap:8px;
+        align-items:center;
+        }
+        #twofa-submit-btn, #twofa-cancel-btn {
+        padding: 10px 14px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        font-weight: 600;
+        }
+        #twofa-submit-btn { background: #146; color: #fff; }
+        #twofa-cancel-btn { background: #eee; color: #111; }
+        #twofa-error { color: #b33; font-size: 13px; margin-top: 8px; display:none; }
+        #twofa-info { font-size: 13px; color: #444; margin-top: 8px; }
+        #twofa-modal .small {
+        font-size: 12px; color: #666; margin-top: 8px;
+        }
+        .twofa-alt {
+        background: none; border: none; color: #146; cursor: pointer;
+        padding: 6px 8px; font-size: 13px;
+        }
+        @media (prefers-reduced-motion: no-preference){
+        #twofa-modal-backdrop.show { animation: fadeIn .15s ease-in; }
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -258,6 +323,26 @@
             <button type="submit">Login</button>
         </form>
         <p>Don't have an account? <a id="signup-link" href="/signup_page">Sign Up</a> Forgot your password? <a href="/reset-password">Reset your password (requires email)</a></p>
+    </div>
+
+    <div id="twofa-modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+        <div id="twofa-modal" role="document" aria-labelledby="twofa-title">
+            <h2 id="twofa-title">Two-step verification</h2>
+            <p class="sub">Enter the code from your authenticator app or use a backup code.</p>
+
+            <label for="twofa-code-input" class="sr-only">2FA code</label>
+            <input id="twofa-code-input" inputmode="numeric" autocomplete="one-time-code"
+                maxlength="12" placeholder="123 456" aria-label="2FA code" />
+
+            <div class="twofa-row" style="margin-top:6px;">
+            <button id="twofa-submit-btn">Verify</button>
+            <button id="twofa-cancel-btn" class="secondary">Cancel</button>
+            <button id="twofa-use-backup" class="twofa-alt" title="Use a backup code">Use backup code</button>
+            </div>
+
+            <div id="twofa-error" role="alert"></div>
+            <div id="twofa-info" class="small">If your code isn't working, check your device clock.</div>
+        </div>
     </div>
 
     <script>
@@ -338,6 +423,109 @@
         const params = new URLSearchParams(window.location.search);
         const redirectUrl = params.get("redirect") || "/index";
 
+        (function () {
+        // helpers / element refs
+        const backdrop = document.getElementById('twofa-modal-backdrop');
+        const modal = document.getElementById('twofa-modal');
+        const codeInput = document.getElementById('twofa-code-input');
+        const submitBtn = document.getElementById('twofa-submit-btn');
+        const cancelBtn = document.getElementById('twofa-cancel-btn');
+        const backupBtn = document.getElementById('twofa-use-backup');
+        const errorBox = document.getElementById('twofa-error');
+
+        let currentLoginToken = null;
+        let currentKeepLogin = false;
+        let currentRedirect = '/index';
+
+        function showError(msg) {
+            errorBox.style.display = msg ? 'block' : 'none';
+            errorBox.textContent = msg || '';
+        }
+
+        function showTwoFAModal(login_token, keep_login=false, redirect='/index') {
+            currentLoginToken = login_token;
+            currentKeepLogin = Boolean(keep_login);
+            currentRedirect = redirect || '/index';
+            showError('');
+            codeInput.value = '';
+            backdrop.style.display = 'flex';
+            backdrop.setAttribute('aria-hidden', 'false');
+            // focus in next tick
+            setTimeout(()=> codeInput.focus(), 50);
+            // add key handlers
+            window.addEventListener('keydown', escHandler);
+        }
+
+        function hideTwoFAModal() {
+            backdrop.style.display = 'none';
+            backdrop.setAttribute('aria-hidden', 'true');
+            currentLoginToken = null;
+            window.removeEventListener('keydown', escHandler);
+            showError('');
+        }
+
+        function escHandler(e){
+            if (e.key === 'Escape') hideTwoFAModal();
+        }
+
+        async function submitCode(code) {
+            if (!currentLoginToken) {
+            showError('Missing login session. Please try logging in again.');
+            return;
+            }
+            showError('');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Verifying...';
+
+            try {
+            const res = await fetch('/login/2fa', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                login_token: currentLoginToken,
+                code: code,
+                keep_login: currentKeepLogin
+                })
+            });
+            const j = await res.json().catch(()=>({}));
+            if (res.ok) {
+                // success: set sessionStorage and redirect
+                try { sessionStorage.setItem('current_user_id', j.user_id); } catch(e){}
+                window.location.href = currentRedirect || j.startpage || '/index';
+            } else {
+                showError(j.error || 'Invalid code');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Verify';
+            }
+            } catch (err) {
+            showError('Network error — try again.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Verify';
+            }
+        }
+
+        // UI bindings
+        submitBtn.addEventListener('click', () => {
+            const code = codeInput.value.trim();
+            if (!code) { showError('Please enter the code.'); return; }
+            submitCode(code);
+        });
+        cancelBtn.addEventListener('click', () => hideTwoFAModal());
+        backupBtn.addEventListener('click', () => {
+            const code = prompt('Enter a backup code:');
+            if (code) submitCode(code.trim());
+        });
+
+        // allow Enter to submit
+        codeInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') submitBtn.click();
+        });
+
+        // expose to global so your login flow can call it
+        window.__showTwoFAModal = showTwoFAModal;
+        })();
+
         const res = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -346,8 +534,13 @@
         const data = await res.json();
 
         if (res.ok) {
-            sessionStorage.setItem("current_user_id", data.user_id)
-            window.location.href = redirectUrl || data.startpage || "/index";
+            if (data["2fa_required"]) {
+                window.__showTwoFAModal(data.login_token, keep, redirectUrl)
+            } else {
+                // existing successful branch (no 2FA)
+                sessionStorage.setItem("current_user_id", data.user_id)
+                window.location.href = redirectUrl || data.startpage || "/index";
+            }
         } else if (res.status === 403 && data.error === "Account is suspended") {
             document.getElementById("ban-message").classList.add("visible");
         } else {
