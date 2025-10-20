@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Two-Factor Authentication — Setup / Manage</title>
+
+<!-- Dark / gray theme styles -->
+<style>
+:root{
+  --bg: #454a4e;
+  --card: #16191b;
+  --muted: #a9b0b6;
+  --accent: #20c997;
+  --danger: #ff6b6b;
+  --border: rgba(255,255,255,0.06);
+  --surface: #111416;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: linear-gradient(180deg,var(--bg), #0b0d0e 140%);
+  color: #e6eef3;
+  padding:28px;
+}
+.container{ max-width:980px; margin:0 auto; }
+.header{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:20px; }
+.header h1{margin:0;font-size:20px}
+.header .muted{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+@media (max-width:880px){ .grid{grid-template-columns:1fr} }
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  border:1px solid var(--border);
+  padding:18px;border-radius:12px;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.5);
+}
+.qr-wrap{
+  display:flex;align-items:center;justify-content:center;min-height:200px;border-radius:10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.015));
+  border: 1px dashed rgba(255,255,255,0.03); overflow:hidden;
+}
+.manual-secret{
+  margin-top:10px; display:inline-block; background:var(--surface); padding:8px 10px;
+  border-radius:8px;border:1px solid rgba(255,255,255,0.03);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+  color: #dbe9ea;
+}
+.hint{color:var(--muted); font-size:13px; margin-top:10px}
+.controls{display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap}
+.btn{ border: none; padding:10px 14px; border-radius:9px; cursor:pointer; font-weight:600; background: rgba(255,255,255,0.03); color: #dff6f0; }
+.btn.primary{ background: linear-gradient(90deg, rgba(32,201,151,0.16), rgba(32,201,151,0.08)); color: var(--accent); }
+.btn.ghost{ background: transparent; border:1px solid rgba(255,255,255,0.03); color:var(--muted); }
+.btn.danger{ background: linear-gradient(90deg, rgba(255,107,107,0.08), rgba(255,107,107,0.02)); color:var(--danger); }
+.input{ width:100%; padding:10px 12px; margin-top:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background: rgba(255,255,255,0.01); color:#eaf6f1; font-size:15px; }
+.small { font-size:13px; color:var(--muted); margin-top:8px; }
+.backup-codes{ margin-top:12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace; background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01)); padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03); color:#dff6f0; white-space:pre-wrap; }
+.kv{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.row{display:flex;gap:12px;align-items:center}
+.loading{ color:var(--muted); font-size:14px; }
+.notice{background: rgba(255,255,255,0.02); padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.02); color:var(--muted); margin-top:12px}
+.action-row{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+
+/* credential modal */
+#cred-backdrop{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(2,6,10,0.6); z-index:9999; }
+#cred-modal{ width:100%; max-width:460px; background: linear-gradient(180deg, var(--muted), #0b0d0e); border-radius:12px; padding:18px; border:1px solid rgba(255,255,255,0.04); box-shadow:0 10px 40px rgba(0,0,0,0.6); color:#eaf6f1; }
+.cred-tabs{ display:flex; gap:8px; margin-bottom:10px; }
+.cred-tab{ padding:8px 10px; border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,0.02); background:transparent; color:var(--muted); }
+.cred-tab.active{ background: rgba(255,255,255,0.02); color:#eaf6f1; border-color: rgba(255,255,255,0.04); }
+.cred-error{ color:#ff9b9b; margin-top:8px; font-size:13px; display:none; }
+.cred-hint{ font-size:13px; color:var(--muted); margin-top:8px; }
+.cred-row{ display:flex; gap:8px; margin-top:12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>Two-Factor Authentication</h1>
+      <div class="muted">Add an authenticator app for extra account protection.</div>
+    </div>
+    <div>
+      <a href="/account_page" class="btn ghost">← Back to account</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Left column -->
+    <div>
+      <div id="main-card" class="card" aria-live="polite">
+        <div id="main-content"><div class="loading">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- Right column: management -->
+    <div>
+      <div id="manage-card" class="card" aria-hidden="true" style="display:none;">
+        <div class="kv">
+          <div>
+            <strong id="manage-title">Manage 2FA</strong>
+            <div class="small" id="manage-sub">Controls to disable or rotate backup codes.</div>
+          </div>
+        </div>
+
+        <div id="manage-body" style="margin-top:12px;">
+          <div class="small" id="manage-status-line">Status: <span id="status-pill" style="color:var(--accent)">Enabled</span></div>
+          <div class="action-row">
+            <button id="btn-regenerate" class="btn ghost" disabled>Regenerate backup codes</button>
+            <button id="btn-disable" class="btn danger" disabled>Disable 2FA</button>
+          </div>
+          <div id="manage-msg" class="small" style="margin-top:12px;color:var(--muted)"></div>
+        </div>
+      </div>
+
+      <div id="help-card" class="card" style="margin-top:14px;">
+        <div style="font-weight:600">Authenticator apps</div>
+        <div class="small">We recommend Authy, Google Authenticator or any TOTP-compatible app. Set your device clock to automatic time for reliable codes.</div>
+        <div class="small" style="margin-top:10px">If you lose access to your authenticator, use your backup codes or contact support.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Credential modal (used for disable & regenerate) -->
+<div id="cred-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+  <div id="cred-modal" role="document" aria-labelledby="cred-title">
+    <h3 id="cred-title" style="margin:0 0 8px">Confirm action</h3>
+    <div class="small cred-hint" id="cred-hint">Enter your account password or a 2FA / backup code to confirm.</div>
+
+    <div class="cred-tabs" role="tablist" aria-label="Authentication method">
+      <button class="cred-tab active" data-method="password" id="tab-password" role="tab" aria-selected="true">Password</button>
+      <button class="cred-tab" data-method="code" id="tab-code" role="tab" aria-selected="false">Authenticator / Backup code</button>
+    </div>
+
+    <input id="cred-input" class="input" type="password" placeholder="Enter your password" autocomplete="current-password" />
+
+    <div class="cred-row">
+      <button id="cred-submit" class="btn primary">Confirm</button>
+      <button id="cred-cancel" class="btn ghost">Cancel</button>
+      <div id="cred-loading" class="small" style="display:none;margin-left:auto">...</div>
+    </div>
+
+    <div id="cred-error" class="cred-error" role="alert"></div>
+  </div>
+</div>
+
+<script>
+/*
+  Enhanced 2FA page script:
+  - Credential modal for disable/regenerate actions (password or code)
+  - Regenerate works and shows new codes
+  - Done button resets to manage screen and hides backup codes
+  - Accessible focus handling
+*/
+
+(function(){
+  const mainContent = document.getElementById('main-content');
+  const manageCard = document.getElementById('manage-card');
+  const manageMsg = document.getElementById('manage-msg');
+  const btnRegenerate = document.getElementById('btn-regenerate');
+  const btnDisable = document.getElementById('btn-disable');
+  const statusPill = document.getElementById('status-pill');
+
+  // cred modal elements
+  const credBackdrop = document.getElementById('cred-backdrop');
+  const credModal = document.getElementById('cred-modal');
+  const credInput = document.getElementById('cred-input');
+  const credSubmit = document.getElementById('cred-submit');
+  const credCancel = document.getElementById('cred-cancel');
+  const credTabs = Array.from(document.querySelectorAll('.cred-tab'));
+  const credError = document.getElementById('cred-error');
+  const credLoading = document.getElementById('cred-loading');
+  const credHint = document.getElementById('cred-hint');
+
+  let currentAction = null; // 'disable' | 'regenerate'
+  let currentBackupCodes = null;
+  let currentQRCode = null;
+  let currentSecret = null;
+
+  async function apiFetch(url, opts={}) {
+    opts.credentials = 'include';
+    opts.headers = Object.assign({'Accept':'application/json'}, opts.headers || {});
+    return fetch(url, opts);
+  }
+
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function showMain(html){ mainContent.innerHTML = html; }
+  function showError(msg){ showMain(`<div style="color:#ff9b9b"><strong>Error:</strong> ${escapeHtml(msg)}</div>`); }
+
+  // ----- renderers -----
+  function renderLoading(){ showMain(`<div class="loading">Checking your 2FA status…</div>`); }
+
+  function renderSetup(qr, secret){
+    currentQRCode = qr; currentSecret = secret;
+    const html = `
+      <h2 style="margin:0 0 8px">Set up two-factor authentication</h2>
+      <div class="small">Scan the QR with your authenticator app. If you prefer, copy the manual secret below.</div>
+
+      <div class="qr-wrap" id="qr-view" style="margin-top:12px">
+        <img alt="QR code" src="${qr}" style="max-width:100%; height:auto; display:block;" />
+      </div>
+
+      <div class="manual-secret" id="manual-secret">${escapeHtml(secret)}</div>
+      <div class="hint">After scanning tap <strong>I've scanned — continue</strong> to enter the code from your app.</div>
+
+      <div class="controls">
+        <button id="btn-scanned" class="btn primary">I've scanned — continue</button>
+        <button id="btn-cancel-setup" class="btn ghost">Cancel</button>
+      </div>
+      <div id="setup-note" class="small" style="margin-top:12px;color:var(--muted)">Keep this tab open while you confirm setup.</div>
+    `;
+    showMain(html);
+    document.getElementById('btn-scanned').addEventListener('click', () => renderConfirm());
+    document.getElementById('btn-cancel-setup').addEventListener('click', () => window.location.href = '/account_page');
+  }
+
+  function renderConfirm(errorMsg=''){
+    const html = `
+      <h2 style="margin:0 0 8px">Confirm your authenticator</h2>
+      <div class="small">Enter the 6-digit code shown in your authenticator app to enable 2FA.</div>
+      <input id="confirm-code" class="input" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" />
+      <div class="controls">
+        <button id="btn-confirm" class="btn primary">Enable 2FA</button>
+        <button id="btn-back" class="btn ghost">Back</button>
+      </div>
+      <div id="confirm-error" class="small" style="color:#ff9b9b; margin-top:10px; display:${errorMsg ? 'block' : 'none'}">${escapeHtml(errorMsg)}</div>
+      <div class="small" style="margin-top:8px;color:var(--muted)">If the code fails, ensure your phone's clock is correct and try again.</div>
+    `;
+    showMain(html);
+    document.getElementById('btn-back').addEventListener('click', () => renderSetup(currentQRCode, currentSecret));
+    document.getElementById('btn-confirm').addEventListener('click', submitConfirm);
+    const input = document.getElementById('confirm-code');
+    input.addEventListener('keyup', (e)=>{ if (e.key === 'Enter') submitConfirm(); });
+    input.focus();
+  }
+
+  function renderBackups(codes){
+    currentBackupCodes = codes;
+    const b = codes.map(c => escapeHtml(c)).join('\\n');
+    const html = `
+      <h2 style="margin:0 0 8px">Backup codes — save these now</h2>
+      <div class="small">These codes can be used if you lose your authenticator app. Each code can be used once.</div>
+      <div class="backup-codes" id="backup-box">${b}</div>
+      <div class="controls">
+        <button id="btn-download" class="btn ghost">Download codes</button>
+        <button id="btn-done" class="btn primary">Done</button>
+      </div>
+      <div class="notice small">We only show these codes once. Store them securely (password manager or printed paper).</div>
+    `;
+    showMain(html);
+    document.getElementById('btn-download').addEventListener('click', downloadBackupText);
+    document.getElementById('btn-done').addEventListener('click', () => {
+      // Reset to manage view (hide backup codes)
+      refreshStatusAndShowManage();
+    });
+  }
+
+  function renderManage(){
+    showMain(`
+      <h2 style="margin:0 0 8px">Two-Factor Authentication is enabled</h2>
+      <div class="small">Use the controls on the right to regenerate backup codes or disable 2FA.</div>
+      <div class="notice small" style="margin-top:12px">If you want to see/reset backup codes, use "Regenerate backup codes".</div>
+    `);
+    showManageCard(true);
+  }
+
+  // ----- actions -----
+  async function start(){
+    renderLoading();
+    try {
+      const res = await apiFetch('/2fa/status', { method: 'GET' });
+      if (res.ok){
+        const j = await res.json().catch(()=>({}));
+        if (j.twofa_enabled){
+          renderManage(); return;
+        } else {
+          await startSetupFlow(); return;
+        }
+      }
+    } catch (e) { /* fallback */ }
+    // fallback to direct setup
+    await startSetupFlow();
+  }
+
+  async function startSetupFlow(){
+    renderLoading();
+    try {
+      const res = await apiFetch('/2fa/setup', { method: 'POST' });
+      const j = await res.json().catch(()=>({}));
+      if (res.ok){
+        renderSetup(j.qr, j.secret);
+      } else {
+        const err = j.error || 'Could not initialize 2FA setup';
+        if (/already/i.test(err) || /enabled/i.test(err)) { renderManage(); return; }
+        showError(err);
+      }
+    } catch (err){
+      showError('Network error while starting setup. Try again later.');
+    }
+  }
+
+  async function submitConfirm(){
+    const input = document.getElementById('confirm-code'); if (!input) return;
+    const code = input.value.trim();
+    if (!code) { renderConfirm('Enter the code from your authenticator app.'); return; }
+    const btn = document.getElementById('btn-confirm'); btn.disabled = true; btn.textContent = 'Verifying…';
+    try {
+      const res = await apiFetch('/2fa/confirm', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code})
+      });
+      const j = await res.json().catch(()=>({}));
+      if (res.ok){
+        renderBackups(j.backup_codes || []);
+        // enable manage controls on right
+        showManageCard(true);
+      } else {
+        renderConfirm(j.error || 'Invalid code');
+      }
+    } catch (err){
+      renderConfirm('Network error — try again.');
+    } finally {
+      if (btn){ btn.disabled = false; btn.textContent = 'Enable 2FA'; }
+    }
+  }
+
+  function downloadBackupText(){
+    if (!currentBackupCodes) return;
+    const blob = new Blob([currentBackupCodes.join('\\n')], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'backup-codes.txt';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 3000);
+  }
+
+  // ----- manage controls -----
+  function showManageCard(show){
+    if (show){
+      manageCard.style.display = 'block';
+      manageCard.setAttribute('aria-hidden','false');
+      btnRegenerate.disabled = false; btnDisable.disabled = false;
+      statusPill.textContent = 'Enabled'; statusPill.style.color = 'var(--accent)';
+      manageMsg.textContent = '';
+    } else {
+      manageCard.style.display = 'none'; manageCard.setAttribute('aria-hidden','true');
+      btnRegenerate.disabled = true; btnDisable.disabled = true;
+      manageMsg.textContent = '';
+    }
+  }
+
+  // open credential modal
+  function openCredModal(action){
+    currentAction = action; // 'disable' or 'regenerate'
+    credError.style.display = 'none'; credError.textContent = '';
+    credLoading.style.display = 'none';
+    // reset tab to password by default
+    setCredMethod('password');
+    credInput.value = ''; credInput.type = 'password'; credInput.placeholder = 'Enter your password';
+    credHint.textContent = action === 'disable' ? 'To disable 2FA, confirm your password or a 2FA / backup code.' : 'To regenerate backup codes, confirm with your password or a 2FA / backup code.';
+    credBackdrop.style.display = 'flex';
+    credBackdrop.setAttribute('aria-hidden','false');
+    setTimeout(()=> credInput.focus(), 60);
+    window.addEventListener('keydown', credEsc);
+  }
+
+  function closeCredModal(){
+    credBackdrop.style.display = 'none';
+    credBackdrop.setAttribute('aria-hidden','true');
+    window.removeEventListener('keydown', credEsc);
+    currentAction = null;
+    credInput.value = '';
+  }
+
+  function credEsc(e){ if (e.key === 'Escape') closeCredModal(); }
+
+  function setCredMethod(method){
+    // method = 'password' or 'code'
+    credTabs.forEach(t => {
+      const m = t.getAttribute('data-method');
+      const active = m === method;
+      t.classList.toggle('active', active);
+      t.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    if (method === 'password'){
+      credInput.type = 'password'; credInput.placeholder = 'Enter your password'; credInput.autocomplete = 'current-password';
+    } else {
+      credInput.type = 'text'; credInput.placeholder = 'Enter a 2FA or backup code'; credInput.autocomplete = 'one-time-code';
+    }
+    credInput.focus();
+  }
+
+  // wire cred tab clicks
+  credTabs.forEach(t => t.addEventListener('click', ()=> setCredMethod(t.getAttribute('data-method'))));
+
+  // cred submit action
+  credSubmit.addEventListener('click', async () => {
+    const val = credInput.value.trim();
+    if (!val){ credError.style.display='block'; credError.textContent = 'Please enter your password or a code.'; return; }
+    credSubmit.disabled = true; credLoading.style.display = 'inline'; credLoading.textContent = 'Processing…';
+    credError.style.display = 'none'; credError.textContent = '';
+
+    try {
+      if (currentAction === 'disable'){
+        const res = await apiFetch('/2fa/disable', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ password: (credInput.type === 'password' ? val : undefined), code: (credInput.type === 'text' ? val : undefined) })
+        });
+        const j = await res.json().catch(()=>({}));
+        if (res.ok){
+          closeCredModal();
+          showMain(`<div class="small">Two-factor authentication has been disabled. You can re-enable it anytime.</div>`);
+          showManageCard(false);
+          return;
+        } else {
+          credError.style.display = 'block'; credError.textContent = j.error || 'Could not disable 2FA.';
+        }
+      } else if (currentAction === 'regenerate'){
+        const res = await apiFetch('/2fa/backup/regenerate', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ password: (credInput.type === 'password' ? val : undefined), code: (credInput.type === 'text' ? val : undefined) })
+        });
+        const j = await res.json().catch(()=>({}));
+        if (res.ok){
+          closeCredModal();
+          // show new codes and reset to manage after Done
+          renderBackups(j.backup_codes || []);
+          showManageCard(true);
+          return;
+        } else {
+          credError.style.display = 'block'; credError.textContent = j.error || 'Could not regenerate codes.';
+        }
+      }
+    } catch (err){
+      credError.style.display = 'block'; credError.textContent = 'Network error — try again.';
+    } finally {
+      credSubmit.disabled = false; credLoading.style.display = 'none';
+    }
+  });
+
+  credCancel.addEventListener('click', () => { closeCredModal(); });
+
+  // wire manage buttons
+  btnRegenerate.addEventListener('click', () => {
+    openCredModal('regenerate');
+  });
+
+  btnDisable.addEventListener('click', () => {
+    openCredModal('disable');
+  });
+
+  // helper: refresh status then show manage or setup
+  async function refreshStatusAndShowManage(){
+    try {
+      const res = await apiFetch('/2fa/status', { method: 'GET' });
+      if (res.ok){
+        const j = await res.json().catch(()=>({}));
+        if (j.twofa_enabled){ renderManage(); return; }
+        // fallback: start setup
+        startSetupFlow();
+      } else {
+        // fallback
+        startSetupFlow();
+      }
+    } catch (err){
+      // network fallback
+      startSetupFlow();
+    }
+  }
+
+  // helper used after Confirm "Done" pressed
+  async function startSetupFlow(){
+    try {
+      const res = await apiFetch('/2fa/setup', { method: 'POST' });
+      const j = await res.json().catch(()=>({}));
+      if (res.ok){ renderSetup(j.qr, j.secret); return; }
+      const err = j.error || 'Could not initialize 2FA setup';
+      if (/already/i.test(err) || /enabled/i.test(err)){ renderManage(); return; }
+      showError(err);
+    } catch (err){
+      showError('Network error while starting setup. Try again later.');
+    }
+  }
+
+  // initial start
+  start();
+})();
+</script>
+</body>
+</html>

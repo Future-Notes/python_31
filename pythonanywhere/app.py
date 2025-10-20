@@ -53,6 +53,11 @@ import requests
 import cohere
 # verify_file_content.py
 from file_check import verify_file_content_hardened
+import io
+import pyotp
+import qrcode
+from cryptography.fernet import Fernet, InvalidToken
+import base64
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -77,6 +82,23 @@ app.config['VAPID_CLAIMS'] = {
 app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
 MAX_NOTE_LENGTH = 3000
 COHERE_API_KEY = "qeLaZAnc8R6ljslvDUhHspgWyheKC5mgOIbFXpcw"
+_TIME_EPS = timedelta(seconds=1)
+# Temporary in-memory stores (for demo). Replace with Redis for production.
+login_tokens = {}        # login_token -> {user_id, expires_at, ip}
+pending_twofa = {}       # user_id -> {secret, created_at}
+login_2fa_attempts = {}  # login_token -> attempts
+
+# Fernet key for encrypting TOTP secrets (store in env var)
+TWOFA_FERNET_KEY = "C7Pi0I9nSCWyVa79gIRKYH3aze1MKjilpUTSH9bJTxo="
+if TWOFA_FERNET_KEY:
+    fernet = Fernet(TWOFA_FERNET_KEY)
+else:
+    fernet = None  # fall back to plain storage (not recommended)
+
+REQUIRE_2FA_ALWAYS = False
+REQUIRE_2FA_ON_NEW_IP = True
+RANDOM_REQUIRE_2FA = True
+
 co = cohere.ClientV2(COHERE_API_KEY)
 # Jinja setup (point at your templates/)
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'templates')
@@ -317,6 +339,12 @@ class User(db.Model):
     has_unlimited_storage = db.Column(db.Boolean, default=False, nullable=False)
     malicious_violations = db.Column(db.Integer, nullable=True)
 
+    # 2FA fields
+    twofa_enabled = db.Column(db.Boolean, default=False)
+    twofa_secret = db.Column(db.Text, nullable=True)  # encrypted string
+    # hashed backup codes (optional)
+    backup_codes_hash = db.Column(db.Text, nullable=True)
+
     base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
     storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
     
@@ -467,6 +495,7 @@ class Appointment(db.Model):
     color = db.Column(db.String(7), nullable=True)
     google_event_id = db.Column(db.String(255))  # Add this field
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime, nullable=True)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
     calendar = db.relationship('Calendar', backref=db.backref('appointments', lazy=True))
@@ -809,6 +838,27 @@ class FlowCommit(db.Model):
     todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
+def encrypt_secret(plain: str) -> str:
+    if not fernet:
+        return plain
+    return fernet.encrypt(plain.encode()).decode()
+
+
+def decrypt_secret(cipher: str) -> str:
+    if not fernet:
+        return cipher
+    try:
+        return fernet.decrypt(cipher.encode()).decode()
+    except InvalidToken:
+        return None
+    
+def make_qr_data_uri(provisioning_uri: str):
+    img = qrcode.make(provisioning_uri)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{b64}"
+
 def generate_session_key(user_id):
     key = secrets.token_hex(32)
     session_keys[key] = {
@@ -1067,192 +1117,300 @@ def sync_calendars(user_id, full_sync=False):
     service = build('calendar', 'v3', credentials=creds)
     results = []
     
-    # Update the overall last sync time for the credentials
+    # Update overall last sync time for the credentials
     creds_record = GoogleCalendarCredentials.query.filter_by(user_id=user_id).first()
     if creds_record:
         creds_record.last_sync = datetime.utcnow()
     
-    # Check if any mapping requires full sync
-    if not full_sync:
-        for mapping in sync_mappings:
-            if not mapping.sync_token:
-                full_sync = True
-                break
-    
-    # Process all mappings
     for mapping in sync_mappings:
         try:
-            # Push local changes to Google
-            push_to_google(service, mapping)
+            sync_start = datetime.utcnow()
             
-            # Pull changes from Google
-            pull_from_google(service, mapping, full_sync)
-            
+            # If any mapping lacks a sync_token, force a full sync for that mapping
+            mapping_full_sync = full_sync or not mapping.sync_token
+
+            # Pull remote changes and resolve conflicts (this function may also push local changes if local wins)
+            pull_and_resolve(service, mapping, mapping_full_sync, sync_start)
+
+            # After pull & conflict resolution, push remaining local-only changes that happened before sync_start
+            push_local_changes(service, mapping, sync_start)
+
             mapping.last_synced = datetime.utcnow()
             results.append(f"Calendar {mapping.local_calendar_id} synced")
         except Exception as e:
+            current_app.logger.exception(f"Sync failed for calendar {mapping.local_calendar_id}: {str(e)}")
             results.append(f"Sync failed for calendar {mapping.local_calendar_id}: {str(e)}")
     
     db.session.commit()
     return True, "\n".join(results)
 
-def push_to_google(service, mapping):
-    # Record sync start time to avoid processing updates during sync
-    sync_start = datetime.utcnow()
-    
-    # Get modified appointments since last sync
+
+def push_local_changes(service, mapping, sync_start):
+    """
+    Push local changes that occurred after mapping.last_synced and before sync_start.
+    For existing Google event ids, we update; for local-only events we create and save google_event_id.
+    """
     last_sync = mapping.last_synced or datetime.min
     appointments = Appointment.query.filter(
         Appointment.calendar_id == mapping.local_calendar_id,
         Appointment.updated_at > last_sync,
-        Appointment.updated_at < sync_start  # Exclude updates during sync
+        Appointment.updated_at < sync_start  # exclude edits made during this sync cycle
     ).all()
-    
+
     if not appointments:
         return
-    
-    current_app.logger.info(f"Pushing {len(appointments)} appointment(s) to Google calendar")
-    
+
+    current_app.logger.info(f"Pushing {len(appointments)} local appointment(s) to Google calendar {mapping.google_calendar_id}")
+
     for appt in appointments:
-        event = convert_appointment_to_event(appt)
-        if not event:
+        # Build event body from local
+        event_body = convert_appointment_to_event(appt)
+        if not event_body:
             continue
-            
+
         google_calendar_id = mapping.google_calendar_id
-        
+
         try:
             if appt.google_event_id:
-                # Update existing event
-                current_app.logger.info(f"Updating event {appt.google_event_id} for appointment {appt.id}")
+                # Before updating, fetch Google's event to compare timestamps (avoid stomping newer remote)
+                try:
+                    remote = service.events().get(calendarId=google_calendar_id, eventId=appt.google_event_id).execute()
+                    remote_updated = parse_google_updated(remote.get('updated'))
+                except Exception:
+                    # If remote cannot be fetched (maybe deleted), treat as non-existent
+                    remote = None
+                    remote_updated = datetime.min
+
+                # If remote is newer than local -> skip update (remote already won)
+                if remote and remote_updated > (appt.updated_at or datetime.min) + _TIME_EPS:
+                    current_app.logger.info(f"Skipping update for {appt.id} because Google is newer.")
+                    # Optionally update the local fields from remote to keep local consistent
+                    # process single remote event to update local
+                    process_single_google_event(service, remote, mapping)
+                    continue
+
+                # Otherwise update remote
                 updated_event = service.events().update(
                     calendarId=google_calendar_id,
                     eventId=appt.google_event_id,
-                    body=event
+                    body=event_body
                 ).execute()
+                # Update local google_event_id (in case Google changed id) and sync timestamps
+                appt.google_event_id = updated_event.get('id', appt.google_event_id)
+                appt.updated_at = max(appt.updated_at or datetime.min, parse_google_updated(updated_event.get('updated')))
+
+            elif appt.deleted_at and appt.google_event_id:
+                try:
+                    service.events().delete(
+                        calendarId=mapping.google_calendar_id,
+                        eventId=appt.google_event_id
+                    ).execute()
+                    current_app.logger.info(f"Deleted Google event {appt.google_event_id} due to local deletion")
+                    appt.google_event_id = None
+                    db.session.add(appt)
+                    db.session.commit()
+                except Exception as e:
+                    current_app.logger.exception(f"Failed to delete Google event {appt.google_event_id}: {str(e)}")
+                continue
             else:
-                # Create new event
-                current_app.logger.info(f"Creating new event for appointment {appt.id}")
-                result = service.events().insert(
+                # Create new event on Google
+                created = service.events().insert(
                     calendarId=google_calendar_id,
-                    body=event
+                    body=event_body
                 ).execute()
-                appt.google_event_id = result['id']
-                current_app.logger.info(f"Created event {result['id']}")
+                appt.google_event_id = created['id']
+                # Use Google 'updated' time if present, otherwise keep local updated_at
+                appt.updated_at = max(appt.updated_at or datetime.min, parse_google_updated(created.get('updated')))
+
+            db.session.add(appt)
+            db.session.commit()
         except Exception as e:
-            # Handle specific Google API errors
+            current_app.logger.exception(f"Failed to push appointment {appt.id} to Google: {str(e)}")
+            # If error contains 'deleted' etc, handle cleanup
             if 'deleted' in str(e).lower():
-                current_app.logger.warning(f"Event {appt.google_event_id} was deleted on Google. Removing local Google event ID.")
+                current_app.logger.warning(f"Event {appt.google_event_id} appears deleted on Google. Clearing local google_event_id.")
                 appt.google_event_id = None
-            else:
-                current_app.logger.error(f"Failed to push appointment {appt.id} to Google: {str(e)}")
-    
-    # Commit any changes made to appointments (google_event_id set or cleared)
-    db.session.commit()
+                db.session.add(appt)
+                db.session.commit()
 
-def pull_from_google(service, mapping, full_sync=False):
-    # Determine if we need to do a full sync
-    if full_sync or not mapping.sync_token:
-        sync_token = None
-    else:
-        sync_token = mapping.sync_token
 
-    events = []
-    next_sync_token = None
+def pull_and_resolve(service, mapping, full_sync, sync_start):
+    """
+    Pulls changes from Google and resolves conflicts by timestamp.
+    If local is newer than Google -> push local update.
+    If Google is newer -> update or create local appointment.
+    """
+    sync_token = None if full_sync or not mapping.sync_token else mapping.sync_token
+
     page_token = None
+    next_sync_token = None
+    google_events = []
 
     while True:
         try:
-            # Prepare parameters
             params = {
                 'calendarId': mapping.google_calendar_id,
-                'timeMin': (datetime.utcnow() - timedelta(days=365)).isoformat() + 'Z',
                 'maxResults': 250,
                 'singleEvents': True,
                 'showDeleted': True,
             }
-            
-            # Add sync token if available
+
             if sync_token and not full_sync:
                 params['syncToken'] = sync_token
             else:
-                # For full syncs, use time range instead of sync token
+                # Use a reasonable time window for full sync (e.g. last 365 days)
                 params['timeMin'] = (datetime.utcnow() - timedelta(days=365)).isoformat() + 'Z'
-            
-            # Add page token if available
+
             if page_token:
                 params['pageToken'] = page_token
-                
-            # Execute API call
+
             events_result = service.events().list(**params).execute()
-            
-            events.extend(events_result.get('items', []))
+            google_events.extend(events_result.get('items', []))
             page_token = events_result.get('nextPageToken')
-            
-            # Get next sync token on last page
+
             if not page_token:
                 next_sync_token = events_result.get('nextSyncToken')
                 break
-                
+
         except Exception as e:
-            # Handle invalid sync token (410 error)
-            if hasattr(e, 'resp') and e.resp.status == 410:
-                # Reset sync token and retry as full sync
+            # Google returns 410 when sync token expired/invalid: reset and do full sync
+            if hasattr(e, 'resp') and getattr(e.resp, 'status', None) == 410:
                 mapping.sync_token = None
                 db.session.commit()
-                return pull_from_google(service, mapping, True)
-            else:
-                current_app.logger.error(f"Google API error: {str(e)}")
-                raise e
-    
-    # Process events
-    for event in events:
-        process_google_event(event, mapping.local_calendar_id, mapping.user_id)
-    
-    # Update sync token if we got a new one
+                return pull_and_resolve(service, mapping, True, sync_start)
+            current_app.logger.exception(f"Google API error while pulling events: {str(e)}")
+            raise
+
+    # Process each event and resolve conflicts
+    for event in google_events:
+        process_single_google_event(service, event, mapping, sync_start=sync_start)
+
+    # store next sync token for incremental syncs
     if next_sync_token:
         mapping.sync_token = next_sync_token
+        db.session.add(mapping)
+        db.session.commit()
 
-def process_google_event(event, local_calendar_id, user_id):
-    try: 
-        # Handle deleted events
-        if event.get('status') == 'cancelled':
-            Appointment.query.filter_by(
-                google_event_id=event['id'],
-                user_id=user_id
-            ).delete()
-            return
-        
-        # Convert Google event to appointment
-        appt_data = {
-            'title': event.get('summary', 'No Title'),
-            'description': event.get('description', ''),
-            'start_datetime': parse_google_datetime(event['start']),
-            'end_datetime': parse_google_datetime(event['end']),
-            'google_event_id': event['id'],
-            'calendar_id': local_calendar_id,
-            'user_id': user_id,
-            'color': event.get('colorId'),
-            'is_all_day': 'date' in event['start'],  # Detect all-day events
-            'recurrence_rule': event.get('recurrence', [None])[0]  # Handle recurrence
-        }
-        
-        # Find existing or create new
-        appointment = Appointment.query.filter_by(
-            google_event_id=event['id'],
-            user_id=user_id
-        ).first()
-        
-        if appointment:
-            # Update existing appointment
-            for key, value in appt_data.items():
-                setattr(appointment, key, value)
-        else:
-            # Create new appointment
+
+def process_single_google_event(service, event, mapping, sync_start=None):
+    """
+    Resolve a single google event vs local appointment by timestamps.
+    If event['status']=='cancelled' => handle deletion/maybe recreate.
+    """
+    user_id = mapping.user_id
+    google_id = event.get('id')
+    google_calendar_id = mapping.google_calendar_id
+
+    google_updated = parse_google_updated(event.get('updated'))
+
+    # Deleted on Google
+    if event.get('status') == 'cancelled':
+        # Local appointment with this google id (if any)
+        local = Appointment.query.filter_by(google_event_id=google_id, user_id=user_id).first()
+        if local:
+            # If local was modified after Google deletion -> recreate on Google
+            if local.updated_at and local.updated_at > google_updated + _TIME_EPS:
+                current_app.logger.info(f"Local {local.id} modified after Google deletion. Recreating on Google.")
+                event_body = convert_appointment_to_event(local)
+                created = service.events().insert(calendarId=google_calendar_id, body=event_body).execute()
+                local.google_event_id = created['id']
+                local.updated_at = max(local.updated_at or datetime.min, parse_google_updated(created.get('updated')))
+                db.session.add(local)
+                db.session.commit()
+            else:
+                # Google deletion wins -> remove local
+                current_app.logger.info(f"Deleting local appointment {local.id} because Google removed the event.")
+                db.session.delete(local)
+                db.session.commit()
+        return
+
+    # Non-deleted event: find local
+    local = Appointment.query.filter_by(google_event_id=google_id, user_id=user_id).first()
+
+    if not local:
+        # Create locally from Google event
+        try:
+            appt_data = google_event_to_appt_data(event, mapping.local_calendar_id, user_id, google_updated)
             appointment = Appointment(**appt_data)
             db.session.add(appointment)
-    except Exception as e:
-        current_app.logger.error(f"Error processing Google event {event.get('id')}: {str(e)}")
+            db.session.commit()
+            current_app.logger.info(f"Created local appointment from Google event {google_id}")
+        except Exception as e:
+            current_app.logger.exception(f"Failed creating local appt for Google event {google_id}: {str(e)}")
+        return
 
+    # Both exist -> compare timestamps
+    local_updated = local.updated_at or datetime.min
+
+    if google_updated > local_updated + _TIME_EPS:
+        # Google is newer: update local from Google
+        try:
+            appt_data = google_event_to_appt_data(event, local.calendar_id, local.user_id, google_updated)
+            for k, v in appt_data.items():
+                setattr(local, k, v)
+            local.updated_at = google_updated
+            db.session.add(local)
+            db.session.commit()
+            current_app.logger.info(f"Updated local appointment {local.id} from Google event {google_id}")
+        except Exception as e:
+            current_app.logger.exception(f"Error updating local appt {local.id} from Google: {str(e)}")
+    elif local_updated > google_updated + _TIME_EPS:
+        # Local is newer: push local update to Google (but only if local change occurred before sync_start)
+        # We avoid pushing edits made during this sync run (sync loop)
+        if sync_start and local_updated >= sync_start:
+            current_app.logger.info(f"Skipping push for local {local.id} because edit occurred during sync.")
+            return
+
+        try:
+            event_body = convert_appointment_to_event(local)
+            updated_event = service.events().update(
+                calendarId=google_calendar_id,
+                eventId=google_id,
+                body=event_body
+            ).execute()
+            # update local updated_at to reflect Google's updated timestamp (prevents flip-flop)
+            local.updated_at = max(local.updated_at, parse_google_updated(updated_event.get('updated')))
+            db.session.add(local)
+            db.session.commit()
+            current_app.logger.info(f"Pushed local appointment {local.id} to Google event {google_id}")
+        except Exception as e:
+            current_app.logger.exception(f"Failed to push local {local.id} to Google: {str(e)}")
+    else:
+        # timestamps equal or within epsilon -> nothing to do
+        return
+
+
+def google_event_to_appt_data(event, local_calendar_id, user_id, google_updated):
+    """
+    Convert Google event dict -> appointment dict for creating/updating local.
+    """
+    return {
+        'title': event.get('summary', 'No Title'),
+        'description': event.get('description', ''),
+        'start_datetime': parse_google_datetime(event['start']),
+        'end_datetime': parse_google_datetime(event['end']),
+        'google_event_id': event['id'],
+        'calendar_id': local_calendar_id,
+        'user_id': user_id,
+        'color': event.get('colorId'),
+        'is_all_day': 'date' in event.get('start', {}),
+        'recurrence_rule': (event.get('recurrence') or [None])[0],
+        'updated_at': google_updated
+    }
+
+
+# Utility: parse Google's 'updated' RFC3339 string into naive UTC datetime
+def parse_google_updated(updated_str):
+    try:
+        if not updated_str:
+            return datetime.min.replace(tzinfo=None)
+        # example: "2023-01-01T12:34:56.789Z"
+        dt = datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    except Exception:
+        current_app.logger.exception(f"Error parsing google updated: {updated_str}")
+        return datetime.min.replace(tzinfo=None)
+    
 def parse_google_datetime(time_dict):
     try:
         if 'dateTime' in time_dict:
@@ -1313,6 +1471,50 @@ def convert_appointment_to_event(appointment):
     except Exception as e:
         current_app.logger.error(f"Error converting appointment {appointment.id} to event: {str(e)}")
         return None
+    
+# ---- helper: verify password or 2FA code (TOTP or backup) ----
+def _verify_password_or_2fa(user, password: str = None, code: str = None):
+    """
+    Returns a tuple (ok: bool, used_backup: bool, reason: str).
+    If a backup code is used, it will be consumed (removed) here and DB committed.
+    """
+    if password:
+        # verify password
+        try:
+            if bcrypt.check_password_hash(user.password, password):
+                return True, False, "password"
+        except Exception:
+            # in case bcrypt object/naming differs, fail safely
+            pass
+        return False, False, "bad_password"
+
+    if code:
+        code = code.strip()
+        # try TOTP first
+        secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
+        if secret:
+            try:
+                totp = pyotp.TOTP(secret)
+                if totp.verify(code, valid_window=1):
+                    return True, False, "totp"
+            except Exception:
+                # invalid secret format or other error — fall through to backup codes
+                pass
+
+        # then try backup codes (stored hashed, comma-separated)
+        if user.backup_codes_hash:
+            hashed_codes = user.backup_codes_hash.split(',')
+            code_hash = hashlib.sha256(code.encode()).hexdigest()
+            if code_hash in hashed_codes:
+                # consume this backup code
+                hashed_codes.remove(code_hash)
+                user.backup_codes_hash = ','.join(hashed_codes) if hashed_codes else None
+                db.session.commit()
+                return True, True, "backup"
+        # failed both
+        return False, False, "bad_code"
+
+    return False, False, "no_credentials"
 
 def check(key: str, default: str) -> str:
     """
@@ -3180,6 +3382,10 @@ def help_admin():
 def help_editor():
     return render_template("help_admin_editor.html")
 
+@app.route('/2fa_page')
+def manage_2fa():
+    return render_template("setup_2fa.html")
+
 #---------------------------------API routes--------------------------------
 
 # -------------------------
@@ -4734,6 +4940,9 @@ def get_appointments():
     user_id = g.user_id
     calendar_id = request.args.get('calendar_id', type=int)
     query = Appointment.query.filter_by(user_id=user_id)
+
+    # Soft-delete filter: alleen actieve appointments
+    query = query.filter(Appointment.deleted_at.is_(None))
     
     # Ensure the user has a default calendar
     user_calendars = Calendar.query.filter_by(user_id=user_id).all()
@@ -4962,7 +5171,10 @@ def delete_appointment(appointment_id):
     if not appointment or appointment.user_id != g.user_id:
         return jsonify({"error": "Appointment not found"}), 404
 
-    db.session.delete(appointment)
+    # Soft delete
+    appointment.deleted_at = datetime.utcnow()
+    appointment.updated_at = datetime.utcnow()  # belangrijk voor sync
+    db.session.add(appointment)
     db.session.commit()
 
     return jsonify({"message": "Appointment deleted successfully"}), 200
@@ -8539,6 +8751,33 @@ def login():
     if user.suspended:
         return jsonify({"error": "Account is suspended"}), 403
 
+    
+    # If user has 2FA enabled decide whether to require TOTP now.
+    user_has_2fa = bool(user.twofa_enabled)
+    new_ip = False
+    if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
+        # determine if this ip is known
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+            new_ip = True
+
+    if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
+        # create a short-lived login_token and return 2FA required response
+        login_token = secrets.token_urlsafe(32)
+        login_tokens[login_token] = {
+            "user_id": user.id,
+            "expires_at": datetime.now() + timedelta(minutes=5),
+            "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
+        }
+        # initialize attempts
+        login_2fa_attempts[login_token] = 0
+
+        return jsonify({
+            "2fa_required": True,
+            "login_token": login_token,
+            "message": "2FA code required"
+        }), 200
+
     session_key = generate_session_key(user.id)
     # record IP
     # If running behind PythonAnywhere, get the real client IP from X-Forwarded-For
@@ -8573,6 +8812,283 @@ def login():
             httponly=True, secure=not _is_local_request(), samesite="Strict",
             max_age=60*60*24*30
         )
+    return resp
+
+@app.route('/2fa/setup', methods=['POST'])
+@require_session_key
+def twofa_setup():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    if user.twofa_enabled:
+        return jsonify({"error": "2FA already enabled"}), 400
+
+    # generate a secret
+    secret = pyotp.random_base32()  # keep server-side until confirm
+    # store temporarily
+    pending_twofa[user.id] = {"secret": secret, "created_at": datetime.now()}
+
+    issuer = f"Future Notes"
+    provisioning_uri = pyotp.totp.TOTP(secret).provisioning_uri(
+        name=f"{issuer}:{user.username}", issuer_name=issuer
+    )
+    qr_data_uri = make_qr_data_uri(provisioning_uri)
+
+    return jsonify({
+        "qr": qr_data_uri,
+        "secret": secret  # optional: user can copy-paste into authenticator
+    }), 200
+
+@app.route('/2fa/confirm', methods=['POST'])
+@require_session_key
+def twofa_confirm():
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    data = request.get_json() or {}
+    code = (data.get('code') or "").strip()
+    tmp = pending_twofa.get(user.id)
+    if not tmp:
+        return jsonify({"error": "No pending 2FA setup"}), 400
+
+    secret = tmp['secret']
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(code, valid_window=1):
+        return jsonify({"error": "Invalid 2FA code"}), 400
+
+    # enable and persist encrypted secret
+    user.twofa_enabled = True
+    user.twofa_secret = encrypt_secret(secret)
+    # optionally generate backup codes (store hashed)
+    backup_codes = []
+    for _ in range(8):
+        code_plain = secrets.token_hex(5)
+        backup_codes.append(code_plain)
+    # store hashed backup codes in DB (sha256 or bcrypt)
+    import hashlib
+    hashed = [hashlib.sha256(c.encode()).hexdigest() for c in backup_codes]
+    user.backup_codes_hash = ",".join(hashed)
+    db.session.commit()
+
+    # cleanup
+    pending_twofa.pop(user.id, None)
+
+    return jsonify({
+        "message": "2FA enabled",
+        "backup_codes": backup_codes  # show once to the user
+    }), 200
+
+@app.route('/2fa/disable', methods=['POST'])
+@require_session_key
+def twofa_disable():
+    """
+    Disable 2FA for the currently authenticated user.
+    Body JSON: { "password": "<password>" } OR { "code": "<TOTP or backup code>" }
+    """
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    password = data.get('password')
+    code = data.get('code')
+
+    if not password and not code:
+        return jsonify({"error": "Provide password or 2FA code to disable 2FA"}), 400
+
+    ok, used_backup, reason = _verify_password_or_2fa(user, password=password, code=code)
+    if not ok:
+        return jsonify({"error": "Authentication failed"}), 400
+
+    # Disable 2FA fields
+    user.twofa_enabled = False
+    user.twofa_secret = None
+    user.backup_codes_hash = None
+    db.session.commit()
+
+    # Invalidate other sessions for this user (keep current session)
+    current_key = request.cookies.get('session_key')
+    for sk in list(session_keys.keys()):
+        meta = session_keys.get(sk)
+        if meta and meta.get('user_id') == user.id and sk != current_key:
+            session_keys.pop(sk, None)
+
+    # Optional: inform client to refresh cookies (we do NOT delete current session cookie here)
+    resp = make_response(jsonify({"message": "2FA disabled"}), 200)
+    # If you prefer to fully sign out everywhere, delete cookies instead:
+    # resp.delete_cookie('session_key'); resp.delete_cookie('lasting_key')
+
+    # TODO: write an audit log entry here (user.id, ip, timestamp, reason)
+    return resp
+
+@app.route('/2fa/backup/regenerate', methods=['POST'])
+@require_session_key
+def twofa_backup_regenerate():
+    """
+    Regenerate backup codes for the current user (returns plaintext codes once).
+    Body JSON: { "password": "<password>" } OR { "code": "<TOTP or backup code>" }
+    Requires that 2FA is currently enabled for the user.
+    """
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    if not user.twofa_enabled:
+        return jsonify({"error": "Two-factor authentication is not enabled"}), 400
+
+    data = request.get_json(silent=True) or {}
+    password = data.get('password')
+    code = data.get('code')
+
+    if not password and not code:
+        return jsonify({"error": "Provide password or 2FA code to confirm"}), 400
+
+    ok, used_backup, reason = _verify_password_or_2fa(user, password=password, code=code)
+    if not ok:
+        return jsonify({"error": "Authentication failed"}), 400
+
+    # Generate new backup codes (plaintext for user, store only hashed)
+    new_plain = []
+    new_hashed = []
+    for _ in range(8):
+        p = secrets.token_urlsafe(9)  # ~12 chars, URL-safe; you can change format
+        new_plain.append(p)
+        new_hashed.append(hashlib.sha256(p.encode()).hexdigest())
+
+    user.backup_codes_hash = ','.join(new_hashed)
+    db.session.commit()
+
+    # TODO: log the regeneration event (audit)
+    return jsonify({"backup_codes": new_plain}), 200
+
+@app.route('/login/2fa', methods=['POST'])
+def login_2fa():
+    data = request.get_json() or {}
+    token = data.get('login_token')
+    code = (data.get('code') or "").strip()
+    keep_login = bool(data.get('keep_login'))
+
+    if not token or not code:
+        return jsonify({"error": "Missing token or code"}), 400
+
+    tmeta = login_tokens.get(token)
+    if not tmeta or tmeta['expires_at'] < datetime.now():
+        login_tokens.pop(token, None)
+        return jsonify({"error": "Invalid or expired login token"}), 400
+
+    user = User.query.get(tmeta['user_id'])
+    if not user:
+        return jsonify({"error": "Invalid token"}), 400
+
+    # rate limiting attempts
+    attempts = login_2fa_attempts.get(token, 0)
+    if attempts >= 5:
+        login_tokens.pop(token, None)
+        login_2fa_attempts.pop(token, None)
+        return jsonify({"error": "Too many attempts"}), 429
+
+    # verify TOTP or backup codes
+    secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
+    verified = False
+    if secret:
+        totp = pyotp.TOTP(secret)
+        if totp.verify(code, valid_window=1):
+            verified = True
+
+    # fallback: check backup codes (hashed)
+    if not verified and user.backup_codes_hash:
+        import hashlib
+        hashed_codes = user.backup_codes_hash.split(",")
+        if hashlib.sha256(code.encode()).hexdigest() in hashed_codes:
+            verified = True
+            # remove used code from DB
+            hashed_codes.remove(hashlib.sha256(code.encode()).hexdigest())
+            user.backup_codes_hash = ",".join(hashed_codes) if hashed_codes else None
+            db.session.commit()
+
+    if not verified:
+        login_2fa_attempts[token] = attempts + 1
+        return jsonify({"error": "Invalid 2FA code"}), 400
+
+    # Verified: issue session_key and optionally lasting_key and persist IP
+    session_key = generate_session_key(user.id)
+
+    # persist IP
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
+        db.session.commit()
+
+    payload = {
+        "message": "Login successful!",
+        "session_key": session_key,
+        "user_id": user.id,
+        "startpage": user.startpage
+    }
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie("session_key", session_key, httponly=True, secure=not _is_local_request(), samesite="Strict", max_age=60*60*24)
+    if keep_login:
+        if not user.lasting_key:
+            user.lasting_key = secrets.token_hex(32)
+            db.session.commit()
+        resp.set_cookie("lasting_key", user.lasting_key, httponly=True, secure=not _is_local_request(), samesite="Strict", max_age=60*60*24*30)
+        payload["lasting_key"] = user.lasting_key
+
+    # cleanup
+    login_tokens.pop(token, None)
+    login_2fa_attempts.pop(token, None)
+
+    return resp
+
+# GET /2fa/status
+@app.route('/2fa/status', methods=['GET'])
+@require_session_key
+def twofa_status():
+    """
+    Returns simple information about the current user's 2FA state.
+
+    Response (200):
+    {
+      "twofa_enabled": bool,
+      "has_backup_codes": bool,
+      "recent_auth": bool
+    }
+
+    401 if not authenticated.
+    """
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    # Optionally enforce a "recent authentication" check.
+    # This helps the UI decide whether to ask for password/2FA before performing
+    # sensitive actions (e.g. disable/regenerate).
+    # Adjust window as needed (minutes).
+    RECENT_AUTH_WINDOW_MINUTES = 15
+
+    recent = False
+    session_key = request.cookies.get("session_key")
+    if session_key:
+        meta = session_keys.get(session_key)
+        if meta:
+            last_active = meta.get("last_active")
+            # last_active expected to be a datetime object; be defensive
+            if isinstance(last_active, datetime):
+                if datetime.now() - last_active < timedelta(minutes=RECENT_AUTH_WINDOW_MINUTES):
+                    recent = True
+
+    payload = {
+        "twofa_enabled": bool(user.twofa_enabled),
+        "has_backup_codes": bool(user.backup_codes_hash),
+        "recent_auth": recent
+    }
+
+    resp = make_response(jsonify(payload), 200)
+    # Sensitive info — do not cache in intermediaries or client
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
     return resp
 
 

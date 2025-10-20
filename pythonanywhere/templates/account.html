@@ -532,7 +532,8 @@
                     <option value="/pws">Zeeslag (Battleship)</option>
                 </select>
                 <!--Removed the button to set the default startpage, as it is now set automatically -->
-                <a href="admin_page" class="admin-page-link disabled">Admin Page</a>
+                <a href="/2fa_page" class="admin-page-link enabled">Two-factor authentication</a>
+                <a href="admin_page" id="admin-page-link" class="admin-page-link disabled">Admin Page</a>
             </div>
             <!-- Admin page link (disabled by default) -->
             
@@ -891,7 +892,7 @@
           document.getElementById("sharing-toggle").checked = !!u.allows_sharing;
 
           // admin link logic
-          const adminLink = document.querySelector(".admin-page-link");
+          const adminLink = document.querySelector("#admin-page-link");
           if (u.role === "admin") {
             adminLink.classList.add("enabled");
             adminLink.classList.remove("disabled");
