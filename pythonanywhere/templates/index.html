@@ -3925,12 +3925,12 @@
             moveBtn.className = "folder-menu-btn";
             moveBtn.innerText = 'Move';
             moveBtn.onclick = (e) => {
-                e.stopPropagation();
-                menu.remove();
-                const noteObj = allNotes && allNotes.find(n => n.id === noteId);
-                const name = noteObj ? (noteObj.title || `Note ${noteId}`) : `Note ${noteId}`;
-                const currentFolderId = noteObj ? noteObj.folder_id : null;
-                openMoveModal({ type: 'note', id: noteId, name, currentParentId: currentFolderId });
+            e.stopPropagation();
+            menu.remove();
+            const noteObj = allNotes && allNotes.find(n => n.id === noteId);
+            const name = noteObj ? (noteObj.title || `Note ${noteId}`) : `Note ${noteId}`;
+            const currentFolderId = noteObj ? noteObj.folder_id : null;
+            openMoveModal({ type: 'note', id: noteId, name, currentParentId: currentFolderId });
             };
 
             // Delete button
@@ -3938,27 +3938,285 @@
             delBtn.className = "folder-menu-btn danger";
             delBtn.innerText = 'Delete';
             delBtn.onclick = (e) => {
-                e.stopPropagation();
-                menu.remove();
-                deleteNote(noteId);
+            e.stopPropagation();
+            menu.remove();
+            deleteNote(noteId);
             };
 
-            // Append buttons to menu
+            // ------- Share button (new) -------
+            const shareBtn = document.createElement('button');
+            shareBtn.className = "folder-menu-btn";
+            shareBtn.innerText = 'Share';
+            shareBtn.onclick = async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            // open modal (creates it once)
+            openShareModal(noteId);
+            };
+
+            // Append buttons to menu (order as you like)
             menu.appendChild(moveBtn);
             menu.appendChild(delBtn);
+            menu.appendChild(shareBtn);
 
             document.body.appendChild(menu);
 
             // close on outside click
             const onDocClick = (e) => {
-                if (!menu.contains(e.target)) {
-                    menu.remove();
-                    document.removeEventListener('click', onDocClick);
-                }
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', onDocClick);
+            }
             };
             // defer adding listener to avoid immediate removal (same pattern used elsewhere)
             setTimeout(() => document.addEventListener('click', onDocClick), 0);
-        }
+            }
+
+            // Keep a small in-memory cache of created shares: { noteId: { token, url, expires_at } }
+            window._shareCache = window._shareCache || {};
+
+            /**
+             * Creates the share modal DOM (only once) and wires UI handlers.
+             */
+            function ensureShareModalExists() {
+            if (document.getElementById('share-modal')) return;
+
+            const modal = document.createElement('div');
+            modal.id = 'share-modal';
+            modal.style.position = 'fixed';
+            modal.style.left = '50%';
+            modal.style.top = '50%';
+            modal.style.transform = 'translate(-50%, -50%)';
+            modal.style.background = 'var(--bg-color)';
+            modal.style.padding = '20px';
+            modal.style.borderRadius = '12px';
+            modal.style.boxShadow = '0 6px 18px rgba(0,0,0,0.35)';
+            modal.style.zIndex = 10005;
+            modal.style.width = 'min(560px, 90%)';
+            modal.style.display = 'none';
+
+            modal.innerHTML = `
+                <h3 style="margin-top:0; color:#e0e0e0">Share note</h3>
+                <div style="margin-bottom:8px">
+                <label style="display:block;margin-bottom:6px;color:#cfcfcf">Expires in (minutes, optional)</label>
+                <input id="share-expires-input" type="number" min="1" placeholder="e.g. 60" style="width:100%;padding:8px;border-radius:6px;border:none;background:var(--btn-color);color:#e0e0e0" />
+                </div>
+                <div id="share-result" style="display:none;margin-bottom:8px;">
+                <input id="share-url-input" type="text" readonly style="width:100%;padding:8px;border-radius:6px;border:none;background:#333;color:#e0e0e0" />
+                <div style="display:flex;gap:8px;margin-top:8px">
+                    <button id="copy-share-btn">Copy link</button>
+                    <button id="revoke-share-btn" style="background:#b33a3a">Revoke link</button>
+                    <button id="close-share-btn" style="margin-left:auto">Close</button>
+                </div>
+                <small id="share-stats" style="display:block;margin-top:8px;color:#bdbdbd"></small>
+                </div>
+                <div id="share-create-area" style="display:block;">
+                <button id="create-share-btn" style="width:100%;padding:10px;border-radius:8px">Create share link</button>
+                <button id="close-share-btn-2" style="width:100%;margin-top:8px;padding:10px;border-radius:8px">Cancel</button>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // wire buttons
+            modal.querySelector('#create-share-btn').addEventListener('click', async () => {
+                const noteId = modal.dataset.noteId;
+                const minutes = modal.querySelector('#share-expires-input').value;
+                await createShareRequest(Number(noteId), minutes ? Number(minutes) : undefined);
+                // createShareRequest will call openShareModal again to update UI
+            });
+
+            modal.querySelector('#copy-share-btn').addEventListener('click', () => {
+                const urlInput = modal.querySelector('#share-url-input');
+                copyToClipboard(urlInput.value);
+            });
+
+            modal.querySelector('#revoke-share-btn').addEventListener('click', async () => {
+                const token = modal.dataset.token;
+                if (!token) return alert('No token available');
+                const ok = confirm('Revoke this share link? This will make the link stop working.');
+                if (!ok) return;
+                const success = await revokeShare(token);
+                if (success) {
+                // clear UI
+                modal.querySelector('#share-result').style.display = 'none';
+                modal.querySelector('#share-create-area').style.display = 'block';
+                modal.dataset.token = '';
+                delete window._shareCache[modal.dataset.noteId];
+                alert('Share revoked');
+                closeShareModal();
+                } else {
+                alert('Failed to revoke share');
+                }
+            });
+
+            const closeBtns = modal.querySelectorAll('#close-share-btn, #close-share-btn-2');
+            closeBtns.forEach(b => b.addEventListener('click', closeShareModal));
+            }
+
+            /**
+             * Opens the share modal for a note. If we already have a share in memory, show it.
+             */
+            async function openShareModal(noteId) {
+            ensureShareModalExists();
+            const modal = document.getElementById('share-modal');
+            modal.dataset.noteId = String(noteId);
+
+            // reset inputs
+            modal.querySelector('#share-expires-input').value = '';
+            modal.querySelector('#share-result').style.display = 'none';
+            modal.querySelector('#share-create-area').style.display = 'block';
+            modal.dataset.token = '';
+
+            // Try to fetch existing share for this note (optional endpoint) - best-effort
+            const existing = await fetchExistingShare(noteId).catch(()=>null);
+            if (existing && existing.token && existing.url) {
+                // cache and show
+                window._shareCache[noteId] = existing;
+                showShareInModal(noteId, existing.token, existing.url, existing.expires_at, existing.access_count);
+            } else if (window._shareCache[noteId]) {
+                const s = window._shareCache[noteId];
+                showShareInModal(noteId, s.token, s.url, s.expires_at, s.access_count);
+            } else {
+                // show create area
+                modal.style.display = 'block';
+            }
+            }
+
+            /**
+             * helper: fill modal with share data
+             */
+            function showShareInModal(noteId, token, url, expires_at, access_count) {
+            const modal = document.getElementById('share-modal');
+            modal.dataset.token = token;
+            modal.querySelector('#share-url-input').value = url;
+            modal.querySelector('#share-result').style.display = 'block';
+            modal.querySelector('#share-create-area').style.display = 'none';
+            const stats = modal.querySelector('#share-stats');
+            if (stats) {
+                const ex = expires_at ? `Expires: ${new Date(expires_at).toLocaleString()}` : 'No expiry';
+                stats.textContent = `${ex} • Views: ${access_count || 0}`;
+            }
+            modal.style.display = 'block';
+            }
+
+            /**
+             * Sends the create-share request to the server.
+             * Expects backend endpoint: POST /notes/<noteId>/share
+             * Body: { "expires_minutes": <number> } (optional)
+             * Response: { token: "...", url: "https://your.site/s/<token>" }
+             */
+            async function createShareRequest(noteId, expiresMinutes) {
+            try {
+                const body = {};
+                if (typeof expiresMinutes !== 'undefined' && expiresMinutes !== null && expiresMinutes !== '') {
+                body.expires_minutes = Number(expiresMinutes);
+                }
+                const resp = await fetch(`/notes/${noteId}/share`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+                });
+
+                if (!resp.ok) {
+                const txt = await resp.text();
+                console.error('Failed to create share', txt);
+                alert('Failed to create share link');
+                return null;
+                }
+                const data = await resp.json();
+                // expected to contain { token, url }
+                if (data && data.token && data.url) {
+                // cache
+                window._shareCache[noteId] = { token: data.token, url: data.url, expires_at: data.expires_at || null, access_count: 0 };
+                // show in modal
+                showShareInModal(noteId, data.token, data.url, data.expires_at || null, 0);
+                return data;
+                } else {
+                alert('Unexpected response from server while creating share.');
+                return null;
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Network error while creating share link.');
+                return null;
+            }
+            }
+
+            /**
+             * Revoke share token
+             * Expects backend endpoint: DELETE /notes/share/<token>
+             */
+            async function revokeShare(token) {
+            try {
+                const resp = await fetch(`/notes/share/${encodeURIComponent(token)}`, {
+                method: 'DELETE'
+                });
+                if (resp.ok) return true;
+                console.error('Failed to revoke', await resp.text());
+                return false;
+            } catch (e) {
+                console.error(e);
+                return false;
+            }
+            }
+
+            /**
+             * Try to fetch an existing share for a note (optional backend).
+             * If you have a backend route (recommended) like GET /notes/<id>/share that returns either null or { token, url, expires_at, access_count }
+             * this function will call it. If you don't have that endpoint it's harmless: fetch will 404 and we ignore.
+             */
+            async function fetchExistingShare(noteId) {
+            try {
+                const resp = await fetch(`/notes/${noteId}/share`);
+                if (!resp.ok) return null;
+                const data = await resp.json();
+                return data;
+            } catch (e) {
+                return null;
+            }
+            }
+
+            /**
+             * Copy helper
+             */
+            function copyToClipboard(text) {
+            if (!text) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                alert('Copied link to clipboard');
+                }).catch(() => {
+                fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+
+            function fallbackCopy(t) {
+                const ta = document.createElement('textarea');
+                ta.value = t;
+                document.body.appendChild(ta);
+                ta.select();
+                try {
+                document.execCommand('copy');
+                alert('Copied link to clipboard');
+                } catch (e) {
+                prompt('Copy this link manually', t);
+                } finally {
+                ta.remove();
+                }
+            }
+            }
+
+            /**
+             * Close modal
+             */
+            function closeShareModal() {
+            const modal = document.getElementById('share-modal');
+            if (!modal) return;
+            modal.style.display = 'none';
+            modal.dataset.noteId = '';
+            }
 
 
 

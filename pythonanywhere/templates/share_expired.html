@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Link expired</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#1f1f1f;color:#e6e6e6;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+    .card{background:#2c2c2c;padding:28px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.6);max-width:720px;text-align:center}
+    a.button{display:inline-block;margin-top:14px;padding:10px 14px;border-radius:8px;background:#424242;color:#eaeaea;text-decoration:none}
+    small{color:#bdbdbd;display:block;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Link expired</h1>
+    <p>This shared link has expired and is no longer available.</p>
+    {% if expired_at %}
+      <small>Originally expired at: {{ expired_at }}</small>
+    {% endif %}
+    <div>
+      <a class="button" href="/">Back to home</a>
+    </div>
+  </div>
+</body>
+</html>
