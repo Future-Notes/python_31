@@ -1364,7 +1364,7 @@
         padding: 28px 30px;
         background: var(--bg-color);
         box-shadow: -10px 0 30px rgba(0,0,0,0.35);
-        z-index: 10050;
+        z-index: 9999;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         transform: translateX(110%);      /* offscreen to right */
@@ -1429,7 +1429,6 @@
         #add-menu > div,
         #update-menu > div {
             display: flex;
-            flex-direction: column;
             gap: 12px;
         }
 
@@ -1459,7 +1458,6 @@
         /* For narrower screens let editor fill more vertical space */
         @media (max-width: 900px) {
             .rich-text-editor {
-                min-height: calc(100vh - 260px);
                 max-height: calc(100vh - 140px);
                 font-size: 17px;
             }
@@ -1605,6 +1603,7 @@
 </head>
 <body>
     <script src="https://cdn.jsdelivr.net/npm/diff@5/dist/diff.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
     <header>
         <div class="mobile-header">
           <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
@@ -1817,6 +1816,94 @@
         let updateUploadedIds = [];      // upload_ids returned for new files in Update
         let updateExistingAttachments = []; // [{id, filename, size_bytes, mimetype}, ...] from server
         // note: when user removes an existing attachment, remove it from updateExistingAttachments array
+
+        // reusable paste handler factory
+        function attachPasteHandler(editorId) {
+            const editor = document.getElementById(editorId);
+            if (!editor) return;
+
+            editor.addEventListener('paste', function (e) {
+                e.preventDefault();
+                const clipboard = e.clipboardData || window.clipboardData;
+
+                // Prefer plain text if user intentionally pastes as plain text (Shift+Ctrl+V)
+                const plain = clipboard.getData('text/plain');
+                const html  = clipboard.getData('text/html');
+
+                // DOMPurify config: allow minimal formatting but NO style or event handlers
+                const ALLOWED_TAGS = [
+                    'b','i','u','strong','em','p','br','ul','ol','li',
+                    'a','code','pre','h1','h2','h3','h4','img'
+                ];
+                const ALLOWED_ATTR = ['href','title','alt','src','target'];
+
+                const config = {
+                    ALLOWED_TAGS,
+                    ALLOWED_ATTR,
+                    FORBID_ATTR: ['style'] // explicitly forbid inline style
+                };
+
+                // If you don't want images, remove 'img' from ALLOWED_TAGS above.
+
+                let sanitized;
+                if (html) {
+                    sanitized = DOMPurify.sanitize(html, config);
+                } else if (plain) {
+                    // convert line breaks to <br> for a nicer paste:
+                    sanitized = DOMPurify.sanitize(plain.replace(/\n/g, '<br>'), config);
+                } else {
+                    return;
+                }
+
+                insertHtmlAtCaretInEditor(editor, sanitized);
+            });
+        }
+
+        // Insert sanitized HTML at caret inside a specific editor element
+        function insertHtmlAtCaretInEditor(editor, html) {
+            const sel = window.getSelection();
+
+            // If selection exists and is inside the target editor, use it.
+            if (sel && sel.rangeCount) {
+                const range = sel.getRangeAt(0);
+
+                // ensure the selection/caret is inside the desired editor
+                if (editor.contains(range.commonAncestorContainer)) {
+                    range.deleteContents();
+                    const el = document.createElement('div');
+                    el.innerHTML = html;
+                    const frag = document.createDocumentFragment();
+                    let node;
+                    while ((node = el.firstChild)) frag.appendChild(node);
+                    range.insertNode(frag);
+
+                    // move caret to the end of the inserted content
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    return;
+                }
+            }
+
+            // Fallback: append to the end of the editor and place caret after inserted content
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            while (temp.firstChild) editor.appendChild(temp.firstChild);
+
+            // place caret at the end
+            editor.focus();
+            const range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        // Attach to both editors (and safe to call for additional editors)
+        attachPasteHandler('update-note-text');
+        attachPasteHandler('add-note-text');
+
+
 
         function formatText(command, editorId, value = null) {
             const editor = document.getElementById(editorId);
