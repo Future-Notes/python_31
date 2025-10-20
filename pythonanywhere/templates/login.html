@@ -233,7 +233,7 @@
         #twofa-modal {
         width: 100%;
         max-width: 420px;
-        background: #fff;
+        background: #2a2a2a;
         border-radius: 10px;
         box-shadow: 0 10px 30px rgba(2,6,23,0.35);
         padding: 20px;
@@ -245,7 +245,7 @@
         }
         #twofa-modal p.sub {
         margin: 0 0 12px;
-        color: #556;
+        color: #fff;
         font-size: 13px;
         }
         #twofa-code-input {
@@ -274,7 +274,7 @@
         #twofa-error { color: #b33; font-size: 13px; margin-top: 8px; display:none; }
         #twofa-info { font-size: 13px; color: #444; margin-top: 8px; }
         #twofa-modal .small {
-        font-size: 12px; color: #666; margin-top: 8px;
+        font-size: 12px; color: #fff; margin-top: 8px;
         }
         .twofa-alt {
         background: none; border: none; color: #146; cursor: pointer;
@@ -347,70 +347,276 @@
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
-        // 1) Patch fetch once (if not already done globally)
-        if (!window.__fetchPatched) {
-            const _f = window.fetch;
-            window.fetch = (url, opts = {}) => {
-            opts.credentials = 'include';
+    // 1) Patch fetch once (if not already done globally)
+    if (!window.__fetchPatched) {
+        const _f = window.fetch;
+        window.fetch = (url, opts = {}) => {
+            opts = opts || {};
+            // only set credentials if not explicitly provided
+            if (!opts.credentials) opts.credentials = 'include';
             return _f(url, opts);
-            };
-            window.__fetchPatched = true;
-        }
+        };
+        window.__fetchPatched = true;
+    }
 
-        // 2) Propagate any ?redirect, ?warning or ?suspended flags to the signup link
-        const query = window.location.search;
-        if (query) {
-            const link = document.getElementById("signup-link");
-            if (link) link.href = "/signup_page" + query;
-        }
+    // small cookie helper
+    function getCookie(name) {
+        const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return v ? v.pop() : '';
+    }
+    function deleteCookie(name) {
+        // remove cookie for current path
+        document.cookie = name + "=; Max-Age=0; path=/; SameSite=Strict";
+    }
 
-        // 3) Show any warning/suspended banners
-        const params = new URLSearchParams(query);
-        if (params.get("warning") === "true") {
-            document.getElementById("warning-message").classList.add("visible");
-        }
-        if (params.get("suspended") === "true") {
-            document.getElementById("ban-message").classList.add("visible");
-        }
+    // 2) Propagate any ?redirect, ?warning or ?suspended flags to the signup link
+    const query = window.location.search;
+    if (query) {
+        const link = document.getElementById("signup-link");
+        if (link) link.href = "/signup_page" + query;
+    }
 
-        const redirectUrl = params.get("redirect") || "/index";
+    // 3) Show any warning/suspended banners
+    const params = new URLSearchParams(query);
+    if (params.get("warning") === "true") {
+        document.getElementById("warning-message").classList.add("visible");
+    }
+    if (params.get("suspended") === "true") {
+        document.getElementById("ban-message").classList.add("visible");
+    }
 
-        // 4) If already authenticated (session_key cookie) or auto‑login via lasting_key → go
-        async function fastPath() {
-            // a) try session
-            let r = await fetch("/test-session", { method: "GET" });
-            if (r.status === 200) {
+    const redirectUrl = params.get("redirect") || "/index";
+
+    // ----------------------------
+    // 2FA modal helpers (available early so fastPath can call them)
+    // ----------------------------
+    const backdrop = document.getElementById('twofa-modal-backdrop');
+    const modal = document.getElementById('twofa-modal');
+    const codeInput = document.getElementById('twofa-code-input');
+    const submitBtn = document.getElementById('twofa-submit-btn');
+    const cancelBtn = document.getElementById('twofa-cancel-btn');
+    const backupBtn = document.getElementById('twofa-use-backup');
+    const errorBox = document.getElementById('twofa-error');
+
+    let currentLoginToken = null;
+    let currentKeepLogin = false;
+    let currentRedirect = '/index';
+
+    function showError(msg) {
+        if (!errorBox) return;
+        errorBox.style.display = msg ? 'block' : 'none';
+        errorBox.textContent = msg || '';
+    }
+
+    function escHandler(e){
+        if (e.key === 'Escape') hideTwoFAModal();
+    }
+
+    function showTwoFAModal(login_token, keep_login=false, redirect='/index') {
+        currentLoginToken = login_token;
+        currentKeepLogin = Boolean(keep_login);
+        currentRedirect = redirect || '/index';
+        showError('');
+        if (codeInput) codeInput.value = '';
+        if (backdrop) {
+            backdrop.style.display = 'flex';
+            backdrop.setAttribute('aria-hidden', 'false');
+        }
+        // focus in next tick
+        setTimeout(()=> { try { codeInput && codeInput.focus(); } catch(e){} }, 50);
+        // add key handlers
+        window.addEventListener('keydown', escHandler);
+    }
+
+    function hideTwoFAModal() {
+        if (backdrop) {
+            backdrop.style.display = 'none';
+            backdrop.setAttribute('aria-hidden', 'true');
+        }
+        currentLoginToken = null;
+        window.removeEventListener('keydown', escHandler);
+        showError('');
+    }
+
+    async function submitCode(code) {
+        if (!currentLoginToken) {
+            showError('Missing login session. Please try logging in again.');
+            return;
+        }
+        showError('');
+        submitBtn.disabled = true;
+        const prevTxt = submitBtn.textContent;
+        submitBtn.textContent = 'Verifying...';
+
+        try {
+            const res = await fetch('/login/2fa', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    login_token: currentLoginToken,
+                    code: code,
+                    keep_login: currentKeepLogin
+                })
+            });
+            const j = await res.json().catch(()=>({}));
+            if (res.ok) {
+                // clear pending cookie if present
+                deleteCookie('pending_login_token');
+                try { sessionStorage.setItem('current_user_id', j.user_id); } catch(e){}
+                window.location.href = currentRedirect || j.startpage || '/index';
+            } else {
+                showError(j.error || 'Invalid code');
+                submitBtn.disabled = false;
+                submitBtn.textContent = prevTxt || 'Verify';
+            }
+        } catch (err) {
+            showError('Network error — try again.');
+            submitBtn.disabled = false;
+            submitBtn.textContent = prevTxt || 'Verify';
+        }
+    }
+
+    // UI bindings for modal controls (safe to add even if elements missing)
+    try {
+        if (submitBtn) submitBtn.addEventListener('click', () => {
+            const code = codeInput.value.trim();
+            if (!code) { showError('Please enter the code.'); return; }
+            submitCode(code);
+        });
+        if (cancelBtn) cancelBtn.addEventListener('click', () => hideTwoFAModal());
+        if (backupBtn) backupBtn.addEventListener('click', () => {
+            const code = prompt('Enter a backup code:');
+            if (code) submitCode(code.trim());
+        });
+        if (codeInput) codeInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') submitBtn && submitBtn.click();
+        });
+    } catch (e) {
+        // ignore binding errors
+    }
+
+    // expose to global so other code (and fastPath) can call it
+    window.__showTwoFAModal = showTwoFAModal;
+
+    // helper: wait (poll) for pending_login_token cookie to appear (returns token or null)
+    async function waitForPendingCookie(timeoutMs = 1000, interval = 100) {
+        const start = Date.now();
+        while ((Date.now() - start) < timeoutMs) {
+            const tok = getCookie('pending_login_token');
+            if (tok) return tok;
+            await new Promise(res => setTimeout(res, interval));
+        }
+        return null;
+    }
+
+    // ----------------------------
+    // fastPath: try session, then lasting_key (and handle 2FA)
+    // ----------------------------
+    async function fastPath() {
+        // a) try session
+        let r = await fetch("/test-session", { method: "GET" });
+        if (r.status === 200) {
             const info = await r.json().catch(()=>({ startpage: redirectUrl }));
-            sessionStorage.setItem("current_user_id", info.user_id);
+            try { sessionStorage.setItem("current_user_id", info.user_id); } catch(e){}
             window.location.href = params.get("redirect") || info.startpage || "/index";
             return true;
-            }
-            if (r.status === 403) {
+        }
+        if (r.status === 403) {
             window.location.href = "/login_page?suspended=true";
             return true;
-            }
-            // b) try lasting_key cookie
-            r = await fetch("/login", {
+        }
+
+        // b) try lasting_key cookie
+        r = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({}) // backend reads lasting_key cookie
-            });
-            if (r.ok) {
-            const data = await r.json();
-            sessionStorage.setItem("current_user_id", data.user_id)
-            window.location.href = redirectUrl || data.startpage || "/index";
-            return true;
-            }
-            return false;
-        }
-
-        await fastPath(); // fire-and-forget: if it succeeds you’ll be redirected
-
-        // 5) Otherwise show the login form as-is
         });
 
-        // 6) Form submission
-        document.getElementById("login-form").addEventListener("submit", async e => {
+        // parse JSON if possible
+        let data;
+        try { data = await r.json(); } catch (e) { data = {}; }
+
+        // fully authenticated response (no 2FA)
+        if (r.ok && data && data.user_id) {
+            try { sessionStorage.setItem("current_user_id", data.user_id); } catch(e){}
+            window.location.href = redirectUrl || data.startpage || "/index";
+            return true;
+        }
+
+        // server indicates 2FA is required
+        if (r.ok && data && data["2fa_required"]) {
+            // If we're *on* the login page, show the modal in-place (don't reload)
+            const onLoginPage = window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1;
+
+            if (onLoginPage) {
+                // If server returned token in JSON, show immediately
+                if (data.login_token) {
+                    window.__showTwoFAModal(data.login_token, false, redirectUrl);
+                    return true;
+                }
+
+                // Otherwise the server likely set pending_login_token cookie. Try to read it.
+                // Poll briefly (browser should have applied Set-Cookie by now in most browsers).
+                const pending = getCookie('pending_login_token') || await waitForPendingCookie(1000, 100);
+
+                if (pending) {
+                    // delete then show modal
+                    deleteCookie('pending_login_token');
+                    window.__showTwoFAModal(pending, false, redirectUrl);
+                    return true;
+                }
+
+                // If we reach here, cookie wasn't visible after a brief wait.
+                // Avoid reload/redirect loop. Show a friendly message so the user can refresh manually.
+                // Create a temporary non-intrusive banner (or you can use your existing warning-message element).
+                try {
+                    const warn = document.getElementById('warning-message');
+                    if (warn) {
+                        warn.textContent = "Two-factor login started — please refresh the page to continue.";
+                        warn.classList.add('visible');
+                    } else {
+                        alert("Two-factor login started — please refresh the page to continue.");
+                    }
+                } catch (e) {}
+                return true;
+            } else {
+                // not on login page: redirect to login_page. The login page will pick up pending_login_token cookie
+                window.location.href = '/login_page' + (params.get('redirect') ? '?redirect=' + encodeURIComponent(params.get('redirect')) : '');
+                return true;
+            }
+        }
+
+        // If server didn't explicitly return 2fa_required but set the pending cookie (edge cases),
+        // check for pending_login_token cookie and show modal if present (only if we are on login page)
+        const pending = getCookie('pending_login_token');
+        if (pending && (window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1)) {
+            // clear it immediately to reduce leakage
+            deleteCookie('pending_login_token');
+            window.__showTwoFAModal(pending, false, redirectUrl);
+            return true;
+        }
+
+        return false;
+    }
+
+    // run fastPath (if it succeeds you'll be redirected)
+    await fastPath();
+
+    // If we reach here and we're on the login page, also check if a pending token cookie exists
+    // (this covers the case where a previous request set the cookie but fastPath didn't detect it)
+    const pendingOnLoad = getCookie('pending_login_token');
+    if (pendingOnLoad && (window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1)) {
+        deleteCookie('pending_login_token');
+        // show modal in-place
+        window.__showTwoFAModal(pendingOnLoad, false, redirectUrl);
+    }
+
+    // ----------------------------
+    // 6) Form submission (username/password)
+    // ----------------------------
+    document.getElementById("login-form").addEventListener("submit", async e => {
         e.preventDefault();
         const user = document.getElementById("username").value.trim();
         const pass = document.getElementById("password").value;
@@ -421,132 +627,56 @@
         }
 
         const params = new URLSearchParams(window.location.search);
-        const redirectUrl = params.get("redirect") || "/index";
+        const redirectUrlLocal = params.get("redirect") || "/index";
 
-        (function () {
-        // helpers / element refs
-        const backdrop = document.getElementById('twofa-modal-backdrop');
-        const modal = document.getElementById('twofa-modal');
-        const codeInput = document.getElementById('twofa-code-input');
-        const submitBtn = document.getElementById('twofa-submit-btn');
-        const cancelBtn = document.getElementById('twofa-cancel-btn');
-        const backupBtn = document.getElementById('twofa-use-backup');
-        const errorBox = document.getElementById('twofa-error');
-
-        let currentLoginToken = null;
-        let currentKeepLogin = false;
-        let currentRedirect = '/index';
-
-        function showError(msg) {
-            errorBox.style.display = msg ? 'block' : 'none';
-            errorBox.textContent = msg || '';
-        }
-
-        function showTwoFAModal(login_token, keep_login=false, redirect='/index') {
-            currentLoginToken = login_token;
-            currentKeepLogin = Boolean(keep_login);
-            currentRedirect = redirect || '/index';
-            showError('');
-            codeInput.value = '';
-            backdrop.style.display = 'flex';
-            backdrop.setAttribute('aria-hidden', 'false');
-            // focus in next tick
-            setTimeout(()=> codeInput.focus(), 50);
-            // add key handlers
-            window.addEventListener('keydown', escHandler);
-        }
-
-        function hideTwoFAModal() {
-            backdrop.style.display = 'none';
-            backdrop.setAttribute('aria-hidden', 'true');
-            currentLoginToken = null;
-            window.removeEventListener('keydown', escHandler);
-            showError('');
-        }
-
-        function escHandler(e){
-            if (e.key === 'Escape') hideTwoFAModal();
-        }
-
-        async function submitCode(code) {
-            if (!currentLoginToken) {
-            showError('Missing login session. Please try logging in again.');
-            return;
-            }
-            showError('');
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Verifying...';
-
-            try {
-            const res = await fetch('/login/2fa', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                login_token: currentLoginToken,
-                code: code,
-                keep_login: currentKeepLogin
-                })
-            });
-            const j = await res.json().catch(()=>({}));
-            if (res.ok) {
-                // success: set sessionStorage and redirect
-                try { sessionStorage.setItem('current_user_id', j.user_id); } catch(e){}
-                window.location.href = currentRedirect || j.startpage || '/index';
-            } else {
-                showError(j.error || 'Invalid code');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Verify';
-            }
-            } catch (err) {
-            showError('Network error — try again.');
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Verify';
-            }
-        }
-
-        // UI bindings
-        submitBtn.addEventListener('click', () => {
-            const code = codeInput.value.trim();
-            if (!code) { showError('Please enter the code.'); return; }
-            submitCode(code);
-        });
-        cancelBtn.addEventListener('click', () => hideTwoFAModal());
-        backupBtn.addEventListener('click', () => {
-            const code = prompt('Enter a backup code:');
-            if (code) submitCode(code.trim());
-        });
-
-        // allow Enter to submit
-        codeInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') submitBtn.click();
-        });
-
-        // expose to global so your login flow can call it
-        window.__showTwoFAModal = showTwoFAModal;
-        })();
-
+        // send login request
         const res = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username: user, password: pass, keep_login: keep })
         });
-        const data = await res.json();
+
+        let data;
+        try { data = await res.json(); } catch(e) { data = {}; }
 
         if (res.ok) {
             if (data["2fa_required"]) {
-                window.__showTwoFAModal(data.login_token, keep, redirectUrl)
+                // if server returned token in JSON we can show modal immediately
+                // otherwise it may have set pending_login_token cookie; modal code handles both cases
+                if (data.login_token) {
+                    window.__showTwoFAModal(data.login_token, keep, redirectUrlLocal);
+                } else {
+                    // try to read cookie immediately and poll briefly as backup
+                    const p = getCookie('pending_login_token') || await waitForPendingCookie(1000, 100);
+                    if (p) {
+                        deleteCookie('pending_login_token');
+                        window.__showTwoFAModal(p, keep, redirectUrlLocal);
+                    } else {
+                        // fallback: show message asking user to refresh
+                        const warn = document.getElementById('warning-message');
+                        if (warn) {
+                            warn.textContent = "Two-factor login started — please refresh the page to continue.";
+                            warn.classList.add('visible');
+                        } else {
+                            alert("Two-factor login started — please refresh the page to continue.");
+                        }
+                    }
+                }
             } else {
                 // existing successful branch (no 2FA)
-                sessionStorage.setItem("current_user_id", data.user_id)
-                window.location.href = redirectUrl || data.startpage || "/index";
+                try { sessionStorage.setItem("current_user_id", data.user_id); } catch(e){}
+                window.location.href = redirectUrlLocal || data.startpage || "/index";
             }
         } else if (res.status === 403 && data.error === "Account is suspended") {
             document.getElementById("ban-message").classList.add("visible");
         } else {
             alert(data.error || "Login failed", "error");
         }
-        });
+    });
+
+}); // DOMContentLoaded
+
+
         </script>
 
 </body>
