@@ -289,10 +289,6 @@
             background-color: #7a7a7a;
         }
 
-        #update-menu input {
-            width: 95% !important;
-        }
-
         #overlay {
             display: none;
             position: fixed;
@@ -455,9 +451,6 @@
             background-color: #7a7a7a;
         }
 
-        #add-menu input {
-            width: 95%;
-        }
 
         #modal-overlay {
             display: none;
@@ -671,6 +664,7 @@
         /* Rich Text Editor Styles */
         .toolbar {
             display: flex;
+            overflow: auto;
             gap: 5px;
             background-color: #424242;
             padding: 8px;
@@ -1234,10 +1228,6 @@
             margin-top: 10px;
         }
 
-        #add-file-input, #update-file-input {
-            width: 95% !important;
-        }
-
         #delete-button {
             background-color: #b33a3a !important;
         }
@@ -1529,6 +1519,212 @@
 
         .prompt-cancel:hover {
             background: #cc4a4a;
+        }
+
+        /* Base: keep panels off-screen initially */
+        #add-menu,
+        #update-menu {
+        /* keep display none by default if your JS hides/shows them */
+        display: none;
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: 50%;
+        min-width: 360px;
+        max-width: none;
+        padding: 28px 30px;
+        background: var(--bg-color);
+        box-shadow: -10px 0 30px rgba(0,0,0,0.35);
+        z-index: 9999;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        transform: translateX(110%);      /* offscreen to right */
+        opacity: 0;
+        transition:
+            transform 340ms cubic-bezier(.2,.8,.2,1),
+            opacity 220ms ease;
+        will-change: transform, opacity;
+        border-radius: 0 0 0 12px;        /* keep the rounded left corner */
+        box-sizing: border-box;
+        }
+
+        /* Visible state (toggle by adding .open) */
+        #add-menu.open,
+        #update-menu.open {
+        transform: translateX(0);
+        opacity: 1;
+        }
+
+        /* If JS simply sets display:block, the panel will appear — make it visible */
+        #add-menu[style*="display: block"],
+        #update-menu[style*="display: block"],
+        #add-menu.open,
+        #update-menu.open {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        /* Optional: nicer "full-page" behavior toggle via body class */
+        body.panel-open {
+            overflow: hidden; /* lock page scroll while panel open (requires JS to toggle) */
+        }
+
+        /* Small screens: use full screen panels */
+        @media (max-width: 900px) {
+            #add-menu,
+            #update-menu {
+                left: 0;
+                right: 0;
+                width: 100%;
+                min-width: 0;
+                border-radius: 0;
+                padding: 18px;
+            }
+        }
+
+        /* If JS shows it */
+        #view-menu[style*="display: block"],
+        #view-menu.open {
+            opacity: 1;
+        }
+
+        /* ---------- Layout & spacing improvements inside panels ---------- */
+        #add-menu h3,
+        #update-menu h3 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 1.3rem;
+        }
+
+        /* Layout container so toolbar/input/ai controls line up nicely */
+        #add-menu > div,
+        #update-menu > div {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Make inputs and file lists take full width and look nicer */
+        #add-menu input[type="text"],
+        #update-menu input[type="text"],
+        #add-menu .attachment-list,
+        #update-menu .attachment-list,
+        #add-menu label.file-label,
+        #update-menu label.file-label,
+        #add-menu input[type="file"],
+        #update-menu input[type="file"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Bigger editor area: expand to available viewport so user gets a "page" feel */
+        .rich-text-editor {
+            max-height: calc(100vh - 180px);
+            padding: 16px;
+            font-size: 18px;
+            line-height: 1.5;
+            overflow-y: auto;
+            border-radius: 10px;
+        }
+
+        /* For narrower screens let editor fill more vertical space */
+        @media (max-width: 900px) {
+            .rich-text-editor {
+                max-height: calc(100vh - 140px);
+                font-size: 17px;
+            }
+        }
+
+        /* Make tag input look like block and align with textarea visuals */
+        #add-menu #note-tag,
+        #update-menu #update-note-tag {
+            display: block;
+            padding: 12px;
+            margin-top: 6px;
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+        }
+
+        /* Button row pinned to bottom inside panel for quick access (desktop) */
+        .button-row-menu {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            align-items: center;
+            justify-content: stretch;
+        }
+
+        /* Make primary buttons occupy more visual space */
+        .button-row-menu button,
+        #add-menu button,
+        #update-menu button {
+            padding: 12px;
+            font-size: 16px;
+        }
+
+        /* Make the apply-ai and clear-draft buttons more visible and consistently placed */
+        #apply-ai-add,
+        #apply-ai-update {
+            display: inline-block;
+        }
+
+        /* Make clear-draft visible and easier to use on panels */
+        .clear-draft-btn {
+            position: absolute !important;
+            top: 14px !important;
+            right: 14px !important;
+            background: none !important;
+            border: 1px solid rgba(255,107,107,0.12) !important;
+            color: #ff6b6b !important;
+            cursor: pointer !important;
+            font-size: 13px !important;
+            padding: 8px 10px !important;
+            border-radius: 8px !important;
+            width: auto !important;
+            height: auto !important;
+        }
+
+        /* Improve attachment list visuals inside the side panel */
+        .attachment-list {
+            background: rgba(0,0,0,0.06);
+            padding: 10px;
+            border-radius: 8px;
+            max-height: 140px;
+            overflow-y: auto;
+        }
+
+        /* make the existing attachments section a nice scrollable block */
+        #update-existing-attachments {
+            max-height: 160px;
+            overflow-y: auto;
+        }
+
+        /* View content styling (consistent with panel look) */
+        .view-note-content {
+            max-height: calc(100vh - 340px);
+        }
+
+        /* Tweak modal overlay so it continues to show behind side panel */
+        #modal-overlay {
+            display: none; /* leave JS to toggle */
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0,0,0,0.45);
+            z-index: 10040;
+        }
+
+        /* If JS sets display:block it will show, dimming the rest of the page */
+        #modal-overlay[style*="display: block"],
+        #modal-overlay.open {
+            display: flex;
+        }
+
+        /* Improve focus styles for accessibility */
+        .rich-text-editor:focus, input:focus, textarea:focus {
+            outline: 3px solid rgba(100, 150, 255, 0.12);
+            outline-offset: 2px;
         }
 
     </style>

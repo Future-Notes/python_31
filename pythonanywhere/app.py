@@ -51,6 +51,8 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 import requests
 import cohere
+# verify_file_content.py
+from file_check import verify_file_content_hardened
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -92,7 +94,7 @@ MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB default (changeable)
 # Allowed extensions and mimetypes
 ALLOWED_EXTENSIONS = {
     # Images
-    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'svg',
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'svg', 'ico',
 
     # Documents
     'txt', 'md', 'pdf', 'doc', 'docx', 'odt', 'rtf',
@@ -313,6 +315,7 @@ class User(db.Model):
     database_dump_tag = db.Column(db.Boolean, default=False, nullable=False)
     has_username_protection = db.Column(db.Boolean, default=False, nullable=False)
     has_unlimited_storage = db.Column(db.Boolean, default=False, nullable=False)
+    malicious_violations = db.Column(db.Integer, nullable=True)
 
     base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
     storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
@@ -1523,6 +1526,12 @@ def validate_session_key(key=None):
     if user.suspended:
         del session_keys[key]
         return False, "Account is suspended and cannot log in."
+    
+    if (user.malicious_violations or 0) > 10:
+        user.suspended = True
+        db.session.add(user)
+        db.session.commit()
+        return False, "You have been suspended for violating the TOS"
 
     # 6) update last‑active timestamp
     sess["last_active"] = now
@@ -1967,6 +1976,10 @@ def delete_user_and_data(user):
         
         # Delete user colors
         UserColor.query.filter_by(user_id=user_to_delete.id).delete()
+
+        # Delete uploads
+        Upload.query.filter_by(user_id=user_to_delete.id).delete()
+
 
         # Finally, delete the user
         db.session.delete(user_to_delete)
@@ -2748,79 +2761,14 @@ def get_user_quota_bytes(user):
 
 def verify_file_content(file_path: str, mimetype: str) -> bool:
     """
-    Stronger file verification:
-      - Uses Pillow for images
-      - Adds safer checks for text, pdf, and zip
-      - Falls back to filetype lib for extra validation
-    Returns True if content matches declared mimetype.
+    Backwards-compatible wrapper.
+    Calls the hardened implementation and returns True/False.
     """
-
-    # --- IMAGES ---
-    if mimetype and mimetype.startswith("image/"):
-        try:
-            with Image.open(file_path) as img:
-                img.verify()  # check integrity
-                format_to_mime = {
-                    "JPEG": "image/jpeg",
-                    "PNG": "image/png",
-                    "GIF": "image/gif",
-                    "WEBP": "image/webp"
-                }
-                detected_mime = format_to_mime.get(img.format)
-                return detected_mime == mimetype
-        except Exception:
-            return False
-
-    # --- TEXT ---
-    if mimetype == "text/plain":
-        try:
-            with open(file_path, "rb") as f:
-                chunk = f.read(2048)  # read more for confidence
-                if b"\x00" in chunk:
-                    return False
-                # crude encoding check
-                chunk.decode("utf-8", errors="strict")
-            return True
-        except Exception:
-            return False
-
-    # --- PDF ---
-    if mimetype == "application/pdf":
-        try:
-            with open(file_path, "rb") as f:
-                header = f.read(5)
-                if not header.startswith(b"%PDF"):
-                    return False
-                f.seek(-7, 2)  # near EOF
-                trailer = f.read().strip()
-                return trailer.startswith(b"%%EOF")
-        except Exception:
-            return False
-
-    # --- ZIP ---
-    if mimetype == "application/zip":
-        try:
-            with open(file_path, "rb") as f:
-                header = f.read(4)
-                if header != b"PK\x03\x04":
-                    return False
-            # optionally: inspect zipfile content
-            import zipfile
-            with zipfile.ZipFile(file_path, "r") as zf:
-                return zf.testzip() is None  # no corrupted entries
-        except Exception:
-            return False
-
-    # --- FALLBACK with filetype ---
     try:
-        kind = filetype.guess(file_path)
-        if kind and kind.mime == mimetype:
-            return True
+        return bool(verify_file_content_hardened(file_path, mimetype))
     except Exception:
+        # In case the hardened version raises unexpectedly, fail closed.
         return False
-
-    # --- FINAL fallback ---
-    return mimetype in ALLOWED_MIMETYPES
 
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
     """
@@ -2881,6 +2829,14 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
     if not ok:
         # delete file and return error
         os.remove(stored_path)
+        try:
+            if user:
+                user.malicious_violations = (user.malicious_violations or 0) + 1
+                db.session.add(user)
+                db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            app.logger.exception("Failed to increment malicious_violations for user %s: %s", getattr(user, "id", None), e)
         return False, "Uploaded file failed content verification."
 
     # All good -> create DB record and update user's storage usage
@@ -6656,7 +6612,7 @@ def admin():
 
     if request.method == 'GET':
         # Fetch users and messages
-        users = User.query.with_entities(User.id, User.username, User.profile_picture, User.allows_sharing, User.role).all()
+        users = User.query.with_entities(User.id, User.suspended, User.username, User.profile_picture, User.allows_sharing, User.role, User.malicious_violations).all()
         messages = Messages.query.with_entities(Messages.id, Messages.email, Messages.message).all()
         return jsonify({
             "users": [user._asdict() for user in users],
@@ -6704,6 +6660,198 @@ def admin():
         user_to_update.role = new_role
         db.session.commit()
         return jsonify({"message": f"Role updated to {new_role} for user {target_user_id}"}), 200
+    
+@app.route('/admin/reset_violations', methods=['PUT'])
+@require_session_key
+@require_admin
+def reset_violations():
+    user = User.query.get(g.user_id)
+    if not user or user.role != "admin":
+        return jsonify({"error": "Insufficient permissions"}), 403
+
+    data = request.json
+    target_user_id = data.get("user_id")
+    target_user = User.query.get(target_user_id)
+
+    if not target_user:
+        return jsonify({"error": "User not found"}), 404
+
+    target_user.malicious_violations = 0
+    db.session.commit()
+    return jsonify({"message": f"Malicious violations reset for user {target_user_id}"}), 200
+
+# -------------------------
+# Update username
+# -------------------------
+@app.route('/admin/user/<int:target_user_id>/username', methods=['PUT'])
+@require_session_key
+@require_admin
+def admin_update_username(target_user_id):
+    data = request.get_json(silent=True) or {}
+    new_username = (data.get("username") or "").strip()
+    if not new_username:
+        return jsonify({"error": "Username cannot be empty"}), 400
+
+    target = User.query.get(target_user_id)
+    if not target:
+        return jsonify({"error": "User not found"}), 404
+
+    # Optional uniqueness check (uncomment if you want uniqueness enforced)
+    existing = User.query.filter(User.username == new_username, User.id != target_user_id).first()
+    if existing:
+        return jsonify({"error": "Username already in use"}), 409
+
+    target.username = new_username
+    db.session.commit()
+    return jsonify({"message": "Username updated", "user_id": target_user_id, "username": new_username}), 200
+
+
+# -------------------------
+# Update allows_sharing
+# -------------------------
+@app.route('/admin/user/<int:target_user_id>/allows_sharing', methods=['PUT'])
+@require_session_key
+@require_admin
+def admin_update_allows_sharing(target_user_id):
+    data = request.get_json(silent=True) or {}
+    if "allows_sharing" not in data:
+        return jsonify({"error": "Missing 'allows_sharing' value"}), 400
+
+    value = data.get("allows_sharing")
+    # Accept booleans or string representations
+    if isinstance(value, str):
+        value = value.lower() in ("1", "true", "yes", "on")
+
+    target = User.query.get(target_user_id)
+    if not target:
+        return jsonify({"error": "User not found"}), 404
+
+    target.allows_sharing = bool(value)
+    db.session.commit()
+    return jsonify({"message": "Allows sharing updated", "user_id": target_user_id, "allows_sharing": target.allows_sharing}), 200
+
+
+# -------------------------
+# Update malicious_violations
+# -------------------------
+@app.route('/admin/user/<int:target_user_id>/violations', methods=['PUT'])
+@require_session_key
+@require_admin
+def admin_update_violations(target_user_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        new_val = int(data.get("malicious_violations"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid malicious_violations value"}), 400
+
+    if new_val < 0:
+        return jsonify({"error": "malicious_violations must be >= 0"}), 400
+
+    target = User.query.get(target_user_id)
+    if not target:
+        return jsonify({"error": "User not found"}), 404
+
+    target.malicious_violations = new_val
+    db.session.commit()
+    return jsonify({"message": "Violations updated", "user_id": target_user_id, "malicious_violations": new_val}), 200
+
+
+# -------------------------
+# Admin update/delete profile picture (re-uses your existing logic style)
+# -------------------------
+@app.route('/admin/user/<int:target_user_id>/profile_picture', methods=['POST', 'DELETE'])
+@require_session_key
+@require_admin
+def admin_update_profile_picture(target_user_id):
+    target = User.query.get(target_user_id)
+    if not target:
+        return jsonify({"error": "User not found"}), 404
+
+    # POST -> upload and process new profile picture for target user
+    if request.method == 'POST':
+        if 'profile_picture' not in request.files:
+            return jsonify({"error": "No file part in the request"}), 400
+
+        file = request.files['profile_picture']
+        if file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+
+        if not file or not allowed_file(file.filename):
+            return jsonify({"error": "Invalid or disallowed file"}), 400
+
+        # Build filename using target username (keep .jpg), mirror your logic
+        filename = secure_filename(f"{target.username}_{uuid.uuid4().hex}.jpg")
+        upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
+        file_path = os.path.join(upload_folder, filename)
+        temp_path = os.path.join(upload_folder, f"temp_{filename}")
+
+        try:
+            # Ensure upload folder exists
+            os.makedirs(upload_folder, exist_ok=True)
+
+            # Save temporarily
+            file.save(temp_path)
+
+            # Open and process image
+            with Image.open(temp_path) as img:
+                # Convert to RGB if needed (removes transparency)
+                if img.mode in ('RGBA', 'LA', 'P'):
+                    img = img.convert('RGB')
+
+                # Downscale image (max dimensions: 500x500)
+                img.thumbnail((500, 500), Image.LANCZOS)
+
+                # Save compressed version with quality similar to your route
+                img.save(file_path, 'JPEG', quality=45, optimize=True)
+
+            # Remove temporary file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        except Exception as e:
+            app.logger.error(f"Admin image processing failed for user {target_user_id}: {e}")
+            # Clean up any partial files
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+            return jsonify({"error": "Failed to process image"}), 500
+
+        # Delete old profile picture after successful processing
+        old_picture = target.profile_picture
+        if old_picture and os.path.isfile(old_picture):
+            try:
+                os.remove(old_picture)
+            except Exception as e:
+                app.logger.warning(f"Failed to delete old profile picture for user {target_user_id}: {e}")
+
+        # Update database record
+        target.profile_picture = file_path
+        db.session.commit()
+
+        return jsonify({"message": "Profile picture updated successfully", "path": file_path}), 200
+
+    # DELETE -> remove target user's profile picture
+    elif request.method == 'DELETE':
+        if target.profile_picture and os.path.isfile(target.profile_picture):
+            try:
+                os.remove(target.profile_picture)
+            except Exception as e:
+                app.logger.warning(f"Failed to delete profile picture for user {target_user_id}: {e}")
+                return jsonify({"error": "Failed to delete profile picture file"}), 500
+
+            target.profile_picture = None
+            db.session.commit()
+            return jsonify({"message": "Profile picture deleted successfully!"}), 200
+
+        return jsonify({"error": "No profile picture to delete"}), 400
+
     
 @app.route('/admin/dump', methods=['POST'])
 @require_session_key

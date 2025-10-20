@@ -327,6 +327,67 @@
         .notif-modal .custom-url {
         display: none;
         }
+        .violations-high {
+            color: red;
+            font-weight: bold;
+        }
+
+        .violations-medium {
+            color: orange;
+            font-weight: bold;
+        }
+
+        .editable-field input[type="text"], 
+        .editable-field input[type="number"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .editable-buttons {
+            display: inline-flex;
+            gap: 5px;
+        }
+
+        .switch {
+        position: relative;
+        display: inline-block;
+        width: 40px;
+        height: 20px;
+        }
+
+        .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        }
+
+        .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #ccc;
+        transition: .2s;
+        border-radius: 20px;
+        }
+
+        .slider:before {
+        position: absolute;
+        content: "";
+        height: 16px; width: 16px;
+        left: 2px;
+        bottom: 2px;
+        background-color: white;
+        transition: .2s;
+        border-radius: 50%;
+        }
+
+        input:checked + .slider {
+        background-color: #4CAF50;
+        }
+
+        input:checked + .slider:before {
+        transform: translateX(20px);
+        }
 
     </style>
     <script>
@@ -424,6 +485,8 @@
                     <th>Username</th>
                     <th>Profile Picture</th>
                     <th>Allows Sharing</th>
+                    <th>Malicious file uploaded</th>
+                    <th>Reset malicous file uploaded counter</th>
                     <th>Role</th>
                     <th>Actions</th>
                 </tr>
@@ -604,7 +667,6 @@
                     const data = await response.json();
                     populateMessagesTable(data.messages);
                     populateUsersTable(data.users);
-                    fetchUserStatus();
                     fetchBackups();
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
@@ -829,37 +891,413 @@
             const currentUserId = sessionStorage.getItem("current_user_id");
 
             users.forEach((user) => {
-                // Skip rendering the current admin user
+                // Skip rendering the current admin user (optional)
                 if (user.id == currentUserId) {
                     return;
                 }
 
+                // Determine color class for violations
+                let violationClass = "";
+                if (user.malicious_violations >= 8) violationClass = "violations-high";
+                else if (user.malicious_violations >= 5) violationClass = "violations-medium";
+
                 const row = document.createElement("tr");
                 row.innerHTML = `
-                    <td>${user.id}</td>
-                    <td>${sanitizeHTML(user.username)}</td>
-                    <td>${user.profile_picture || "N/A"}</td>
-                    <td>${user.allows_sharing ? "Yes" : "No"}</td>
+                    <td class="user-id">${user.id}</td>
+
+                    <!-- Username (clickable) -->
+                    <td class="editable username-cell" data-user-id="${user.id}">
+                        <span class="display username-text">${sanitizeHTML(user.username)}</span>
+                    </td>
+
+                    <!-- Profile picture (clickable to open file picker) -->
+                    <td class="editable profile-picture-cell" data-user-id="${user.id}">
+                        ${ user.profile_picture ? `<img src="${sanitizeHTML(user.profile_picture)}" alt="Profile" width="40" />` : `<span class="display profile-text">N/A</span>`}
+                    </td>
+
+                    <!-- Allows sharing (clickable switch) -->
+                    <td class="editable allows-sharing-cell" data-user-id="${user.id}">
+                        <label class="switch">
+                            <input type="checkbox" class="allows-sharing-checkbox" ${user.allows_sharing ? "checked" : ""} />
+                            <span class="slider"></span>
+                        </label>
+                    </td>
+
+                    <!-- Malicious violations (clickable number) -->
+                    <td class="editable malicious-cell ${violationClass}" data-user-id="${user.id}">
+                        <span class="display violations-text">${user.malicious_violations}</span>
+                    </td>
                     <td>
-                        <select onchange="changeUserRole(${user.id}, this.value)">
+                        <button class="small reset-violations-btn" title="Reset violations">♻️</button>
+                    </td>
+
+                    <!-- Role dropdown -->
+                    <td class="role-cell" data-user-id="${user.id}">
+                        <select class="role-select">
                             <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
                             <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
                         </select>
                     </td>
-                    <td>
-                        ${user.role !== "admin" ? `<button onclick="loginUser(${user.id})">🔑</button>` : ""}
-                        <button onclick="deleteUser(${user.id})">🗑️</button>
-                        <button onclick="banUser(${user.id})">🚫</button>
-                        <button onclick="showUserNotificationModal(${user.id})">🔔</button>
+
+                    <!-- Actions: login | delete | ban/unban | notify -->
+                    <td class="actions-cell" data-user-id="${user.id}">
+                        ${user.role !== "admin" ? `<button class="action login-btn" title="Login as user">🔑</button>` : ""}
+                        <button class="action delete-btn" title="Delete user">🗑️</button>
+                        <button class="action ban-btn" title="${user.suspended ? "Unban user" : "Ban user"}">
+                            ${user.suspended ? "✅ Unban" : "🚫 Ban"}
+                        </button>
+
+                        <button class="action notify-btn" title="Notify user">🔔</button>
                     </td>
+
                 `;
+
                 tableBody.appendChild(row);
-                if (users.length === 0) {
-                    const row = document.createElement("tr");
-                    row.innerHTML = `<td colspan="4" style="text-align:center;color:#aaa;">No users found.</td>`;
-                    tableBody.appendChild(row);
+
+                // Attach handlers (use functions defined below)
+                const uid = user.id;
+                attachUsernameEdit(row.querySelector(".username-cell"), uid, user.username);
+                attachProfilePictureHandler(row.querySelector(".profile-picture-cell"), uid);
+                attachAllowsSharingHandler(row.querySelector(".allows-sharing-checkbox"), uid);
+                attachViolationsHandler(row.querySelector(".malicious-cell"), uid, user.malicious_violations);
+                attachRoleHandler(row.querySelector(".role-select"), uid);
+                attachActionButtons(row.querySelector(".actions-cell"), uid);
+            });
+
+            if (users.length === 0) {
+                const row = document.createElement("tr");
+                row.innerHTML = `<td colspan="8" style="text-align:center;color:#aaa;">No users found.</td>`;
+                tableBody.appendChild(row);
+            }
+        }
+
+        // ---------------------------
+        // Username editing
+        // ---------------------------
+        function attachUsernameEdit(cell, userId, currentUsername) {
+            // avoid adding multiple listeners by removing existing
+            cell.replaceWith(cell.cloneNode(true));
+            cell = document.querySelector(`td.username-cell[data-user-id="${userId}"]`);
+
+            cell.addEventListener("click", function onClick(e) {
+                // Prevent if click on inner controls
+                if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+
+                const original = sanitizeHTML(currentUsername);
+                cell.innerHTML = `
+                    <div class="editable-field">
+                        <input type="text" class="username-input" value="${original}" />
+                        <div class="editable-buttons">
+                            <button class="confirm-username">✔️</button>
+                            <button class="cancel-username">❌</button>
+                        </div>
+                    </div>
+                `;
+
+                const confirmBtn = cell.querySelector(".confirm-username");
+                const cancelBtn = cell.querySelector(".cancel-username");
+
+                confirmBtn.addEventListener("click", async (ev) => {
+                    ev.stopPropagation();
+                    const newValue = cell.querySelector(".username-input").value.trim();
+                    if (!newValue) return alert("Username cannot be empty");
+                    try {
+                        const res = await fetch(`/admin/user/${userId}/username`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ username: newValue })
+                        });
+                        if (!res.ok) {
+                            const err = await res.json().catch(()=>({error:"Unknown"}));
+                            return alert("Failed to update username: " + (err.error || res.statusText));
+                        }
+                        fetchAdminData();
+                    } catch (e) {
+                        console.error(e);
+                        alert("Network error while updating username");
+                    }
+                });
+
+                cancelBtn.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
+                    cell.innerHTML = `<span class="display username-text">${original}</span>`;
+                });
+            }, { once: true });
+        }
+
+        // ---------------------------
+        // Profile picture file picker + upload/delete
+        // ---------------------------
+        function attachProfilePictureHandler(cell, userId) {
+            // re-query after potential clones
+            cell = document.querySelector(`td.profile-picture-cell[data-user-id="${userId}"]`);
+            cell.addEventListener("click", (e) => {
+                // If clicking on an inner button (none expected) ignore
+                if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+
+                // create file input
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "image/*";
+
+                input.addEventListener("change", async () => {
+                    const file = input.files[0];
+                    if (!file) return;
+                    // client-side size check
+                    const MAX_BYTES = 5 * 1024 * 1024;
+                    if (file.size > MAX_BYTES) return alert("File too large (max 5 MB)");
+
+                    const form = new FormData();
+                    form.append("profile_picture", file);
+
+                    try {
+                        const res = await fetch(`/admin/user/${userId}/profile_picture`, {
+                            method: "POST",
+                            body: form
+                        });
+                        if (!res.ok) {
+                            const err = await res.json().catch(()=>({error:"Unknown"}));
+                            return alert("Upload failed: " + (err.error || res.statusText));
+                        }
+                        fetchAdminData();
+                    } catch (err) {
+                        console.error(err);
+                        alert("Network error while uploading profile picture");
+                    }
+                });
+
+                // For delete: show a confirm option if there's a picture
+                const hasPic = !!cell.querySelector("img");
+                if (hasPic) {
+                    // small prompt: replace or delete
+                    const choice = confirm("Replace profile picture? Cancel will delete the existing one.");
+                    if (!choice) {
+                        // Delete flow
+                        (async () => {
+                            try {
+                                const res = await fetch(`/admin/user/${userId}/profile_picture`, { method: "DELETE" });
+                                if (!res.ok) {
+                                    const err = await res.json().catch(()=>({error:"Unknown"}));
+                                    return alert("Delete failed: " + (err.error || res.statusText));
+                                }
+                                fetchAdminData();
+                            } catch (e) {
+                                console.error(e);
+                                alert("Network error while deleting profile picture");
+                            }
+                        })();
+                        return;
+                    }
+                }
+
+                input.click();
+            });
+        }
+
+        // ---------------------------
+        // Allows_sharing toggle
+        // ---------------------------
+        function attachAllowsSharingHandler(checkbox, userId) {
+            if (!checkbox) return;
+            checkbox.addEventListener("change", async () => {
+                const value = checkbox.checked;
+                try {
+                    const res = await fetch(`/admin/user/${userId}/allows_sharing`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ allows_sharing: value })
+                    });
+                    if (!res.ok) {
+                        const err = await res.json().catch(()=>({error:"Unknown"}));
+                        alert("Failed to update setting: " + (err.error || res.statusText));
+                        // revert toggle on failure
+                        checkbox.checked = !value;
+                    } else {
+                        // optional: toast success
+                    }
+                } catch (e) {
+                    console.error(e);
+                    alert("Network error while updating setting");
+                    checkbox.checked = !value;
                 }
             });
+        }
+
+        // ---------------------------
+        // Malicious violations editable + reset button
+        // ---------------------------
+        // Replace your old attachViolationsHandler with this version:
+        function attachViolationsHandler(cell, userId, currentValue) {
+            // ensure we're working with the fresh cell element (avoid multiple listeners)
+            const row = cell.parentElement;
+            // find the reset button in the same row (you put it in its own <td>)
+            const resetBtn = row.querySelector(".reset-violations-btn");
+
+            // Remove previous listeners safely by cloning nodes
+            if (resetBtn) {
+                const newReset = resetBtn.cloneNode(true);
+                resetBtn.parentElement.replaceChild(newReset, resetBtn);
+            }
+
+            // Re-query reset button after potential replace
+            const resetBtnFinal = row.querySelector(".reset-violations-btn");
+
+            // Attach reset handler (if present)
+            if (resetBtnFinal) {
+                resetBtnFinal.addEventListener("click", async (ev) => {
+                    ev.stopPropagation();
+                    if (!confirm("Reset violations to 0 for this user?")) return;
+                    try {
+                        const res = await fetch(`/admin/user/${userId}/violations`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ malicious_violations: 0 })
+                        });
+                        if (!res.ok) {
+                            const err = await res.json().catch(() => ({ error: "Unknown" }));
+                            return alert("Failed to reset: " + (err.error || res.statusText));
+                        }
+                        fetchAdminData();
+                    } catch (e) {
+                        console.error(e);
+                        alert("Network error while resetting violations");
+                    }
+                });
+            }
+
+            // Remove existing click listener by replacing the cell node, then re-query
+            const newCell = cell.cloneNode(true);
+            cell.parentElement.replaceChild(newCell, cell);
+            cell = row.querySelector(".malicious-cell[data-user-id='" + userId + "']");
+
+            // Clicking the cell (not the reset button) opens inline edit
+            cell.addEventListener("click", (e) => {
+                // If click was on the reset button (which is in a sibling cell) or on inner controls, ignore
+                if (e.target.classList && e.target.classList.contains("reset-violations-btn")) return;
+
+                const original = currentValue;
+                cell.innerHTML = `
+                    <div class="editable-field">
+                        <input type="number" class="violations-input" min="0" value="${original}" />
+                        <div class="editable-buttons">
+                            <button class="confirm-violations">✔️</button>
+                            <button class="cancel-violations">❌</button>
+                        </div>
+                    </div>
+                `;
+
+                const confirmBtn = cell.querySelector(".confirm-violations");
+                const cancelBtn = cell.querySelector(".cancel-violations");
+
+                confirmBtn.addEventListener("click", async (ev) => {
+                    ev.stopPropagation();
+                    const newVal = parseInt(cell.querySelector(".violations-input").value, 10);
+                    if (Number.isNaN(newVal) || newVal < 0) return alert("Invalid value");
+                    try {
+                        const res = await fetch(`/admin/user/${userId}/violations`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ malicious_violations: newVal })
+                        });
+                        if (!res.ok) {
+                            const err = await res.json().catch(() => ({ error: "Unknown" }));
+                            return alert("Failed to update: " + (err.error || res.statusText));
+                        }
+                        fetchAdminData();
+                    } catch (e) {
+                        console.error(e);
+                        alert("Network error while updating violations");
+                    }
+                });
+
+                cancelBtn.addEventListener("click", (ev) => {
+                    ev.stopPropagation();
+                    // restore the cell display (value only — reset button is in sibling cell)
+                    cell.innerHTML = `<span class="display violations-text">${original}</span>`;
+                });
+            }, { once: true });
+        }
+
+
+        // ---------------------------
+        // Role dropdown -> uses existing /admin PUT route (user_id + new_role)
+        // ---------------------------
+        function attachRoleHandler(selectElem, userId) {
+            selectElem.addEventListener("change", async () => {
+                const newRole = selectElem.value;
+                try {
+                    const res = await fetch("/admin", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ user_id: userId, new_role: newRole })
+                    });
+                    if (!res.ok) {
+                        const err = await res.json().catch(()=>({error:"Unknown"}));
+                        alert("Failed to change role: " + (err.error || res.statusText));
+                        // optionally refresh to restore previous value
+                        fetchAdminData();
+                        return;
+                    }
+                    fetchAdminData();
+                } catch (e) {
+                    console.error(e);
+                    alert("Network error while updating role");
+                    fetchAdminData();
+                }
+            });
+        }
+
+        // ---------------------------
+        // Actions buttons (delegates to your existing functions)
+        // ---------------------------
+        function attachActionButtons(actionsCell, userId) {
+            // ensure existing actions exist in global scope: loginUser, deleteUser, banUser, showUserNotificationModal
+            const loginBtn = actionsCell.querySelector(".login-btn");
+            const deleteBtn = actionsCell.querySelector(".delete-btn");
+            const banBtn = actionsCell.querySelector(".ban-btn");
+            const notifyBtn = actionsCell.querySelector(".notify-btn");
+
+            if (loginBtn) loginBtn.addEventListener("click", () => typeof loginUser === "function" && loginUser(userId));
+            if (deleteBtn) deleteBtn.addEventListener("click", () => typeof deleteUser === "function" && deleteUser(userId));
+            if (banBtn) banBtn.addEventListener("click", () => typeof banUser === "function" && banUser(userId));
+            if (notifyBtn) notifyBtn.addEventListener("click", () => typeof showUserNotificationModal === "function" && showUserNotificationModal(userId));
+        }
+
+        function confirmViolations(userId, btn) {
+            const input = btn.parentElement.parentElement.querySelector("input");
+            const newValue = parseInt(input.value);
+            if (isNaN(newValue) || newValue < 0) return alert("Invalid value");
+
+            // Send to backend (placeholder)
+            console.log(`Set malicious violations for ${userId} to ${newValue}`);
+
+            const cell = btn.closest("td");
+            cell.innerHTML = newValue;
+            if (newValue >= 8) cell.className = "editable malicious violations-high";
+            else if (newValue >= 5) cell.className = "editable malicious violations-medium";
+            else cell.className = "editable malicious";
+        }
+
+
+        async function resetViolations(userId) {
+            try {
+                const response = await fetch("/admin/reset_violations", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: userId })
+                });
+
+                if (response.ok) {
+                    alert(`Malicious violations reset for user ${userId}`);
+                    fetchAdminData(); // Refresh the table
+                } else {
+                    const data = await response.json();
+                    alert(`Failed to reset: ${data.error || "Unknown error"}`);
+                }
+            } catch (error) {
+                console.error("Error resetting violations:", error);
+                alert("Unexpected error. Check console.");
+            }
         }
 
 
@@ -909,7 +1347,7 @@
         }
 
         async function banUser(userId) {
-            if (confirm("Are you sure you want to suspend this user?")) {
+            if (confirm("Are you sure you want to ban/unban this user?")) {
                 try {
                     const response = await fetch("/admin/ban", {
                         method: "POST",
@@ -921,13 +1359,13 @@
                     });
 
                     if (response.ok) {
-                        alert("User suspended successfully.");
+                        alert("User banned/unbanned successfully.");
                         fetchAdminData();
                     } else {
-                        alert("Failed to suspend user.");
+                        alert("Failed to ban/unban user.");
                     }
                 } catch (error) {
-                    console.error("Error suspending user:", error);
+                    console.error("Error banning/unbanning user:", error);
                 }
             }
         }
