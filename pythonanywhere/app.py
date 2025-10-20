@@ -95,7 +95,7 @@ if TWOFA_FERNET_KEY:
 else:
     fernet = None  # fall back to plain storage (not recommended)
 
-REQUIRE_2FA_ALWAYS = True
+REQUIRE_2FA_ALWAYS = False
 REQUIRE_2FA_ON_NEW_IP = True
 RANDOM_REQUIRE_2FA = True
 
