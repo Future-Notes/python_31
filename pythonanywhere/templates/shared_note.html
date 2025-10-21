@@ -1,310 +1,231 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>{{ note_title or "Shared note" }} — Future Notes</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>{{ note_title or "Shared note" }} — Future Notes</title>
 
-  <style>
-  /* =========================
-     Theme variables
-     ========================= */
-  :root{
-    --bg-1: #0f1720;
-    --bg-2: #151922;
-    --card: #1f262b;
-    --muted: #bfc6cb;
-    --accent: #f05a4a;
-    --soft: rgba(255,255,255,0.03);
-    --glass: rgba(255,255,255,0.04);
-    --fg: #e9eef1;
-    --glass-border: rgba(255,255,255,0.06);
-    --radius: 14px;
-  }
+<style>
+/* Use your existing variables and gray theme */
+:root{
+  --bg-color: #2c2c2c;
+  --hdr-color: #3a3a3a;
+  --ctr-color: #1e1e1e;
+  --btn-color: #424242;
+  --fg: #e0e0e0;
+  --muted: #bdbdbd;
+  --accent: #b33a3a;
+}
 
-  /* =========================
-     Page texture & layout
-     ========================= */
-  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;}
-  body{
-    background:
-      radial-gradient(1200px 600px at 10% 10%, rgba(240,90,74,0.06), transparent 8%),
-      radial-gradient(900px 400px at 85% 90%, rgba(80,150,255,0.03), transparent 6%),
-      linear-gradient(180deg, var(--bg-1), var(--bg-2) 60%);
-    color:var(--fg);
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-    overflow-y:auto;
-  }
+/* Page base */
+html,body { height:100%; margin:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--fg); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
 
-  /* subtle paper grain via repeating linear gradients */
-  body::before{
-    content:"";
-    position:fixed; inset:0; pointer-events:none; z-index:0;
-    background-image:
-      linear-gradient(transparent 0 30%, rgba(255,255,255,0.008) 31%),
-      linear-gradient(90deg, rgba(255,255,255,0.006) 1px, transparent 1px);
-    background-size: 100% 60px, 6px 100%;
-    mix-blend-mode: overlay;
-    opacity:0.85;
-  }
+/* subtle texture (very light) */
+body::before {
+  content: "";
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(255,255,255,0.01), transparent 6%),
+    radial-gradient(circle at 85% 85%, rgba(0,0,0,0.03), transparent 8%);
+  opacity: 0.8;
+}
 
-  /* =========================
-     Top hero/header
-     ========================= */
-  header.page-hero{
-    position:relative;
-    z-index:2;
-    padding:40px 28px 18px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-  }
-  .hero-left{
-    max-width:900px;
-  }
-  .brand {
-    font-weight:800;
-    font-size:28px;
-    letter-spacing: -0.02em;
-    color:var(--fg);
-    display:flex;
-    align-items:center;
-    gap:12px;
-  }
-  .brand .logo {
-    width:44px;height:44px;border-radius:10px;
-    background: linear-gradient(135deg,var(--accent),#d76b5a);
-    box-shadow: 0 6px 22px rgba(16,20,24,0.6), inset 0 -6px 18px rgba(255,255,255,0.04);
-    display:flex;align-items:center;justify-content:center;font-weight:700;color:white;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
-  }
-  .hero-title {
-    margin-top:6px;
-    font-size:18px;
-    color:var(--muted);
-  }
-  .hero-main {
-    font-size:42px;
-    line-height:1;
-    margin:6px 0 0 0;
-    font-weight:900;
-    text-shadow: 0 6px 24px rgba(0,0,0,0.6);
-  }
+/* Header (small, consistent with app) */
+header.shared-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.brand { display:flex; align-items:center; gap:12px; }
+.brand img { width:40px; height:40px; border-radius:8px; object-fit:cover; background:var(--ctr-color); box-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+.brand .title { font-weight:700; font-size:16px; color:var(--fg); }
+.header-actions a { text-decoration:none; color:var(--fg); background: var(--ctr-color); padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); font-weight:600; font-size:13px; }
+.header-actions a.secondary { background:transparent; border:1px solid rgba(255,255,255,0.04); color:var(--muted); }
 
-  /* right side actions (login/signup) */
-  .hero-actions {
-    display:flex;
-    gap:12px;
-    align-items:center;
-  }
-  .cta {
-    background: linear-gradient(180deg, rgba(255,255,255,0.04), var(--glass));
-    color:var(--fg);
-    border: 1px solid var(--glass-border);
-    padding:8px 12px;
-    border-radius:10px;
-    text-decoration:none;
-    font-weight:600;
-    font-size:14px;
-  }
-  .cta.secondary { background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--muted); }
+/* Center container */
+main.shared-main {
+  min-height: calc(100vh - 64px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 36px 20px;
+  z-index:1;
+}
 
-  /* =========================
-     Center content wrapper
-     ========================= */
-  main.container{
-    display:flex;
-    justify-content:center;
-    padding:30px 20px 80px;
-    z-index:2;
-  }
+/* card centered & OCD-friendly */
+.shared-note-container {
+  width:100%;
+  max-width: 880px;
+  display:flex;
+  justify-content:center;
+  padding: 8px;
+  box-sizing:border-box;
+}
+.shared-note-card {
+  width:100%;
+  background: var(--ctr-color);
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.03);
+  color: var(--fg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 
-  /* card that holds the note */
-  .note-wrap {
-    width:100%;
-    max-width:900px;
-    display:flex;
-    gap:20px;
-    align-items:flex-start;
-  }
+/* header inside card */
+.shared-note-header {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+.shared-note-title { margin:0; font-size:20px; font-weight:700; }
+.shared-note-tag { background: var(--btn-color); color:var(--fg); padding:6px 10px; border-radius:999px; font-weight:600; font-size:13px; }
 
-  .note-card {
-    flex:1;
-    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-    border-radius:var(--radius);
-    padding:22px;
-    box-shadow:
-      0 20px 60px rgba(6,8,10,0.6),
-      inset 0 1px 0 rgba(255,255,255,0.02);
-    border: 1px solid rgba(255,255,255,0.03);
-    position:relative;
-    overflow:hidden;
-  }
+/* body of the note */
+.shared-note-body {
+  background: var(--btn-color);
+  padding: 12px;
+  border-radius: 8px;
+  color: var(--fg);
+  font-size:15px;
+  line-height:1.5;
+  max-height: 62vh;
+  overflow: auto;
+}
 
-  /* subtle pattern inside card edge */
-  .note-card::before {
-    content:"";
-    position:absolute;
-    left:-20%; top:-10%;
-    width:160%; height:160%;
-    background: radial-gradient(circle at 20% 20%, rgba(255,255,255,0.02), transparent 8%),
-                radial-gradient(circle at 80% 80%, rgba(255,255,255,0.01), transparent 6%);
-    transform: rotate(-8deg);
-    pointer-events:none;
-    opacity:0.9;
-  }
+/* bottom area inside the card - share + attachments */
+.card-bottom {
+  margin-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.03);
+  padding-top: 12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  align-items:center; /* center the contents */
+}
 
-  .note-header {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    margin-bottom:10px;
-  }
-  .note-title {
-    font-size:20px;
-    font-weight:700;
-    color:var(--fg);
-    margin:0;
-  }
-  .note-meta {
-    color:var(--muted);
-    font-size:13px;
-  }
+/* share row */
+.share-row {
+  width:100%;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content:center;
+}
+.share-url {
+  flex: 1 1 auto;
+  max-width: 740px;
+  background: rgba(255,255,255,0.02);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size:13px;
+  color: var(--fg);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  border: 1px solid rgba(255,255,255,0.02);
+  text-align:center;
+}
 
-  .note-body {
-    background: transparent;
-    color: #e9eef1;
-    font-size:15px;
-    line-height:1.52;
-    padding-right:6px;
-    max-height:62vh;
-    overflow:auto;
-    border-radius:10px;
-  }
+/* copy + report buttons */
+.copy-btn, .report-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 9px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight:700;
+  font-size:13px;
+}
+.report-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(255,255,255,0.04);
+  font-weight:600;
+}
 
-  /* fade hint for overflow inside body */
-  .note-body:after {
-    content:"";
-    position:sticky;
-    display:block;
-    pointer-events:none;
-    width:100%; height:48px;
-    margin-top:-48px;
-    background: linear-gradient(180deg, rgba(255,255,255,0), var(--bg-2));
-  }
+/* attachments listed below share row */
+.attachments {
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:8px;
+}
+.attachment-row {
+  background: rgba(255,255,255,0.01);
+  padding: 8px;
+  border-radius: 8px;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  color:var(--fg);
+}
+.attachment-row a { color:var(--fg); text-decoration:none; font-weight:600; }
+.attachment-row small { display:block; color:var(--muted); font-size:12px; margin-top:4px; }
 
-  /* tag pill */
-  .note-tag {
-    display:inline-block;
-    background: rgba(255,255,255,0.03);
-    color:var(--muted);
-    padding:6px 10px;
-    border-radius:999px;
-    font-weight:600;
-    font-size:13px;
-    border: 1px solid rgba(255,255,255,0.02);
-  }
+/* footer small */
+.shared-footer { color:var(--muted); font-size:13px; text-align:center; margin-top:6px; }
 
-  /* attachment column */
-  .side-panel {
-    width:260px;
-    min-width:180px;
-    max-height:72vh;
-    background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
-    border-radius:12px;
-    padding:12px;
-    border:1px solid rgba(255,255,255,0.03);
-    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
-    color:var(--muted);
-    font-size:14px;
-  }
-  .side-panel h4 { margin:0 0 8px 0; color:var(--fg); font-size:15px; }
-  .attachment-row { display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px; background:var(--soft); margin-bottom:8px; }
-  .attachment-row a { color:var(--fg); text-decoration:none; font-weight:600; }
-  .attachment-row small { color:var(--muted); font-size:12px; display:block; margin-top:2px; }
-
-  /* copy link area (top of side panel) */
-  .share-box { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
-  .share-url { flex:1; padding:8px 10px; background:rgba(255,255,255,0.02); border-radius:8px; font-size:13px; color:var(--muted); border:1px solid rgba(255,255,255,0.02); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .btn { padding:8px 10px; border-radius:8px; border:none; cursor:pointer; background:var(--accent); color:white; font-weight:700; font-size:13px; }
-  .btn.ghost { background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.04); font-weight:600; }
-
-  /* footer small print */
-  .shared-footer { margin-top:18px; color:var(--muted); font-size:13px; text-align:center; }
-
-  /* responsive */
-  @media (max-width:960px){
-    .note-wrap { flex-direction:column-reverse; align-items:stretch; gap:18px; }
-    .side-panel { width:100%; max-height:none; order:1; }
-    .note-card { order:2; }
-  }
-  </style>
+/* responsive */
+@media (max-width:760px) {
+  .share-row { flex-direction:column; gap:8px; }
+  .share-url { max-width:100%; text-align:center; }
+  .copy-btn, .report-btn { width:100%; padding:10px; }
+}
+</style>
 </head>
 <body>
 
-  <!-- Hero header -->
-  <header class="page-hero" role="banner">
-    <div class="hero-left">
-      <div class="brand">
-        <div class="logo">FN</div>
-        <div>
-          <div style="font-size:13px;color:var(--muted)">Public share</div>
-          <div class="hero-main">Future Notes</div>
-        </div>
+<header class="shared-header" role="banner">
+  <div class="brand">
+    <img src="/android-chrome-512x512.png" alt="icon" />
+    <div>
+      <div class="title">Future Notes</div>
+      <div class="subtitle" style="font-size:12px;color:var(--muted)">Shared note</div>
+    </div>
+  </div>
+
+  <div class="header-actions">
+    <a class="secondary" href="/login_page">Log in</a>
+    <a href="/signup_page">Sign up — it's free</a>
+  </div>
+</header>
+
+<main class="shared-main" role="main">
+  <div class="shared-note-container" aria-live="polite">
+    <article class="shared-note-card" role="article" aria-labelledby="shared-note-title">
+      <div class="shared-note-header">
+        <h2 id="shared-note-title" class="shared-note-title">{{ note_title or 'Untitled' }}</h2>
+        {% if note_tag %}<div class="shared-note-tag">{{ note_tag }}</div>{% endif %}
       </div>
-      <div class="hero-title">A single note — shared publicly</div>
-    </div>
 
-    <div class="hero-actions">
-      <a class="cta secondary" href="/login">Log in</a>
-      <a class="cta" href="/signup">Create account — it's free</a>
-    </div>
-  </header>
+      <div class="shared-note-body" id="shared-note-body">
+        {{ note_html|safe }}
+      </div>
 
-  <!-- Center content -->
-  <main class="container" role="main">
-    <div class="note-wrap" aria-live="polite">
-
-      <!-- main note card -->
-      <article class="note-card" role="article" aria-labelledby="shared-note-title">
-
-        <div class="note-header">
-          <h2 id="shared-note-title" class="note-title">{{ note_title or "Untitled" }}</h2>
-          <div class="note-meta">
-            {% if note_tag %}<span class="note-tag">{{ note_tag }}</span>{% endif %}
-          </div>
-        </div>
-
-        <div class="note-body" id="shared-note-body">
-          {{ note_html|safe }}
-        </div>
-
-        <div class="shared-footer">
-          <small>Shared publicly via a link. <a href="/" style="color:var(--muted);text-decoration:underline">Back to app</a></small>
-        </div>
-      </article>
-
-      <!-- side panel: share + attachments -->
-      <aside class="side-panel" role="complementary" aria-label="Share & attachments">
-        <h4>Share link</h4>
-        <div class="share-box" title="Copy the public link">
+      <!-- bottom: share + attachments inside the card -->
+      <div class="card-bottom">
+        <div class="share-row">
           <div id="share-url" class="share-url">{{ url_for('public_share', token=token, _external=True) }}</div>
-          <button id="copy-link-btn" class="btn">Copy</button>
+          <button id="copy-btn" class="copy-btn" aria-label="Copy share link">Copy</button>
+          <button id="report-btn" class="report-btn" aria-label="Report link">Report</button>
         </div>
 
-        <div style="margin-bottom:12px;color:var(--muted);font-size:13px">
-          <strong>Views:</strong> <span id="share-views">—</span>
-        </div>
-
-        <h4 style="margin-top:6px">Attachments</h4>
-        <div id="attachments-list" style="margin-top:8px">
+        <div class="attachments" id="attachments">
           {% if attachments and attachments|length %}
             {% for a in attachments %}
               <div class="attachment-row">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 13v6a2 2 0 0 1-2 2H7a4 4 0 0 1-4-4V7a2 2 0 0 1 2-2h6" stroke="currentColor" stroke-opacity="0.7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <div style="flex:1">
                   <a href="{{ url_for('shared_attachment_download', token=token, upload_id=a.upload_id) }}" target="_blank" rel="noopener noreferrer">{{ a.filename }}</a>
                   <small>{{ (a.size_bytes // 1024) if a.size_bytes else '' }} KB • {{ a.mimetype or '' }}</small>
@@ -312,99 +233,156 @@
               </div>
             {% endfor %}
           {% else %}
-            <div style="color:var(--muted);font-size:14px">No attachments</div>
+            <div style="color:var(--muted); text-align:center; width:100%;">No attachments</div>
           {% endif %}
         </div>
 
-        <div style="margin-top:12px">
-          <button id="report-link-btn" class="btn ghost" style="width:100%">Report this link</button>
+        <div class="shared-footer">
+          <small>This note is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a></small>
         </div>
+      </div>
+    </article>
+  </div>
+</main>
 
-      </aside>
+<script>
+/*
+  Client script:
+  - Copy button
+  - Report button
+  - Single fingerprint POST (sendBeacon or fetch keepalive)
+  - No public view count fetching
+*/
+(function(){
+  const token = {{ token|tojson }};
+  const noteId = {{ note_id|tojson }};
 
-    </div>
-  </main>
+  const copyBtn = document.getElementById('copy-btn');
+  const shareUrlEl = document.getElementById('share-url');
+  const reportBtn = document.getElementById('report-btn');
 
-  <!-- small bottom script -->
-  <script>
-  (function() {
-    const token = {{ token|tojson }};
-    const shareUrl = document.getElementById('share-url').textContent.trim();
-    const copyBtn = document.getElementById('copy-link-btn');
-    const viewsEl = document.getElementById('share-views');
-    const reportBtn = document.getElementById('report-link-btn');
+  function flash(el, text, ms=1200){
+    if(!el) return;
+    const orig = el.textContent;
+    el.textContent = text;
+    setTimeout(()=> el.textContent = orig, ms);
+  }
 
+  if (copyBtn && shareUrlEl) {
     copyBtn.addEventListener('click', async () => {
+      const url = shareUrlEl.textContent.trim();
+      if (!url) return;
       try {
-        await navigator.clipboard.writeText(shareUrl);
-        copyBtn.textContent = 'Copied!';
-        setTimeout(()=> copyBtn.textContent = 'Copy', 1500);
-      } catch(e) {
-        // fallback
-        const ok = window.prompt('Copy this link', shareUrl);
-        if (ok !== null) {
-          copyBtn.textContent = 'Copied!';
-          setTimeout(()=> copyBtn.textContent = 'Copy', 1500);
-        }
+        await navigator.clipboard.writeText(url);
+        flash(copyBtn, 'Copied', 1200);
+      } catch (e) {
+        const ok = prompt('Copy this link', url);
+        if (ok !== null) flash(copyBtn, 'Copied', 1200);
       }
     });
+  }
 
-    reportBtn.addEventListener('click', () => {
-      // simple mailto for now — replace with your own report endpoint if desired
-      const subject = encodeURIComponent('Report shared note: ' + shareUrl);
-      const body = encodeURIComponent('I want to report this shared note: ' + shareUrl + '\\nReason: ');
-      window.location.href = 'mailto:abuse@example.com?subject=' + subject + '&body=' + body;
+  if (reportBtn && shareUrlEl) {
+    reportBtn.addEventListener('click', ()=> {
+      const url = encodeURIComponent(shareUrlEl.textContent.trim());
+      const subject = encodeURIComponent('Report shared note: ' + shareUrlEl.textContent.trim());
+      const body = encodeURIComponent('I want to report this shared note: ' + shareUrlEl.textContent.trim() + '\\nReason: ');
+      window.location.href = 'mailto:nathanvcappellen@solcon.nl?subject=' + subject + '&body=' + body;
     });
+  }
 
-    // fetch share meta (views) if you provide an endpoint for it
-    async function fetchShareMeta() {
-      try {
-        const resp = await fetch(`/notes/{{ note_id }}/share`);
-        if (!resp.ok) return;
-        const data = await resp.json();
-        if (data && typeof data.access_count !== 'undefined') {
-          viewsEl.textContent = data.access_count;
-        }
-      } catch(e){ /* ignore */ }
+  // compute fingerprint hash
+  async function computeFingerprintHash(){
+    try {
+      const parts = [
+        navigator.userAgent || '',
+        navigator.language || '',
+        screen.width + 'x' + screen.height,
+        Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+        new Date().getTimezoneOffset()
+      ].join('||');
+      const enc = new TextEncoder().encode(parts);
+      const buf = await crypto.subtle.digest('SHA-256', enc);
+      return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    } catch(e){
+      return null;
     }
-    fetchShareMeta();
+  }
 
-    // fingerprinting and post to /s/<token>/visit
-    async function sendFingerprint() {
-      try {
-        const parts = [
-          navigator.userAgent || '',
-          navigator.language || '',
-          screen.width + 'x' + screen.height,
-          Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-          new Date().getTimezoneOffset()
-        ].join('||');
+  // Send exactly one visit POST; use sendBeacon if available
+  async function sendFingerprintOnce(tokenStr){
+    if (!tokenStr) return;
+    if (window.__sharedFingerprintSent) return;
+    window.__sharedFingerprintSent = true;
 
-        const enc = new TextEncoder().encode(parts);
-        const buf = await crypto.subtle.digest('SHA-256', enc);
-        const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-        await fetch(`/s/${encodeURIComponent(token)}/visit`, {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({fingerprint_hash: hex})
-        });
-      } catch(e) { /* ignore fingerprint failures */ }
+    const fp = await computeFingerprintHash();
+    if (!fp) return;
+
+    const url = `/s/${encodeURIComponent(tokenStr)}/visit`;
+    const payload = JSON.stringify({ fingerprint_hash: fp });
+
+    try {
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        const ok = navigator.sendBeacon(url, blob);
+        if (ok) return;
+      }
+    } catch(e){ /* ignore */ }
+
+    // fallback to fetch keepalive
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: payload,
+        keepalive: true
+      });
+    } catch(e){ /* ignore */ }
+  }
+
+  // small delay so page rendering is not blocked
+  setTimeout(()=> sendFingerprintOnce(token), 250);
+
+  // attempt final send on pagehide if not sent yet
+  window.addEventListener('pagehide', function(){
+    if (!window.__sharedFingerprintSent) {
+      (async () => {
+        const fp = await computeFingerprintHash();
+        if (!fp) return;
+        const url = `/s/${encodeURIComponent(token)}/visit`;
+        const payload = JSON.stringify({ fingerprint_hash: fp });
+        try {
+          if (navigator.sendBeacon) {
+            const blob = new Blob([payload], { type: 'application/json' });
+            navigator.sendBeacon(url, blob);
+            window.__sharedFingerprintSent = true;
+          } else {
+            try {
+              const xhr = new XMLHttpRequest();
+              xhr.open('POST', url, false); // synchronous (last resort)
+              xhr.setRequestHeader('Content-Type','application/json');
+              xhr.send(payload);
+              window.__sharedFingerprintSent = true;
+            } catch(e){ /* ignore */ }
+          }
+        } catch(e){ /* ignore */ }
+      })();
     }
-    // call fingerprint but don't block rendering
-    setTimeout(sendFingerprint, 350);
+  });
 
-    // small accessibility: allow keyboard copy when focus is on share-url
-    const shareUrlEl = document.getElementById('share-url');
+  // accessibility: let Enter on share-url copy it
+  if (shareUrlEl && copyBtn) {
     shareUrlEl.tabIndex = 0;
     shareUrlEl.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        navigator.clipboard && navigator.clipboard.writeText(shareUrl);
-        copyBtn.textContent = 'Copied!';
-        setTimeout(()=> copyBtn.textContent = 'Copy', 1500);
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        copyBtn.click();
       }
     });
+  }
 
-  })();
-  </script>
+})();
+</script>
+
 </body>
 </html>
