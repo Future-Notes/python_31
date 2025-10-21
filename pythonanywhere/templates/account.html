@@ -821,7 +821,7 @@
               window.location.href = "/login_page?suspended=true";
               return false;
             }
-            // 401 or anything else means “not authenticated”
+            window.location.href = "/login_page"
             return false;
           } catch (err) {
             console.error("Session validation error:", err);

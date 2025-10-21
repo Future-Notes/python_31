@@ -1,6 +1,5 @@
 # ------------------------------Imports--------------------------------
-import filetype
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for
+from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for, send_file
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
 from functools import wraps
@@ -22,7 +21,6 @@ import json
 import uuid
 import random
 import string
-from collections import deque
 import time
 from datetime import timezone, datetime, timedelta
 import glob
@@ -87,7 +85,8 @@ _TIME_EPS = timedelta(seconds=1)
 login_tokens = {}        # login_token -> {user_id, expires_at, ip}
 pending_twofa = {}       # user_id -> {secret, created_at}
 login_2fa_attempts = {}  # login_token -> attempts
-
+# how long to consider a visit "the same visitor" (in seconds)
+SHARE_VISIT_WINDOW_SECONDS = 30 * 60  # 30 minutes — change as you like
 # Fernet key for encrypting TOTP secrets (store in env var)
 TWOFA_FERNET_KEY = "C7Pi0I9nSCWyVa79gIRKYH3aze1MKjilpUTSH9bJTxo="
 if TWOFA_FERNET_KEY:
@@ -95,7 +94,7 @@ if TWOFA_FERNET_KEY:
 else:
     fernet = None  # fall back to plain storage (not recommended)
 
-REQUIRE_2FA_ALWAYS = True
+REQUIRE_2FA_ALWAYS = False
 REQUIRE_2FA_ON_NEW_IP = True
 RANDOM_REQUIRE_2FA = True
 
@@ -650,6 +649,27 @@ class Note(db.Model):
             "group_id": self.group_id,
             "folder_id": self.folder_id
         }
+
+class Share(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, index=True, nullable=False)
+    note_id = db.Column(db.Integer, db.ForeignKey('note.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # owner
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    access_count = db.Column(db.Integer, default=0, nullable=False)
+
+    note = db.relationship('Note', backref='shares')
+
+class ShareVisit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    share_id = db.Column(db.Integer, db.ForeignKey('share.id'), nullable=False)
+    ip = db.Column(db.String(100), nullable=True)
+    user_agent = db.Column(db.Text, nullable=True)
+    fingerprint_hash = db.Column(db.String(128), nullable=True)  # store a hash, not raw fingerprint
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    share = db.relationship('Share', backref='visits')
     
 class Folder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -838,6 +858,14 @@ class FlowCommit(db.Model):
     todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
+# Helper to get client IP (works behind proxies if you set them)
+def client_ip():
+    xff = request.headers.get('X-Forwarded-For', None)
+    if xff:
+        # if multiple IPs, first is original client
+        return xff.split(',')[0].strip()
+    return request.remote_addr
+
 def encrypt_secret(plain: str) -> str:
     if not fernet:
         return plain
@@ -3387,6 +3415,208 @@ def manage_2fa():
     return render_template("setup_2fa.html")
 
 #---------------------------------API routes--------------------------------
+
+# Create share link (owner only)
+@app.route('/notes/<int:note_id>/share', methods=['POST'])
+@require_session_key
+def create_share(note_id):
+    note = Note.query.get(note_id)
+    if not note or note.user_id != g.user_id:
+        return jsonify({"error": "Note not found or access denied"}), 404
+
+    # optional: expiration in minutes provided by client
+    data = request.json or {}
+    expires_minutes = data.get('expires_minutes')  # e.g. 60 -> expires in 60 minutes
+    expires_at = None
+    if expires_minutes:
+        try:
+            expires_at = datetime.utcnow() + timedelta(minutes=int(expires_minutes))
+        except Exception:
+            pass
+
+    token = secrets.token_urlsafe(24)
+    share = Share(token=token, note_id=note.id, user_id=g.user_id, expires_at=expires_at)
+    db.session.add(share)
+    db.session.commit()
+
+    share_url = url_for('public_share', token=token, _external=True)
+    return jsonify({"token": token, "url": share_url}), 201
+
+# Revoke share (owner only)
+@app.route('/notes/share/<token>', methods=['DELETE'])
+@require_session_key
+def revoke_share(token):
+    share = Share.query.filter_by(token=token, user_id=g.user_id).first()
+    if not share:
+        return jsonify({"error": "Share not found or access denied"}), 404
+    try:
+        ShareVisit.query.filter_by(share_id=share.id).delete()
+        db.session.delete(share)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "DB error while revoking share"}), 500
+    return jsonify({"message": "Share revoked"}), 200
+
+
+from datetime import datetime
+from flask import render_template
+
+@app.route('/s/<token>', methods=['GET'])
+def public_share(token):
+    share = Share.query.filter_by(token=token).first()
+    if not share:
+        return render_template('shared_not_found.html', token=token), 404
+
+    # expired -> friendly page (410)
+    now = datetime.utcnow()
+    if share.expires_at and now > share.expires_at:
+        return render_template('share_expired.html', token=token, expired_at=share.expires_at), 410
+
+    note = Note.query.get(share.note_id)
+    if not note:
+        return render_template('shared_not_found.html', token=token), 404
+
+    # Do NOT increment share.access_count here — counting happens on POST /s/<token>/visit
+    safe_note_html = sanitize_html(note.note)
+
+    attachments = []
+    for nu in NoteUpload.query.filter_by(note_id=note.id).all():
+        up = Upload.query.get(nu.upload_id)
+        if up and not up.deleted:
+            attachments.append({
+                "upload_id": up.id,
+                "filename": up.original_filename,
+                "size_bytes": up.size_bytes,
+                "mimetype": up.mimetype
+            })
+
+    return render_template(
+        'shared_note.html',
+        note_id=note.id,
+        note_title=note.title,
+        note_html=safe_note_html,
+        note_tag=note.tag,
+        attachments=attachments,
+        token=token
+    ), 200
+
+# Endpoint to record a client-side fingerprint (hashed) - optional but recommended for unique visitors
+@app.route('/s/<token>/visit', methods=['POST'])
+def public_share_visit(token):
+    """
+    Count a visit in a deduplicated way:
+      - require both fingerprint_hash (from client) and IP (from request)
+      - deduplicate by exact (fingerprint_hash + ip) within SHARE_VISIT_WINDOW_SECONDS
+      - if existing visit within window -> update its timestamp (extend) but do not increment counter
+      - else -> create new visit and increment share.access_count
+    """
+    share = Share.query.filter_by(token=token).first()
+    if not share:
+        return jsonify({"ok": False, "reason": "share_not_found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    fingerprint_hash = (data.get('fingerprint_hash') or '').strip()
+    ip = client_ip()  # your helper that respects X-Forwarded-For if configured
+
+    # If either missing, do not count (privacy/respect). Return OK so client doesn't retry.
+    if not fingerprint_hash or not ip:
+        current_app.logger.debug("Visit ignored: missing fingerprint or ip (token=%s, ip=%s, fp=%s)", token, bool(ip), bool(fingerprint_hash))
+        return jsonify({"ok": True, "counted": False, "reason": "missing_fp_or_ip"}), 200
+
+    now = datetime.utcnow()
+    window_start = now - timedelta(seconds=SHARE_VISIT_WINDOW_SECONDS)
+
+    try:
+        # Look for an existing visit within the window for same share + fingerprint + ip
+        existing = (ShareVisit.query
+                    .filter(ShareVisit.share_id == share.id,
+                            ShareVisit.fingerprint_hash == fingerprint_hash,
+                            ShareVisit.ip == ip,
+                            ShareVisit.created_at >= window_start)
+                    .with_for_update(read=False)  # optional, may require DB support
+                    .first())
+
+        if existing:
+            # Extend the window: update timestamp but DO NOT increment access_count
+            existing.created_at = now
+            db.session.add(existing)
+            db.session.commit()
+            return jsonify({"ok": True, "counted": False, "reason": "extended"}), 200
+
+        # No existing recent visit -> create one and increment access_count
+        visit = ShareVisit(
+            share_id=share.id,
+            ip=ip,
+            user_agent=request.headers.get('User-Agent'),
+            fingerprint_hash=fingerprint_hash,
+            created_at=now
+        )
+        db.session.add(visit)
+        # increment access_count atomically
+        share.access_count = (share.access_count or 0) + 1
+        db.session.add(share)
+        db.session.commit()
+        return jsonify({"ok": True, "counted": True, "new_count": share.access_count}), 200
+
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to record visit for share token=%s", token)
+        # Return ok so client won't spam; counting failed but app still works
+        return jsonify({"ok": False, "reason": "db_error"}), 500
+
+# Attachment download only for valid shares (do not reuse the normal /uploads/ download without permission)
+@app.route('/s/<token>/attachments/<int:upload_id>', methods=['GET'])
+def shared_attachment_download(token, upload_id):
+    share = Share.query.filter_by(token=token).first()
+    if not share:
+        abort(404)
+
+    # ensure upload belongs to this note
+    linked = NoteUpload.query.filter_by(note_id=share.note_id, upload_id=upload_id).first()
+    if not linked:
+        abort(404)
+
+    up = Upload.query.get(upload_id)
+    if not up or up.deleted:
+        abort(404)
+
+    file_path = os.path.join(UPLOAD_FOLDER, up.stored_filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    # serve file (adjust your storage strategy - maybe use send_from_directory or stream from S3)
+    return send_file(file_path, as_attachment=True, download_name=up.original_filename)
+
+@app.route('/notes/<int:note_id>/share', methods=['GET'])
+@require_session_key
+def get_share_for_note(note_id):
+    # Ensure the note exists & belongs to the user
+    note = Note.query.get(note_id)
+    if not note or note.user_id != g.user_id:
+        return jsonify({"error": "Note not found or access denied"}), 404
+
+    # Find active (non-expired) shares for this note owned by this user.
+    now = datetime.utcnow()
+    # Prefer non-expired shares; order by created_at desc so newest first
+    share = (Share.query
+             .filter(Share.note_id == note_id, Share.user_id == g.user_id)
+             .filter((Share.expires_at == None) | (Share.expires_at > now))
+             .order_by(Share.created_at.desc())
+             .first())
+
+    if not share:
+        return jsonify({"error": "No active share found"}), 404
+
+    # Build external URL to public share view
+    share_url = url_for('public_share', token=share.token, _external=True)
+
+    return jsonify({
+        "token": share.token,
+        "url": share_url,
+        "expires_at": share.expires_at.isoformat() if share.expires_at else None,
+        "access_count": share.access_count or 0
+    }), 200
 
 # -------------------------
 # Public API routes (no auth)
@@ -9257,37 +9487,43 @@ def update_delete_note(note_id):
                 note.folder_id = None
         # If folder_id is not in data, don't change the existing value
 
-        requested_attachments = set(data.get('attachments') or [])
-        existing_attachments = current_attachment_ids(note.id)
+        # existing_attachments helper stays the same
+        if 'attachments' in data:
+            requested_attachments = set(data.get('attachments') or [])
+            existing_attachments = current_attachment_ids(note.id)
 
-        to_add = requested_attachments - existing_attachments
-        to_remove = existing_attachments - requested_attachments
+            to_add = requested_attachments - existing_attachments
+            to_remove = existing_attachments - requested_attachments
 
-        for uid in list(to_add):
-            up = Upload.query.get(uid)
-            if not up or up.user_id != g.user_id or up.deleted:
-                return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
+            # validate to_add
+            for uid in list(to_add):
+                up = Upload.query.get(uid)
+                if not up or up.user_id != g.user_id or up.deleted:
+                    return jsonify({"error": f"Invalid attachment to add: {uid}"}), 400
 
-        try:
-            for uid in to_add:
-                nu = NoteUpload(note_id=note.id, upload_id=uid)
-                db.session.add(nu)
-
-            for uid in to_remove:
-                nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
-                if nu_row:
-                    db.session.delete(nu_row)
-                    
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"error": "Database error on updating note attachments."}), 500
-
-        for uid in to_remove:
             try:
-                ok, msg = remove_upload_if_orphan(uid)
+                for uid in to_add:
+                    nu = NoteUpload(note_id=note.id, upload_id=uid)
+                    db.session.add(nu)
+
+                for uid in to_remove:
+                    nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
+                    if nu_row:
+                        db.session.delete(nu_row)
+
+                db.session.commit()
             except Exception:
-                pass
+                db.session.rollback()
+                return jsonify({"error": "Database error on updating note attachments."}), 500
+
+            # remove orphaned uploads outside DB transaction (as you already do)
+            for uid in to_remove:
+                try:
+                    ok, msg = remove_upload_if_orphan(uid)
+                except Exception:
+                    pass
+        # else: attachments key not present -> do not touch attachments
+
 
         return jsonify({"message": "Note updated successfully!"}), 200
 
