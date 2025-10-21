@@ -182,6 +182,7 @@ main.shared-main {
   .share-row { flex-direction:column; gap:8px; }
   .share-url { max-width:100%; text-align:center; }
   .copy-btn, .report-btn { width:100%; padding:10px; }
+  .header-actions {display: flex;}
 }
 </style>
 </head>
@@ -214,6 +215,31 @@ main.shared-main {
         {{ note_html|safe }}
       </div>
 
+      <div class="attachments" id="attachments">
+          {% if attachments and attachments|length %}
+        {% for a in attachments %}
+          <div class="attachment-row">
+            <div style="flex:1">
+          <a href="{{ url_for('shared_attachment_download', token=token, upload_id=a.upload_id) }}" target="_blank" rel="noopener noreferrer">{{ a.filename }}</a>
+          <small>{{ (a.size_bytes // 1024) if a.size_bytes else '' }} KB • {{ a.mimetype or '' }}</small>
+            </div>
+            <div>
+          <a
+            href="{{ url_for('shared_attachment_download', token=token, upload_id=a.upload_id) }}"
+            download="{{ a.filename }}"
+            class="download-btn"
+            style="display:inline-block;background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;"
+            title="Download {{ a.filename }}"
+            aria-label="Download attachment {{ a.filename }}"
+          >Download</a>
+            </div>
+          </div>
+        {% endfor %}
+          {% else %}
+        <div style="color:var(--muted); text-align:center; width:100%;">No attachments</div>
+          {% endif %}
+        </div>
+
       <!-- bottom: share + attachments inside the card -->
       <div class="card-bottom">
         <div class="share-row">
@@ -222,20 +248,6 @@ main.shared-main {
           <button id="report-btn" class="report-btn" aria-label="Report link">Report</button>
         </div>
 
-        <div class="attachments" id="attachments">
-          {% if attachments and attachments|length %}
-            {% for a in attachments %}
-              <div class="attachment-row">
-                <div style="flex:1">
-                  <a href="{{ url_for('shared_attachment_download', token=token, upload_id=a.upload_id) }}" target="_blank" rel="noopener noreferrer">{{ a.filename }}</a>
-                  <small>{{ (a.size_bytes // 1024) if a.size_bytes else '' }} KB • {{ a.mimetype or '' }}</small>
-                </div>
-              </div>
-            {% endfor %}
-          {% else %}
-            <div style="color:var(--muted); text-align:center; width:100%;">No attachments</div>
-          {% endif %}
-        </div>
 
         <div class="shared-footer">
           <small>This note is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a></small>
