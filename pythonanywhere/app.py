@@ -3491,8 +3491,14 @@ def public_share(token):
                 "mimetype": up.mimetype
             })
 
+    # Try to detect language from Accept-Language header
+    lang = request.accept_languages.best_match(['nl', 'en'])
+    template = "shared_note.html"
+    if lang == 'nl':
+        template = "shared_note_dutch.html"
+
     return render_template(
-        'shared_note.html',
+        template,
         note_id=note.id,
         note_title=note.title,
         note_html=safe_note_html,
@@ -9534,6 +9540,7 @@ def update_delete_note(note_id):
             db.session.delete(note)
             db.session.commit()
         except Exception as e:
+            current_app.logger.exception(e)
             db.session.rollback()
             return jsonify({"error": "Database error on deleting note."}), 500
 

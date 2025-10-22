@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>{{ note_title or "Shared note" }} — Future Notes</title>
+<title>{{ note_title or "Gedeelde notitie" }} — Future Notes</title>
 
 <style>
 /* Use your existing variables and gray theme */
@@ -185,21 +185,22 @@ main.shared-main {
   .header-actions {display: flex;}
 }
 </style>
+
 </head>
 <body>
 
 <header class="shared-header" role="banner">
   <div class="brand">
-    <img src="/android-chrome-512x512.png" alt="icon" />
+    <img src="/android-chrome-512x512.png" alt="icoon" />
     <div>
       <div class="title">Future Notes</div>
-      <div class="subtitle" style="font-size:12px;color:var(--muted)">Shared note</div>
+      <div class="subtitle" style="font-size:12px;color:var(--muted)">Gedeelde notitie</div>
     </div>
   </div>
 
   <div class="header-actions">
-    <a class="secondary" href="/login_page">Log in</a>
-    <a href="/signup_page">Sign up</a>
+    <a class="secondary" href="/login_page">Inloggen</a>
+    <a href="/signup_page">Registreren</a>
   </div>
 </header>
 
@@ -207,7 +208,7 @@ main.shared-main {
   <div class="shared-note-container" aria-live="polite">
     <article class="shared-note-card" role="article" aria-labelledby="shared-note-title">
       <div class="shared-note-header">
-        <h2 id="shared-note-title" class="shared-note-title">{{ note_title or 'Untitled' }}</h2>
+        <h2 id="shared-note-title" class="shared-note-title">{{ note_title or 'Zonder titel' }}</h2>
         {% if note_tag %}<div class="shared-note-tag">{{ note_tag }}</div>{% endif %}
       </div>
 
@@ -230,27 +231,26 @@ main.shared-main {
             class="download-btn"
             style="display:inline-block;background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;"
             title="Download {{ a.filename }}"
-            aria-label="Download attachment {{ a.filename }}"
+            aria-label="Bijlage downloaden {{ a.filename }}"
           >Download</a>
             </div>
           </div>
         {% endfor %}
           {% else %}
-        <div style="color:var(--muted); text-align:center; width:100%;">No attachments</div>
+        <div style="color:var(--muted); text-align:center; width:100%;">Geen bijlagen</div>
           {% endif %}
         </div>
 
-      <!-- bottom: share + attachments inside the card -->
+      <!-- onderkant: delen + bijlagen -->
       <div class="card-bottom">
         <div class="share-row">
           <div id="share-url" class="share-url">{{ url_for('public_share', token=token, _external=True) }}</div>
-          <button id="copy-btn" class="copy-btn" aria-label="Copy share link">Copy</button>
-          <button id="report-btn" class="report-btn" aria-label="Report link">Report</button>
+          <button id="copy-btn" class="copy-btn" aria-label="Kopieer deel-link">Kopieer</button>
+          <button id="report-btn" class="report-btn" aria-label="Meld link">Melden</button>
         </div>
 
-
         <div class="shared-footer">
-          <small>This note is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a></small>
+          <small>Deze notitie is openbaar gedeeld via een link. <a href="/index" style="color:var(--muted)">Terug naar app</a></small>
         </div>
       </div>
     </article>
@@ -258,13 +258,7 @@ main.shared-main {
 </main>
 
 <script>
-/*
-  Client script:
-  - Copy button
-  - Report button
-  - Single fingerprint POST (sendBeacon or fetch keepalive)
-  - No public view count fetching
-*/
+/* JavaScript blijft ongewijzigd */
 (function(){
   const token = {{ token|tojson }};
   const noteId = {{ note_id|tojson }};
@@ -286,10 +280,10 @@ main.shared-main {
       if (!url) return;
       try {
         await navigator.clipboard.writeText(url);
-        flash(copyBtn, 'Copied', 1200);
+        flash(copyBtn, 'Gekopieerd', 1200);
       } catch (e) {
-        const ok = prompt('Copy this link', url);
-        if (ok !== null) flash(copyBtn, 'Copied', 1200);
+        const ok = prompt('Kopieer deze link', url);
+        if (ok !== null) flash(copyBtn, 'Gekopieerd', 1200);
       }
     });
   }
@@ -297,13 +291,12 @@ main.shared-main {
   if (reportBtn && shareUrlEl) {
     reportBtn.addEventListener('click', ()=> {
       const url = encodeURIComponent(shareUrlEl.textContent.trim());
-      const subject = encodeURIComponent('Report shared note: ' + shareUrlEl.textContent.trim());
-      const body = encodeURIComponent('I want to report this shared note: ' + shareUrlEl.textContent.trim() + '\\nReason: ');
+      const subject = encodeURIComponent('Melding gedeelde notitie: ' + shareUrlEl.textContent.trim());
+      const body = encodeURIComponent('Ik wil deze gedeelde notitie melden: ' + shareUrlEl.textContent.trim() + '\\nReden: ');
       window.location.href = 'mailto:nathanvcappellen@solcon.nl?subject=' + subject + '&body=' + body;
     });
   }
 
-  // compute fingerprint hash
   async function computeFingerprintHash(){
     try {
       const parts = [
@@ -321,7 +314,6 @@ main.shared-main {
     }
   }
 
-  // Send exactly one visit POST; use sendBeacon if available
   async function sendFingerprintOnce(tokenStr){
     if (!tokenStr) return;
     if (window.__sharedFingerprintSent) return;
@@ -339,9 +331,8 @@ main.shared-main {
         const ok = navigator.sendBeacon(url, blob);
         if (ok) return;
       }
-    } catch(e){ /* ignore */ }
+    } catch(e){ /* negeren */ }
 
-    // fallback to fetch keepalive
     try {
       await fetch(url, {
         method: 'POST',
@@ -349,13 +340,11 @@ main.shared-main {
         body: payload,
         keepalive: true
       });
-    } catch(e){ /* ignore */ }
+    } catch(e){ /* negeren */ }
   }
 
-  // small delay so page rendering is not blocked
   setTimeout(()=> sendFingerprintOnce(token), 250);
 
-  // attempt final send on pagehide if not sent yet
   window.addEventListener('pagehide', function(){
     if (!window.__sharedFingerprintSent) {
       (async () => {
@@ -371,18 +360,17 @@ main.shared-main {
           } else {
             try {
               const xhr = new XMLHttpRequest();
-              xhr.open('POST', url, false); // synchronous (last resort)
+              xhr.open('POST', url, false);
               xhr.setRequestHeader('Content-Type','application/json');
               xhr.send(payload);
               window.__sharedFingerprintSent = true;
-            } catch(e){ /* ignore */ }
+            } catch(e){ /* negeren */ }
           }
-        } catch(e){ /* ignore */ }
+        } catch(e){ /* negeren */ }
       })();
     }
   });
 
-  // accessibility: let Enter on share-url copy it
   if (shareUrlEl && copyBtn) {
     shareUrlEl.tabIndex = 0;
     shareUrlEl.addEventListener('keydown', (ev) => {

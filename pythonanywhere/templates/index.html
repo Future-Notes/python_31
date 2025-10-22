@@ -1806,6 +1806,66 @@
     </div>
 
     <script>
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            if (!window.__fetchPatched) {
+                const _f = window.fetch;
+                window.fetch = (url, opts = {}) => {
+                opts.credentials = 'include';
+                return _f(url, opts);
+                };
+                window.__fetchPatched = true;
+            }
+
+            async function validateSession() {
+                try {
+                const res = await fetch("/test-session", { method: "GET" });
+                if (res.status === 200) {
+                    hideModal();
+                    fetchAndRenderItems();
+                    updateStorageCounter();
+                    initSearchingShortcut();
+                    return true;
+                }
+                if (res.status === 403) {
+                    window.location.href = '/login_page?suspended=true';
+                    return false;
+                }
+                return false;
+                } catch (err) {
+                return false;
+                }
+            }
+
+            async function attemptAutoLogin() {
+                try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({})
+                });
+                if (res.ok) {
+                    console.log("Auto-login successful");
+                    hideModal();
+                    fetchAndRenderItems();
+                    updateStorageCounter();
+                    initSearchingShortcut();
+                    return true;
+                }
+                showModal();
+                return false;
+                } catch (err) {
+                showModal();
+                return false;
+                }
+            }
+            
+        const ok = await validateSession();
+        if (!ok) {
+            await attemptAutoLogin();
+        }
+        });
+        
         let allNotes = [];
         let allFolders = [];
         let currentFolderId = null;
@@ -2278,67 +2338,6 @@
         }
         }
 
-
-
-
-        document.addEventListener("DOMContentLoaded", async () => {
-            if (!window.__fetchPatched) {
-                const _f = window.fetch;
-                window.fetch = (url, opts = {}) => {
-                opts.credentials = 'include';
-                return _f(url, opts);
-                };
-                window.__fetchPatched = true;
-            }
-
-            async function validateSession() {
-                try {
-                const res = await fetch("/test-session", { method: "GET" });
-                if (res.status === 200) {
-                    hideModal();
-                    fetchAndRenderItems();
-                    updateStorageCounter();
-                    initSearchingShortcut();
-                    return true;
-                }
-                if (res.status === 403) {
-                    window.location.href = '/login_page?suspended=true';
-                    return false;
-                }
-                return false;
-                } catch (err) {
-                return false;
-                }
-            }
-
-            async function attemptAutoLogin() {
-                try {
-                const res = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({})
-                });
-                if (res.ok) {
-                    console.log("Auto-login successful");
-                    hideModal();
-                    fetchAndRenderItems();
-                    updateStorageCounter();
-                    initSearchingShortcut();
-                    return true;
-                }
-                showModal();
-                return false;
-                } catch (err) {
-                showModal();
-                return false;
-                }
-            }
-            
-        const ok = await validateSession();
-        if (!ok) {
-            await attemptAutoLogin();
-        }
-        });
 
         function initSearchingShortcut() {
             document.addEventListener('keydown', (e) => {
