@@ -1909,6 +1909,28 @@ def ensure_user_colors(user_id):
         db.session.commit()
     return uc
 
+def delete_shares(note_id):
+    try:
+        # Load shares for this note
+        shares = Share.query.filter_by(note_id=note_id).all()
+        if not shares:
+            return
+
+        share_ids = [s.id for s in shares]
+
+        # Delete ShareVisit rows referencing these shares (bulk delete)
+        # use synchronize_session=False for performance / to avoid session state issues
+        ShareVisit.query.filter(ShareVisit.share_id.in_(share_ids)).delete(synchronize_session=False)
+
+        # Delete Share rows (bulk delete)
+        Share.query.filter(Share.id.in_(share_ids)).delete(synchronize_session=False)
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to delete share and sharevisits")
+        # Consider re-raising or returning False if you want caller to abort the parent deletion
+
 def send_email(
     to_address,
     subject,
@@ -3491,8 +3513,14 @@ def public_share(token):
                 "mimetype": up.mimetype
             })
 
+    # Try to detect language from Accept-Language header
+    lang = request.accept_languages.best_match(['nl', 'en'])
+    template = "shared_note.html"
+    if lang == 'nl':
+        template = "shared_note_dutch.html"
+
     return render_template(
-        'shared_note.html',
+        template,
         note_id=note.id,
         note_title=note.title,
         note_html=safe_note_html,
@@ -3564,6 +3592,146 @@ def public_share_visit(token):
         current_app.logger.exception("Failed to record visit for share token=%s", token)
         # Return ok so client won't spam; counting failed but app still works
         return jsonify({"ok": False, "reason": "db_error"}), 500
+    
+import os
+from werkzeug.datastructures import FileStorage
+from flask import current_app, jsonify, abort, g
+from datetime import datetime
+
+@app.route('/s/<token>/save', methods=["POST"])
+@require_session_key
+def save_note(token):
+    user = User.query.get(g.user_id)
+    if not user:
+        abort(401)
+
+    share = Share.query.filter_by(token=token).first()
+    if not share:
+        abort(404)
+
+    # check expiry
+    if share.expires_at is not None and datetime.utcnow() > share.expires_at:
+        abort(410)  # Gone
+
+    original = share.note
+    if not original:
+        abort(404)
+
+    created_uploads = []  # list of Upload model instances created via verify_and_record_upload
+
+    def cleanup_created_uploads():
+        """Best-effort cleanup of uploads already created (delete DB rows, files, and adjust user's storage)."""
+        for up in created_uploads:
+            try:
+                # re-query fresh instance
+                db_up = Upload.query.get(up.id)
+                if not db_up:
+                    continue
+
+                # remove file from disk
+                stored_path = os.path.join(current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER, db_up.stored_filename)
+                try:
+                    if os.path.exists(stored_path):
+                        os.remove(stored_path)
+                except Exception as e:
+                    current_app.logger.exception("Failed to remove uploaded file during cleanup: %s", stored_path)
+
+                # subtract size from user's storage_used_bytes if present
+                try:
+                    user = User.query.get(user.id)
+                    user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - (db_up.size_bytes or 0))
+                    db.session.add(user)
+                except Exception:
+                    db.session.rollback()
+                    current_app.logger.exception("Failed to adjust user.storage_used_bytes during cleanup for user %s", getattr(user, "id", None))
+
+                # delete upload db row
+                try:
+                    db.session.delete(db_up)
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    current_app.logger.exception("Failed to delete upload DB row during cleanup: %s", db_up.id)
+            except Exception:
+                current_app.logger.exception("Unexpected error during cleanup of upload %s", getattr(up, "id", None))
+
+    try:
+        # Create the new note owned by current user. Do not assign original group/folder by default.
+        new_note = Note(
+            title=original.title,
+            note=original.note,
+            tag=original.tag,
+            user_id=user.id,
+            group_id=None,
+            folder_id=None
+        )
+        db.session.add(new_note)
+        db.session.flush()  # ensure new_note.id is available
+
+        # find attachments for original note
+        note_uploads = NoteUpload.query.filter_by(note_id=original.id).all()
+        upload_folder = current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER
+
+        for nu in note_uploads:
+            orig_upload = Upload.query.get(nu.upload_id)
+            if not orig_upload:
+                continue
+            if orig_upload.deleted:
+                # skip deleted uploads
+                continue
+
+            src_path = os.path.join(upload_folder, orig_upload.stored_filename)
+            if not os.path.isfile(src_path):
+                current_app.logger.warning("Original upload file missing: %s; skipping copy", src_path)
+                continue
+
+            # Open original file and wrap into FileStorage so verify_and_record_upload can run the usual checks
+            try:
+                with open(src_path, "rb") as f:
+                    fs = FileStorage(stream=f, filename=orig_upload.original_filename or orig_upload.stored_filename,
+                                     content_type=orig_upload.mimetype or '')
+                    # call verify_and_record_upload which will enforce user quota, max size, content checks, etc.
+                    success, result = verify_and_record_upload(fs, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES)
+            except Exception as e:
+                current_app.logger.exception("Exception while wrapping/or calling verify_and_record_upload for %s", src_path)
+                # cleanup any uploads we've created so far
+                cleanup_created_uploads()
+                db.session.rollback()
+                abort(500, description="Internal error while copying attachments.")
+
+            if not success:
+                # verification failed (quota, type, content, etc). Do best-effort cleanup of already created uploads.
+                current_app.logger.warning("Failed to copy attachment for note %s: %s", original.id, result)
+                cleanup_created_uploads()
+                db.session.rollback()
+                abort(400, description=f"Failed to copy attachment: {result}")
+
+            # success -> result is an Upload model which verify_and_record_upload already committed
+            new_upload = result
+            created_uploads.append(new_upload)
+
+            # Link the newly created upload to the new note (we will commit these links later)
+            note_upload_link = NoteUpload(note_id=new_note.id, upload_id=new_upload.id)
+            db.session.add(note_upload_link)
+
+        # increment share access_count
+        share.access_count = (share.access_count or 0) + 1
+        db.session.add(share)
+
+        # commit note + noteupload links + share increment
+        db.session.commit()
+
+        return jsonify(new_note.to_dict()), 201
+
+    except Exception as e:
+        current_app.logger.exception("Failed to copy shared note (final exception)")
+        # cleanup created uploads if any (best-effort)
+        try:
+            cleanup_created_uploads()
+        except Exception:
+            current_app.logger.exception("Cleanup also failed")
+        db.session.rollback()
+        abort(500, description="Failed to save shared note.")    
 
 # Attachment download only for valid shares (do not reuse the normal /uploads/ download without permission)
 @app.route('/s/<token>/attachments/<int:upload_id>', methods=['GET'])
@@ -9528,12 +9696,14 @@ def update_delete_note(note_id):
         return jsonify({"message": "Note updated successfully!"}), 200
 
     elif request.method == 'DELETE':
+        delete_shares(note.id)
         existing_attachments = current_attachment_ids(note.id)
         try:
             NoteUpload.query.filter_by(note_id=note.id).delete()
             db.session.delete(note)
             db.session.commit()
         except Exception as e:
+            current_app.logger.exception(e)
             db.session.rollback()
             return jsonify({"error": "Database error on deleting note."}), 500
 
