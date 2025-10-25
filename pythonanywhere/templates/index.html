@@ -1852,7 +1852,6 @@
                     initSearchingShortcut();
                     return true;
                 }
-                showModal();
                 return false;
                 } catch (err) {
                 showModal();
@@ -1865,7 +1864,7 @@
             await attemptAutoLogin();
         }
         });
-        
+
         let allNotes = [];
         let allFolders = [];
         let currentFolderId = null;

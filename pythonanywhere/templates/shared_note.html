@@ -245,9 +245,9 @@ main.shared-main {
         <div class="share-row">
           <div id="share-url" class="share-url">{{ url_for('public_share', token=token, _external=True) }}</div>
           <button id="copy-btn" class="copy-btn" aria-label="Copy share link">Copy</button>
+          <button id="save-note-btn" class="report-btn">Save note</button>
           <button id="report-btn" class="report-btn" aria-label="Report link">Report</button>
         </div>
-
 
         <div class="shared-footer">
           <small>This note is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a></small>
@@ -265,6 +265,277 @@ main.shared-main {
   - Single fingerprint POST (sendBeacon or fetch keepalive)
   - No public view count fetching
 */
+
+var shouldCopy = false;
+
+document.addEventListener("DOMContentLoaded", async () => {
+  if (!window.__fetchPatched) {
+      const _f = window.fetch;
+      window.fetch = (url, opts = {}) => {
+      opts.credentials = 'include';
+      return _f(url, opts);
+      };
+      window.__fetchPatched = true;
+  }
+
+  async function validateSession() {
+    try {
+      const res = await fetch("/test-session", { method: "GET" });
+      if (res.status === 200) {
+          shouldCopy = true;
+          return true;
+      }
+      return false;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  async function attemptAutoLogin() {
+    try {
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        console.log("Auto-login successful");
+        shouldCopy = true;
+        return true;
+      }
+      return false;
+    } catch (err) {
+      //Do nothing
+      return false;
+    }
+  }
+            
+  const ok = await validateSession();
+  if (!ok) {
+      await attemptAutoLogin();
+  }
+});
+
+const saveButton = document.getElementById("save-note-btn");
+
+saveButton.addEventListener('click', ()=> {
+  if (shouldCopy) {
+    saveNote();
+  } else {
+    openAdvertisementModal();
+  }
+});
+
+(function () {
+  // Reuse your global shouldCopy if present; otherwise create it.
+  window.shouldCopy = typeof window.shouldCopy === "boolean" ? window.shouldCopy : false;
+
+  // Small helper: find share token from a few sensible places
+  function getShareToken() {
+    const token = {{ token|tojson }};
+    return token
+  }
+
+  // Minimal transient toast
+  function showToast(msg, opts = {}) {
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.position = 'fixed';
+    el.style.right = '16px';
+    el.style.bottom = '16px';
+    el.style.padding = '10px 14px';
+    el.style.background = opts.error ? '#d9534f' : '#222';
+    el.style.color = '#fff';
+    el.style.borderRadius = '6px';
+    el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.2)';
+    el.style.zIndex = 2147483647;
+    document.body.appendChild(el);
+    setTimeout(() => {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }, opts.duration || 3500);
+  }
+
+  // Create modal lazily (only injected when needed)
+  function createAdModal() {
+    if (document.getElementById('share-ad-modal')) return document.getElementById('share-ad-modal');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'share-ad-modal';
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.display = 'none';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.zIndex = 2147483646;
+    overlay.style.backdropFilter = 'blur(2px)';
+
+    const box = document.createElement('div');
+    box.style.background = '#fff';
+    box.style.borderRadius = '8px';
+    box.style.boxShadow = '0 6px 30px rgba(0,0,0,.25)';
+    box.style.maxWidth = '520px';
+    box.style.width = '92%';
+    box.style.padding = '20px';
+    box.style.position = 'relative';
+    box.style.fontFamily = 'system-ui,Segoe UI,Roboto,Arial';
+
+    box.innerHTML = `
+      <button id="share-ad-close" aria-label="Close" style="position:absolute;right:10px;top:10px;border:none;background:none;font-size:18px;cursor:pointer;">✕</button>
+      <h2 style="margin-top:0">Save this shared note</h2>
+      <p style="margin:8px 0 18px;color:#444;">Save a copy of this note to your account. Sign up or log in to keep and manage saved notes.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button id="share-ad-login" style="padding:8px 12px;border-radius:6px;border:1px solid #999;background:#fff;cursor:pointer;">Login</button>
+        <button id="share-ad-signup" style="padding:10px 14px;border-radius:6px;border:none;background:#007bff;color:#fff;cursor:pointer;">Create account — Save note</button>
+      </div>
+    `;
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    // hookup actions
+    overlay.querySelector('#share-ad-close').addEventListener('click', () => {
+      overlay.style.display = 'none';
+    });
+
+    overlay.querySelector('#share-ad-login').addEventListener('click', () => {
+      // redirect to login page
+      window.location.href = '/login_page';
+    });
+
+    overlay.querySelector('#share-ad-signup').addEventListener('click', () => {
+      // redirect to signup page (or pricing)
+      window.location.href = '/signup_page';
+    });
+
+    // close if click outside box
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) overlay.style.display = 'none';
+    });
+
+    return overlay;
+  }
+
+  function openAdvertisementModal() {
+    const modal = createAdModal();
+    modal.style.display = 'flex';
+    // focus first actionable button for accessibility
+    const loginBtn = modal.querySelector('#share-ad-login');
+    if (loginBtn) loginBtn.focus();
+  }
+
+  // Actual saving logic — reuses your global shouldCopy and doesn't touch your existing code.
+  async function performSaveNoteFlow() {
+    // guard
+    if (!window.shouldCopy) return;
+
+    const saveBtn = document.getElementById('save-note-btn');
+    if (!saveBtn) {
+      console.warn('save button not found');
+      return;
+    }
+
+    // prevent double clicks
+    if (saveBtn.dataset.busy === '1') return;
+    saveBtn.dataset.busy = '1';
+    const prevDisabled = saveBtn.disabled;
+    const prevHtml = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    try { saveBtn.innerHTML = 'Saving…'; } catch (e) { /* ignore */ }
+
+    try {
+      const token = getShareToken();
+      if (!token) {
+        showToast('Technical error: no share token.', { error: true });
+        return;
+      }
+
+      const url = `/s/${encodeURIComponent(token)}/save`;
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+
+      if (res.status === 200 || res.status === 201) {
+        let data = null;
+        try { data = await res.json(); } catch (e) { /* ignore parse error */ }
+        showToast('Saved! Redirecting…');
+        window.location.href = '/index';
+        return;
+      }
+
+      if (res.status === 401) {
+        // not authorized — show modal to encourage login/signup
+        openAdvertisementModal();
+        return;
+      }
+
+      if (res.status === 404) {
+        showToast('This share link no longer exists.', { error: true });
+        return;
+      }
+
+      if (res.status === 410) {
+        showToast('This shared note has expired.', { error: true });
+        return;
+      }
+
+      if (res.status === 400 || res.status === 422) {
+        let body = null;
+        try { body = await res.json(); } catch (e) { body = await res.text().catch(()=>null); }
+        const msg = (body && (body.message || body.error || body.msg)) || (typeof body === 'string' ? body : 'Unable to save note.');
+        showToast(msg, { error: true });
+        return;
+      }
+
+      // other errors
+      let txt = await res.text().catch(()=>null);
+      showToast(txt || 'Server error while saving shared note.', { error: true });
+
+    } catch (err) {
+      console.error('Save note failed', err);
+      showToast('Network error while saving note.', { error: true });
+    } finally {
+      saveBtn.disabled = prevDisabled;
+      saveBtn.dataset.busy = '0';
+      try { saveBtn.innerHTML = prevHtml; } catch (e) {}
+    }
+  }
+
+  // Intercept the click using a capture-phase listener so we don't have to change or remove existing listeners.
+  // We stop immediate propagation to prevent the original (broken) handler from attempting to run,
+  // and run our own reliable flow instead.
+  const saveBtnRef = document.getElementById('save-note-btn');
+  if (saveBtnRef) {
+    saveBtnRef.addEventListener('click', async function (ev) {
+      // Intercept and take control. Prevent original handlers from running.
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+
+      if (window.shouldCopy) {
+        await performSaveNoteFlow();
+      } else {
+        openAdvertisementModal();
+      }
+    }, true); // capture = true
+  } else {
+    // in case your code creates the button later, observe DOM for it
+    const observer = new MutationObserver((mutations, obs) => {
+      const b = document.getElementById('save-note-btn');
+      if (b) {
+        b.addEventListener('click', async function (ev) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          if (window.shouldCopy) {
+            await performSaveNoteFlow();
+          } else {
+            openAdvertisementModal();
+          }
+        }, true);
+        obs.disconnect();
+      }
+    });
+    observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  }
+
+})();
+
 (function(){
   const token = {{ token|tojson }};
   const noteId = {{ note_id|tojson }};
