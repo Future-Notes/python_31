@@ -185,7 +185,7 @@
             animation: fadeIn 0.5s forwards 0.3s;
         }
 
-        #items-list li {
+        #items-list > li {
             background-color: var(--ctr-color);
             padding: 20px;
             border-radius: 15px;
@@ -227,7 +227,7 @@
             border-bottom-right-radius: 15px;
         }
 
-        #items-list li:hover {
+        #items-list > li:hover {
             background-color: #4a4a4a;
             box-shadow: 0 6px 15px rgba(0, 0, 0, 0.4);
         }
@@ -756,8 +756,16 @@
         
         .note-preview {
             text-align: left;
+            overflow: auto !important;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE 10+ */
+            }
+            .note-preview::-webkit-scrollbar {
+                display: none; /* Chrome, Safari, Edge */
+            }
+            .note-preview {
             max-height: 120px;
-            overflow: hidden;
+            overflow: scroll;
             margin: 10px 0;
         }
         
