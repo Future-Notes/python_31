@@ -58,6 +58,7 @@ import pyotp
 import qrcode
 from cryptography.fernet import Fernet, InvalidToken
 import base64
+from collections import deque
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -653,16 +654,28 @@ class Note(db.Model):
             "folder_id": self.folder_id
         }
 
+
 class Share(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    token = db.Column(db.String(64), unique=True, index=True, nullable=False)
-    note_id = db.Column(db.Integer, db.ForeignKey('note.id'), nullable=False)
+
+    # token used for public access. NOTE: not unique anymore because we will
+    # create multiple Share rows that share the same token for folder trees.
+    token = db.Column(db.String(64), index=True, nullable=False)
+
+    # Either a note_id OR folder_id, or both can be NULL. A share row points
+    # to one node that is accessible under the token.
+    note_id = db.Column(db.Integer, db.ForeignKey('note.id'), nullable=True)
+    folder_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
+
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # owner
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=True)
+
     access_count = db.Column(db.Integer, default=0, nullable=False)
 
-    note = db.relationship('Note', backref='shares')
+    # relationships for convenience
+    note = db.relationship('Note', backref='shares', foreign_keys=[note_id])
+    folder = db.relationship('Folder', backref='shares', foreign_keys=[folder_id])
 
 class ShareVisit(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -861,6 +874,72 @@ class FlowCommit(db.Model):
     todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
+def collect_folder_tree_ids(root_folder_id):
+    """
+    Return two sets: (folder_ids_set, note_ids_set) covering root_folder_id
+    and all descendants (recursive).
+    BFS/stack traversal.
+    """
+    folder_ids = set()
+    note_ids = set()
+
+    q = deque([root_folder_id])
+    while q:
+        fid = q.popleft()
+        if fid in folder_ids:
+            continue
+        folder_ids.add(fid)
+
+        # subfolders
+        subfolders = Folder.query.filter_by(parent_id=fid).with_entities(Folder.id).all()
+        for (sid,) in subfolders:
+            if sid not in folder_ids:
+                q.append(sid)
+
+        # notes in folder
+        notes = Note.query.filter_by(folder_id=fid).with_entities(Note.id).all()
+        for (nid,) in notes:
+            note_ids.add(nid)
+
+    return folder_ids, note_ids
+
+def get_shared_node_sets_for_token(token):
+    """
+    Return (folder_ids_set, note_ids_set, root_folder_id_or_None, root_note_id_or_None)
+    For folder shares root_folder_id is set (the first folder share created for this token).
+    For note-only shares, root_note_id will be set.
+    """
+    shares = (Share.query
+              .filter(Share.token == token)
+              .order_by(Share.created_at.asc())
+              .all())
+
+    folder_ids = set()
+    note_ids = set()
+    root_folder_id = None
+    root_note_id = None
+    if not shares:
+        return folder_ids, note_ids, None, None
+
+    for s in shares:
+        if s.folder_id:
+            folder_ids.add(s.folder_id)
+            if root_folder_id is None:
+                root_folder_id = s.folder_id
+        if s.note_id:
+            note_ids.add(s.note_id)
+            if root_note_id is None:
+                root_note_id = s.note_id
+
+    return folder_ids, note_ids, root_folder_id, root_note_id
+
+def token_has_access_to_folder(token, folder_id):
+    folder_ids, note_ids, _, _ = get_shared_node_sets_for_token(token)
+    return folder_id in folder_ids
+
+def token_has_access_to_note(token, note_id):
+    folder_ids, note_ids, _, _ = get_shared_node_sets_for_token(token)
+    return note_id in note_ids
 # Helper to get client IP (works behind proxies if you set them)
 def client_ip():
     xff = request.headers.get('X-Forwarded-For', None)
@@ -3505,6 +3584,59 @@ def create_share(note_id):
     share_url = url_for('public_share', token=token, _external=True)
     return jsonify({"token": token, "url": share_url}), 201
 
+# -------------------------------------------------------
+# Create a folder share
+# -------------------------------------------------------
+@app.route('/folders/<int:folder_id>/share', methods=['POST'])
+@require_session_key
+def create_folder_share(folder_id):
+    # ensure folder exists and belongs to user (or group logic if needed)
+    folder = Folder.query.get(folder_id)
+    if not folder or folder.user_id != g.user_id:
+        return jsonify({"error": "Folder not found or access denied"}), 404
+
+    data = request.json or {}
+    expires_minutes = data.get('expires_minutes')
+    expires_at = None
+    if expires_minutes:
+        try:
+            expires_at = datetime.utcnow() + timedelta(minutes=int(expires_minutes))
+        except Exception:
+            pass
+
+    # generate token once
+    token = secrets.token_urlsafe(24)
+
+    try:
+        # collect all folder and note ids under this folder (root included)
+        folder_ids, note_ids = collect_folder_tree_ids(folder_id)
+
+        # create a Share row for the root folder first (we will use it for visit counting)
+        root_share = Share(token=token, folder_id=folder_id, user_id=g.user_id, expires_at=expires_at)
+        db.session.add(root_share)
+        db.session.flush()  # so root_share.id exists
+
+        # create share rows for all other folder nodes (including root again is OK if unique constraint removed)
+        for fid in folder_ids:
+            if fid == folder_id:
+                continue
+            s = Share(token=token, folder_id=fid, user_id=g.user_id, expires_at=expires_at)
+            db.session.add(s)
+
+        # create share rows for notes
+        for nid in note_ids:
+            s = Share(token=token, note_id=nid, user_id=g.user_id, expires_at=expires_at)
+            db.session.add(s)
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("Failed to create folder share for folder=%s user=%s", folder_id, g.user_id)
+        return jsonify({"error": "DB error while creating share"}), 500
+
+    share_url = url_for('public_share', token=token, _external=True)
+    return jsonify({"token": token, "url": share_url}), 201
+
 # Revoke share (owner only)
 @app.route('/notes/share/<token>', methods=['DELETE'])
 @require_session_key
@@ -3521,74 +3653,222 @@ def revoke_share(token):
         return jsonify({"error": "DB error while revoking share"}), 500
     return jsonify({"message": "Share revoked"}), 200
 
+# -------------------------------------------------------
+# Revoke folder share (by token)
+# -------------------------------------------------------
+@app.route('/folders/share/<token>', methods=['DELETE'])
+@require_session_key
+def revoke_folder_share(token):
+    # find shares owned by user with this token
+    shares = Share.query.filter_by(token=token, user_id=g.user_id).all()
+    if not shares:
+        return jsonify({"error": "Share not found or access denied"}), 404
+
+    try:
+        # delete any ShareVisit rows for these shares
+        share_ids = [s.id for s in shares]
+        ShareVisit.query.filter(ShareVisit.share_id.in_(share_ids)).delete(synchronize_session=False)
+        # delete shares
+        Share.query.filter(Share.id.in_(share_ids)).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception("DB error while revoking folder share token=%s owner=%s", token, g.user_id)
+        return jsonify({"error": "DB error while revoking share"}), 500
+
+    return jsonify({"message": "Share revoked"}), 200
+
 
 from datetime import datetime
 from flask import render_template
 
 @app.route('/s/<token>', methods=['GET'])
 def public_share(token):
-    share = Share.query.filter_by(token=token).first()
-    if not share:
+    # fetch shared node sets
+    folder_ids, note_ids, root_folder_id, root_note_id = get_shared_node_sets_for_token(token)
+
+    # default safe value for template
+    display_folder_id = None
+
+    if not folder_ids and not note_ids:
+        # no shares for token
         return render_template('shared_not_found.html', token=token), 404
 
-    # expired -> friendly page (410)
+    # check if any share is still valid
     now = datetime.utcnow()
-    if share.expires_at and now > share.expires_at:
-        return render_template('share_expired.html', token=token, expired_at=share.expires_at), 410
+    any_unexpired = any(
+        (s.expires_at is None or s.expires_at > now)
+        for s in Share.query.filter_by(token=token).all()
+    )
+    if not any_unexpired:
+        return render_template('share_expired.html', token=token, expired_at=now), 410
 
-    note = Note.query.get(share.note_id)
-    if not note:
+    # handle explicit note query
+    q_note_id = request.args.get('note_id', type=int)
+    if q_note_id:
+        if not token_has_access_to_note(token, q_note_id):
+            return render_template('shared_not_found.html', token=token), 404
+
+        note = Note.query.get(q_note_id)
+        if not note:
+            return render_template('shared_not_found.html', token=token), 404
+
+        safe_note_html = sanitize_html(note.note)
+        attachments = []
+        for nu in NoteUpload.query.filter_by(note_id=note.id).all():
+            up = Upload.query.get(nu.upload_id)
+            if up and not up.deleted:
+                attachments.append({
+                    "upload_id": up.id,
+                    "filename": up.original_filename,
+                    "size_bytes": up.size_bytes,
+                    "mimetype": up.mimetype
+                })
+
+        lang = request.accept_languages.best_match(['nl', 'en'])
+        template = "shared_note.html" if lang != 'nl' else "shared_note_dutch.html"
+
+        # determine folder for back button
+        return_folder_id = request.args.get('folder_id', type=int) or note.folder_id
+
+        return render_template(
+            template,
+            token=token,
+            note_id=note.id,
+            note_title=note.title,
+            note_html=safe_note_html,
+            note_tag=note.tag,
+            attachments=attachments,
+            is_folder_view=False,
+            return_folder_id=return_folder_id,
+            display_folder_id=return_folder_id
+        ), 200
+
+    # handle note-only share
+    if note_ids and not folder_ids:
+        note = Note.query.get(root_note_id)
+        if not note:
+            return render_template('shared_not_found.html', token=token), 404
+
+        safe_note_html = sanitize_html(note.note)
+        attachments = []
+        for nu in NoteUpload.query.filter_by(note_id=note.id).all():
+            up = Upload.query.get(nu.upload_id)
+            if up and not up.deleted:
+                attachments.append({
+                    "upload_id": up.id,
+                    "filename": up.original_filename,
+                    "size_bytes": up.size_bytes,
+                    "mimetype": up.mimetype
+                })
+
+        lang = request.accept_languages.best_match(['nl', 'en'])
+        template = "shared_note.html" if lang != 'nl' else "shared_note_dutch.html"
+
+        return render_template(
+            template,
+            token=token,
+            note_id=note.id,
+            note_title=note.title,
+            note_html=safe_note_html,
+            note_tag=note.tag,
+            attachments=attachments,
+            is_folder_view=False,
+            display_folder_id=None
+        ), 200
+
+    # handle folder share or mixed share
+    q_folder_id = request.args.get('folder_id', type=int)
+    if q_folder_id and q_folder_id in folder_ids:
+        display_folder_id = q_folder_id
+    else:
+        display_folder_id = root_folder_id or (next(iter(folder_ids)) if folder_ids else None)
+
+    if display_folder_id is None:
         return render_template('shared_not_found.html', token=token), 404
 
-    # Do NOT increment share.access_count here — counting happens on POST /s/<token>/visit
-    safe_note_html = sanitize_html(note.note)
+    # fetch folder name for header/title
+    folder_obj = Folder.query.get(display_folder_id)
+    display_folder_name = folder_obj.name if folder_obj else None
 
-    attachments = []
-    for nu in NoteUpload.query.filter_by(note_id=note.id).all():
-        up = Upload.query.get(nu.upload_id)
-        if up and not up.deleted:
-            attachments.append({
-                "upload_id": up.id,
-                "filename": up.original_filename,
-                "size_bytes": up.size_bytes,
-                "mimetype": up.mimetype
-            })
-
-    # Try to detect language from Accept-Language header
     lang = request.accept_languages.best_match(['nl', 'en'])
-    template = "shared_note.html"
-    if lang == 'nl':
-        template = "shared_note_dutch.html"
+    template = "shared_note.html" if lang != 'nl' else "shared_note_dutch.html"
 
     return render_template(
         template,
-        note_id=note.id,
-        note_title=note.title,
-        note_html=safe_note_html,
-        note_tag=note.tag,
-        attachments=attachments,
-        token=token
+        token=token,
+        note_id=None,
+        note_title=None,
+        note_html=None,
+        note_tag=None,
+        attachments=[],
+        is_folder_view=True,
+        display_folder_id=display_folder_id,
+        display_folder_name=display_folder_name
     ), 200
 
-# Endpoint to record a client-side fingerprint (hashed) - optional but recommended for unique visitors
+# -------------------------------------------------------
+# API: get folder contents for a token
+# -------------------------------------------------------
+@app.route('/s/<token>/api/folder/<int:folder_id>', methods=['GET'])
+def shared_folder_contents(token, folder_id):
+    folder_ids, note_ids, root_folder_id, root_note_id = get_shared_node_sets_for_token(token)
+    if not folder_ids:
+        return jsonify({"ok": False, "reason": "not_a_folder_share"}), 404
+
+    if folder_id not in folder_ids:
+        return jsonify({"ok": False, "reason": "access_denied"}), 404
+
+    # get folder metadata for the folder we are showing (so client has parent_id + name)
+    folder = Folder.query.get(folder_id)
+    folder_meta = None
+    if folder:
+        # if you have to_dict(), use that; otherwise provide minimal fields
+        try:
+            folder_meta = folder.to_dict()
+        except Exception:
+            folder_meta = {"id": folder.id, "name": folder.name, "parent_id": folder.parent_id}
+
+    # list child folders that are also shared
+    child_folders = (Folder.query
+                     .filter(Folder.parent_id == folder_id, Folder.id.in_(list(folder_ids)))
+                     .order_by(Folder.name.asc())
+                     .all())
+
+    # list notes in this folder that are shared
+    notes = (Note.query
+             .filter(Note.folder_id == folder_id, Note.id.in_(list(note_ids)))
+             .order_by(Note.title.asc())
+             .all())
+
+    folder_list = [f.to_dict() for f in child_folders]
+    note_list = [n.to_dict() for n in notes]
+
+    return jsonify({
+        "ok": True,
+        "folder_id": folder_id,
+        "folder": folder_meta,
+        "folders": folder_list,
+        "notes": note_list,
+    }), 200
+
+# -------------------------------------------------------
+# modified /s/<token>/visit -> pick canonical share for token (root)
+# -------------------------------------------------------
 @app.route('/s/<token>/visit', methods=['POST'])
 def public_share_visit(token):
-    """
-    Count a visit in a deduplicated way:
-      - require both fingerprint_hash (from client) and IP (from request)
-      - deduplicate by exact (fingerprint_hash + ip) within SHARE_VISIT_WINDOW_SECONDS
-      - if existing visit within window -> update its timestamp (extend) but do not increment counter
-      - else -> create new visit and increment share.access_count
-    """
-    share = Share.query.filter_by(token=token).first()
+    # pick canonical share row for counting visits: use first created share for the token
+    share = (Share.query
+             .filter(Share.token == token)
+             .order_by(Share.created_at.asc())
+             .first())
     if not share:
         return jsonify({"ok": False, "reason": "share_not_found"}), 404
 
     data = request.get_json(silent=True) or {}
     fingerprint_hash = (data.get('fingerprint_hash') or '').strip()
-    ip = client_ip()  # your helper that respects X-Forwarded-For if configured
+    ip = client_ip()
 
-    # If either missing, do not count (privacy/respect). Return OK so client doesn't retry.
     if not fingerprint_hash or not ip:
         current_app.logger.debug("Visit ignored: missing fingerprint or ip (token=%s, ip=%s, fp=%s)", token, bool(ip), bool(fingerprint_hash))
         return jsonify({"ok": True, "counted": False, "reason": "missing_fp_or_ip"}), 200
@@ -3597,23 +3877,19 @@ def public_share_visit(token):
     window_start = now - timedelta(seconds=SHARE_VISIT_WINDOW_SECONDS)
 
     try:
-        # Look for an existing visit within the window for same share + fingerprint + ip
         existing = (ShareVisit.query
                     .filter(ShareVisit.share_id == share.id,
                             ShareVisit.fingerprint_hash == fingerprint_hash,
                             ShareVisit.ip == ip,
                             ShareVisit.created_at >= window_start)
-                    .with_for_update(read=False)  # optional, may require DB support
+                    .with_for_update(read=False)
                     .first())
-
         if existing:
-            # Extend the window: update timestamp but DO NOT increment access_count
             existing.created_at = now
             db.session.add(existing)
             db.session.commit()
             return jsonify({"ok": True, "counted": False, "reason": "extended"}), 200
 
-        # No existing recent visit -> create one and increment access_count
         visit = ShareVisit(
             share_id=share.id,
             ip=ip,
@@ -3622,16 +3898,13 @@ def public_share_visit(token):
             created_at=now
         )
         db.session.add(visit)
-        # increment access_count atomically
         share.access_count = (share.access_count or 0) + 1
         db.session.add(share)
         db.session.commit()
         return jsonify({"ok": True, "counted": True, "new_count": share.access_count}), 200
-
     except Exception:
         db.session.rollback()
         current_app.logger.exception("Failed to record visit for share token=%s", token)
-        # Return ok so client won't spam; counting failed but app still works
         return jsonify({"ok": False, "reason": "db_error"}), 500
     
 import os
@@ -3639,6 +3912,9 @@ from werkzeug.datastructures import FileStorage
 from flask import current_app, jsonify, abort, g
 from datetime import datetime
 
+# -------------------------------------------------------
+# Modified save endpoint - allows saving a specific shared note when token is for a folder
+# -------------------------------------------------------
 @app.route('/s/<token>/save', methods=["POST"])
 @require_session_key
 def save_note(token):
@@ -3646,47 +3922,65 @@ def save_note(token):
     if not user:
         abort(401)
 
-    share = Share.query.filter_by(token=token).first()
+    share = (Share.query
+             .filter(Share.token == token)
+             .order_by(Share.created_at.asc())
+             .first())
     if not share:
         abort(404)
 
-    # check expiry
-    if share.expires_at is not None and datetime.utcnow() > share.expires_at:
-        abort(410)  # Gone
+    # check any unexpired share for the token exists (we already do this above in public_share,
+    # but duplicate check here)
+    now = datetime.utcnow()
+    any_unexpired = any((s.expires_at is None or s.expires_at > now) for s in Share.query.filter_by(token=token).all())
+    if not any_unexpired:
+        abort(410)
 
-    original = share.note
-    if not original:
+    data = request.get_json(silent=True) or {}
+    requested_note_id = data.get('note_id')
+
+    # if this share row points to a note (old behaviour), use it
+    if share.note_id and requested_note_id is None:
+        target_note = Note.query.get(share.note_id)
+    else:
+        # when token is a folder-share, client must provide note_id to save that particular note
+        if not requested_note_id:
+            abort(400, description="note_id required for folder share")
+        # ensure note_id is within the allowed set for this token
+        if not token_has_access_to_note(token, requested_note_id):
+            abort(404)
+        target_note = Note.query.get(requested_note_id)
+
+    if not target_note:
         abort(404)
 
-    created_uploads = []  # list of Upload model instances created via verify_and_record_upload
+    # existing copy logic below unchanged, but replace 'original' with target_note
+    original = target_note
+
+    # check expiry on share rows is done earlier
+    created_uploads = []
 
     def cleanup_created_uploads():
-        """Best-effort cleanup of uploads already created (delete DB rows, files, and adjust user's storage)."""
         for up in created_uploads:
             try:
-                # re-query fresh instance
                 db_up = Upload.query.get(up.id)
                 if not db_up:
                     continue
-
-                # remove file from disk
                 stored_path = os.path.join(current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER, db_up.stored_filename)
                 try:
                     if os.path.exists(stored_path):
                         os.remove(stored_path)
-                except Exception as e:
+                except Exception:
                     current_app.logger.exception("Failed to remove uploaded file during cleanup: %s", stored_path)
 
-                # subtract size from user's storage_used_bytes if present
                 try:
-                    user = User.query.get(user.id)
-                    user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - (db_up.size_bytes or 0))
-                    db.session.add(user)
+                    u = User.query.get(user.id)  # refresh
+                    u.storage_used_bytes = max(0, (u.storage_used_bytes or 0) - (db_up.size_bytes or 0))
+                    db.session.add(u)
                 except Exception:
                     db.session.rollback()
                     current_app.logger.exception("Failed to adjust user.storage_used_bytes during cleanup for user %s", getattr(user, "id", None))
 
-                # delete upload db row
                 try:
                     db.session.delete(db_up)
                     db.session.commit()
@@ -3697,7 +3991,7 @@ def save_note(token):
                 current_app.logger.exception("Unexpected error during cleanup of upload %s", getattr(up, "id", None))
 
     try:
-        # Create the new note owned by current user. Do not assign original group/folder by default.
+        # Create the new note owned by current user. Do not assign group/folder by default.
         new_note = Note(
             title=original.title,
             note=original.note,
@@ -3707,18 +4001,14 @@ def save_note(token):
             folder_id=None
         )
         db.session.add(new_note)
-        db.session.flush()  # ensure new_note.id is available
+        db.session.flush()
 
-        # find attachments for original note
         note_uploads = NoteUpload.query.filter_by(note_id=original.id).all()
         upload_folder = current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER
 
         for nu in note_uploads:
             orig_upload = Upload.query.get(nu.upload_id)
-            if not orig_upload:
-                continue
-            if orig_upload.deleted:
-                # skip deleted uploads
+            if not orig_upload or orig_upload.deleted:
                 continue
 
             src_path = os.path.join(upload_folder, orig_upload.stored_filename)
@@ -3726,47 +4016,39 @@ def save_note(token):
                 current_app.logger.warning("Original upload file missing: %s; skipping copy", src_path)
                 continue
 
-            # Open original file and wrap into FileStorage so verify_and_record_upload can run the usual checks
             try:
                 with open(src_path, "rb") as f:
                     fs = FileStorage(stream=f, filename=orig_upload.original_filename or orig_upload.stored_filename,
                                      content_type=orig_upload.mimetype or '')
-                    # call verify_and_record_upload which will enforce user quota, max size, content checks, etc.
                     success, result = verify_and_record_upload(fs, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES)
-            except Exception as e:
+            except Exception:
                 current_app.logger.exception("Exception while wrapping/or calling verify_and_record_upload for %s", src_path)
-                # cleanup any uploads we've created so far
                 cleanup_created_uploads()
                 db.session.rollback()
                 abort(500, description="Internal error while copying attachments.")
 
             if not success:
-                # verification failed (quota, type, content, etc). Do best-effort cleanup of already created uploads.
                 current_app.logger.warning("Failed to copy attachment for note %s: %s", original.id, result)
                 cleanup_created_uploads()
                 db.session.rollback()
                 abort(400, description=f"Failed to copy attachment: {result}")
 
-            # success -> result is an Upload model which verify_and_record_upload already committed
             new_upload = result
             created_uploads.append(new_upload)
-
-            # Link the newly created upload to the new note (we will commit these links later)
             note_upload_link = NoteUpload(note_id=new_note.id, upload_id=new_upload.id)
             db.session.add(note_upload_link)
 
-        # increment share access_count
-        share.access_count = (share.access_count or 0) + 1
-        db.session.add(share)
+        # increment canonical share access count (same as visit: pick first created share)
+        canonical = (Share.query.filter_by(token=token).order_by(Share.created_at.asc()).first())
+        if canonical:
+            canonical.access_count = (canonical.access_count or 0) + 1
+            db.session.add(canonical)
 
-        # commit note + noteupload links + share increment
         db.session.commit()
-
         return jsonify(new_note.to_dict()), 201
 
-    except Exception as e:
+    except Exception:
         current_app.logger.exception("Failed to copy shared note (final exception)")
-        # cleanup created uploads if any (best-effort)
         try:
             cleanup_created_uploads()
         except Exception:
@@ -3774,27 +4056,42 @@ def save_note(token):
         db.session.rollback()
         abort(500, description="Failed to save shared note.")    
 
-# Attachment download only for valid shares (do not reuse the normal /uploads/ download without permission)
+# -------------------------------------------------------
+# Attachment download for notes inside folder shares
+# -------------------------------------------------------
 @app.route('/s/<token>/attachments/<int:upload_id>', methods=['GET'])
 def shared_attachment_download(token, upload_id):
-    share = Share.query.filter_by(token=token).first()
-    if not share:
+    # check token exists and has some allowed nodes
+    folder_ids, note_ids, _, _ = get_shared_node_sets_for_token(token)
+    if not folder_ids and not note_ids:
         abort(404)
 
-    # ensure upload belongs to this note
-    linked = NoteUpload.query.filter_by(note_id=share.note_id, upload_id=upload_id).first()
-    if not linked:
-        abort(404)
-
+    # find upload
     up = Upload.query.get(upload_id)
     if not up or up.deleted:
+        abort(404)
+
+    # find the note(s) that reference this upload
+    linked_nu = NoteUpload.query.filter_by(upload_id=upload_id).first()
+    if not linked_nu:
+        abort(404)
+
+    note = Note.query.get(linked_nu.note_id)
+    if not note:
+        abort(404)
+
+    # allow access if either:
+    #  - this specific note id is in the set of shared notes
+    #  - OR the note's folder is in the set of shared folders (because we created share rows for notes explicitly above,
+    #    the note should normally be in note_ids; but double check)
+    allowed = (note.id in note_ids) or (note.folder_id in folder_ids)
+    if not allowed:
         abort(404)
 
     file_path = os.path.join(UPLOAD_FOLDER, up.stored_filename)
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
-    # serve file (adjust your storage strategy - maybe use send_from_directory or stream from S3)
     return send_file(file_path, as_attachment=True, download_name=up.original_filename)
 
 @app.route('/notes/<int:note_id>/share', methods=['GET'])
@@ -3826,6 +4123,34 @@ def get_share_for_note(note_id):
         "expires_at": share.expires_at.isoformat() if share.expires_at else None,
         "access_count": share.access_count or 0
     }), 200
+
+@app.route('/folders/<int:folder_id>/share', methods=['GET'])
+@require_session_key
+def get_folder_share(folder_id):
+    folder = Folder.query.get(folder_id)
+    if not folder or folder.user_id != g.user_id:
+        return jsonify({"error": "Folder not found or access denied"}), 404
+
+    now = datetime.utcnow()
+    # Find active (non-expired) shares for this folder
+    share = (Share.query
+             .filter_by(folder_id=folder_id, user_id=g.user_id)
+             .filter((Share.expires_at == None) | (Share.expires_at > now))
+             .order_by(Share.created_at.desc())
+             .first())
+
+    if not share:
+        return jsonify({"error": "No active share found"}), 404
+
+    share_url = url_for('public_share', token=share.token, _external=True)
+
+    return jsonify({
+        "token": share.token,
+        "url": share_url,
+        "expires_at": share.expires_at.isoformat() if share.expires_at else None,
+        "access_count": share.access_count or 0
+    }), 200
+
 
 # -------------------------
 # Public API routes (no auth)
@@ -9592,28 +9917,28 @@ def password_eisen():
 def manage_notes():
     if request.method == 'POST':
         data = request.json
-        note_html = data['note']
-        note_html = sanitize_html(note_html)
-        
-        # Validate folder_id if provided
+        note_html = sanitize_html(data['note'])
         folder_id = data.get('folder_id')
+
+        # Validate folder
         if folder_id:
             folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
             if not folder:
                 return jsonify({"error": "Folder not found or access denied"}), 400
 
+        # Handle attachments
         attachments = data.get('attachments') or []
         valid_attachments = []
-        if attachments:
-            for uid in attachments:
-                up = Upload.query.get(uid)
-                if not up or up.user_id != g.user_id or up.deleted:
-                    return jsonify({"error": f"Invalid attachment id: {uid}"}), 400
-                valid_attachments.append(up.id)
+        for uid in attachments:
+            up = Upload.query.get(uid)
+            if not up or up.user_id != g.user_id or up.deleted:
+                return jsonify({"error": f"Invalid attachment id: {uid}"}), 400
+            valid_attachments.append(up.id)
 
+        # Create note
         new_note = Note(
-            user_id=g.user_id, 
-            title=data.get('title'), 
+            user_id=g.user_id,
+            title=data.get('title'),
             note=note_html,
             tag=data.get('tag'),
             folder_id=folder_id
@@ -9621,36 +9946,46 @@ def manage_notes():
         db.session.add(new_note)
         db.session.commit()
 
-        if valid_attachments:
-            for uid in valid_attachments:
-                nu = NoteUpload(note_id=new_note.id, upload_id=uid)
-                db.session.add(nu)
+        # Attach uploads
+        for uid in valid_attachments:
+            db.session.add(NoteUpload(note_id=new_note.id, upload_id=uid))
+        db.session.commit()
+
+        # Propagate shares from ancestor folders
+        if folder_id:
+            parent_folder = Folder.query.get(folder_id)
+            while parent_folder:
+                for share in parent_folder.shares:  # all shares on this folder
+                    db.session.add(Share(
+                        token=share.token,
+                        note_id=new_note.id,
+                        folder_id=None,
+                        user_id=g.user_id,
+                        expires_at=share.expires_at
+                    ))
+                parent_folder = Folder.query.get(parent_folder.parent_id) if parent_folder.parent_id else None
             db.session.commit()
 
         return jsonify({"message": "Note added successfully!"}), 201
+
     else:
-        # Get folder_id from query parameter
-        folder_id = request.args.get('folder_id')
+        # GET notes (unchanged)
+        folder_id = request.args.get('folder_id', type=int)
         query = Note.query.filter_by(user_id=g.user_id)
-        
-        if folder_id:
-            query = query.filter_by(folder_id=folder_id)
-        else:
-            # If no folder_id specified, get notes without a folder (root level)
-            query = query.filter_by(folder_id=None)
-            
+        query = query.filter_by(folder_id=folder_id) if folder_id else query.filter_by(folder_id=None)
+
         notes = query.order_by(Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
             attachments = []
             for nu in NoteUpload.query.filter_by(note_id=note.id).all():
-                uploads_row = Upload.query.get(nu.upload_id)
-                if uploads_row and not uploads_row.deleted:
+                up = Upload.query.get(nu.upload_id)
+                if up and not up.deleted:
                     attachments.append({
-                        "upload_id": uploads_row.id,
-                        "filename": uploads_row.original_filename,
-                        "size_bytes": uploads_row.size_bytes,
-                        "mimetype": uploads_row.mimetype
+                        "upload_id": up.id,
+                        "filename": up.original_filename,
+                        "size_bytes": up.size_bytes,
+                        "mimetype": up.mimetype
                     })
             sanitized_notes.append({
                 "id": note.id,
@@ -9763,34 +10098,43 @@ def manage_folders():
         data = request.json
         name = data.get('name')
         parent_id = data.get('parent_id')
-        
+
         if not name:
             return jsonify({"error": "Folder name is required"}), 400
-            
-        # Validate parent folder if provided
+
+        # Validate parent folder
         if parent_id:
             parent = Folder.query.filter_by(id=parent_id, user_id=g.user_id).first()
             if not parent:
                 return jsonify({"error": "Parent folder not found or access denied"}), 400
 
-        new_folder = Folder(
-            user_id=g.user_id,
-            name=name,
-            parent_id=parent_id
-        )
+        # Create folder
+        new_folder = Folder(user_id=g.user_id, name=name, parent_id=parent_id)
         db.session.add(new_folder)
         db.session.commit()
-        
+
+        # Propagate shares from ancestor folders
+        if parent_id:
+            parent_folder = Folder.query.get(parent_id)
+            while parent_folder:
+                for share in parent_folder.shares:
+                    db.session.add(Share(
+                        token=share.token,
+                        note_id=None,
+                        folder_id=new_folder.id,
+                        user_id=g.user_id,
+                        expires_at=share.expires_at
+                    ))
+                parent_folder = Folder.query.get(parent_folder.parent_id) if parent_folder.parent_id else None
+            db.session.commit()
+
         return jsonify({"message": "Folder created successfully!", "folder": new_folder.to_dict()}), 201
+
     else:
+        # GET folders (unchanged)
         parent_id = request.args.get("parent_id", type=int)
         query = Folder.query.filter_by(user_id=g.user_id)
-
-        if parent_id is None:
-            query = query.filter(Folder.parent_id == None)  # top-level
-        else:
-            query = query.filter(Folder.parent_id == parent_id)
-
+        query = query.filter(Folder.parent_id == parent_id) if parent_id is not None else query.filter(Folder.parent_id == None)
         folders = query.all()
         return jsonify([folder.to_dict() for folder in folders])
 

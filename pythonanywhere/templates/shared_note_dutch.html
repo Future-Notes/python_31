@@ -384,5 +384,151 @@ main.shared-main {
 })();
 </script>
 
+<script>
+(function () {
+  const token = {{ token|tojson }};
+  const isFolder = {{ is_folder_view|tojson }};
+  const displayFolderId = {{ display_folder_id|tojson }};
+
+  function el(tag, attrs={}, text='') {
+    const e = document.createElement(tag);
+    for (const k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  async function fetchFolder(folderId) {
+    const url = `/s/${encodeURIComponent(token)}/api/folder/${folderId}`;
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      console.warn('Failed to load folder contents', res.status);
+      return null;
+    }
+    const data = await res.json();
+    return data;
+  }
+
+  function renderFolder(data) {
+    const container = document.querySelector('.shared-note-body');
+    if (!container) return;
+
+    container.innerHTML = ''; // clear
+    const top = el('div', { class: 'folder-view-top' });
+
+    const backBtn = el('button', { class: 'back-btn', type: 'button' }, '⬅ Up');
+    backBtn.addEventListener('click', () => {
+      // Navigate to parent by reloading with parent folder id parameter.
+      // For better UX you could pushState and fetch new contents without reload.
+      if (data.folder && data.folder.parent_id) {
+        window.location.href = `/s/${encodeURIComponent(token)}?folder_id=${data.folder.parent_id}`;
+      } else {
+        // if no parent, go to root share page
+        window.location.href = `/s/${encodeURIComponent(token)}`;
+      }
+    });
+
+    top.appendChild(backBtn);
+    container.appendChild(top);
+
+    const lists = el('div', { class: 'folder-lists' });
+
+    const folderSection = el('section');
+    folderSection.appendChild(el('h3', {}, 'Folders'));
+    if (data.folders && data.folders.length) {
+      const ul = el('ul');
+      data.folders.forEach(f => {
+        const li = el('li');
+        const a = el('a', { href: `/s/${encodeURIComponent(token)}?folder_id=${f.id}` }, f.name || '(untitled)');
+        li.appendChild(a);
+        folderSection.appendChild(li);
+      });
+    } else {
+      folderSection.appendChild(el('div', {}, 'No subfolders'));
+    }
+
+    const noteSection = el('section');
+    noteSection.appendChild(el('h3', {}, 'Notes'));
+    if (data.notes && data.notes.length) {
+      const ul2 = el('ul');
+      data.notes.forEach(n => {
+        const li = el('li');
+        // link navigates to note view within same token; GET /s/<token>?note_id=<id> could be supported,
+        // but we will direct to the same token root note view via server-side rendering:
+        // Provide link that opens the note detail (server will render note view because note-only rendering uses note shares
+        // or you might implement a client fetch and render detail inline).
+        const a = el('a', { href: `/s/${encodeURIComponent(token)}?note_id=${n.id}` }, n.title || '(untitled)');
+        a.addEventListener('click', (ev) => {
+          // prevent default and fetch and render note inline via new API if you prefer.
+          // For simplicity, allow server to handle note rendering when clicked (so the token + note context is server-rendered).
+        });
+        li.appendChild(a);
+
+        // small meta and save button
+        const meta = el('small', {}, (n.tag ? n.tag + ' • ' : '') + (n.title || ''));
+        li.appendChild(meta);
+
+        const saveBtn = el('button', { type: 'button', 'data-note-id': n.id }, 'Save');
+        saveBtn.addEventListener('click', async () => {
+          // POST /s/<token>/save with note_id so logged in users can copy.
+          try {
+            const resp = await fetch(`/s/${encodeURIComponent(token)}/save`, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({note_id: n.id})
+            });
+            if (resp.status === 201 || resp.status === 200) {
+              alert('Saved!');
+              window.location.href = '/index';
+            } else if (resp.status === 401) {
+              // show login/signup modal or redirect
+              window.location.href = '/login_page';
+            } else {
+              const text = await resp.text().catch(()=>null);
+              alert('Failed to save: ' + (text || resp.status));
+            }
+          } catch (e) {
+            alert('Network error while saving note.');
+          }
+        });
+
+        li.appendChild(saveBtn);
+        ul2.appendChild(li);
+      });
+      noteSection.appendChild(ul2);
+    } else {
+      noteSection.appendChild(el('div', {}, 'No notes'));
+    }
+
+    lists.appendChild(folderSection);
+    lists.appendChild(noteSection);
+    container.appendChild(lists);
+  }
+
+  // initial load
+  (async function init() {
+    if (!isFolder) return;
+
+    let fid = displayFolderId || null;
+    if (!fid) {
+      console.warn('No folder id to display');
+      return;
+    }
+
+    const data = await fetchFolder(fid);
+    if (!data) {
+      document.querySelector('.shared-note-body').innerHTML = '<div>Unable to load folder contents.</div>';
+      return;
+    }
+
+    // Optional: also include parent folder metadata if needed; server can include it in API if you expand.
+    // For now just render received data.
+    renderFolder(data);
+  })();
+})();
+</script>
+
 </body>
 </html>

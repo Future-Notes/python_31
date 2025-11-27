@@ -193,7 +193,10 @@ main.shared-main {
     <img src="/android-chrome-512x512.png" alt="icon" />
     <div>
       <div class="title">Future Notes</div>
-      <div class="subtitle" style="font-size:12px;color:var(--muted)">Shared note</div>
+      <div class="subtitle" style="font-size:12px;color:var(--muted)">
+        {% if is_folder_view %}Shared folder{% else %}Shared note{% endif %}
+      </div>
+
     </div>
   </div>
 
@@ -207,7 +210,17 @@ main.shared-main {
   <div class="shared-note-container" aria-live="polite">
     <article class="shared-note-card" role="article" aria-labelledby="shared-note-title">
       <div class="shared-note-header">
-        <h2 id="shared-note-title" class="shared-note-title">{{ note_title or 'Untitled' }}</h2>
+        <h2 id="shared-note-title" class="shared-note-title">
+          {% if is_folder_view %}
+            {{ display_folder_name or ('Folder ' ~ display_folder_id) }}
+          {% else %}
+            {{ note_title or 'Untitled' }}
+          {% endif %}
+        </h2>
+        {% if return_folder_id %}
+          <a href="{{ url_for('public_share', token=token, folder_id=return_folder_id) }}" class="back-to-folder" style="margin-right:12px;">⬅ Back to folder</a>
+        {% endif %}
+
         {% if note_tag %}<div class="shared-note-tag">{{ note_tag }}</div>{% endif %}
       </div>
 
@@ -245,7 +258,9 @@ main.shared-main {
         <div class="share-row">
           <div id="share-url" class="share-url">{{ url_for('public_share', token=token, _external=True) }}</div>
           <button id="copy-btn" class="copy-btn" aria-label="Copy share link">Copy</button>
-          <button id="save-note-btn" class="report-btn">Save note</button>
+          {% if not is_folder_view %}
+            <button id="save-note-btn" class="report-btn">Save note</button>
+          {% endif %}
           <button id="report-btn" class="report-btn" aria-label="Report link">Report</button>
         </div>
 
@@ -317,14 +332,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 const saveButton = document.getElementById("save-note-btn");
-
-saveButton.addEventListener('click', ()=> {
-  if (shouldCopy) {
-    saveNote();
-  } else {
-    openAdvertisementModal();
-  }
-});
+if (saveButton) {
+  saveButton.addEventListener('click', ()=> {
+    if (shouldCopy) {
+      saveNote();
+    } else {
+      openAdvertisementModal();
+    }
+  });
+}
 
 (function () {
   // Reuse your global shouldCopy if present; otherwise create it.
@@ -666,6 +682,157 @@ saveButton.addEventListener('click', ()=> {
 
 })();
 </script>
+
+<script>
+(function () {
+  const token = {{ token|tojson }};
+  const isFolder = {{ is_folder_view|tojson }};
+  const displayFolderId = {{ display_folder_id|tojson }};
+
+  function el(tag, attrs={}, text='') {
+    const e = document.createElement(tag);
+    for (const k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  async function fetchFolder(folderId) {
+    const url = `/s/${encodeURIComponent(token)}/api/folder/${folderId}`;
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      console.warn('Failed to load folder contents', res.status);
+      return null;
+    }
+    const data = await res.json();
+    return data;
+  }
+
+  function renderFolder(data) {
+    const container = document.querySelector('.shared-note-body');
+    if (!container) return;
+
+    container.innerHTML = ''; // clear
+
+    // update header title to folder name (so title updates without reload)
+    if (data.folder && data.folder.name) {
+      const titleEl = document.getElementById('shared-note-title');
+      if (titleEl) titleEl.textContent = data.folder.name;
+    }
+
+    const top = el('div', { class: 'folder-view-top' });
+
+    const backBtn = el('button', { class: 'back-btn', type: 'button' }, '⬅ Up');
+    backBtn.addEventListener('click', () => {
+      // If current folder has a parent, navigate to it. If no parent go to root share page.
+      if (data.folder && data.folder.parent_id) {
+        window.location.href = `/s/${encodeURIComponent(token)}?folder_id=${data.folder.parent_id}`;
+      } else {
+        // go to root share page (no folder param)
+        window.location.href = `/s/${encodeURIComponent(token)}`;
+      }
+    });
+
+    top.appendChild(backBtn);
+    container.appendChild(top);
+
+    const lists = el('div', { class: 'folder-lists' });
+
+    // Folders section
+    const folderSection = el('section');
+    folderSection.appendChild(el('h3', {}, 'Folders'));
+    if (data.folders && data.folders.length) {
+      const ul = el('ul');
+      data.folders.forEach(f => {
+        const li = el('li');
+        const a = el('a', { href: `/s/${encodeURIComponent(token)}?folder_id=${f.id}` }, f.name || '(untitled)');
+        li.appendChild(a);
+        ul.appendChild(li);
+      });
+      folderSection.appendChild(ul);
+    } else {
+      folderSection.appendChild(el('div', {}, 'No subfolders'));
+    }
+
+    // Notes section
+    const noteSection = el('section');
+    noteSection.appendChild(el('h3', {}, 'Notes'));
+    if (data.notes && data.notes.length) {
+      const ul2 = el('ul');
+      data.notes.forEach(n => {
+        const li = el('li');
+
+        // link: ask the server to render the single-note view but remember the folder we came from
+        const noteLinkHref = `/s/${encodeURIComponent(token)}?note_id=${n.id}&folder_id=${data.folder ? data.folder.id : ''}`;
+        const a = el('a', { href: noteLinkHref }, n.title || '(untitled)');
+        li.appendChild(a);
+
+        // small meta and save button
+        const meta = el('small', {}, (n.tag ? n.tag + ' • ' : '') + (n.title || ''));
+        li.appendChild(meta);
+
+        // per-note save button (works via API endpoint /s/<token>/save with note_id)
+        const saveBtn = el('button', { type: 'button', 'data-note-id': n.id }, 'Save');
+        saveBtn.addEventListener('click', async () => {
+          try {
+            const resp = await fetch(`/s/${encodeURIComponent(token)}/save`, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({note_id: n.id})
+            });
+            if (resp.status === 201 || resp.status === 200) {
+              alert('Saved!');
+              window.location.href = '/index';
+            } else if (resp.status === 401) {
+              window.location.href = '/login_page';
+            } else {
+              const text = await resp.text().catch(()=>null);
+              alert('Failed to save: ' + (text || resp.status));
+            }
+          } catch (e) {
+            alert('Network error while saving note.');
+          }
+        });
+
+        li.appendChild(saveBtn);
+        ul2.appendChild(li);
+      });
+      noteSection.appendChild(ul2);
+    } else {
+      noteSection.appendChild(el('div', {}, 'No notes'));
+    }
+
+    lists.appendChild(folderSection);
+    lists.appendChild(noteSection);
+    container.appendChild(lists);
+  }
+
+
+  // initial load
+  (async function init() {
+    if (!isFolder) return;
+
+    let fid = displayFolderId || null;
+    if (!fid) {
+      console.warn('No folder id to display');
+      return;
+    }
+
+    const data = await fetchFolder(fid);
+    if (!data) {
+      document.querySelector('.shared-note-body').innerHTML = '<div>Unable to load folder contents.</div>';
+      return;
+    }
+
+    // Optional: also include parent folder metadata if needed; server can include it in API if you expand.
+    // For now just render received data.
+    renderFolder(data);
+  })();
+})();
+</script>
+
 
 </body>
 </html>
