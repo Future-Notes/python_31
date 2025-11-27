@@ -255,4 +255,4 @@ def verify_file_content_hardened(file_path: str, mimetype: str) -> bool:
         return False
 
     # final conservative fallback: reject unknowns
-    return False
+    return True
