@@ -2582,17 +2582,6 @@
                 if (existing && (f.upload_id || f.id)) {
                     const uid = f.upload_id || f.id;
 
-                    // Only show Word Online edit button for .docx
-                    const filename = f.original_filename || f.filename || f.name || '';
-                    const ext = filename.split('.').pop().toLowerCase();
-                    if (ext === 'docx') {
-                        const editBtn = document.createElement('button');
-                        editBtn.type = 'button';
-                        editBtn.textContent = 'Edit in Word';
-                        editBtn.style.marginLeft = '8px';
-                        editBtn.onclick = () => openInWordOnline(uid);
-                        row.appendChild(editBtn);
-                    }
 
                     // Existing Open / download link
                     const link = document.createElement('a');
@@ -2624,17 +2613,6 @@
                 el.appendChild(row);
             });
         }
-        
-        function openInWordOnline(fileId) {
-            const width = 1200;
-            const height = 800;
-            const left = (screen.width / 2) - (width / 2);
-            const top = (screen.height / 2) - (height / 2);
-
-            window.open(`/wopi/launch/${fileId}`, "WordEditor",
-                `width=${width},height=${height},top=${top},left=${left}`);
-        }
-
 
         document.addEventListener('DOMContentLoaded', () => {
             const toggleBtn = document.getElementById('toggle-attachments-btn');
