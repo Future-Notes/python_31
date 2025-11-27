@@ -34,6 +34,7 @@ import subprocess
 import shutil
 import hashlib
 import smtplib
+from urllib.parse import quote_plus
 from email.mime.text import MIMEText
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from email.mime.multipart import MIMEMultipart
@@ -3486,13 +3487,13 @@ def wopi_launch(file_id):
 
     # Generate token: include file_id and user_id
     token = serializer.dumps({"file_id": file_id, "user_id": upload.user_id})
-
+    token_encoded = quote_plus(token)
     # Build WOPI CheckFileInfo endpoint URL
     wopi_src = url_for("wopi_check_fileinfo", file_id=file_id, _external=True)
     # Word Online editor URL
     word_online_url = (
         f"https://word-edit.officeapps.live.com/we/wordeditorframe.aspx"
-        f"?WOPISrc={wopi_src}&access_token={token}"
+        f"?WOPISrc={wopi_src}&access_token={token_encoded}"
     )
 
     # Open in popup
