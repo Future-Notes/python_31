@@ -3497,7 +3497,7 @@ def wopi_launch(file_id):
     # Word Online editor URL
     word_online_url = (
         f"https://word-edit.officeapps.live.com/we/wordeditorframe.aspx"
-        f"?WOPISrc={wopi_src_encoded}&access_token={token_encoded}"
+        f"?WOPISrc={wopi_src_encoded}?access_token={token_encoded}"
     )
 
     return redirect(word_online_url)
