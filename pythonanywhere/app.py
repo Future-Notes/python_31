@@ -42,7 +42,6 @@ from email import encoders
 from email.mime.image import MIMEImage
 import mimetypes
 import urllib
-from urllib.parse import quote
 from PIL import Image
 import bleach
 from google.oauth2.credentials import Credentials
@@ -3479,47 +3478,54 @@ def manage_2fa():
 #---------------------------------API routes--------------------------------
 
 # -------------------------------
-# 1. Launch endpoint (popup)
+# 1. Launch route: generate token & redirect to Word Online
 # -------------------------------
 @app.route("/wopi/launch/<int:file_id>")
 def wopi_launch(file_id):
-    session_key = request.args.get("session_key")
-    if not session_key or session_key not in session_keys:
-        return abort(403, "Invalid session")
+    upload = Upload.query.get_or_404(file_id)
 
-    token = generate_wopi_token(file_id, session_key)
+    # Generate token: include file_id and user_id
+    token = serializer.dumps({"file_id": file_id, "user_id": upload.user_id})
 
-    # Build full HTTPS WOPISrc URL
-    wopi_src = url_for("wopi_check_fileinfo", file_id=file_id,
-                       _external=True, _scheme="https")
-
+    # Build WOPI CheckFileInfo endpoint URL
+    wopi_src = url_for("wopi_check_fileinfo", file_id=file_id, _external=True)
+    # Word Online editor URL
     word_online_url = (
         f"https://word-edit.officeapps.live.com/we/wordeditorframe.aspx"
-        f"?WOPISrc={quote(wopi_src, safe='')}&access_token={token}"
+        f"?WOPISrc={wopi_src}&access_token={token}"
     )
 
+    # Open in popup
     return redirect(word_online_url)
-
 
 # -------------------------------
 # 2. CheckFileInfo endpoint
 # -------------------------------
 @app.route("/wopi/files/<int:file_id>")
 def wopi_check_fileinfo(file_id):
-    token = request.args.get("access_token")
-    data = verify_wopi_token(token)
-    if not data or data["file_id"] != file_id:
-        return abort(403)
+    # Verify access token
+    access_token = request.args.get("access_token")
+    if not access_token:
+        return abort(403, "Missing access token")
+
+    try:
+        data = serializer.loads(access_token, max_age=TOKEN_EXPIRATION)
+        if data["file_id"] != file_id:
+            return abort(403)
+    except (BadSignature, SignatureExpired):
+        return abort(403, "Invalid or expired token")
 
     upload = Upload.query.get_or_404(file_id)
-    return jsonify({
+
+    response = {
         "BaseFileName": upload.original_filename,
         "Size": upload.size_bytes,
-        "UserId": str(data["user_id"]),
+        "UserId": str(upload.user_id),
         "UserCanWrite": True,
         "SupportsUpdate": True,
         "Version": "1.0"
-    })
+    }
+    return jsonify(response)
 
 
 # -------------------------------
@@ -3527,10 +3533,17 @@ def wopi_check_fileinfo(file_id):
 # -------------------------------
 @app.route("/wopi/files/<int:file_id>/contents", methods=["GET", "POST"])
 def wopi_file_contents(file_id):
-    token = request.args.get("access_token")
-    data = verify_wopi_token(token)
-    if not data or data["file_id"] != file_id:
-        return abort(403)
+    # Verify access token
+    access_token = request.args.get("access_token")
+    if not access_token:
+        return abort(403, "Missing access token")
+
+    try:
+        data = serializer.loads(access_token, max_age=TOKEN_EXPIRATION)
+        if data["file_id"] != file_id:
+            return abort(403)
+    except (BadSignature, SignatureExpired):
+        return abort(403, "Invalid or expired token")
 
     upload = Upload.query.get_or_404(file_id)
     path = os.path.join(UPLOAD_FOLDER, upload.stored_filename)
@@ -3539,25 +3552,13 @@ def wopi_file_contents(file_id):
         return send_file(path, as_attachment=False)
 
     if request.method == "POST":
-        # Word Online is saving updated file
-        try:
-            with open(path, "wb") as f:
-                f.write(request.data)
-            # update metadata
-            upload.size_bytes = os.path.getsize(path)
-            upload.modified_at = datetime.utcnow()
-            db.session.commit()
-            return "", 200
-        except Exception as e:
-            return f"Error saving file: {e}", 500
-
-
-# -------------------------------
-# Optional: health check endpoint
-# -------------------------------
-@app.route("/wopi/health")
-def health():
-    return jsonify({"status": "ok"})
+        # Word Online is sending updated file
+        with open(path, "wb") as f:
+            f.write(request.data)
+        upload.size_bytes = os.path.getsize(path)
+        upload.modified_at = datetime.utcnow()
+        db.session.commit()
+        return "", 200
 
 # Create share link (owner only)
 @app.route('/notes/<int:note_id>/share', methods=['POST'])
