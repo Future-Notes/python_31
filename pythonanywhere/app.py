@@ -3481,6 +3481,7 @@ def manage_2fa():
 # -------------------------------
 # 1. Launch route: generate token & redirect to Word Online
 # -------------------------------
+
 @app.route("/wopi/launch/<int:file_id>")
 def wopi_launch(file_id):
     upload = Upload.query.get_or_404(file_id)
@@ -3488,15 +3489,17 @@ def wopi_launch(file_id):
     # Generate token: include file_id and user_id
     token = serializer.dumps({"file_id": file_id, "user_id": upload.user_id})
     token_encoded = quote_plus(token)
+
     # Build WOPI CheckFileInfo endpoint URL
     wopi_src = url_for("wopi_check_fileinfo", file_id=file_id, _external=True)
+    wopi_src_encoded = quote_plus(wopi_src)  # <-- encode WOPISrc too
+
     # Word Online editor URL
     word_online_url = (
         f"https://word-edit.officeapps.live.com/we/wordeditorframe.aspx"
-        f"?WOPISrc={wopi_src}&access_token={token_encoded}"
+        f"?WOPISrc={wopi_src_encoded}&access_token={token_encoded}"
     )
 
-    # Open in popup
     return redirect(word_online_url)
 
 # -------------------------------
