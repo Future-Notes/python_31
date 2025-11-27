@@ -2,6 +2,7 @@
 from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for, send_file
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, func
@@ -41,6 +42,7 @@ from email import encoders
 from email.mime.image import MIMEImage
 import mimetypes
 import urllib
+from urllib.parse import quote
 from PIL import Image
 import bleach
 from google.oauth2.credentials import Credentials
@@ -150,9 +152,6 @@ ALLOWED_MIMETYPES = {
     # optional fallback
     'application/octet-stream',
 }
-# Upload folder
-UPLOAD_FOLDER = os.path.join(app.root_path, 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -160,6 +159,10 @@ UPLOAD_FOLDER = 'static/uploads/profile_pictures'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+app.config['SECRET_KEY'] = os.urandom(24)
+# Token serializer
+serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+TOKEN_EXPIRATION = 3600  # seconds (1 hour)
 session_keys = {}
 games = {}
 BOARD_SIZE = 10
@@ -895,6 +898,43 @@ def generate_session_key(user_id):
         "last_active": datetime.now()
     }
     return key
+
+def generate_wopi_token(file_id, session_key):
+    """
+    Create a signed WOPI token tied to the user session.
+    """
+    session_data = session_keys.get(session_key)
+    if not session_data:
+        raise ValueError("Invalid session key")
+
+    payload = {
+        "file_id": file_id,
+        "user_id": session_data["user_id"],
+        "session_key": session_key
+    }
+    return serializer.dumps(payload)
+
+def verify_wopi_token(token):
+    try:
+        data = serializer.loads(token, max_age=TOKEN_EXPIRATION)
+    except Exception:
+        return None
+
+    # Verify session exists and is not expired
+    session_key = data.get("session_key")
+    session_data = session_keys.get(session_key)
+
+    if not session_data:
+        return None
+
+    # Optional: check expiration
+    if session_data["expires_at"] < datetime.now():
+        # session expired
+        session_keys.pop(session_key, None)
+        return None
+
+    return data
+
 
 def remove_upload_if_orphan(upload_id):
     """
@@ -3437,6 +3477,87 @@ def manage_2fa():
     return render_template("setup_2fa.html")
 
 #---------------------------------API routes--------------------------------
+
+# -------------------------------
+# 1. Launch endpoint (popup)
+# -------------------------------
+@app.route("/wopi/launch/<int:file_id>")
+def wopi_launch(file_id):
+    session_key = request.args.get("session_key")
+    if not session_key or session_key not in session_keys:
+        return abort(403, "Invalid session")
+
+    token = generate_wopi_token(file_id, session_key)
+
+    # Build full HTTPS WOPISrc URL
+    wopi_src = url_for("wopi_check_fileinfo", file_id=file_id,
+                       _external=True, _scheme="https")
+
+    word_online_url = (
+        f"https://word-edit.officeapps.live.com/we/wordeditorframe.aspx"
+        f"?WOPISrc={quote(wopi_src, safe='')}&access_token={token}"
+    )
+
+    return redirect(word_online_url)
+
+
+# -------------------------------
+# 2. CheckFileInfo endpoint
+# -------------------------------
+@app.route("/wopi/files/<int:file_id>")
+def wopi_check_fileinfo(file_id):
+    token = request.args.get("access_token")
+    data = verify_wopi_token(token)
+    if not data or data["file_id"] != file_id:
+        return abort(403)
+
+    upload = Upload.query.get_or_404(file_id)
+    return jsonify({
+        "BaseFileName": upload.original_filename,
+        "Size": upload.size_bytes,
+        "UserId": str(data["user_id"]),
+        "UserCanWrite": True,
+        "SupportsUpdate": True,
+        "Version": "1.0"
+    })
+
+
+# -------------------------------
+# 3. File contents endpoint
+# -------------------------------
+@app.route("/wopi/files/<int:file_id>/contents", methods=["GET", "POST"])
+def wopi_file_contents(file_id):
+    token = request.args.get("access_token")
+    data = verify_wopi_token(token)
+    if not data or data["file_id"] != file_id:
+        return abort(403)
+
+    upload = Upload.query.get_or_404(file_id)
+    path = os.path.join(UPLOAD_FOLDER, upload.stored_filename)
+
+    if request.method == "GET":
+        return send_file(path, as_attachment=False)
+
+    if request.method == "POST":
+        # Word Online is saving updated file
+        try:
+            with open(path, "wb") as f:
+                f.write(request.data)
+            # update metadata
+            upload.size_bytes = os.path.getsize(path)
+            upload.modified_at = datetime.utcnow()
+            db.session.commit()
+            return "", 200
+        except Exception as e:
+            return f"Error saving file: {e}", 500
+
+
+# -------------------------------
+# Optional: health check endpoint
+# -------------------------------
+@app.route("/wopi/health")
+def health():
+    return jsonify({"status": "ok"})
 
 # Create share link (owner only)
 @app.route('/notes/<int:note_id>/share', methods=['POST'])
