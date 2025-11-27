@@ -3492,12 +3492,12 @@ def wopi_launch(file_id):
 
     # Build WOPI CheckFileInfo endpoint URL
     wopi_src = url_for("wopi_check_fileinfo", file_id=file_id, _external=True)
-    wopi_src_encoded = quote_plus(wopi_src)  # <-- encode WOPISrc too
+    wopi_src_encoded = wopi_src + f"?access_token={token_encoded}"
 
     # Word Online editor URL
     word_online_url = (
         f"https://word-edit.officeapps.live.com/we/wordeditorframe.aspx"
-        f"?WOPISrc={wopi_src_encoded}?access_token={token_encoded}"
+        f"?WOPISrc={wopi_src_encoded}"
     )
 
     return redirect(word_online_url)
