@@ -20,7 +20,6 @@
 /* Page base */
 html,body { height:100%; margin:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--fg); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
 
-/* subtle texture (very light) */
 body::before {
   content: "";
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
@@ -49,6 +48,11 @@ header.shared-header {
 .header-actions a { text-decoration:none; color:var(--fg); background: var(--ctr-color); padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); font-weight:600; font-size:13px; }
 .header-actions a.secondary { background:transparent; border:1px solid rgba(255,255,255,0.04); color:var(--muted); }
 
+.brand:hover img {
+  transform: scale(1.05);
+  transition: transform 0.2s;
+}
+
 /* Center container */
 main.shared-main {
   min-height: calc(100vh - 64px);
@@ -75,7 +79,7 @@ main.shared-main {
   padding: 22px;
   box-shadow: 0 18px 48px rgba(0,0,0,0.55);
   border: 1px solid rgba(255,255,255,0.03);
-  color: var(--fg);
+  color: var(--fg) !important;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -177,6 +181,68 @@ main.shared-main {
 /* footer small */
 .shared-footer { color:var(--muted); font-size:13px; text-align:center; margin-top:6px; }
 
+.item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.item-card {
+    background: var(--bg-color);
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.item-card:hover {
+    background: var(--ctr-color);
+}
+
+.item-title {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--fg);
+}
+
+.item-preview {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.item-tag {
+    display: inline-block;
+    background: #e4edf9;
+    color: #395b9b;
+    padding: 2px 6px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    width: fit-content;
+}
+
+.folder-card .item-title {
+    color: var(--fg);
+}
+
+.back-btn {
+    background: var(--btn-color);
+    border: 1px solid #ccc;
+    color: var(--fg);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.back-btn:hover {
+    background: var(--ctr-color);
+}
+
+
 /* responsive */
 @media (max-width:760px) {
   .share-row { flex-direction:column; gap:8px; }
@@ -193,7 +259,10 @@ main.shared-main {
     <img src="/android-chrome-512x512.png" alt="icon" />
     <div>
       <div class="title">Future Notes</div>
-      <div class="subtitle" style="font-size:12px;color:var(--muted)">Shared note</div>
+      <div class="subtitle" style="font-size:12px;color:var(--muted)">
+        {% if is_folder_view %}Shared folder{% else %}Shared note{% endif %}
+      </div>
+
     </div>
   </div>
 
@@ -207,7 +276,17 @@ main.shared-main {
   <div class="shared-note-container" aria-live="polite">
     <article class="shared-note-card" role="article" aria-labelledby="shared-note-title">
       <div class="shared-note-header">
-        <h2 id="shared-note-title" class="shared-note-title">{{ note_title or 'Untitled' }}</h2>
+        <h2 id="shared-note-title" class="shared-note-title">
+          {% if is_folder_view %}
+            {{ display_folder_name or ('Folder ' ~ display_folder_id) }}
+          {% else %}
+            {{ note_title or 'Untitled' }}
+          {% endif %}
+        </h2>
+        {% if return_folder_id %}
+          <a style="color: var(--fg) !important" href="{{ url_for('public_share', token=token, folder_id=return_folder_id) }}" class="back-to-folder" style="margin-right:12px;">⬅ Back to folder</a>
+        {% endif %}
+
         {% if note_tag %}<div class="shared-note-tag">{{ note_tag }}</div>{% endif %}
       </div>
 
@@ -215,6 +294,9 @@ main.shared-main {
         {{ note_html|safe }}
       </div>
 
+      {# Only show the attachments block for single-note views.
+         For folder views, attachments are not relevant and would otherwise show "No attachments". #}
+      {% if not is_folder_view %}
       <div class="attachments" id="attachments">
           {% if attachments and attachments|length %}
         {% for a in attachments %}
@@ -239,18 +321,27 @@ main.shared-main {
         <div style="color:var(--muted); text-align:center; width:100%;">No attachments</div>
           {% endif %}
         </div>
+      {% endif %}
 
       <!-- bottom: share + attachments inside the card -->
       <div class="card-bottom">
         <div class="share-row">
           <div id="share-url" class="share-url">{{ url_for('public_share', token=token, _external=True) }}</div>
           <button id="copy-btn" class="copy-btn" aria-label="Copy share link">Copy</button>
-          <button id="save-note-btn" class="report-btn">Save note</button>
+          {% if not is_folder_view %}
+            <button id="save-note-btn" class="report-btn">Save note</button>
+          {% endif %}
           <button id="report-btn" class="report-btn" aria-label="Report link">Report</button>
         </div>
 
         <div class="shared-footer">
-          <small>This note is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a></small>
+          <small>
+            {% if is_folder_view %}
+              This folder is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a>
+            {% else %}
+              This note is shared publicly via a link. <a href="/index" style="color:var(--muted)">Back to app</a>
+            {% endif %}
+          </small>
         </div>
       </div>
     </article>
@@ -317,14 +408,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 const saveButton = document.getElementById("save-note-btn");
-
-saveButton.addEventListener('click', ()=> {
-  if (shouldCopy) {
-    saveNote();
-  } else {
-    openAdvertisementModal();
-  }
-});
+if (saveButton) {
+  saveButton.addEventListener('click', ()=> {
+    if (shouldCopy) {
+      saveNote();
+    } else {
+      openAdvertisementModal();
+    }
+  });
+}
 
 (function () {
   // Reuse your global shouldCopy if present; otherwise create it.
@@ -564,13 +656,12 @@ saveButton.addEventListener('click', ()=> {
       }
     });
   }
-
   if (reportBtn && shareUrlEl) {
     reportBtn.addEventListener('click', ()=> {
       const url = encodeURIComponent(shareUrlEl.textContent.trim());
       const subject = encodeURIComponent('Report shared note: ' + shareUrlEl.textContent.trim());
       const body = encodeURIComponent('I want to report this shared note: ' + shareUrlEl.textContent.trim() + '\\nReason: ');
-      window.location.href = 'mailto:nathanvcappellen@solcon.nl?subject=' + subject + '&body=' + body;
+      window.location.href = 'mailto:noreplyfuturenotes@gmail.com?subject=' + subject + '&body=' + body;
     });
   }
 
@@ -666,6 +757,131 @@ saveButton.addEventListener('click', ()=> {
 
 })();
 </script>
+
+<script>
+(function () {
+  const token = {{ token|tojson }};
+  const isFolder = {{ is_folder_view|tojson }};
+  const displayFolderId = {{ display_folder_id|tojson }};
+
+  function el(tag, attrs={}, text='') {
+    const e = document.createElement(tag);
+    for (const k in attrs) {
+      if (k === 'class') e.className = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    }
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  async function fetchFolder(folderId) {
+    const url = `/s/${encodeURIComponent(token)}/api/folder/${folderId}`;
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      console.warn('Failed to load folder contents', res.status);
+      return null;
+    }
+    const data = await res.json();
+    return data;
+  }
+
+  function renderFolder(data) {
+    const container = document.querySelector('.shared-note-body');
+    if (!container) return;
+
+    container.innerHTML = ''; // clear
+
+    // Update title
+    if (data.folder && data.folder.name) {
+        const titleEl = document.getElementById('shared-note-title');
+        if (titleEl) titleEl.textContent = data.folder.name;
+    }
+
+    // Back button area
+    const top = el('div', { class: 'folder-view-top' });
+
+    if (data.folder && data.folder.parent_id) {
+        const backBtn = el('button', { class: 'back-btn', type: 'button' }, '⬅ Back');
+        backBtn.onclick = () => {
+            window.location.href = `/s/${token}?folder_id=${data.folder.parent_id}`;
+        };
+        top.appendChild(backBtn);
+    }
+
+    container.appendChild(top);
+
+    // --- CARD CONTAINER ---
+    const list = el('div', { class: 'item-list' });
+
+    // --- FOLDERS ---
+    if (data.folders && data.folders.length) {
+        data.folders.forEach(f => {
+            const card = el('div', { class: 'item-card folder-card' });
+            card.onclick = () => {
+                window.location.href = `/s/${token}?folder_id=${f.id}`;
+            };
+
+            card.appendChild(el('div', { class: 'item-title' }, `📁 ${f.name || 'Untitled folder'}`));
+            list.appendChild(card);
+        });
+    }
+
+    // --- NOTES ---
+    if (data.notes && data.notes.length) {
+        data.notes.forEach(n => {
+            const card = el('div', { class: 'item-card note-card' });
+            card.onclick = () => {
+                window.location.href = `/s/${token}?note_id=${n.id}&folder_id=${data.folder.id}`;
+            };
+
+            card.appendChild(el('div', { class: 'item-title' }, `📝 ${n.title || 'Untitled'}`));
+
+            if (n.tag) {
+                card.appendChild(el('div', { class: 'item-tag' }, n.tag));
+            }
+
+            // preview field
+            if (n.preview) {
+                card.appendChild(el('div', { class: 'item-preview' }, n.preview));
+            }
+
+            list.appendChild(card);
+        });
+    }
+
+    // -- If no items --
+    if ((!data.folders || data.folders.length === 0) && (!data.notes || data.notes.length === 0)) {
+        list.appendChild(el('div', {}, 'This folder is empty.'));
+    }
+
+    container.appendChild(list);
+}
+
+
+
+  // initial load
+  (async function init() {
+    if (!isFolder) return;
+
+    let fid = displayFolderId || null;
+    if (!fid) {
+      console.warn('No folder id to display');
+      return;
+    }
+
+    const data = await fetchFolder(fid);
+    if (!data) {
+      document.querySelector('.shared-note-body').innerHTML = '<div>Unable to load folder contents.</div>';
+      return;
+    }
+
+    // Optional: also include parent folder metadata if needed; server can include it in API if you expand.
+    // For now just render received data.
+    renderFolder(data);
+  })();
+})();
+</script>
+
 
 </body>
 </html>

@@ -2582,17 +2582,6 @@
                 if (existing && (f.upload_id || f.id)) {
                     const uid = f.upload_id || f.id;
 
-                    // Only show Word Online edit button for .docx
-                    const filename = f.original_filename || f.filename || f.name || '';
-                    const ext = filename.split('.').pop().toLowerCase();
-                    if (ext === 'docx') {
-                        const editBtn = document.createElement('button');
-                        editBtn.type = 'button';
-                        editBtn.textContent = 'Edit in Word';
-                        editBtn.style.marginLeft = '8px';
-                        editBtn.onclick = () => openInWordOnline(uid);
-                        row.appendChild(editBtn);
-                    }
 
                     // Existing Open / download link
                     const link = document.createElement('a');
@@ -2624,17 +2613,6 @@
                 el.appendChild(row);
             });
         }
-        
-        function openInWordOnline(fileId) {
-            const width = 1200;
-            const height = 800;
-            const left = (screen.width / 2) - (width / 2);
-            const top = (screen.height / 2) - (height / 2);
-
-            window.open(`/wopi/launch/${fileId}`, "WordEditor",
-                `width=${width},height=${height},top=${top},left=${left}`);
-        }
-
 
         document.addEventListener('DOMContentLoaded', () => {
             const toggleBtn = document.getElementById('toggle-attachments-btn');
@@ -3834,6 +3812,8 @@
                 showRenamePrompt(folderId);
             };
 
+            window._folderShareCache = window._folderShareCache || {};
+
             function showRenamePrompt(folderId) {
                 // remove existing prompt if open
                 const existing = document.getElementById("rename-prompt");
@@ -3919,6 +3899,17 @@
 
             folderOptionsMenu.appendChild(moveButton);
 
+            const shareButton = document.createElement("button");
+            shareButton.className = "folder-menu-btn";
+            shareButton.innerText = "Share";
+            shareButton.onclick = (e) => {
+                e.stopPropagation();
+                folderOptionsMenu.remove();
+                openFolderShareModal(folderId);
+            };
+
+            folderOptionsMenu.appendChild(shareButton);
+
             // Close menu if clicking outside
             const onDocClick = (e) => {
                 if (!folderOptionsMenu.contains(e.target)) {
@@ -3927,6 +3918,177 @@
                 }
             };
             setTimeout(() => document.addEventListener("click", onDocClick), 0);
+        }
+
+        function openFolderShareModal(folderId) {
+            ensureFolderShareModalExists();
+            const modal = document.getElementById('folder-share-modal');
+            modal.dataset.folderId = String(folderId);
+
+            // Reset inputs and UI
+            modal.querySelector('#folder-share-expires-input').value = '';
+            modal.querySelector('#folder-share-result').style.display = 'none';
+            modal.querySelector('#folder-share-create-area').style.display = 'block';
+            modal.dataset.token = '';
+
+            // Open immediately
+            modal.style.display = 'block';
+
+            // Try to fetch existing share for this folder
+            fetchExistingFolderShare(folderId)
+                .then(existing => {
+                    if (existing && existing.token && existing.url) {
+                        window._folderShareCache[folderId] = existing;
+                        showFolderShareInModal(folderId, existing.token, existing.url, existing.expires_at, existing.access_count);
+                    } else if (window._folderShareCache[folderId]) {
+                        const s = window._folderShareCache[folderId];
+                        showFolderShareInModal(folderId, s.token, s.url, s.expires_at, s.access_count);
+                    }
+                })
+                .catch(() => {
+                    // fail silently, modal already open
+                });
+        }
+
+        function ensureFolderShareModalExists() {
+            if (document.getElementById('folder-share-modal')) return;
+
+            const modal = document.createElement('div');
+            modal.id = 'folder-share-modal';
+            Object.assign(modal.style, {
+                position: 'fixed', left: '50%', top: '50%',
+                transform: 'translate(-50%, -50%)',
+                background: 'var(--bg-color)', padding: '20px',
+                borderRadius: '12px', boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                zIndex: 10005, width: 'min(560px, 90%)', display: 'none'
+            });
+
+            modal.innerHTML = `
+                <h3 style="margin-top:0; color:#e0e0e0">Share folder</h3>
+                <div style="margin-bottom:8px">
+                    <label style="display:block;margin-bottom:6px;color:#cfcfcf">Expires in (minutes, optional)</label>
+                    <input id="folder-share-expires-input" type="number" min="1" placeholder="e.g. 60"
+                        style="width:100%;padding:8px;border-radius:6px;border:none;background:var(--btn-color);color:#e0e0e0" />
+                </div>
+                <div id="folder-share-result" style="display:none;margin-bottom:8px;">
+                    <input id="folder-share-url-input" type="text" readonly
+                        style="width:100%;padding:8px;border-radius:6px;border:none;background:#333;color:#e0e0e0" />
+                    <div style="display:flex;gap:8px;margin-top:8px">
+                        <button id="copy-folder-share-btn">Copy link</button>
+                        <button id="revoke-folder-share-btn" style="background:#b33a3a">Revoke link</button>
+                        <button id="close-folder-share-btn" style="margin-left:auto">Close</button>
+                    </div>
+                    <small id="folder-share-stats" style="display:block;margin-top:8px;color:#bdbdbd"></small>
+                </div>
+                <div id="folder-share-create-area" style="display:block;">
+                    <button id="create-folder-share-btn" style="width:100%;padding:10px;border-radius:8px">Create share link</button>
+                    <button id="close-folder-share-btn-2" style="width:100%;margin-top:8px;padding:10px;border-radius:8px">Cancel</button>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Buttons
+            modal.querySelector('#create-folder-share-btn').addEventListener('click', async () => {
+                const folderId = modal.dataset.folderId;
+                const minutes = modal.querySelector('#folder-share-expires-input').value;
+                await createFolderShareRequest(Number(folderId), minutes ? Number(minutes) : undefined);
+            });
+
+            modal.querySelector('#copy-folder-share-btn').addEventListener('click', () => {
+                const urlInput = modal.querySelector('#folder-share-url-input');
+                copyToClipboard(urlInput.value);
+            });
+
+            modal.querySelector('#revoke-folder-share-btn').addEventListener('click', async () => {
+                const token = modal.dataset.token;
+                if (!token) return alert('No token available');
+                if (!confirm('Revoke this share link? This will make the link stop working.')) return;
+                const success = await revokeFolderShare(token);
+                if (success) {
+                    modal.querySelector('#folder-share-result').style.display = 'none';
+                    modal.querySelector('#folder-share-create-area').style.display = 'block';
+                    modal.dataset.token = '';
+                    delete window._folderShareCache[modal.dataset.folderId];
+                    alert('Share revoked');
+                    closeFolderShareModal();
+                } else {
+                    alert('Failed to revoke share');
+                }
+            });
+
+            modal.querySelectorAll('#close-folder-share-btn, #close-folder-share-btn-2')
+                .forEach(b => b.addEventListener('click', closeFolderShareModal));
+        }
+
+        function showFolderShareInModal(folderId, token, url, expires_at, access_count) {
+            const modal = document.getElementById('folder-share-modal');
+            modal.dataset.token = token;
+            modal.querySelector('#folder-share-url-input').value = url;
+            modal.querySelector('#folder-share-result').style.display = 'block';
+            modal.querySelector('#folder-share-create-area').style.display = 'none';
+            const stats = modal.querySelector('#folder-share-stats');
+            if (stats) {
+                const ex = expires_at ? `Expires: ${new Date(expires_at).toLocaleString()}` : 'No expiry';
+                stats.textContent = `${ex} • Views: ${access_count || 0}`;
+            }
+            modal.style.display = 'block';
+        }
+
+        async function fetchExistingFolderShare(folderId) {
+            try {
+                const resp = await fetch(`/folders/${folderId}/share`);
+                if (!resp.ok) return null;
+                return await resp.json();
+            } catch (e) {
+                return null;
+            }
+        }
+
+        async function createFolderShareRequest(folderId, expiresMinutes) {
+            try {
+                const body = {};
+                if (expiresMinutes) body.expires_minutes = Number(expiresMinutes);
+                const resp = await fetch(`/folders/${folderId}/share`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) {
+                    console.error('Failed to create folder share', await resp.text());
+                    alert('Failed to create share link');
+                    return null;
+                }
+                const data = await resp.json();
+                if (data && data.token && data.url) {
+                    window._folderShareCache[folderId] = data;
+                    showFolderShareInModal(folderId, data.token, data.url, data.expires_at || null, 0);
+                    return data;
+                }
+                alert('Unexpected response from server while creating share.');
+                return null;
+            } catch (e) {
+                console.error(e);
+                alert('Network error while creating share link.');
+                return null;
+            }
+        }
+
+        async function revokeFolderShare(token) {
+            try {
+                const resp = await fetch(`/folders/share/${encodeURIComponent(token)}`, { method: 'DELETE' });
+                return resp.ok;
+            } catch (e) {
+                console.error(e);
+                return false;
+            }
+        }
+
+        function closeFolderShareModal() {
+            const modal = document.getElementById('folder-share-modal');
+            if (!modal) return;
+            modal.style.display = 'none';
+            modal.dataset.folderId = '';
         }
 
         function showNoteOptions(noteId, ev) {
