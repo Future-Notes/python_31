@@ -1929,11 +1929,12 @@ def require_session_key(func):
 def get_user_from_session(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # if they still sent an Authorization header, ignore it
+        # Try to get session info, but ignore if missing/invalid
         valid, resp = validate_session_key()
-        if not valid:
-            return None
-        g.user_id = resp["user_id"]
+        if valid:
+            g.user_id = resp["user_id"]
+        else:
+            g.user_id = None  # explicitly set to None if no valid session
         return func(*args, **kwargs)
     return wrapper
 
@@ -3997,9 +3998,7 @@ def save_note(token):
     any_unexpired = any((s.expires_at is None or s.expires_at > now) for s in Share.query.filter_by(token=token).all())
     if not any_unexpired:
         abort(410)
-
-    data = request.get_json(silent=True) or {}
-    requested_note_id = data.get('note_id')
+    requested_note_id = request.args.get('note_id', type=int)
 
     # if this share row points to a note (old behaviour), use it
     if share.note_id and requested_note_id is None:
