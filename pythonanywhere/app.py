@@ -940,6 +940,15 @@ def token_has_access_to_folder(token, folder_id):
 def token_has_access_to_note(token, note_id):
     folder_ids, note_ids, _, _ = get_shared_node_sets_for_token(token)
     return note_id in note_ids
+
+def extract_text_preview(html, length=50):
+    # strip HTML tags
+    text = re.sub('<[^<]+?>', '', html or "")
+    text = text.replace("&nbsp;", " ").strip()
+    if len(text) > length:
+        return text[:length].rstrip() + "…"
+    return text
+
 # Helper to get client IP (works behind proxies if you set them)
 def client_ip():
     xff = request.headers.get('X-Forwarded-For', None)
@@ -3794,6 +3803,25 @@ def public_share(token):
     lang = request.accept_languages.best_match(['nl', 'en'])
     template = "shared_note.html" if lang != 'nl' else "shared_note_dutch.html"
 
+    # fetch children folders
+    child_folders = Folder.query.filter_by(parent_id=display_folder_id).all()
+
+    # fetch notes inside folder
+    child_notes = Note.query.filter_by(folder_id=display_folder_id).all()
+
+    # add preview text
+    notes_payload = []
+    for n in child_notes:
+        notes_payload.append({
+            "id": n.id,
+            "title": n.title,
+            "tag": n.tag,
+            "preview": extract_text_preview(n.note),
+        })
+
+    folders_payload = [{"id": f.id, "name": f.name} for f in child_folders]
+
+
     return render_template(
         template,
         token=token,
@@ -3804,8 +3832,11 @@ def public_share(token):
         attachments=[],
         is_folder_view=True,
         display_folder_id=display_folder_id,
-        display_folder_name=display_folder_name
-    ), 200
+        display_folder_name=display_folder_name,
+        folders=folders_payload,
+        notes=notes_payload,
+    )
+
 
 # -------------------------------------------------------
 # API: get folder contents for a token
@@ -3842,7 +3873,16 @@ def shared_folder_contents(token, folder_id):
              .all())
 
     folder_list = [f.to_dict() for f in child_folders]
-    note_list = [n.to_dict() for n in notes]
+    note_list = [
+        {
+            "id": n.id,
+            "title": n.title,
+            "tag": n.tag,
+            "preview": extract_text_preview(n.note),  # <-- add this
+        }
+        for n in notes
+    ]
+
 
     return jsonify({
         "ok": True,
