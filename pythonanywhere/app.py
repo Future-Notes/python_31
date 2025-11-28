@@ -1926,6 +1926,17 @@ def require_session_key(func):
         return func(*args, **kwargs)
     return wrapper
 
+def get_user_from_session(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # if they still sent an Authorization header, ignore it
+        valid, resp = validate_session_key()
+        if not valid:
+            return None
+        g.user_id = resp["user_id"]
+        return func(*args, **kwargs)
+    return wrapper
+
 @event.listens_for(db.session.__class__, "before_flush")
 def before_flush(session, flush_context, instances):
     import datetime as dt_module  # ✅ bring in the datetime module under the alias dt_module
@@ -3892,10 +3903,8 @@ def shared_folder_contents(token, folder_id):
         "notes": note_list,
     }), 200
 
-# -------------------------------------------------------
-# modified /s/<token>/visit -> pick canonical share for token (root)
-# -------------------------------------------------------
 @app.route('/s/<token>/visit', methods=['POST'])
+@get_user_from_session
 def public_share_visit(token):
     # pick canonical share row for counting visits: use first created share for the token
     share = (Share.query
@@ -3910,13 +3919,25 @@ def public_share_visit(token):
     ip = client_ip()
 
     if not fingerprint_hash or not ip:
-        current_app.logger.debug("Visit ignored: missing fingerprint or ip (token=%s, ip=%s, fp=%s)", token, bool(ip), bool(fingerprint_hash))
+        current_app.logger.debug(
+            "Visit ignored: missing fingerprint or ip (token=%s, ip=%s, fp=%s)",
+            token, bool(ip), bool(fingerprint_hash)
+        )
         return jsonify({"ok": True, "counted": False, "reason": "missing_fp_or_ip"}), 200
+
+    # Skip counting if the visitor is the owner
+    if g.get('user_id') is not None and g.user_id == share.user_id:
+        current_app.logger.debug(
+            "Visit ignored: visitor is the owner (token=%s, user_id=%s)",
+            token, g.user_id
+        )
+        return jsonify({"ok": True, "counted": False, "reason": "self_visit"}), 200
 
     now = datetime.utcnow()
     window_start = now - timedelta(seconds=SHARE_VISIT_WINDOW_SECONDS)
 
     try:
+        # Check if a recent visit exists from this fingerprint/ip
         existing = (ShareVisit.query
                     .filter(ShareVisit.share_id == share.id,
                             ShareVisit.fingerprint_hash == fingerprint_hash,
@@ -3930,6 +3951,7 @@ def public_share_visit(token):
             db.session.commit()
             return jsonify({"ok": True, "counted": False, "reason": "extended"}), 200
 
+        # Add new visit
         visit = ShareVisit(
             share_id=share.id,
             ip=ip,
