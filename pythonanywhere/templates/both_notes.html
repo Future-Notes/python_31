@@ -120,6 +120,38 @@ iframe {
 </div>
 
 <script>
+const allowedIframeUrls = [
+    '/notes_page',
+    '/group-notes'
+];
+
+function monitorIframeNavigation(iframeId) {
+  const iframe = document.getElementById(iframeId);
+
+  iframe.addEventListener('load', () => {
+    try {
+      // Get the iframe's current URL
+      const iframeUrl = iframe.contentWindow.location.pathname;
+      
+      // If it's not one of the allowed URLs, navigate the parent
+      if(!allowedIframeUrls.includes(iframeUrl)) {
+        console.log(`Iframe navigated to ${iframeUrl}, redirecting parent.`);
+        window.location.href = iframe.contentWindow.location.href;
+      }
+    } catch (e) {
+      // Catch cross-origin errors (if the iframe navigates to a completely different domain)
+      // Just navigate the parent anyway
+      window.location.href = iframe.src;
+    }
+  });
+}
+
+// Apply to all your iframes
+['iframe-personal','iframe-group','iframe-split-left','iframe-split-right'].forEach(id => {
+  monitorIframeNavigation(id);
+});
+
+
 // ------------------- Tab handling & lazy load -------------------
 function loadIframe(id) {
   const iframe = document.getElementById(id);
