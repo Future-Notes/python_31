@@ -3723,7 +3723,7 @@
             li.addEventListener('click', () => navigateToFolder(folder.id));
             // folder options button
             const optBtn = li.querySelector('.folder-options-btn');
-            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showFolderOptions(folder.id, groupId); });
+            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showFolderOptions(folder.id); });
             list.appendChild(li);
         });
 
@@ -3750,7 +3750,7 @@
 
             // options button (stop propagation)
             const noteOpt = li.querySelector('.share-button');
-            if (noteOpt) noteOpt.addEventListener('click', (ev) => { ev.stopPropagation(); showNoteOptions(note.id, groupId); });
+            if (noteOpt) noteOpt.addEventListener('click', (ev) => { ev.stopPropagation(); showNoteOptions(note.id); });
 
             list.appendChild(li);
         });
