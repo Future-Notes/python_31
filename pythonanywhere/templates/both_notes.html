@@ -3,113 +3,232 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#2c2c2c">
-<link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
-<link rel="favicon" type="image/x-icon" href="static/favicon.ico">
-<link rel="manifest" href="static/site.webmanifest">
-<title>Future Notes - Notes</title>
-<script src="/static/js/loader.js"></script>
+<title>Future Notes - Optimized</title>
 <style>
-  :root {
-    --bg-color:  #2c2c2c;
-    --hdr-color: #3a3a3a;
-    --ctr-color: #1e1e1e;
-    --btn-color: #424242;
-  }
+:root {
+  --bg-color:  #2c2c2c;
+  --ctr-color: #1e1e1e;
+  --btn-color: #424242;
+}
 
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    overflow: hidden;
-    background-color: var(--bg-color);
-    font-family: sans-serif;
-  }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: sans-serif;
+}
 
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    position: absolute;
-    top: 0;
-    left: 0;
-    background-color: var(--ctr-color);
-  }
+/* Taskbar */
+.tabs {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 1000;
+  transition: transform 0.25s ease;
+}
+.tabs.hidden { transform: translateX(-50%) translateY(100%); }
 
-  .tabs {
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 10px;
-    z-index: 1000;
-  }
+.tab {
+  background: var(--btn-color);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: bold;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  transition: background 0.2s, transform 0.1s;
+}
+.tab:hover { background: var(--ctr-color); transform: translateY(-2px); }
+.tab.active { background: var(--ctr-color); border: 2px solid var(--btn-color); }
 
-  .tab {
-    background: var(--btn-color);
-    color: #fff;
-    padding: 10px 20px;
-    border-radius: 12px;
-    cursor: pointer;
-    font-weight: bold;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-    transition: background 0.2s, transform 0.1s;
-  }
+/* Hover zone to track mouse near bottom */
+.taskbar-hover-zone {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;  /* slightly larger than taskbar */
+  height: 60px;
+  pointer-events: none;
+  background: rgba(0,0,0,0);
+  z-index: 999;
+}
 
-  .tab:hover {
-    background: var(--hdr-color);
-    transform: translateY(-2px);
-  }
+/* Iframe containers */
+.iframe-container {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+.iframe-container.active { display: flex; }
+iframe {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: var(--ctr-color);
+}
 
-  .tab.active {
-    background: var(--ctr-color);
-    border: 2px solid #0077ff;
-  }
-
-  @media (max-width: 600px) {
-    .tabs {
-      bottom: 20px;
-      left: 41%;
-    }
-  }
+/* Split view */
+.split {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.split iframe { flex: 1 1 50%; height: 100%; }
+.resizer {
+  width: 6px;
+  cursor: ew-resize;
+  background-color: var(--btn-color);
+  z-index: 2;
+}
 </style>
+<script src="/static/custom-alert.js"></script>
 </head>
 <body>
 
-<!-- Bottom tabs -->
-<div class="tabs">
+<!-- Hover zone for taskbar -->
+<div class="taskbar-hover-zone" id="hoverZone"></div>
+
+<!-- Tabs / floating taskbar -->
+<div class="tabs" id="tabs">
   <div class="tab active" onclick="showTab('personal')">Personal</div>
   <div class="tab" onclick="showTab('group')">Groups</div>
+  <div class="tab" onclick="showTab('both')">Split View</div>
 </div>
 
-<!-- Fullscreen iframes -->
-<iframe id="personal" src="/notes_page"></iframe>
-<!-- group iframe will be lazy loaded -->
-<iframe id="group" data-lazy src="/group-notes" style="display:none;"></iframe>
+<!-- Iframe containers (lazy loading) -->
+<div id="personal" class="iframe-container active">
+  <iframe id="iframe-personal" data-src="/notes_page"></iframe>
+</div>
+<div id="group" class="iframe-container">
+  <iframe id="iframe-group" data-src="/group-notes"></iframe>
+</div>
+<div id="both" class="iframe-container">
+  <div class="split">
+    <iframe id="iframe-split-left" data-src="/notes_page"></iframe>
+    <div class="resizer"></div>
+    <iframe id="iframe-split-right" data-src="/group-notes"></iframe>
+  </div>
+</div>
 
 <script>
-let groupLoaded = false;
+// ------------------- Tab handling & lazy load -------------------
+function loadIframe(id) {
+  const iframe = document.getElementById(id);
+  if(!iframe.src) iframe.src = iframe.dataset.src;
+}
 
-function showTab(tab) {
-  const personal = document.getElementById('personal');
-  const group = document.getElementById('group');
+function pauseIframe(id) {
+  const iframe = document.getElementById(id);
+  if(iframe.contentWindow) iframe.contentWindow.postMessage('pause', '*');
+}
 
-  if(tab === 'personal') {
-    personal.style.display = 'block';
-    group.style.display = 'none';
-  } else {
-    personal.style.display = 'none';
-    
-    group.style.display = 'block';
+function resumeIframe(id) {
+  const iframe = document.getElementById(id);
+  if(iframe.contentWindow) iframe.contentWindow.postMessage('resume', '*');
+}
+
+function showTab(tab, event) {
+  document.querySelectorAll('.iframe-container').forEach(c => c.classList.remove('active'));
+  document.getElementById(tab).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if(event) event.target.classList.add('active');
+
+  // Experimental warning for split view
+  if(tab === 'both' && !localStorage.getItem('splitViewWarningShown')){
+    alert("⚠️ Split view is experimental! Some features may not work perfectly.", "error");
+    localStorage.setItem('splitViewWarningShown', 'true');
   }
 
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
+  // Lazy load
+  if(tab === 'personal') loadIframe('iframe-personal');
+  if(tab === 'group') loadIframe('iframe-group');
+  if(tab === 'both'){
+    loadIframe('iframe-split-left');
+    loadIframe('iframe-split-right');
+  }
+
+  // Focus / pause handling
+  ['iframe-personal','iframe-group','iframe-split-left','iframe-split-right'].forEach(id => {
+    if(document.getElementById(id).closest('.iframe-container').id === tab){
+      resumeIframe(id);
+    } else {
+      pauseIframe(id);
+    }
+  });
+}
+
+// Auto-load default tab with a null event
+showTab('personal', null);
+
+const isMobile = window.matchMedia("(max-width: 600px)").matches;
+if(isMobile){
+  // hide or disable the "Split View" tab
+  const splitTab = document.querySelector('.tab[onclick*="both"]');
+  if(splitTab) splitTab.style.display = 'none';
+}
+
+
+// ------------------- Floating taskbar auto-hide -------------------
+const tabs = document.getElementById('tabs');
+const hoverZone = document.getElementById('hoverZone');
+
+document.addEventListener('mousemove', e => {
+  const windowHeight = window.innerHeight;
+  const threshold = 100;
+  const rect = hoverZone.getBoundingClientRect();
+  if(e.clientY > windowHeight - threshold || e.clientY >= rect.top){
+    tabs.classList.remove('hidden');
+  } else {
+    tabs.classList.add('hidden');
+  }
+});
+
+// ------------------- Split view resizer -------------------
+const resizer = document.querySelector('.resizer');
+if(resizer){
+  const left = resizer.previousElementSibling;
+  const right = resizer.nextElementSibling;
+  let isResizing = false;
+
+  const overlay = document.createElement('div');
+  overlay.style.position = 'absolute';
+  overlay.style.top = 0;
+  overlay.style.left = 0;
+  overlay.style.width = '100%';
+  overlay.style.height = '100%';
+  overlay.style.zIndex = 5;
+  overlay.style.cursor = 'ew-resize';
+
+  resizer.addEventListener('mousedown', e => {
+    isResizing = true;
+    document.body.appendChild(overlay);
+  });
+
+  document.addEventListener('mousemove', e => {
+    if(!isResizing) return;
+    const containerWidth = resizer.parentElement.getBoundingClientRect().width;
+    let newLeftWidth = e.clientX / containerWidth;
+    newLeftWidth = Math.max(0.1, Math.min(0.9, newLeftWidth));
+    left.style.flex = `${newLeftWidth} 1 0%`;
+    right.style.flex = `${1 - newLeftWidth} 1 0%`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if(isResizing){
+      isResizing = false;
+      if(overlay.parentElement) overlay.parentElement.removeChild(overlay);
+    }
+  });
 }
 </script>
-
 </body>
 </html>
