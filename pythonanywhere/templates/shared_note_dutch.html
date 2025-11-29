@@ -541,7 +541,7 @@ if (saveButton) {
         return;
       }
 
-      const url = `/s/${encodeURIComponent(token)}/save`;
+      const url = `/s/${encodeURIComponent(token)}/save?note_id={{ note_id|tojson }}`;
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
 
       if (res.status === 200 || res.status === 201) {
