@@ -10,9 +10,8 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
-    <script src="/static/js/loader.js"></script>
     <script src="/static/js/check.js"></script>
-    
+    <base target="_parent">
     <style>
         body {
             margin: 0;
@@ -1619,10 +1618,9 @@
       
         <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
         <nav class="desktop-nav">
-          <a href="/index" class="nav-link active">Personal notes</a>
-          <a href="/group-notes" class="nav-link">Group notes</a>
-          <a href="/scheduler-page" class="nav-link">Calendar</a>
-          <a href="/todo_page" class="nav-link">Todo</a>
+            <a href="/index" class="nav-link active">Notes</a>
+            <a href="/scheduler-page" class="nav-link">Calendar</a>
+            <a href="/todo_page" class="nav-link">Todo</a>
         </nav>
         <div id="storage-container" style="margin: 0px 100px;">
             <span id="storage-counter">0 / 0 MB</span>
@@ -1634,11 +1632,10 @@
       </header>
       
       <nav id="mobileSubHeader" class="mobile-sub-header">
-        <a href="/index" class="nav-link active">Personal notes</a>
-        <a href="/group-notes" class="nav-link">Group notes</a>
+        <a href="/index" class="nav-link active">Notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
-      </nav> 
+      </nav>
 
 
     <main>

@@ -1,10 +1,9 @@
 (function() {
-  // 1) Inject CSS immediately into <head>
+  // 1) Inject CSS overlay immediately
   const css = `
     #loading-overlay {
       position: fixed;
       inset: 0;
-      /* stronger black so the white‑flash is truly hidden */
       background: #2c2c2c;
       display: flex;
       align-items: center;
@@ -42,28 +41,59 @@
     window.addEventListener('DOMContentLoaded', insertOverlay);
   }
 
-  // 3) Track pending fetches and log them in the console
+  // 3) Track pending fetches, ignoring lazy iframes
   window.__pendingFetches = [];
   const _origFetch = window.fetch;
   window.fetch = function(...args) {
+    let isInsideLazyIframe = false;
+    try {
+      // Detect if this fetch originates from a lazy iframe
+      isInsideLazyIframe = window.frameElement?.hasAttribute('data-lazy');
+    } catch(e) {
+      // Cross-origin frames may throw
+      isInsideLazyIframe = false;
+    }
+
     const p = _origFetch.apply(this, args);
-    window.__pendingFetches.push(p);
-    p.finally(() => {
-      window.__pendingFetches =
-        window.__pendingFetches.filter(x => x !== p);
-    });
+
+    if (!isInsideLazyIframe) {
+      window.__pendingFetches.push(p);
+      p.finally(() => {
+        window.__pendingFetches = window.__pendingFetches.filter(x => x !== p);
+      });
+    }
+
     return p;
   };
 
-  // 4) Remove overlay once window & fetches settle
+  // 4) Track non-lazy iframes
+  function getIframePromises() {
+    const iframes = Array.from(document.querySelectorAll('iframe'))
+      .filter(f => !f.hasAttribute('data-lazy'));
+
+    return iframes.map(f => new Promise(resolve => {
+      // iframe already loaded
+      if (f.complete || f.contentWindow?.document.readyState === 'complete') {
+        resolve();
+      } else {
+        f.addEventListener('load', () => resolve());
+        f.addEventListener('error', () => resolve());
+      }
+    }));
+  }
+
+  // 5) Remove overlay once page + fetches + non-lazy iframes are ready
   function hideLoader() {
     const o = document.getElementById('loading-overlay');
     if (o) o.remove();
   }
 
   window.addEventListener('load', () => {
-    if (window.__pendingFetches.length) {
-      Promise.allSettled(window.__pendingFetches).then(hideLoader);
+    const iframePromises = getIframePromises();
+    const allPromises = [...window.__pendingFetches, ...iframePromises];
+
+    if (allPromises.length) {
+      Promise.allSettled(allPromises).then(hideLoader);
     } else {
       hideLoader();
     }

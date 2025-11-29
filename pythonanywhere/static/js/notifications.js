@@ -2,7 +2,7 @@
   // ——— CONFIG ———
   const FETCH_INTERVAL_MS = 30_000;
   const BELL_ROUTES = [
-    '/index',
+    '/notes_page',
     '/group-notes',
     '/scheduler-page',
     '/todo_page',

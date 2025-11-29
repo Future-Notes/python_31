@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Future Notes - Notes</title>
+<script src="/static/js/loader.js"></script>
+<style>
+  :root {
+    --bg-color:  #2c2c2c;
+    --hdr-color: #3a3a3a;
+    --ctr-color: #1e1e1e;
+    --btn-color: #424242;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--bg-color);
+    font-family: sans-serif;
+  }
+
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: var(--ctr-color);
+  }
+
+  .tabs {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 1000;
+  }
+
+  .tab {
+    background: var(--btn-color);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: bold;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    transition: background 0.2s, transform 0.1s;
+  }
+
+  .tab:hover {
+    background: var(--hdr-color);
+    transform: translateY(-2px);
+  }
+
+  .tab.active {
+    background: var(--ctr-color);
+    border: 2px solid #0077ff;
+  }
+
+  @media (max-width: 600px) {
+    .tabs {
+      bottom: 20px;
+      left: 41%;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Bottom tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('personal')">Personal</div>
+  <div class="tab" onclick="showTab('group')">Groups</div>
+</div>
+
+<!-- Fullscreen iframes -->
+<iframe id="personal" src="/notes_page"></iframe>
+<!-- group iframe will be lazy loaded -->
+<iframe id="group" data-lazy src="/group-notes" style="display:none;"></iframe>
+
+<script>
+let groupLoaded = false;
+
+function showTab(tab) {
+  const personal = document.getElementById('personal');
+  const group = document.getElementById('group');
+
+  if(tab === 'personal') {
+    personal.style.display = 'block';
+    group.style.display = 'none';
+  } else {
+    personal.style.display = 'none';
+    
+    group.style.display = 'block';
+  }
+
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

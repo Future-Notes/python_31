@@ -1926,6 +1926,18 @@ def require_session_key(func):
         return func(*args, **kwargs)
     return wrapper
 
+def get_user_from_session(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Try to get session info, but ignore if missing/invalid
+        valid, resp = validate_session_key()
+        if valid:
+            g.user_id = resp["user_id"]
+        else:
+            g.user_id = None  # explicitly set to None if no valid session
+        return func(*args, **kwargs)
+    return wrapper
+
 @event.listens_for(db.session.__class__, "before_flush")
 def before_flush(session, flush_context, instances):
     import datetime as dt_module  # ✅ bring in the datetime module under the alias dt_module
@@ -3419,6 +3431,10 @@ def serve_sw():
 
 @app.route('/index')
 def index():
+    return render_template('both_notes.html')
+
+@app.route('/notes_page')
+def notes_page():
     return render_template('index.html')
 
 @app.route('/todo_page')
@@ -3892,10 +3908,8 @@ def shared_folder_contents(token, folder_id):
         "notes": note_list,
     }), 200
 
-# -------------------------------------------------------
-# modified /s/<token>/visit -> pick canonical share for token (root)
-# -------------------------------------------------------
 @app.route('/s/<token>/visit', methods=['POST'])
+@get_user_from_session
 def public_share_visit(token):
     # pick canonical share row for counting visits: use first created share for the token
     share = (Share.query
@@ -3910,13 +3924,25 @@ def public_share_visit(token):
     ip = client_ip()
 
     if not fingerprint_hash or not ip:
-        current_app.logger.debug("Visit ignored: missing fingerprint or ip (token=%s, ip=%s, fp=%s)", token, bool(ip), bool(fingerprint_hash))
+        current_app.logger.debug(
+            "Visit ignored: missing fingerprint or ip (token=%s, ip=%s, fp=%s)",
+            token, bool(ip), bool(fingerprint_hash)
+        )
         return jsonify({"ok": True, "counted": False, "reason": "missing_fp_or_ip"}), 200
+
+    # Skip counting if the visitor is the owner
+    if g.get('user_id') is not None and g.user_id == share.user_id:
+        current_app.logger.debug(
+            "Visit ignored: visitor is the owner (token=%s, user_id=%s)",
+            token, g.user_id
+        )
+        return jsonify({"ok": True, "counted": False, "reason": "self_visit"}), 200
 
     now = datetime.utcnow()
     window_start = now - timedelta(seconds=SHARE_VISIT_WINDOW_SECONDS)
 
     try:
+        # Check if a recent visit exists from this fingerprint/ip
         existing = (ShareVisit.query
                     .filter(ShareVisit.share_id == share.id,
                             ShareVisit.fingerprint_hash == fingerprint_hash,
@@ -3930,6 +3956,7 @@ def public_share_visit(token):
             db.session.commit()
             return jsonify({"ok": True, "counted": False, "reason": "extended"}), 200
 
+        # Add new visit
         visit = ShareVisit(
             share_id=share.id,
             ip=ip,
@@ -3975,9 +4002,7 @@ def save_note(token):
     any_unexpired = any((s.expires_at is None or s.expires_at > now) for s in Share.query.filter_by(token=token).all())
     if not any_unexpired:
         abort(410)
-
-    data = request.get_json(silent=True) or {}
-    requested_note_id = data.get('note_id')
+    requested_note_id = request.args.get('note_id', type=int)
 
     # if this share row points to a note (old behaviour), use it
     if share.note_id and requested_note_id is None:
@@ -6670,6 +6695,27 @@ def create_group():
     db.session.commit()
 
     return jsonify({"message": "Group created successfully!", "group_id": new_group.id}), 201
+
+@app.route('/groups/modify', methods=['POST'])
+@require_session_key
+def modify_group():
+    data = request.json
+    title = data.get('name')
+    group_id = data.get('group_id')
+    group = Group.query.get(group_id)
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+    # Check if the user is an admin of the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    if not membership or not membership.admin:
+        return jsonify({"error": "User is not an admin of this group"}), 403
+    if not title:
+        return jsonify({"error": "Group name is required"}), 400
+
+    group.name = title
+    db.session.commit()
+
+    return jsonify({"message": "Group name updated successfully!"}), 200
 
 @app.route('/groups/join', methods=['POST'])
 @require_session_key
