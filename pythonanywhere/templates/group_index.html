@@ -10,8 +10,8 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
-    <script src="/static/js/loader.js"></script>
     <script src="/static/js/check.js"></script>
+    <base target="_parent">
     <style>
         body {
             margin: 0;
@@ -185,6 +185,7 @@
             animation: fadeIn 0.5s forwards 0.3s;
         }
 
+        /* individual items (applies to both folders and notes) */
         #items-list > li {
             background-color: var(--ctr-color);
             padding: 20px;
@@ -196,11 +197,29 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            text-align: center;
             height: 200px;
             overflow: hidden;
             opacity: 0;
             animation: fadeIn 1s forwards;
+        }
+
+        /* Restore folder-only centering without changing note layout */
+        #items-list li.folder-card {
+        /* center children vertically & horizontally for folders only */
+        justify-content: center; /* vertical centering */
+        align-items: center;     /* horizontal centering */
+        text-align: center;      /* center the title text under the icon */
+        }
+
+        /* Ensure the icon itself is centered and doesn't inherit any weird spacing */
+        #items-list li.folder-card .folder-icon {
+        margin: 0 auto;
+        display: block;
+        }
+
+        /* Slight spacing so the folder title sits nicely under the icon */
+        #items-list li.folder-card h3 {
+        margin-top: 10px;
         }
 
         #items-list li h3 {
@@ -529,6 +548,16 @@
             font-size: 24px;
             color: #e0e0e0;
             margin: 0;
+            overflow: auto;
+        }
+
+        /* Remove scrollbars for group name*/
+        #group-name::-webkit-scrollbar {
+            display: none;
+        }
+        #group-name {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
         }
 
         #leave-group-button {
@@ -817,7 +846,8 @@
 
         .sidebar-toggle-btn {
             position: absolute;
-            top: 10px;
+            bottom: 10px;
+            top: unset;
             width: 5px;
             height: 5px;
             background-color: var(--btn-color);
@@ -830,6 +860,13 @@
             line-height: 5px;
             text-align: center;
             z-index: 1001;
+        }
+
+        @media (max-width: 800px) {
+            .sidebar-toggle-btn {
+                top: 10px;
+                bottom: unset;
+            }
         }
 
         #group-list-sidebar .sidebar-toggle-btn.collapse { 
@@ -1789,8 +1826,7 @@
       
         <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
         <nav class="desktop-nav">
-            <a href="/index" class="nav-link">Personal notes</a>
-            <a href="/group-notes" class="nav-link active">Group notes</a>
+            <a href="/index" class="nav-link active">Notes</a>
             <a href="/scheduler-page" class="nav-link">Calendar</a>
             <a href="/todo_page" class="nav-link">Todo</a>
         </nav>
@@ -1804,8 +1840,7 @@
     </header>
       
     <nav id="mobileSubHeader" class="mobile-sub-header">
-        <a href="/index" class="nav-link">Personal notes</a>
-        <a href="/group-notes" class="nav-link active">Group notes</a>
+        <a href="/index" class="nav-link active">Notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
     </nav>        
@@ -3278,13 +3313,51 @@
                 const response = await fetch(`/group-info/${groupId}`);
                 if (response.ok) {
                     const data = await response.json();
-                    document.getElementById("group-name").textContent = data.group_name;
+                    group_name = document.getElementById("group-name");
+                    group_name.textContent = data.group_name;
+                    if (data.current_user_admin) {
+                        group_name.style.cursor = "pointer";
+                        group_name.addEventListener("click", () => {
+                            const newName = prompt("Enter new group name:", data.group_name);
+                            if (newName && newName.trim() !== "" && newName !== data.group_name) {
+                                updateGroupName(groupId, newName.trim());
+                            }
+                        });
+                    } else {
+                        group_name.style.cursor = "default";
+                        group_name.replaceWith(group_name.cloneNode(true)); // Remove all event listeners
+                    }
                     populateSidebar(data.group_members, data.current_user_admin);
                 } else {
                     document.getElementById("group-name").textContent = "Unknown group name";
                 }
             } catch (error) {
                 console.error("Error fetching group info:", error);
+            }
+        }
+
+        async function updateGroupName(groupId, newName) {
+            try {
+                const response = await fetch('/groups/modify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ group_id: groupId, name: newName })
+                });
+
+                if (response.ok) {
+                    document.getElementById("group-name").textContent = newName;
+                    // Also update in sidebar
+                    const groupButtons = document.querySelectorAll('.group-item');
+                    groupButtons.forEach(btn => {
+                        if (btn.dataset.groupId === groupId) {
+                            btn.querySelector('.group-item-label').textContent = newName;
+                        }
+                    });
+                } else {
+                    alert('Failed to update group name');
+                }
+            } catch (error) {
+                console.error('Error updating group name:', error);
             }
         }
 

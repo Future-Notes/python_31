@@ -3431,6 +3431,10 @@ def serve_sw():
 
 @app.route('/index')
 def index():
+    return render_template('both_notes.html')
+
+@app.route('/notes_page')
+def notes_page():
     return render_template('index.html')
 
 @app.route('/todo_page')
@@ -6691,6 +6695,27 @@ def create_group():
     db.session.commit()
 
     return jsonify({"message": "Group created successfully!", "group_id": new_group.id}), 201
+
+@app.route('/groups/modify', methods=['POST'])
+@require_session_key
+def modify_group():
+    data = request.json
+    title = data.get('name')
+    group_id = data.get('group_id')
+    group = Group.query.get(group_id)
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+    # Check if the user is an admin of the group
+    membership = GroupMember.query.filter_by(user_id=g.user_id, group_id=group_id).first()
+    if not membership or not membership.admin:
+        return jsonify({"error": "User is not an admin of this group"}), 403
+    if not title:
+        return jsonify({"error": "Group name is required"}), 400
+
+    group.name = title
+    db.session.commit()
+
+    return jsonify({"message": "Group name updated successfully!"}), 200
 
 @app.route('/groups/join', methods=['POST'])
 @require_session_key
