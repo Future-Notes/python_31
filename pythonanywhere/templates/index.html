@@ -293,7 +293,21 @@
             background-color: #cc4a4a;
         }
 
-
+        #items-list li button.pin-button {
+            top: 10px;
+            left: 10px;
+            right: unset;
+        }
+        .pin-button {
+            background: none !important;      /* remove default button bg */
+            border: none !important;          /* remove border */
+            cursor: pointer !important;       /* pointer on hover */
+            display: inline-flex !important;  
+            align-items: center !important;
+            justify-content: center !important;
+            color: white !important;          /* icon color */
+            font-size: 1.1rem !important;     /* adjust size */
+        }
         #update-menu {
             display: none;
             position: fixed;
@@ -1563,7 +1577,6 @@
             outline-offset: 2px;
         }
 
-
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -1610,6 +1623,7 @@
 <body>
     <script src="https://cdn.jsdelivr.net/npm/diff@5/dist/diff.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet">
     <header>
         <div class="mobile-header">
           <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
@@ -2892,65 +2906,176 @@
         }
         }
 
-        // --- unified render function ---
-        // render folders and notes into single container #items-list
+        // --- helper: update local arrays when a pin toggles ---
+        function updateLocalItemPinned(type, id, pinned) {
+            if (type === 'folder') {
+                const idx = allFolders.findIndex(f => f.id === id);
+                if (idx !== -1) allFolders[idx].pinned = pinned;
+            } else if (type === 'note') {
+                const idx = allNotes.findIndex(n => n.id === id);
+                if (idx !== -1) allNotes[idx].pinned = pinned;
+            }
+        }
+
+        // --- toggle pin on server by sending { note_id | folder_id } to single route ---
+        // expects backend to accept JSON { note_id: <id|null>, folder_id: <id|null> } and return updated item or 200
+        async function togglePinById(type, id, currentPinned) {
+            // optimistic update locally
+            updateLocalItemPinned(type, id, !currentPinned);
+            renderItems(allFolders, allNotes);
+
+            try {
+                const payload = {
+                    note_id: type === 'note' ? id : null,
+                    folder_id: type === 'folder' ? id : null
+                };
+                const res = await fetch('/toggle_pin', {
+                    method: 'POST', // or PATCH depending on your API; change if needed
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    throw new Error(`Toggle pin failed: ${res.status}`);
+                }
+                // If backend returns updated item, use it to keep local state accurate
+                const body = await res.json().catch(() => null);
+                if (body) {
+                    // backend may return the updated note/folder object
+                    if (type === 'note' && body.id != null) {
+                        const idx = allNotes.findIndex(n => n.id === body.id);
+                        if (idx !== -1) allNotes[idx] = { ...allNotes[idx], ...body };
+                    } else if (type === 'folder' && body.id != null) {
+                        const idx = allFolders.findIndex(f => f.id === body.id);
+                        if (idx !== -1) allFolders[idx] = { ...allFolders[idx], ...body };
+                    }
+                    renderItems(allFolders, allNotes);
+                }
+            } catch (err) {
+                console.error('Error toggling pin:', err);
+                alert('Failed to update pin state. Refreshing items.');
+                // revert optimistic update by refetching everything
+                const [folders, notes] = await Promise.all([ fetchFoldersData(), fetchNotesData() ]);
+                renderItems(folders, notes);
+            }
+        }
+
+        // --- unified render function (pins-first, folders+notes mixed) ---
         function renderItems(folders = [], notes = []) {
-        const list = document.getElementById("items-list");
-        if (!list) {
-            console.error("No #items-list found in DOM");
-            return;
-        }
-        list.innerHTML = ''; // clear previous
+            const list = document.getElementById("items-list");
+            if (!list) {
+                console.error("No #items-list found in DOM");
+                return;
+            }
+            list.innerHTML = ''; // clear previous
 
-        if ((!folders || folders.length === 0) && (!notes || notes.length === 0)) {
-            list.innerHTML = "<li class='empty-note'>No notes or folders available</li>";
-            return;
-        }
+            if ((!folders || folders.length === 0) && (!notes || notes.length === 0)) {
+                list.innerHTML = "<li class='empty-note'>No notes or folders available</li>";
+                return;
+            }
 
-        // FOLDERS first (keep class names and data attributes)
-        folders.forEach(folder => {
-            const li = document.createElement('li');
-            li.className = 'folder-card';           // preserve your class
-            li.setAttribute('data-folder-id', folder.id); // optional, matches your pattern
-            li.innerHTML = `
-            <div class="folder-icon"><i class="fa-sharp fa-solid fa-folder-open"></i></div>
-            <h3>${escapeHTML(folder.name)}</h3>
-            <button class="folder-options-btn" title="Options">⋮</button>
-            `;
-            li.addEventListener('click', () => navigateToFolder(folder.id));
-            const optBtn = li.querySelector('.folder-options-btn');
-            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showFolderOptions(folder.id); });
-            list.appendChild(li);
-        });
+            // Combine items and mark their type so we can render appropriately
+            const combined = [
+                ...folders.map(f => ({ ...f, __type: 'folder' })),
+                ...notes.map(n => ({ ...n, __type: 'note' }))
+            ];
 
-        // NOTES second (keep class names and data attributes)
-        notes.forEach(note => {
-            const li = document.createElement('li');
-            li.className = 'note-card';             // preserve your class
-            li.setAttribute('data-note-id', note.id); // preserve data-note-id
-            const escapedTitle = escapeHTML(note.title || 'Untitled');
-            const escapedTag = escapeHTML(note.tag || '');
-            const preview = htmlToPlainText(note.note || '').substring(0, 100);
-
-            li.innerHTML = `
-            <h3>${escapedTitle}</h3>
-            <div class="note-preview">${note.note ? note.note : 'Empty note'}</div>
-            ${note.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
-            <button class="share-button" title="Options">⋮</button>
-            `;
-
-            li.addEventListener('click', function() {
-            const noteId = parseInt(this.getAttribute('data-note-id'));
-            const found = allNotes.find(n => n.id === noteId);
-            if (found) showViewMenu(found.id, found.note, found.tag, found.title);
+            // sort: pinned items first (descending), then keep stable order otherwise
+            combined.sort((a, b) => {
+                const pa = a.pinned ? 1 : 0;
+                const pb = b.pinned ? 1 : 0;
+                if (pa !== pb) return pb - pa; // pinned (1) before unpinned (0)
+                return 0;
             });
 
-            const optBtn = li.querySelector('.share-button');
-            if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showNoteOptions(note.id); });
+            combined.forEach(item => {
+                if (item.__type === 'folder') {
+                    const li = document.createElement('li');
+                    li.className = 'folder-card';
+                    li.setAttribute('data-folder-id', item.id);
 
-            list.appendChild(li);
-        });
+                    const pinIconClass = 'fa-sharp fa-solid fa-thumbtack'; // always solid
+                    const pinTitle = item.pinned ? 'Unpin folder' : 'Pin folder';
+                    const pinColor = item.pinned ? 'white' : '#888'; // greyed out if unpinned
+
+
+                    li.innerHTML = `
+                        <div class="folder-left">
+                        <div class="folder-icon"><i class="fa-sharp fa-solid fa-folder-open"></i></div>
+                        <h3>${escapeHTML(item.name)}</h3>
+                        </div>
+                        <div class="folder-controls">
+                        <button class="pin-button" title="${pinTitle}">
+                            <i class="${pinIconClass}" style="color: ${pinColor};"></i>
+                        </button>
+                        <button class="folder-options-btn" title="Options">⋮</button>
+                        </div>
+                    `;
+
+                    li.addEventListener('click', () => navigateToFolder(item.id));
+
+                    // wire up pin button
+                    const pinBtn = li.querySelector('.pin-button');
+                    if (pinBtn) {
+                        pinBtn.addEventListener('click', (ev) => {
+                            ev.stopPropagation();
+                            togglePinById('folder', item.id, !!item.pinned);
+                        });
+                    }
+
+                    const optBtn = li.querySelector('.folder-options-btn');
+                    if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showFolderOptions(item.id); });
+
+                    list.appendChild(li);
+                } else if (item.__type === 'note') {
+                    const li = document.createElement('li');
+                    li.className = 'note-card';
+                    li.setAttribute('data-note-id', item.id);
+
+                    const escapedTitle = escapeHTML(item.title || 'Untitled');
+                    const escapedTag = escapeHTML(item.tag || '');
+                    const preview = htmlToPlainText(item.note || '').substring(0, 100);
+
+                    const pinIconClass = 'fa-sharp fa-solid fa-thumbtack'; // always solid
+                    const pinTitle = item.pinned ? 'Unpin note' : 'Pin note';
+                    const pinColor = item.pinned ? 'white' : '#888'; // greyed out if unpinned
+
+                    li.innerHTML = `
+                        <div class="note-main">
+                        <h3>${escapedTitle}</h3>
+                        <div class="note-preview">${item.note ? item.note : 'Empty note'}</div>
+                        ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+                        </div>
+                        <div class="note-controls">
+                        <button class="pin-button" title="${pinTitle}" aria-label="${pinTitle}">
+                            <i class="${pinIconClass}" style="color: ${pinColor};"></i>
+                        </button>
+                        <button class="share-button" title="Options">⋮</button>
+                        </div>
+                    `;
+
+                    li.addEventListener('click', function() {
+                        const noteId = parseInt(this.getAttribute('data-note-id'));
+                        const found = allNotes.find(n => n.id === noteId);
+                        if (found) showViewMenu(found.id, found.note, found.tag, found.title);
+                    });
+
+                    // pin button for note
+                    const pinBtn = li.querySelector('.pin-button');
+                    if (pinBtn) {
+                        pinBtn.addEventListener('click', (ev) => {
+                            ev.stopPropagation();
+                            togglePinById('note', item.id, !!item.pinned);
+                        });
+                    }
+
+                    const optBtn = li.querySelector('.share-button');
+                    if (optBtn) optBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showNoteOptions(item.id); });
+
+                    list.appendChild(li);
+                }
+            });
         }
+
 
         // --- main function to fetch & render both in parallel ---
         async function fetchAndRenderItems() {
