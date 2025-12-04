@@ -638,6 +638,7 @@ class Note(db.Model):
     title = db.Column(db.String(100), nullable=True)
     note = db.Column(db.Text, nullable=False)
     tag = db.Column(db.String(100), nullable=True)
+    pinned = db.Column(db.Boolean, default=False)
 
     group = db.relationship("Group", backref="notes")
 
@@ -651,7 +652,8 @@ class Note(db.Model):
             "tag": self.tag,
             "user_id": self.user_id,
             "group_id": self.group_id,
-            "folder_id": self.folder_id
+            "folder_id": self.folder_id,
+            "pinned": self.pinned
         }
 
 
@@ -693,6 +695,7 @@ class Folder(db.Model):
     group_id = db.Column(db.String(36), db.ForeignKey('group.id'), nullable=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('folder.id'), nullable=True)
     name = db.Column(db.String(100), nullable=False)
+    pinned = db.Column(db.Boolean, default=False)
     
     # Self-referential relationship for subfolders
     parent = db.relationship('Folder', remote_side=[id], backref='subfolders')
@@ -704,7 +707,8 @@ class Folder(db.Model):
             "name": self.name,
             "parent_id": self.parent_id,
             "user_id": self.user_id,
-            "group_id": self.group_id
+            "group_id": self.group_id,
+            "pinned": self.pinned
         }
     
 class Draft(db.Model):
@@ -10060,7 +10064,8 @@ def manage_notes():
         query = Note.query.filter_by(user_id=g.user_id)
         query = query.filter_by(folder_id=folder_id) if folder_id else query.filter_by(folder_id=None)
 
-        notes = query.order_by(Note.id.desc()).all()
+        # Order by pinned items first, then by descending ID
+        notes = query.order_by(Note.pinned.desc(), Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
             attachments = []
@@ -10082,6 +10087,43 @@ def manage_notes():
                 "attachments": attachments
             })
         return jsonify(sanitized_notes)
+
+@app.route("/toggle_pin", methods=["POST"])
+@require_session_key
+def toggle_pin():
+    """
+    Toggle the pinned state of either a folder or a note.
+    Expects JSON payload:
+    {
+        "folder_id": <int|null>,
+        "note_id": <int|null>
+    }
+    Only one of folder_id or note_id should be non-null.
+    """
+    data = request.get_json() or {}
+    folder_id = data.get("folder_id")
+    note_id = data.get("note_id")
+
+    if not folder_id and not note_id:
+        return jsonify({"error": "Missing folder_id or note_id"}), 400
+
+    # Handle folder toggle
+    if folder_id:
+        folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
+        if not folder:
+            return jsonify({"error": "Folder not found"}), 404
+        folder.pinned = not folder.pinned
+        db.session.commit()
+        return jsonify(folder.to_dict()), 200
+
+    # Handle note toggle
+    if note_id:
+        note = Note.query.filter_by(id=note_id, user_id=g.user_id).first()
+        if not note:
+            return jsonify({"error": "Note not found"}), 404
+        note.pinned = not note.pinned
+        db.session.commit()
+        return jsonify(note.to_dict()), 200
 
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
@@ -10221,7 +10263,7 @@ def manage_folders():
         parent_id = request.args.get("parent_id", type=int)
         query = Folder.query.filter_by(user_id=g.user_id)
         query = query.filter(Folder.parent_id == parent_id) if parent_id is not None else query.filter(Folder.parent_id == None)
-        folders = query.all()
+        folders = query.order_by(Folder.pinned.desc(), Folder.id.desc()).all()
         return jsonify([folder.to_dict() for folder in folders])
 
 @app.route('/folders/<int:folder_id>/parents', methods=['GET'])
