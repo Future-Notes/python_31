@@ -3040,17 +3040,16 @@
                     const pinColor = item.pinned ? 'white' : '#888'; // greyed out if unpinned
 
                     li.innerHTML = `
-                        <div class="note-main">
                         <h3>${escapedTitle}</h3>
-                        <div class="note-preview">${item.note ? item.note : 'Empty note'}</div>
-                        ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+                        <div class="note-preview">${item.note ? item.note : 'Empty note'}
                         </div>
-                        <div class="note-controls">
+                        
                         <button class="pin-button" title="${pinTitle}" aria-label="${pinTitle}">
                             <i class="${pinIconClass}" style="color: ${pinColor};"></i>
                         </button>
+                        ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
                         <button class="share-button" title="Options">⋮</button>
-                        </div>
+                        
                     `;
 
                     li.addEventListener('click', function() {
@@ -4267,10 +4266,20 @@
             openShareModal(noteId);
             };
 
+            const versionBtn = document.createElement('button');
+            versionBtn.className = "folder-menu-btn";
+            versionBtn.innerText = 'Version history';
+            versionBtn.onclick = (e) => {
+            e.stopPropagation();
+            menu.remove();
+            showNoteVersions(noteId);
+            };
+
             // Append buttons to menu (order as you like)
             menu.appendChild(moveBtn);
             menu.appendChild(delBtn);
             menu.appendChild(shareBtn);
+            menu.appendChild(versionBtn);
 
             document.body.appendChild(menu);
 
@@ -5602,6 +5611,211 @@
         function showAccountMenu() {
             window.location.href = "/account_page";
         }
+
+        function showNoteVersions(noteId) {
+            const existing = document.getElementById('note-version-modal');
+            if (existing) existing.remove();
+
+            const style = document.createElement('style');
+            style.textContent = `
+                :root {
+                    --bg-color: #2c2c2c;
+                    --hdr-color: #3a3a3a;
+                    --ctr-color: #1e1e1e;
+                    --btn-color: #424242;
+                    --btn-hover: #5a5a5a;
+                    --text-color: #ffffff;
+                    --border-color: #555555;
+                }
+                #note-version-modal {
+                    position: fixed;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    background-color: rgba(0,0,0,0.7);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 9999;
+                }
+                #note-version-modal .modal-container {
+                    background-color: var(--bg-color);
+                    border-radius: 10px;
+                    width: 90%;
+                    max-width: 700px;
+                    max-height: 80%;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                    box-shadow: 0 0 20px rgba(0,0,0,0.6);
+                }
+                #note-version-modal .modal-header {
+                    background-color: var(--hdr-color);
+                    padding: 14px 18px;
+                    font-weight: bold;
+                    font-size: 1.2em;
+                    color: var(--text-color);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                #note-version-modal .modal-header button.close-btn {
+                    background: none;
+                    border: none;
+                    color: var(--text-color);
+                    font-size: 1.4em;
+                    cursor: pointer;
+                }
+                #note-version-modal .modal-content {
+                    background-color: var(--ctr-color);
+                    overflow-y: auto;
+                    padding: 14px 16px;
+                    flex: 1 1 auto;
+                    overflow: auto;
+                }
+                #note-version-modal .version-entry {
+                    border: 1px solid var(--border-color);
+                    border-radius: 6px;
+                    padding: 10px 12px;
+                    margin-bottom: 12px;
+                    background-color: var(--ctr-color);
+                }
+                #note-version-modal .version-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    font-size: 0.95em;
+                    margin-bottom: 6px;
+                }
+                #note-version-modal .version-text {
+                    font-size: 0.9em;
+                    color: var(--text-color);
+                    margin-bottom: 8px;
+                }
+                #note-version-modal .version-changes {
+                    font-size: 0.7em;
+                    color: #bbbbbb;
+                    margin-top: 4px;
+                }
+                #note-version-modal .attachments {
+                    font-size: 0.85em;
+                    color: #bbbbbb;
+                    margin-bottom: 6px;
+                }
+                #note-version-modal .rollback-btn {
+                    background-color: var(--btn-color);
+                    color: var(--text-color);
+                    border: none;
+                    border-radius: 4px;
+                    padding: 6px 12px;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                    font-size: 0.85em;
+                }
+                #note-version-modal .rollback-btn:hover {
+                    background-color: var(--btn-hover);
+                }
+            `;
+            document.head.appendChild(style);
+
+            const modal = document.createElement('div');
+            modal.id = 'note-version-modal';
+
+            const container = document.createElement('div');
+            container.className = 'modal-container';
+
+            const header = document.createElement('div');
+            header.className = 'modal-header';
+            header.textContent = 'Version History';
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'close-btn';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.onclick = () => modal.remove();
+            header.appendChild(closeBtn);
+            container.appendChild(header);
+
+            const content = document.createElement('div');
+            content.className = 'modal-content';
+            content.textContent = 'Loading...';
+            container.appendChild(content);
+
+            modal.appendChild(container);
+            document.body.appendChild(modal);
+
+            fetch(`/notes/${noteId}/versions`)
+                .then(res => res.json())
+                .then(versions => {
+                    content.innerHTML = '';
+                    if (!versions.length) {
+                        content.textContent = 'No versions found.';
+                        return;
+                    }
+
+                    let lastRendered = null;
+
+                    versions.forEach(v => {
+                        // Deduplication: skip if same note HTML + same attachments
+                        const currentHash = v.note + JSON.stringify(v.uploads.map(u => [u.filename, u.present_now]));
+                        if (lastRendered === currentHash) return;
+                        lastRendered = currentHash;
+
+                        const entry = document.createElement('div');
+                        entry.className = 'version-entry';
+
+                        const headerDiv = document.createElement('div');
+                        headerDiv.className = 'version-header';
+                        const dateStr = new Date(v.created_at).toLocaleString();
+                        headerDiv.innerHTML = `<span>Version #${v.version_number} - ${dateStr}</span>`;
+
+                        const rollbackBtn = document.createElement('button');
+                        rollbackBtn.className = 'rollback-btn';
+                        rollbackBtn.textContent = 'Rollback';
+                        rollbackBtn.onclick = () => {
+                            if (!confirm(`Rollback to version #${v.version_number}?`)) return;
+                            fetch(`/notes/${noteId}/versions/${v.version_id}/restore`, {method: 'POST'})
+                                .then(r => r.json())
+                                .then(res => {
+                                    alert(res.message || JSON.stringify(res));
+                                    modal.remove();
+                                })
+                                .catch(err => alert('Rollback failed: ' + err));
+                        };
+                        headerDiv.appendChild(rollbackBtn);
+
+                        const versionText = document.createElement('div');
+                        versionText.className = 'version-text';
+                        versionText.innerHTML = v.note;
+
+                        const attachments = document.createElement('div');
+                        attachments.className = 'attachments';
+                        if (v.uploads && v.uploads.length) {
+                            attachments.textContent = 'Attachments: ' + v.uploads.map(u => u.filename + (u.present_now ? '' : ' (deleted)')).join(', ');
+                        }
+
+                        // Minimal changes info if there was a backend-reported change but note/attachments identical
+                        const changesDiv = document.createElement('div');
+                        changesDiv.className = 'version-changes';
+                        const changes = [];
+                        if (v.title) changes.push(`Title: ${v.title}`);
+                        if (v.tag) changes.push(`Tag: ${v.tag}`);
+                        if (v.folder_id) changes.push(`Folder: ${v.folder_id}`);
+                        if (changes.length) {
+                            changesDiv.textContent = 'Changes: ' + changes.join(', ');
+                        }
+
+                        entry.appendChild(headerDiv);
+                        entry.appendChild(versionText);
+                        if (v.uploads && v.uploads.length) entry.appendChild(attachments);
+                        if (changesDiv.textContent) entry.appendChild(changesDiv);
+
+                        content.appendChild(entry);
+                    });
+                })
+                .catch(err => {
+                    content.textContent = 'Failed to load versions.';
+                    console.error(err);
+                });
+        }
+
+
 
         function showFolderOrAddMenu() {
             // Build the html to show 2 buttons above the floating button, one to show the folder add menu, the other to show the note add menu
