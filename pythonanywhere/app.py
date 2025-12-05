@@ -8320,8 +8320,8 @@ def scan_updates():
         local = repo.heads[default_branch.remote_head]
         remote_ref = default_branch
 
-        # Count how many commits local is behind remote
-        commits_behind = sum(1 for _ in repo.iter_commits(f"{local.commit.hexsha}..{remote_ref.commit.hexsha}"))
+        # Exclude merge commits by using --no-merges
+        commits_behind = sum(1 for _ in repo.iter_commits(f"{local.commit.hexsha}..{remote_ref.commit.hexsha}", no_merges=True))
         up_to_date = (commits_behind == 0)
 
         return jsonify({
