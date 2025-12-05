@@ -508,6 +508,9 @@
         }
 
         document.getElementById("deploy-local").addEventListener("click", async () => {
+            if (!confirm("Are you sure you want to deploy local changes to the production environment? This action cannot be undone.")) {
+                return;
+            }
             try {
                 const response = await fetch("/deploy/local", {
                     method: "POST",

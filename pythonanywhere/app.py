@@ -179,6 +179,8 @@ BACKUP_DIR = os.path.join(os.getcwd(), 'backups')
 DB_PATH = os.path.join(os.getcwd(), 'instance', 'data.db')
 if not os.path.isdir(BACKUP_DIR):
     os.makedirs(BACKUP_DIR, exist_ok=True)
+PRIME = 7919  # arbitrary prime number
+SALT = "ted2FrJNDRf3vgzZdyx2iWx1267OSaufRb6CZNVDfGg7Tg61kO"
 ERROR_MESSAGES = {
     "ERR-1001": "Something went wrong. Please try again later.",
     "DB-2002": "A database issue occurred. Please retry your request.",
@@ -2220,6 +2222,19 @@ def require_localhost_domain(fn):
             )
         return fn(*args, **kwargs)
     return wrapper
+
+def has_changes():
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True
+    )
+    return result.stdout.strip() != ""
+
+def generate_deploy_hash():
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    data = f"{PRIME}-{today}-{SALT}"
+    return hashlib.sha256(data.encode()).hexdigest()
 
 def delete_profile_pictures(username):
     """ Deletes all profile pictures associated with the given username. """
@@ -8448,24 +8463,122 @@ def merge_dev_into_master():
         "merge_sha": response.json().get("sha")
     })
 
-@app.route("/deploy/local", methods=["POST"])
+@app.route("/deploy/local", methods=['POST'])
+@require_localhost_domain
 @require_session_key
 @require_admin
-@require_localhost_domain
 def deploy_local():
-    import subprocess
+    # Optional: Commit and push local changes first
+    result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+    if result.stdout.strip():  # Only commit if changes exist
+        cmds = [
+            ["git", "add", "."],
+            ["git", "commit", "-m", "Auto deploy"],
+            ["git", "push", "origin", "dev"]
+        ]
+        for cmd in cmds:
+            subprocess.run(cmd, check=True)
 
-    cmds = [
-        ["git", "add", "."],
-        ["git", "commit", "-m", "Auto deploy"],
-        ["git", "push", "origin", "dev"]
-    ]
+    # Step 2: Call remote deploy endpoint
+    DEPLOY_HASH = generate_deploy_hash()  # Must match server
+    url = "https://bosbes.eu.pythonanywhere.com/remote/deploy"
+    try:
+        resp = requests.post(url, headers={"X-Deploy-Hash": DEPLOY_HASH}, timeout=60)
+        return {
+            "status": "Remote deploy triggered",
+            "remote_response": resp.json() if resp.headers.get("Content-Type") == "application/json" else resp.text,
+            "http_status": resp.status_code
+        }
+    except requests.RequestException as e:
+        return {"error": "Failed to reach remote deploy endpoint", "details": str(e)}, 500
 
-    for cmd in cmds:
-        subprocess.run(cmd, check=True)
+@app.route('/admin/deploy-all', methods=['POST'])
+@require_pythonanywhere_domain
+@require_session_key
+@require_admin
+def deploy_all():
+    results = {}
 
-    return "Local push completed", 200
+    # Step 1: Check dev vs master
+    dev_vs_master_resp = scan_dev_vs_master()
+    if isinstance(dev_vs_master_resp, tuple):
+        dev_vs_master_json, status = dev_vs_master_resp
+    else:
+        dev_vs_master_json = dev_vs_master_resp.get_json()
+        status = 200
 
+    results['scan_dev_vs_master'] = dev_vs_master_json
+    if status != 200 or not dev_vs_master_json.get('dev_ahead_of_master', False):
+        return jsonify({
+            "status": "Aborted",
+            "reason": "Dev branch is not ahead of master",
+            "details": results
+        }), 400
+
+    # Step 2: Merge dev into master
+    merge_resp = merge_dev_into_master()
+    if isinstance(merge_resp, tuple):
+        merge_json, status = merge_resp
+    else:
+        merge_json = merge_resp.get_json()
+        status = 200
+
+    results['merge_dev_into_master'] = merge_json
+    if status != 200:
+        return jsonify({
+            "status": "Aborted",
+            "reason": "Merge failed",
+            "details": results
+        }), 500
+
+    # Step 3: Scan updates (check if remote master has new commits)
+    scan_resp = scan_updates()
+    if isinstance(scan_resp, tuple):
+        scan_json, status = scan_resp
+    else:
+        scan_json = scan_resp.get_json()
+        status = 200
+
+    results['scan_updates'] = scan_json
+    if status != 200 or scan_json.get('update_available', False):
+        return jsonify({
+            "status": "Aborted",
+            "reason": "Remote master branch not ahead, PR may not have merged correctly",
+            "details": results
+        }), 500
+
+    # Step 4: Update code
+    update_resp = update_code()
+    if isinstance(update_resp, tuple):
+        update_json, status = update_resp
+    else:
+        update_json = update_resp.get_json()
+        status = 200
+
+    results['update_code'] = update_json
+    if status != 200:
+        return jsonify({
+            "status": "Completed with errors",
+            "details": results
+        }), 500
+
+    return jsonify({
+        "status": "Deployment completed successfully",
+        "details": results
+    }), 200
+
+@app.route('/remote/deploy', methods=['POST'])
+def remote_deploy():
+    provided_hash = request.headers.get("X-Deploy-Hash") or request.args.get("hash")
+    if not provided_hash:
+        return {"error": "Missing hash"}, 401
+
+    expected_hash = generate_deploy_hash()
+    if provided_hash != expected_hash:
+        return {"error": "Invalid hash"}, 403
+
+    # Call your existing deploy_all function
+    return deploy_all()
 
 @app.route('/admin/versions', methods=['GET', 'POST'])
 @require_pythonanywhere_domain
