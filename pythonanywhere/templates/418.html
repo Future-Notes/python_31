@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>418 I'm a teapot</title>
+    <style>
+        body {
+            background: #f0f0f0;
+            color: #333;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding-top: 10%;
+        }
+        .container {
+            display: inline-block;
+            background: #fff;
+            padding: 40px 60px;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        h1 {
+            font-size: 3em;
+            margin-bottom: 0.2em;
+            color: #ff6f61;
+        }
+        p {
+            font-size: 1.2em;
+            margin-top: 0;
+        }
+        a {
+            color: #337ab7;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>418 I'm a teapot</h1>
+        <p>Sorry, I can't brew coffee because I'm a teapot.</p>
+        <a href="https://tools.ietf.org/html/rfc2324" target="_blank">Learn more about the 418 status code</a>
+        <p><a href="{{ url_for('index') }}">Return to Home</a></p>
+    </div>
+</body>
+</html>

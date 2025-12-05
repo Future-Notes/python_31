@@ -3491,6 +3491,12 @@ def method_not_allowed(e):
         return jsonify({"error": "Method Not Allowed"}), 405
     return render_template('405.html'), 405
 
+@app.errorhandler(418)
+def im_a_teapot(e):
+    if request.path.startswith('/api') or request.is_json:
+        return jsonify({"error": "I'm a teapot"}), 418
+    return render_template('418.html'), 418
+
 @app.errorhandler(404)
 def page_not_found(error):
     # Check if the error is related to the profile pictures URL
@@ -3506,6 +3512,11 @@ def generate_error_code():
     return f"ERR-{random.randint(1000, 9999)}"
 
 #---------------------------------Template routes--------------------------------
+
+@app.route("/brew-coffee")
+def brew_coffee():
+    # Pretend your API can't brew coffee
+    abort(418)
 
 @app.route('/')
 def home():
