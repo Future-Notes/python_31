@@ -2232,7 +2232,7 @@ def has_changes():
     return result.stdout.strip() != ""
 
 def generate_deploy_hash():
-    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
     data = f"{PRIME}-{today}-{SALT}"
     return hashlib.sha256(data.encode()).hexdigest()
 
