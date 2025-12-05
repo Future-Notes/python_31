@@ -429,11 +429,10 @@
             <a class="db" href="/mutations_page">DB Logs</a>
             <a class="db" href="/checks_page">Supermode</a>
             <button id="scan-updates">Scan for updates</button>
-            <div id="update-status"></div>
             <button id="run-update">Run updates</button>
             <button id="scan-dev-vs-master">Check Dev vs Master</button>
-            <div id="dev-status"></div>
             <button id="merge-dev-master">Merge Dev into Master</button>
+            <button id="deploy-local">Deploy Local Changes</button>
             <button id="create-backup-btn">Create Backup</button>
             <button id="send-notification-all">Send Notification to All Users</button>
         </div>
@@ -507,6 +506,29 @@
             modalOverlay.style.display = "none";
             location.reload();
         }
+
+        document.getElementById("deploy-local").addEventListener("click", async () => {
+            if (!confirm("Are you sure you want to deploy local changes to the production environment? This action cannot be undone.")) {
+                return;
+            }
+            try {
+                const response = await fetch("/deploy/local", {
+                    method: "POST",
+                    
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    alert(data.status || "Deployment successful.");
+                } else {
+                    const errorData = await response.json();
+                    alert(`Deployment failed: ${errorData.error || response.statusText}`);
+                }
+            } catch (error) {
+                console.error("Error during deployment:", error);
+                alert("An unexpected error occurred during deployment.");
+            }
+        });
 
 
         document.getElementById('create-backup-btn').addEventListener('click', async () => {
