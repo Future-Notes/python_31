@@ -2209,6 +2209,18 @@ def require_pythonanywhere_domain(fn):
         return fn(*args, **kwargs)
     return wrapper
 
+def require_localhost_domain(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        host = request.host.split(":", 1)[0].lower()
+        if not (host == "localhost" or host == "127.0.0.1" or host == "::1"):
+           return (
+                jsonify({"error": "Forbidden: this endpoint only works on localhost domain"}),
+                403
+            )
+        return fn(*args, **kwargs)
+    return wrapper
+
 def delete_profile_pictures(username):
     """ Deletes all profile pictures associated with the given username. """
     profile_pictures_path = os.path.join(UPLOAD_FOLDER)
@@ -8435,6 +8447,25 @@ def merge_dev_into_master():
         "pr_number": pr_number,
         "merge_sha": response.json().get("sha")
     })
+
+@app.route("/deploy/local", methods=["POST"])
+@require_session_key
+@require_admin
+@require_localhost_domain
+def deploy_local():
+    import subprocess
+
+    cmds = [
+        ["git", "add", "."],
+        ["git", "commit", "-m", "Auto deploy"],
+        ["git", "push", "origin", "dev"]
+    ]
+
+    for cmd in cmds:
+        subprocess.run(cmd, check=True)
+
+    return "Local push completed", 200
+
 
 @app.route('/admin/versions', methods=['GET', 'POST'])
 @require_pythonanywhere_domain
