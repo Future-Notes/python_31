@@ -8577,6 +8577,8 @@ def remote_deploy():
     if provided_hash != expected_hash:
         return {"error": "Invalid hash"}, 403
 
+    print("REMOTE DEPLOY HIT")
+
     # Call your existing deploy_all function
     return deploy_all()
 
