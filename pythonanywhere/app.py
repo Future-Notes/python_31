@@ -658,6 +658,36 @@ class Note(db.Model):
             "pinned": self.pinned
         }
 
+class NoteVersion(db.Model):
+    __tablename__ = "note_version"
+    id = db.Column(db.Integer, primary_key=True)
+    note_id = db.Column(db.Integer, db.ForeignKey('note.id'), nullable=False)
+    version_number = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    editor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    # snapshot fields
+    title = db.Column(db.String(100), nullable=True)
+    note = db.Column(db.Text, nullable=False)
+    tag = db.Column(db.String(100), nullable=True)
+    folder_id = db.Column(db.Integer, nullable=True)
+    pinned = db.Column(db.Boolean, default=False)
+
+    uploads = db.relationship("NoteVersionUpload", backref="note_version", cascade="all, delete-orphan")
+
+class NoteVersionUpload(db.Model):
+    __tablename__ = "note_version_upload"
+    id = db.Column(db.Integer, primary_key=True)
+    note_version_id = db.Column(db.Integer, db.ForeignKey('note_version.id'), nullable=False)
+
+    # reference to the original Upload (if still present)
+    upload_id = db.Column(db.Integer, nullable=True)
+
+    # snapshot metadata (so versions remain meaningful if upload later removed)
+    filename = db.Column(db.String(255), nullable=True)
+    size = db.Column(db.Integer, nullable=True)
+    mime_type = db.Column(db.String(100), nullable=True)
+    upload_deleted = db.Column(db.Boolean, nullable=True)  # true if upload.deleted was true at snapshot
 
 class Share(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -880,6 +910,56 @@ class FlowCommit(db.Model):
     todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
+def create_note_version(note, editor_id=None):
+    """
+    Create a NoteVersion snapshot of `note` and its current attachments.
+    Call after the note and NoteUpload rows are committed/persisted.
+    """
+    # find the next version number
+    last_version = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.desc()).first()
+    next_version_number = 1 if not last_version else last_version.version_number + 1
+
+    nv = NoteVersion(
+        note_id=note.id,
+        version_number=next_version_number,
+        editor_id=editor_id,
+        title=note.title,
+        note=note.note,
+        tag=note.tag,
+        folder_id=note.folder_id,
+        pinned=note.pinned
+    )
+    db.session.add(nv)
+    db.session.flush()  # get nv.id
+
+    # snapshot attachments that are currently attached to the note
+    attached_rows = NoteUpload.query.filter_by(note_id=note.id).all()
+    for ar in attached_rows:
+        up = Upload.query.get(ar.upload_id)
+        vu = NoteVersionUpload(
+            note_version_id=nv.id,
+            upload_id=up.id if up else None,
+            filename=getattr(up, "filename", None) if up else None,
+            size=getattr(up, "size", None) if up else None,
+            mime_type=getattr(up, "mime_type", None) if up else None,
+            upload_deleted=getattr(up, "deleted", None) if up else True
+        )
+        db.session.add(vu)
+
+    db.session.commit()
+    return nv
+
+def delete_version_history(note_id):
+    """
+    Delete all NoteVersion and NoteVersionUpload rows for note_id.
+    """
+    versions = NoteVersion.query.filter_by(note_id=note_id).all()
+    for nv in versions:
+        NoteVersionUpload.query.filter_by(note_version_id=nv.id).delete()
+        db.session.delete(nv)
+    db.session.commit()
+
+
 def collect_folder_tree_ids(root_folder_id):
     """
     Return two sets: (folder_ids_set, note_ids_set) covering root_folder_id
@@ -8477,13 +8557,16 @@ def deploy_local():
             ["git", "push", "origin", "dev"]
         ]
         for cmd in cmds:
+            print(f"Running: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
 
     # Step 2: Call remote deploy endpoint
     DEPLOY_HASH = generate_deploy_hash()  # Must match server
+    print(f"Generated deploy hash: {DEPLOY_HASH}")
     url = "https://bosbes.eu.pythonanywhere.com/remote/deploy"
     try:
         resp = requests.post(url, headers={"X-Deploy-Hash": DEPLOY_HASH}, timeout=60)
+        print(f"Remote deploy response: {resp.status_code} - {resp.text}")
         return {
             "status": "Remote deploy triggered",
             "remote_response": resp.json() if resp.headers.get("Content-Type") == "application/json" else resp.text,
@@ -10148,6 +10231,7 @@ def password_eisen():
 
 # Personal notes
 
+# --- POST and GET /notes ---
 @app.route('/notes', methods=['GET', 'POST'])
 @require_session_key
 def manage_notes():
@@ -10191,7 +10275,7 @@ def manage_notes():
         if folder_id:
             parent_folder = Folder.query.get(folder_id)
             while parent_folder:
-                for share in parent_folder.shares:  # all shares on this folder
+                for share in parent_folder.shares:
                     db.session.add(Share(
                         token=share.token,
                         note_id=new_note.id,
@@ -10202,15 +10286,20 @@ def manage_notes():
                 parent_folder = Folder.query.get(parent_folder.parent_id) if parent_folder.parent_id else None
             db.session.commit()
 
+        # --- Create initial note version ---
+        try:
+            create_note_version(new_note, editor_id=g.user_id)
+        except Exception:
+            current_app.logger.exception(f"Failed to create version for note {new_note.id}")
+
         return jsonify({"message": "Note added successfully!"}), 201
 
     else:
-        # GET notes (unchanged)
+        # GET notes
         folder_id = request.args.get('folder_id', type=int)
         query = Note.query.filter_by(user_id=g.user_id)
         query = query.filter_by(folder_id=folder_id) if folder_id else query.filter_by(folder_id=None)
 
-        # Order by pinned items first, then by descending ID
         notes = query.order_by(Note.pinned.desc(), Note.id.desc()).all()
         sanitized_notes = []
         for note in notes:
@@ -10271,6 +10360,7 @@ def toggle_pin():
         db.session.commit()
         return jsonify(note.to_dict()), 200
 
+# --- PUT and DELETE /notes/<id> ---
 @app.route('/notes/<int:note_id>', methods=['PUT', 'DELETE'])
 @require_session_key
 def update_delete_note(note_id):
@@ -10283,29 +10373,23 @@ def update_delete_note(note_id):
 
     if request.method == 'PUT':
         data = request.json
-        
-        # Only update fields that are provided in the request
+
         if 'title' in data:
             note.title = data.get('title')
         if 'note' in data:
             note.note = sanitize_html(data.get('note', note.note))
         if 'tag' in data:
             note.tag = data.get('tag')
-        
-        # Handle folder_id update - explicitly check for presence in request
         if 'folder_id' in data:
             folder_id = data.get('folder_id')
-            if folder_id is not None:  # Explicit null check
+            if folder_id is not None:
                 folder = Folder.query.filter_by(id=folder_id, user_id=g.user_id).first()
                 if not folder:
                     return jsonify({"error": "Folder not found or access denied"}), 400
                 note.folder_id = folder_id
             else:
-                # Explicitly set to None to move to root
                 note.folder_id = None
-        # If folder_id is not in data, don't change the existing value
 
-        # existing_attachments helper stays the same
         if 'attachments' in data:
             requested_attachments = set(data.get('attachments') or [])
             existing_attachments = current_attachment_ids(note.id)
@@ -10313,7 +10397,6 @@ def update_delete_note(note_id):
             to_add = requested_attachments - existing_attachments
             to_remove = existing_attachments - requested_attachments
 
-            # validate to_add
             for uid in list(to_add):
                 up = Upload.query.get(uid)
                 if not up or up.user_id != g.user_id or up.deleted:
@@ -10321,32 +10404,32 @@ def update_delete_note(note_id):
 
             try:
                 for uid in to_add:
-                    nu = NoteUpload(note_id=note.id, upload_id=uid)
-                    db.session.add(nu)
-
+                    db.session.add(NoteUpload(note_id=note.id, upload_id=uid))
                 for uid in to_remove:
-                    nu_row = NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).first()
-                    if nu_row:
-                        db.session.delete(nu_row)
+                    NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).delete()
 
                 db.session.commit()
             except Exception:
                 db.session.rollback()
                 return jsonify({"error": "Database error on updating note attachments."}), 500
 
-            # remove orphaned uploads outside DB transaction (as you already do)
             for uid in to_remove:
                 try:
-                    ok, msg = remove_upload_if_orphan(uid)
+                    remove_upload_if_orphan(uid)
                 except Exception:
                     pass
-        # else: attachments key not present -> do not touch attachments
 
+        # --- Create version after update ---
+        try:
+            create_note_version(note, editor_id=g.user_id)
+        except Exception:
+            current_app.logger.exception(f"Failed to create version for note {note.id}")
 
         return jsonify({"message": "Note updated successfully!"}), 200
 
     elif request.method == 'DELETE':
         delete_shares(note.id)
+        delete_version_history(note.id)
         existing_attachments = current_attachment_ids(note.id)
         try:
             NoteUpload.query.filter_by(note_id=note.id).delete()
@@ -10359,11 +10442,122 @@ def update_delete_note(note_id):
 
         for uid in existing_attachments:
             try:
-                ok, msg = remove_upload_if_orphan(uid)
+                remove_upload_if_orphan(uid)
             except Exception:
                 pass
 
         return jsonify({"message": "Note deleted successfully."}), 200
+
+@app.route('/notes/<int:note_id>/versions', methods=['GET'])
+@require_session_key
+def list_note_versions(note_id):
+    note = Note.query.get(note_id)
+    if not note or note.user_id != g.user_id:
+        return jsonify({"error": "Note not found"}), 404
+
+    versions = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.desc()).all()
+    result = []
+    for v in versions:
+        uploads = []
+        for vu in v.uploads:
+            present = False
+            up = None
+            if vu.upload_id:
+                up = Upload.query.get(vu.upload_id)
+                present = (up is not None and not getattr(up, "deleted", False))
+            uploads.append({
+                "version_upload_id": vu.id,
+                "upload_id": vu.upload_id,
+                "filename": vu.filename,
+                "size": vu.size,
+                "mime_type": vu.mime_type,
+                "upload_deleted_at_snapshot": bool(vu.upload_deleted),
+                "present_now": present
+            })
+        result.append({
+            "version_id": v.id,
+            "version_number": v.version_number,
+            "created_at": v.created_at.isoformat(),
+            "editor_id": v.editor_id,
+            "title": v.title,
+            "note": v.note,
+            "tag": v.tag,
+            "folder_id": v.folder_id,
+            "pinned": v.pinned,
+            "uploads": uploads
+        })
+    return jsonify(result), 200
+
+@app.route('/notes/<int:note_id>/versions/<int:version_id>/restore', methods=['POST'])
+@require_session_key
+def restore_note_version(note_id, version_id):
+    note = Note.query.get(note_id)
+    if not note or note.user_id != g.user_id:
+        return jsonify({"error": "Note not found"}), 404
+
+    def current_attachment_ids(note_id):
+        return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
+
+    v = NoteVersion.query.filter_by(id=version_id, note_id=note.id).first()
+    if not v:
+        return jsonify({"error": "Version not found"}), 404
+
+    content_only = request.args.get('content_only', 'false').lower() == 'true'
+
+    # check uploads
+    missing = []
+    version_upload_ids = []
+    for vu in v.uploads:
+        version_upload_ids.append(vu.upload_id)
+        if vu.upload_id is not None:
+            up = Upload.query.get(vu.upload_id)
+            if not up or up.deleted or up.user_id != g.user_id:
+                missing.append({
+                    "upload_id": vu.upload_id,
+                    "filename": vu.filename
+                })
+
+    if missing and not content_only:
+        return jsonify({
+            "error": "Some files referenced by this version are missing or deleted. Cannot restore attachments.",
+            "missing_files": missing
+        }), 400
+
+    # proceed to restore note fields
+    try:
+        note.title = v.title
+        note.note = v.note
+        note.tag = v.tag
+        note.folder_id = v.folder_id
+        note.pinned = v.pinned
+
+        # handle attachments: if content_only we skip attachments; else replace attachments to match version
+        if not content_only:
+            requested_attachments = set([uid for uid in version_upload_ids if uid is not None])
+            existing_attachments = current_attachment_ids(note.id)
+
+            to_add = requested_attachments - existing_attachments
+            to_remove = existing_attachments - requested_attachments
+
+            for uid in list(to_add):
+                up = Upload.query.get(uid)
+                if not up or up.user_id != g.user_id or up.deleted:
+                    raise ValueError(f"Invalid attachment to add during restore: {uid}")
+                db.session.add(NoteUpload(note_id=note.id, upload_id=uid))
+
+            for uid in to_remove:
+                NoteUpload.query.filter_by(note_id=note.id, upload_id=uid).delete()
+
+        db.session.commit()
+        # create a new version for this restore operation
+        create_note_version(note, editor_id=g.user_id)
+        return jsonify({"message": "Note restored from version"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception(e)
+        return jsonify({"error": "Database error on restoring version."}), 500
+
     
 @app.route('/folders', methods=['GET', 'POST'])
 @require_session_key
