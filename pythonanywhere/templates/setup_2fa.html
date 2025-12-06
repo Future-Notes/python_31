@@ -114,6 +114,16 @@ body{
         </div>
       </div>
 
+      <div id="webauthn-card" class="card" style="margin-top:14px;">
+        <div style="font-weight:600">Biometric login / Security keys</div>
+        <div class="small">Register a device to log in without your password. You can register multiple devices.</div>
+        <div id="webauthn-list" style="margin-top:10px"></div>
+        <div class="controls" style="margin-top:8px;">
+          <button id="btn-webauthn-add" class="btn primary">Register a new device</button>
+        </div>
+      </div>
+
+
       <div id="help-card" class="card" style="margin-top:14px;">
         <div style="font-weight:600">Authenticator apps</div>
         <div class="small">We recommend Authy, Google Authenticator or any TOTP-compatible app. Set your device clock to automatic time for reliable codes.</div>
@@ -178,6 +188,115 @@ body{
   let currentBackupCodes = null;
   let currentQRCode = null;
   let currentSecret = null;
+
+  // ----- WebAuthn device management -----
+  const webauthnList = document.getElementById('webauthn-list');
+  const btnWebAuthnAdd = document.getElementById('btn-webauthn-add');
+
+  async function fetchDevices(){
+    try {
+      const res = await apiFetch('/webauthn/devices', { method:'GET' });
+      const j = await res.json().catch(()=>({ devices: [] }));
+      if (res.ok){
+        renderDeviceList(j.devices || []);
+      }
+    } catch(e){ console.error(e); }
+  }
+
+  function renderDeviceList(devices){
+    if (!devices.length){
+      webauthnList.innerHTML = `<div class="small">No registered devices</div>`;
+      return;
+    }
+    const html = devices.map(d=>`
+      <div class="device-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span>${escapeHtml(d.name)}</span>
+        <button class="btn danger btn-remove-device" data-id="${d.credential_id}">Remove</button>
+      </div>
+    `).join('');
+    webauthnList.innerHTML = html;
+
+    document.querySelectorAll('.btn-remove-device').forEach(b => {
+      b.addEventListener('click', async ()=>{
+        const credId = b.dataset.id;
+        b.disabled = true;
+        try {
+          const res = await apiFetch('/webauthn/device/remove', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ credential_id: credId })
+          });
+          const j = await res.json().catch(()=>({}));
+          if (res.ok){
+            fetchDevices(); // refresh list
+          } else {
+            alert(j.error || 'Could not remove device.');
+            b.disabled = false;
+          }
+        } catch(e){
+          alert('Network error — try again.');
+          b.disabled = false;
+        }
+      });
+    });
+  }
+
+  btnWebAuthnAdd.addEventListener('click', async ()=>{
+    btnWebAuthnAdd.disabled = true;
+    try {
+      // Step 1: start registration
+      const startRes = await apiFetch('/webauthn/register/start', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({  })
+      });
+      const startData = await startRes.json().catch(()=>({}));
+      if (!startRes.ok) { alert(startData.error || 'Could not start registration'); btnWebAuthnAdd.disabled=false; return; }
+
+      const publicKey = startData.publicKey;
+
+      // Convert challenge & id from base64url to Uint8Array
+      publicKey.challenge = Uint8Array.from(atob(publicKey.challenge.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+      publicKey.user.id = Uint8Array.from(atob(publicKey.user.id.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0));
+
+      if (publicKey.excludeCredentials){
+        publicKey.excludeCredentials = publicKey.excludeCredentials.map(c => {
+          c.id = Uint8Array.from(atob(c.id.replace(/-/g,'+').replace(/_/g,'/')), ch=>ch.charCodeAt(0));
+          return c;
+        });
+      }
+
+      // Step 2: create credential in browser
+      const cred = await navigator.credentials.create({ publicKey });
+      if (!cred) { alert('Could not create credential'); btnWebAuthnAdd.disabled=false; return; }
+
+      // Step 3: send result to server to finish registration
+      const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(cred.response.clientDataJSON))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+      const attestationObject = btoa(String.fromCharCode(...new Uint8Array(cred.response.attestationObject))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+      const finishRes = await apiFetch('/webauthn/register/finish', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          clientDataJSON,
+          attestationObject,
+          device_name: prompt('Enter a name for this device') || 'My device'
+        })
+      });
+      const finishData = await finishRes.json().catch(()=>({}));
+      if (finishRes.ok){
+        fetchDevices();
+        alert('Device registered successfully!');
+      } else {
+        alert(finishData.error || 'Could not register device.');
+      }
+
+    } catch(e){ console.error(e); alert('Registration failed.'); }
+    btnWebAuthnAdd.disabled = false;
+  });
+
+  // initial load
+  fetchDevices();
 
   async function apiFetch(url, opts={}) {
     opts.credentials = 'include';

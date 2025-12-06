@@ -1,5 +1,5 @@
 (function() {
-  // 1) Inject CSS overlay immediately
+  // --- 1) Inject CSS overlay immediately ---
   const css = `
     #loading-overlay {
       position: fixed;
@@ -24,7 +24,7 @@
   styleTag.textContent = css;
   document.head.appendChild(styleTag);
 
-  // 2) Overlay injection helper
+  // --- 2) Overlay injection helper ---
   function insertOverlay() {
     if (document.getElementById('loading-overlay')) return;
     const overlay = document.createElement('div');
@@ -35,54 +35,71 @@
     document.body.insertBefore(overlay, document.body.firstChild);
   }
 
-  if (document.body) {
-    insertOverlay();
-  } else {
-    window.addEventListener('DOMContentLoaded', insertOverlay);
-  }
+  if (document.body) insertOverlay();
+  else window.addEventListener('DOMContentLoaded', insertOverlay);
 
-  // 3) Track pending fetches, ignoring lazy iframes
-  window.__pendingFetches = [];
+  // --- 3) Patch fetch globally with automatic retry ---
   const _origFetch = window.fetch;
-  window.fetch = function(...args) {
-    let isInsideLazyIframe = false;
-    try {
-      // Detect if this fetch originates from a lazy iframe
-      isInsideLazyIframe = window.frameElement?.hasAttribute('data-lazy');
-    } catch(e) {
-      // Cross-origin frames may throw
-      isInsideLazyIframe = false;
+  window.__pendingFetches = [];
+
+  window.fetch = async function(input, init = {}) {
+    const clonedInit = structuredClone(init); // safe clone for retry
+    let retries = 2;
+    let delays = [1500, 800]; // ms delays for first and second retry
+
+    let attempt = 0;
+    while (true) {
+      const p = _origFetch.apply(this, [input, init]);
+
+      if (!window.frameElement?.hasAttribute?.('data-lazy')) {
+        window.__pendingFetches.push(p);
+        p.finally(() => {
+          window.__pendingFetches = window.__pendingFetches.filter(x => x !== p);
+        });
+      }
+
+      const res = await p;
+
+      // Attempt retry if schema update message detected
+      let data = null;
+      try { data = await res.clone().json(); } catch(e){}
+
+      if (res.status === 500 &&
+          data?.message === "Database schema updated. Please retry your request." &&
+          attempt < retries) {
+
+        console.warn(`Database schema updated detected, retrying fetch in ${delays[attempt]}ms...`);
+        await new Promise(r => setTimeout(r, delays[attempt]));
+        attempt++;
+        init = structuredClone(clonedInit); // reset init for exact retry
+        continue; // retry
+      }
+
+      // If retries exhausted and still schema update, alert user
+      if (res.status === 500 &&
+          data?.message === "Database schema updated. Please retry your request." &&
+          attempt >= retries) {
+        alert("Database schema updated. Please retry your last action manually.");
+      }
+
+      return res; // return response
     }
-
-    const p = _origFetch.apply(this, args);
-
-    if (!isInsideLazyIframe) {
-      window.__pendingFetches.push(p);
-      p.finally(() => {
-        window.__pendingFetches = window.__pendingFetches.filter(x => x !== p);
-      });
-    }
-
-    return p;
   };
 
-  // 4) Track non-lazy iframes
+  // --- 4) Track non-lazy iframes ---
   function getIframePromises() {
-    const iframes = Array.from(document.querySelectorAll('iframe'))
-      .filter(f => !f.hasAttribute('data-lazy'));
-
-    return iframes.map(f => new Promise(resolve => {
-      // iframe already loaded
-      if (f.complete || f.contentWindow?.document.readyState === 'complete') {
-        resolve();
-      } else {
-        f.addEventListener('load', () => resolve());
-        f.addEventListener('error', () => resolve());
-      }
-    }));
+    return Array.from(document.querySelectorAll('iframe'))
+      .filter(f => !f.hasAttribute('data-lazy'))
+      .map(f => new Promise(resolve => {
+        if (f.complete || f.contentWindow?.document.readyState === 'complete') resolve();
+        else {
+          f.addEventListener('load', () => resolve());
+          f.addEventListener('error', () => resolve());
+        }
+      }));
   }
 
-  // 5) Remove overlay once page + fetches + non-lazy iframes are ready
+  // --- 5) Remove overlay once page + fetches + non-lazy iframes are ready ---
   function hideLoader() {
     const o = document.getElementById('loading-overlay');
     if (o) o.remove();
