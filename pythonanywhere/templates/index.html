@@ -212,8 +212,6 @@
             justify-content: space-between;
             height: 200px;
             overflow: hidden;
-            opacity: 0;
-            animation: fadeIn 1s forwards;
         }
 
         /* Restore folder-only centering without changing note layout */
@@ -293,10 +291,11 @@
             background-color: #cc4a4a;
         }
 
-        #items-list li button.pin-button {
-            top: 10px;
+        .note-top-right-corner {
+            top: 20px;
             left: 10px;
             right: unset;
+            position: absolute;
         }
         .pin-button {
             background: none !important;      /* remove default button bg */
@@ -307,6 +306,9 @@
             justify-content: center !important;
             color: white !important;          /* icon color */
             font-size: 1.1rem !important;     /* adjust size */
+            position: relative !important;
+            top: unset !important;
+            right: unset !important;
         }
         #update-menu {
             display: none;
@@ -352,8 +354,6 @@
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
             z-index: 1001;
-            opacity: 0;
-            animation: fadeIn 0.2s forwards 0.3s;
         }
 
         @keyframes fadeIn {
@@ -366,7 +366,6 @@
         }
 
         .note-tag {
-            position: absolute;
             color: #e0e0e0;
             padding: 10px 5px;
             text-align: center;
@@ -409,8 +408,6 @@
             z-index: 1003;
             width: 80%;
             max-width: 500px;
-            opacity: 0;
-            animation: fadeIn 0.2s forwards 0.2s;
         }
 
         #view-menu textarea {
@@ -1642,7 +1639,7 @@
             </div>
         </div>
         <div id="profile-pic" class="profile-pic no-picture"></div>
-      </header>
+    </header>
       
       <nav id="mobileSubHeader" class="mobile-sub-header">
         <a href="/index" class="nav-link active">Notes</a>
@@ -2802,70 +2799,86 @@
             });
         });
 
-        document.getElementById("search-input").addEventListener("input", (event) => {
-            const query = event.target.value.toLowerCase();
-            searchNotes(query);
+        const searchInput = document.getElementById("search-input");
+        let backendSearchTimeout;
+        let backendResultsList;
+
+        searchInput.addEventListener("input", async (event) => {
+            const query = event.target.value.trim().toLowerCase();
+
+            // Remove previous backend results
+            if (backendResultsList) {
+                backendResultsList.remove();
+                backendResultsList = null;
+            }
+
+            // 1️⃣ First search locally in current items-list
+            searchLocalItems(query);
+
+            // 2️⃣ Debounce backend search for network efficiency
+            if (backendSearchTimeout) clearTimeout(backendSearchTimeout);
+            if (query.length >= 2) { // only search backend if at least 2 chars
+                backendSearchTimeout = setTimeout(() => searchBackend(query), 300);
+            }
         });
 
-        function searchNotes(searchTerm) {
-            const notesList = document.getElementById("notes-list");
-            const notes = Array.from(notesList.children);
-            const noResultsMessage = document.querySelector(".no-results-message");
-            
-            // Remove existing no-results message at start
-            if (noResultsMessage) noResultsMessage.remove();
+        function searchLocalItems(query) {
+            const itemsList = document.getElementById("items-list");
+            if (!itemsList) return;
 
-            // Handle empty search term immediately
-            if (!searchTerm.trim()) {
-                notes.forEach(note => note.style.display = "flex");
-                return;
-            }
+            const items = Array.from(itemsList.children);
+            items.forEach(item => {
+                const text = (item.querySelector('h3')?.innerText + " " +
+                            item.querySelector('.note-preview')?.innerText + " " +
+                            item.querySelector('.note-tag')?.innerText || "")
+                            .toLowerCase();
+                item.style.display = query ? (text.includes(query) ? "flex" : "none") : "flex";
+            });
+        }
 
-            // Parse search terms (including phrases in quotes)
-            const terms = searchTerm
-                .match(/"[^"]+"|\S+/g)
-                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase()) || [];
+        async function searchBackend(query) {
+            try {
+                const res = await fetch(`/search_notes?q=${encodeURIComponent(query)}`);
+                if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+                const results = await res.json();
 
-            let hasResults = false;
+                if (results.length === 0) return; // no results to display
 
-            // Handle case where there are no notes at all
-            if (notes.length === 0) {
-                const messageElement = document.createElement("li");
-                messageElement.classList.add("no-results-message", "empty-note");
-                messageElement.innerText = "No notes available to search.";
-                notesList.appendChild(messageElement);
-                return;
-            }
+                // Create results list
+                backendResultsList = document.createElement("ul");
+                backendResultsList.className = "backend-search-results";
+                backendResultsList.style.position = "absolute";
+                backendResultsList.style.top = `${searchInput.offsetHeight + searchInput.offsetTop}px`;
+                backendResultsList.style.left = `${searchInput.offsetLeft}px`;
+                backendResultsList.style.width = `${searchInput.offsetWidth}px`;
+                backendResultsList.style.background = "var(--bg-color)";
+                backendResultsList.style.border = "1px solid #ccc";
+                backendResultsList.style.zIndex = 999;
+                backendResultsList.style.listStyle = "none";
+                backendResultsList.style.padding = "0";
+                backendResultsList.style.margin = "0";
 
-            // Process each note
-            notes.forEach(note => {
-                const noteText = note.querySelector('.note-preview')?.innerText.toLowerCase() || "";
-                const noteTag = note.querySelector('.note-tag')?.innerText.toLowerCase() || "";
-                const noteTitle = note.querySelector('h3')?.innerText.toLowerCase() || "";
-                const noteContent = `${noteTitle} ${noteText} ${noteTag}`;
-
-                const matches = terms.every(term => {
-                    if (term.includes(" ")) {
-                        return noteContent.includes(term);
-                    } else {
-                        return noteContent.split(/\s+/).some(word => word.startsWith(term));
-                    }
+                results.forEach(note => {
+                    const li = document.createElement("li");
+                    li.style.padding = "8px";
+                    li.style.cursor = "pointer";
+                    li.innerText = note.title || "Untitled note";
+                    li.addEventListener("click", () => {
+                        currentFolderId = note.folder_id; // navigate to folder
+                        fetchAndRenderItems();           // refresh UI
+                        backendResultsList.remove();     // remove dropdown
+                        backendResultsList = null;
+                        // refresh search input so it searches locally again, but dont trigger backend search
+                        
+                        searchInput.value = query;
+                    });
+                    backendResultsList.appendChild(li);
                 });
 
-                if (matches) {
-                    note.style.display = "flex";
-                    hasResults = true;
-                } else {
-                    note.style.display = "none";
-                }
-            });
+                searchInput.parentNode.appendChild(backendResultsList);
 
-            // Show message if no matches found
-            if (!hasResults) {
-                const messageElement = document.createElement("li");
-                messageElement.classList.add("no-results-message", "empty-note");
-                messageElement.innerText = "No results found.";
-                notesList.appendChild(messageElement);
+            } catch (err) {
+                console.error("Backend search error:", err);
             }
         }
 
@@ -3004,9 +3017,11 @@
                         <h3>${escapeHTML(item.name)}</h3>
                         </div>
                         <div class="folder-controls">
+                        <div class="note-top-right-corner">
                         <button class="pin-button" title="${pinTitle}">
                             <i class="${pinIconClass}" style="color: ${pinColor};"></i>
                         </button>
+                        </div>
                         <button class="folder-options-btn" title="Options">⋮</button>
                         </div>
                     `;
@@ -3041,13 +3056,13 @@
 
                     li.innerHTML = `
                         <h3>${escapedTitle}</h3>
-                        <div class="note-preview">${item.note ? item.note : 'Empty note'}
+                        <div class="note-preview">${item.note ? item.note : 'Empty note'}</div>
+                        <div class="note-top-right-corner">
+                            ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+                            <button class="pin-button" title="${pinTitle}" aria-label="${pinTitle}">
+                                <i class="${pinIconClass}" style="color: ${pinColor};"></i>
+                            </button>
                         </div>
-                        
-                        <button class="pin-button" title="${pinTitle}" aria-label="${pinTitle}">
-                            <i class="${pinIconClass}" style="color: ${pinColor};"></i>
-                        </button>
-                        ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
                         <button class="share-button" title="Options">⋮</button>
                         
                     `;
@@ -5618,101 +5633,59 @@
 
             const style = document.createElement('style');
             style.textContent = `
-                :root {
-                    --bg-color: #2c2c2c;
-                    --hdr-color: #3a3a3a;
-                    --ctr-color: #1e1e1e;
-                    --btn-color: #424242;
-                    --btn-hover: #5a5a5a;
-                    --text-color: #ffffff;
-                    --border-color: #555555;
+                :root{
+                    --bg-color:#2c2c2c; --hdr-color:#3a3a3a; --ctr-color:#1e1e1e;
+                    --btn-color:#424242; --btn-hover:#5a5a5a; --text-color:#ffffff; --border-color:#555555;
+                    --muted:#bbbbbb;
                 }
                 #note-version-modal {
-                    position: fixed;
-                    top: 0; left: 0; right: 0; bottom: 0;
-                    background-color: rgba(0,0,0,0.7);
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    z-index: 9999;
+                    position: fixed; inset: 0;
+                    background-color: rgba(0,0,0,0.6);
+                    display:flex; justify-content:center; align-items:center; z-index:9999;
                 }
                 #note-version-modal .modal-container {
-                    background-color: var(--bg-color);
-                    border-radius: 10px;
-                    width: 90%;
-                    max-width: 700px;
-                    max-height: 80%;
-                    display: flex;
-                    flex-direction: column;
-                    overflow: hidden;
-                    box-shadow: 0 0 20px rgba(0,0,0,0.6);
+                    background: var(--bg-color); border-radius:10px;
+                    width:90%; max-width:820px; max-height:84%; display:flex; flex-direction:column; overflow:hidden;
+                    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
                 }
                 #note-version-modal .modal-header {
-                    background-color: var(--hdr-color);
-                    padding: 14px 18px;
-                    font-weight: bold;
-                    font-size: 1.2em;
-                    color: var(--text-color);
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
+                    background: var(--hdr-color); padding:12px 16px; color:var(--text-color); font-weight:600;
+                    display:flex; justify-content:space-between; gap:12px; align-items:center;
                 }
+                #note-version-modal .modal-header .title { font-size:1.05rem; }
                 #note-version-modal .modal-header button.close-btn {
-                    background: none;
-                    border: none;
-                    color: var(--text-color);
-                    font-size: 1.4em;
-                    cursor: pointer;
+                    background:none; border:none; color:var(--text-color); font-size:1.4rem; cursor:pointer;
                 }
                 #note-version-modal .modal-content {
-                    background-color: var(--ctr-color);
-                    overflow-y: auto;
-                    padding: 14px 16px;
-                    flex: 1 1 auto;
-                    overflow: auto;
+                    background: var(--ctr-color); padding:14px; overflow:auto; flex:1 1 auto; display:flex; flex-direction:column; gap:12px; max-height: 50vh;
                 }
                 #note-version-modal .version-entry {
-                    border: 1px solid var(--border-color);
-                    border-radius: 6px;
-                    padding: 10px 12px;
-                    margin-bottom: 12px;
-                    background-color: var(--ctr-color);
+                    border:1px solid var(--border-color); border-radius:8px; padding:10px; background:transparent;
+                    display:flex; flex-direction:column; gap:8px;
                 }
                 #note-version-modal .version-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    font-size: 0.95em;
-                    margin-bottom: 6px;
+                    display:flex; align-items:center; justify-content:space-between; gap:8px;
                 }
+                #note-version-modal .version-meta { color:var(--muted); font-size:0.9em; }
                 #note-version-modal .version-text {
-                    font-size: 0.9em;
-                    color: var(--text-color);
-                    margin-bottom: 8px;
+                    background-color: rgba(255,255,255,0.02); padding:10px; border-radius:6px; color:var(--text-color);
+                    max-height:220px; overflow:auto;
                 }
-                #note-version-modal .version-changes {
-                    font-size: 0.7em;
-                    color: #bbbbbb;
-                    margin-top: 4px;
+                /* Style the sanitized HTML content in the note so it looks decent */
+                #note-version-modal .version-text h1, .version-text h2, .version-text h3 { margin:0 0 6px 0; }
+                #note-version-modal .version-text p { margin: 6px 0; line-height:1.45; }
+                #note-version-modal .version-text img { max-width:100%; height:auto; display:block; margin:6px 0; border-radius:4px; }
+                #note-version-modal .version-text pre { white-space:pre-wrap; font-family:monospace; font-size:0.85em; padding:8px; border-radius:6px; background:rgba(0,0,0,0.2); }
+                #note-version-modal .version-changes { font-size:0.85em; color:var(--muted); display:flex; gap:8px; flex-wrap:wrap; }
+                #note-version-modal .version-diff {
+                    margin-top:6px; padding:8px; border-radius:6px; background:rgba(0,0,0,0.25);
+                    font-family:monospace; font-size:0.8em; white-space:pre-wrap; overflow:auto; max-height:180px; color:var(--text-color);
                 }
-                #note-version-modal .attachments {
-                    font-size: 0.85em;
-                    color: #bbbbbb;
-                    margin-bottom: 6px;
+                .rollback-btn {
+                    background:var(--btn-color); color:var(--text-color); border:none; padding:6px 10px; border-radius:6px; cursor:pointer;
                 }
-                #note-version-modal .rollback-btn {
-                    background-color: var(--btn-color);
-                    color: var(--text-color);
-                    border: none;
-                    border-radius: 4px;
-                    padding: 6px 12px;
-                    cursor: pointer;
-                    transition: background 0.2s;
-                    font-size: 0.85em;
-                }
-                #note-version-modal .rollback-btn:hover {
-                    background-color: var(--btn-hover);
-                }
+                .rollback-btn:disabled { opacity:0.5; cursor:not-allowed; }
+                .attachment-list { color:var(--muted); font-size:0.9em; }
             `;
             document.head.appendChild(style);
 
@@ -5724,11 +5697,14 @@
 
             const header = document.createElement('div');
             header.className = 'modal-header';
-            header.textContent = 'Version History';
+            const titleEl = document.createElement('div');
+            titleEl.className = 'title';
+            titleEl.textContent = 'Version History';
             const closeBtn = document.createElement('button');
             closeBtn.className = 'close-btn';
             closeBtn.innerHTML = '&times;';
             closeBtn.onclick = () => modal.remove();
+            header.appendChild(titleEl);
             header.appendChild(closeBtn);
             container.appendChild(header);
 
@@ -5741,21 +5717,27 @@
             document.body.appendChild(modal);
 
             fetch(`/notes/${noteId}/versions`)
-                .then(res => res.json())
+                .then(async res => {
+                    if (!res.ok) {
+                        const body = await res.json().catch(()=>null);
+                        content.textContent = body && body.error ? body.error : 'Failed to load versions.';
+                        return;
+                    }
+                    return res.json();
+                })
                 .then(versions => {
+                    if (!versions) return;
                     content.innerHTML = '';
                     if (!versions.length) {
                         content.textContent = 'No versions found.';
                         return;
                     }
 
-                    let lastRendered = null;
+                    let seenVersionNumbers = new Set();
 
                     versions.forEach(v => {
-                        // Deduplication: skip if same note HTML + same attachments
-                        const currentHash = v.note + JSON.stringify(v.uploads.map(u => [u.filename, u.present_now]));
-                        if (lastRendered === currentHash) return;
-                        lastRendered = currentHash;
+                        if (seenVersionNumbers.has(v.version_number)) return;
+                        seenVersionNumbers.add(v.version_number);
 
                         const entry = document.createElement('div');
                         entry.className = 'version-entry';
@@ -5763,48 +5745,99 @@
                         const headerDiv = document.createElement('div');
                         headerDiv.className = 'version-header';
                         const dateStr = new Date(v.created_at).toLocaleString();
-                        headerDiv.innerHTML = `<span>Version #${v.version_number} - ${dateStr}</span>`;
 
+                        const meta = document.createElement('div');
+                        meta.className = 'version-meta';
+                        meta.textContent = `Version #${v.version_number} — ${dateStr}`;
+
+                        const actions = document.createElement('div');
+                        // rollback button
                         const rollbackBtn = document.createElement('button');
                         rollbackBtn.className = 'rollback-btn';
                         rollbackBtn.textContent = 'Rollback';
-                        rollbackBtn.onclick = () => {
+                        rollbackBtn.onclick = async () => {
                             if (!confirm(`Rollback to version #${v.version_number}?`)) return;
-                            fetch(`/notes/${noteId}/versions/${v.version_id}/restore`, {method: 'POST'})
-                                .then(r => r.json())
-                                .then(res => {
-                                    alert(res.message || JSON.stringify(res));
+                            rollbackBtn.disabled = true;
+                            try {
+                                let res = await fetch(`/notes/${noteId}/versions/${v.version_id}/restore`, {method: 'POST'});
+                                let body = await res.json().catch(()=>null);
+                                if (res.ok) {
+                                    alert(body && body.message ? body.message : 'Restored.');
                                     modal.remove();
-                                })
-                                .catch(err => alert('Rollback failed: ' + err));
+                                    fetchAndRenderItems(); // refresh notes list
+                                } else if (res.status === 400 && body && body.missing_files) {
+                                    // offer content-only restore
+                                    const ok = confirm("Some attachments referenced by this version are missing. Restore note content only (attachments will not be restored)?");
+                                    if (ok) {
+                                        let res2 = await fetch(`/notes/${noteId}/versions/${v.version_id}/restore?content_only=true`, {method: 'POST'});
+                                        let body2 = await res2.json().catch(()=>null);
+                                        if (res2.ok) {
+                                            alert(body2 && body2.message ? body2.message : 'Restored content-only.');
+                                            modal.remove();
+                                            fetchAndRenderItems(); // refresh notes list
+                                        } else {
+                                            alert(body2 && body2.error ? body2.error : 'Restore failed.');
+                                        }
+                                    }
+                                } else {
+                                    alert(body && body.error ? body.error : 'Rollback failed.');
+                                }
+                            } catch (err) {
+                                alert('Rollback failed: ' + err);
+                            } finally {
+                                rollbackBtn.disabled = false;
+                            }
                         };
-                        headerDiv.appendChild(rollbackBtn);
+                        actions.appendChild(rollbackBtn);
 
+                        headerDiv.appendChild(meta);
+                        headerDiv.appendChild(actions);
+
+                        // version text (render HTML)
                         const versionText = document.createElement('div');
                         versionText.className = 'version-text';
-                        versionText.innerHTML = v.note;
+                        // v.note is HTML; server should sanitize it. Insert as innerHTML.
+                        versionText.innerHTML = v.note || '<em>(empty)</em>';
 
+                        // attachments
                         const attachments = document.createElement('div');
-                        attachments.className = 'attachments';
+                        attachments.className = 'attachment-list';
                         if (v.uploads && v.uploads.length) {
-                            attachments.textContent = 'Attachments: ' + v.uploads.map(u => u.filename + (u.present_now ? '' : ' (deleted)')).join(', ');
+                            const list = v.uploads.map(u => `${u.filename || '(unknown)'}${u.present_now ? '' : ' (deleted)'}`).join(', ');
+                            attachments.textContent = 'Attachments: ' + list;
                         }
 
-                        // Minimal changes info if there was a backend-reported change but note/attachments identical
+                        // field-level changes (returned by backend)
                         const changesDiv = document.createElement('div');
                         changesDiv.className = 'version-changes';
-                        const changes = [];
-                        if (v.title) changes.push(`Title: ${v.title}`);
-                        if (v.tag) changes.push(`Tag: ${v.tag}`);
-                        if (v.folder_id) changes.push(`Folder: ${v.folder_id}`);
-                        if (changes.length) {
-                            changesDiv.textContent = 'Changes: ' + changes.join(', ');
+                        if (v.changes && v.changes.length) {
+                            v.changes.forEach(c => {
+                                const pill = document.createElement('span');
+                                if (c.field === 'attachments') {
+                                    pill.textContent = `Attachments changed`;
+                                    pill.title = `From: ${JSON.stringify(c.from)} → To: ${JSON.stringify(c.to)}`;
+                                } else {
+                                    pill.textContent = `${c.field}: ${c.from === null ? '(none)' : c.from} → ${c.to === null ? '(none)' : c.to}`;
+                                }
+                                changesDiv.appendChild(pill);
+                            });
+                        } else {
+                            const none = document.createElement('span');
+                            none.textContent = 'No metadata changes';
+                            none.style.opacity = '0.8';
+                            changesDiv.appendChild(none);
                         }
+
+                        // note diff block (plain text unified diff from backend)
+                        const diffBlock = document.createElement('pre');
+                        diffBlock.className = 'version-diff';
+                        diffBlock.textContent = v.note_diff || '';
 
                         entry.appendChild(headerDiv);
                         entry.appendChild(versionText);
                         if (v.uploads && v.uploads.length) entry.appendChild(attachments);
-                        if (changesDiv.textContent) entry.appendChild(changesDiv);
+                        entry.appendChild(changesDiv);
+                        if (diffBlock.textContent) entry.appendChild(diffBlock);
 
                         content.appendChild(entry);
                     });
@@ -5814,6 +5847,7 @@
                     console.error(err);
                 });
         }
+
 
 
 
@@ -5869,11 +5903,6 @@
         document.getElementById("floating-add-button").addEventListener("click", showFolderOrAddMenu);
         document.getElementById("add-note-button").addEventListener("click", addNote);
         document.getElementById("cancel-button").addEventListener("click", closeAddMenu);
-
-        document.getElementById("search-input").addEventListener("input", (event) => {
-            const query = event.target.value.toLowerCase();
-            searchNotes(query);
-        });
 
         sessionStorage.setItem("last_page", "/index");
     </script>
