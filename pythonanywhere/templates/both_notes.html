@@ -568,6 +568,14 @@ iframe {
       };
       window.__fetchPatched = true;
   }
+    // Listen for iframe alert messages
+    window.addEventListener("message", (event) => {
+        if (!event.data || event.data.from !== "iframe-alert") return;
+
+        // Trigger parent’s alert system (this file’s own patched alert)
+        alert(event.data.message, event.data.type, event.data.timeout);
+    });
+
 
   // Ping to check session
   async function validateSession() {

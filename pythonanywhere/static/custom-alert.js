@@ -13,6 +13,19 @@
     const alertQueue = [];
 
     window.alert = function (message, type = "info", timeout = 5000) {
+        // If this script runs inside an iframe...
+        if (window !== window.parent) {
+            // Forward the alert call upward to the parent page
+            window.parent.postMessage({
+                from: "iframe-alert",
+                message,
+                type,
+                timeout
+            }, "*");
+            return; // Prevent current iframe from showing the alert
+        }
+
+        // If we are NOT in an iframe, handle the alert normally:
         const alertConfig = { message, type, timeout };
         if (activeAlerts.length < MAX_VISIBLE) {
             showAlert(alertConfig);
@@ -20,6 +33,7 @@
             alertQueue.push(alertConfig);
         }
     };
+
 
     // Requires: `activeAlerts`, `GAP`, `alertQueue` exist in outer scope (as in your original code).
     // Optional but recommended: include DOMPurify in your page for best results:

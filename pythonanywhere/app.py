@@ -5,7 +5,7 @@ from flask.json.provider import DefaultJSONProvider
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from functools import wraps
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, func
+from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, func, or_
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
@@ -10405,6 +10405,36 @@ def manage_notes():
                 "attachments": attachments
             })
         return jsonify(sanitized_notes)
+    
+@app.route("/search_notes", methods=["GET"])
+@require_session_key
+def search_notes():
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify([])
+
+    # Wrap query for SQL LIKE matching
+    like_query = f"%{query}%"
+
+    # Search notes for the current user
+    results = Note.query.filter(
+        Note.user_id == g.user_id,
+        or_(
+            Note.title.ilike(like_query),
+            Note.note.ilike(like_query),
+            Note.tag.ilike(like_query)
+        )
+    ).limit(50).all()  # Limit for efficiency
+
+    # Convert to dict
+    return jsonify([
+        {
+            "id": note.id,
+            "title": note.title,
+            "tag": note.tag,
+            "folder_id": note.folder_id
+        } for note in results
+    ])
 
 @app.route("/toggle_pin", methods=["POST"])
 @require_session_key
@@ -10538,8 +10568,17 @@ def list_note_versions(note_id):
     if not note or note.user_id != g.user_id:
         return jsonify({"error": "Note not found"}), 404
 
-    # load versions ascending so we can compute diffs with previous
+    # Check if there are existing versions for the note
     versions = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.asc()).all()
+    if not versions:
+        # If no versions exist, create the first version with the current content of the note
+        try:
+            create_note_version(note, editor_id=g.user_id)
+            versions = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.asc()).all()
+        except Exception as e:
+            current_app.logger.exception("Failed to create initial version for note")
+            return jsonify({"error": "Failed to create initial version"}), 500
+
     result = []
     prev = None
     for v in versions:
@@ -10560,10 +10599,10 @@ def list_note_versions(note_id):
                 "present_now": present
             })
 
-        # compute field-level changes compared to prev
+        # Compute field-level changes compared to the previous version
         changes = []
         if prev:
-            # title
+            # Compare fields to detect changes
             if (prev.title or "") != (v.title or ""):
                 changes.append({"field": "title", "from": prev.title, "to": v.title})
             if (prev.tag or "") != (v.tag or ""):
@@ -10573,30 +10612,27 @@ def list_note_versions(note_id):
             if bool(prev.pinned) != bool(v.pinned):
                 changes.append({"field": "pinned", "from": bool(prev.pinned), "to": bool(v.pinned)})
 
-            # attachments: compare by upload_id + filename
+            # Compare attachments
             prev_uploads = [(x.upload_id, x.filename) for x in prev.uploads]
             cur_uploads = [(x.upload_id, x.filename) for x in v.uploads]
             if prev_uploads != cur_uploads:
-                # produce a compact attachments change description
                 changes.append({"field": "attachments", "from": prev_uploads, "to": cur_uploads})
 
-            # note content diff (strip tags before diffing)
+            # Compute note content diff
             prev_text = _strip_html_tags(prev.note)
             cur_text = _strip_html_tags(v.note)
             if prev_text != cur_text:
-                # unified diff lines (limited length)
                 ud = '\n'.join(difflib.unified_diff(
                     prev_text.splitlines(), cur_text.splitlines(),
                     fromfile=f"v{prev.version_number}", tofile=f"v{v.version_number}",
                     lineterm=''
                 ))
-                # keep diff size-bounded
                 if len(ud) > 4000:
                     ud = ud[:4000] + "\n... (truncated)\n"
             else:
                 ud = ""
         else:
-            # first version — everything is 'from' None
+            # First version — everything is 'from' None
             changes = []
             if v.title:
                 changes.append({"field": "title", "from": None, "to": v.title})
@@ -10606,7 +10642,7 @@ def list_note_versions(note_id):
                 changes.append({"field": "folder_id", "from": None, "to": v.folder_id})
             if v.pinned:
                 changes.append({"field": "pinned", "from": None, "to": bool(v.pinned)})
-            ud = _strip_html_tags(v.note)  # for the first version we can include the note text as 'diff'
+            ud = _strip_html_tags(v.note)  # Include note text as 'diff' for the first version
 
         result.append({
             "version_id": v.id,
@@ -10619,12 +10655,12 @@ def list_note_versions(note_id):
             "folder_id": v.folder_id,
             "pinned": v.pinned,
             "uploads": uploads,
-            "changes": changes,        # field-level changes from previous version
-            "note_diff": ud           # unified diff (plain text) or note text for first version
+            "changes": changes,        # Field-level changes from previous version
+            "note_diff": ud           # Unified diff (plain text) or note text for first version
         })
         prev = v
 
-    # return in descending order (most recent first) as before
+    # Return in descending order (most recent first)
     result.reverse()
     return jsonify(result), 200
 

@@ -212,8 +212,6 @@
             justify-content: space-between;
             height: 200px;
             overflow: hidden;
-            opacity: 0;
-            animation: fadeIn 1s forwards;
         }
 
         /* Restore folder-only centering without changing note layout */
@@ -293,10 +291,11 @@
             background-color: #cc4a4a;
         }
 
-        #items-list li button.pin-button {
-            top: 10px;
+        .note-top-right-corner {
+            top: 20px;
             left: 10px;
             right: unset;
+            position: absolute;
         }
         .pin-button {
             background: none !important;      /* remove default button bg */
@@ -307,6 +306,9 @@
             justify-content: center !important;
             color: white !important;          /* icon color */
             font-size: 1.1rem !important;     /* adjust size */
+            position: relative !important;
+            top: unset !important;
+            right: unset !important;
         }
         #update-menu {
             display: none;
@@ -352,8 +354,6 @@
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
             z-index: 1001;
-            opacity: 0;
-            animation: fadeIn 0.2s forwards 0.3s;
         }
 
         @keyframes fadeIn {
@@ -366,7 +366,6 @@
         }
 
         .note-tag {
-            position: absolute;
             color: #e0e0e0;
             padding: 10px 5px;
             text-align: center;
@@ -409,8 +408,6 @@
             z-index: 1003;
             width: 80%;
             max-width: 500px;
-            opacity: 0;
-            animation: fadeIn 0.2s forwards 0.2s;
         }
 
         #view-menu textarea {
@@ -1642,7 +1639,7 @@
             </div>
         </div>
         <div id="profile-pic" class="profile-pic no-picture"></div>
-      </header>
+    </header>
       
       <nav id="mobileSubHeader" class="mobile-sub-header">
         <a href="/index" class="nav-link active">Notes</a>
@@ -2802,70 +2799,86 @@
             });
         });
 
-        document.getElementById("search-input").addEventListener("input", (event) => {
-            const query = event.target.value.toLowerCase();
-            searchNotes(query);
+        const searchInput = document.getElementById("search-input");
+        let backendSearchTimeout;
+        let backendResultsList;
+
+        searchInput.addEventListener("input", async (event) => {
+            const query = event.target.value.trim().toLowerCase();
+
+            // Remove previous backend results
+            if (backendResultsList) {
+                backendResultsList.remove();
+                backendResultsList = null;
+            }
+
+            // 1️⃣ First search locally in current items-list
+            searchLocalItems(query);
+
+            // 2️⃣ Debounce backend search for network efficiency
+            if (backendSearchTimeout) clearTimeout(backendSearchTimeout);
+            if (query.length >= 2) { // only search backend if at least 2 chars
+                backendSearchTimeout = setTimeout(() => searchBackend(query), 300);
+            }
         });
 
-        function searchNotes(searchTerm) {
-            const notesList = document.getElementById("notes-list");
-            const notes = Array.from(notesList.children);
-            const noResultsMessage = document.querySelector(".no-results-message");
-            
-            // Remove existing no-results message at start
-            if (noResultsMessage) noResultsMessage.remove();
+        function searchLocalItems(query) {
+            const itemsList = document.getElementById("items-list");
+            if (!itemsList) return;
 
-            // Handle empty search term immediately
-            if (!searchTerm.trim()) {
-                notes.forEach(note => note.style.display = "flex");
-                return;
-            }
+            const items = Array.from(itemsList.children);
+            items.forEach(item => {
+                const text = (item.querySelector('h3')?.innerText + " " +
+                            item.querySelector('.note-preview')?.innerText + " " +
+                            item.querySelector('.note-tag')?.innerText || "")
+                            .toLowerCase();
+                item.style.display = query ? (text.includes(query) ? "flex" : "none") : "flex";
+            });
+        }
 
-            // Parse search terms (including phrases in quotes)
-            const terms = searchTerm
-                .match(/"[^"]+"|\S+/g)
-                ?.map(term => term.replace(/^"|"$/g, "").toLowerCase()) || [];
+        async function searchBackend(query) {
+            try {
+                const res = await fetch(`/search_notes?q=${encodeURIComponent(query)}`);
+                if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+                const results = await res.json();
 
-            let hasResults = false;
+                if (results.length === 0) return; // no results to display
 
-            // Handle case where there are no notes at all
-            if (notes.length === 0) {
-                const messageElement = document.createElement("li");
-                messageElement.classList.add("no-results-message", "empty-note");
-                messageElement.innerText = "No notes available to search.";
-                notesList.appendChild(messageElement);
-                return;
-            }
+                // Create results list
+                backendResultsList = document.createElement("ul");
+                backendResultsList.className = "backend-search-results";
+                backendResultsList.style.position = "absolute";
+                backendResultsList.style.top = `${searchInput.offsetHeight + searchInput.offsetTop}px`;
+                backendResultsList.style.left = `${searchInput.offsetLeft}px`;
+                backendResultsList.style.width = `${searchInput.offsetWidth}px`;
+                backendResultsList.style.background = "var(--bg-color)";
+                backendResultsList.style.border = "1px solid #ccc";
+                backendResultsList.style.zIndex = 999;
+                backendResultsList.style.listStyle = "none";
+                backendResultsList.style.padding = "0";
+                backendResultsList.style.margin = "0";
 
-            // Process each note
-            notes.forEach(note => {
-                const noteText = note.querySelector('.note-preview')?.innerText.toLowerCase() || "";
-                const noteTag = note.querySelector('.note-tag')?.innerText.toLowerCase() || "";
-                const noteTitle = note.querySelector('h3')?.innerText.toLowerCase() || "";
-                const noteContent = `${noteTitle} ${noteText} ${noteTag}`;
-
-                const matches = terms.every(term => {
-                    if (term.includes(" ")) {
-                        return noteContent.includes(term);
-                    } else {
-                        return noteContent.split(/\s+/).some(word => word.startsWith(term));
-                    }
+                results.forEach(note => {
+                    const li = document.createElement("li");
+                    li.style.padding = "8px";
+                    li.style.cursor = "pointer";
+                    li.innerText = note.title || "Untitled note";
+                    li.addEventListener("click", () => {
+                        currentFolderId = note.folder_id; // navigate to folder
+                        fetchAndRenderItems();           // refresh UI
+                        backendResultsList.remove();     // remove dropdown
+                        backendResultsList = null;
+                        // refresh search input so it searches locally again, but dont trigger backend search
+                        
+                        searchInput.value = query;
+                    });
+                    backendResultsList.appendChild(li);
                 });
 
-                if (matches) {
-                    note.style.display = "flex";
-                    hasResults = true;
-                } else {
-                    note.style.display = "none";
-                }
-            });
+                searchInput.parentNode.appendChild(backendResultsList);
 
-            // Show message if no matches found
-            if (!hasResults) {
-                const messageElement = document.createElement("li");
-                messageElement.classList.add("no-results-message", "empty-note");
-                messageElement.innerText = "No results found.";
-                notesList.appendChild(messageElement);
+            } catch (err) {
+                console.error("Backend search error:", err);
             }
         }
 
@@ -3004,9 +3017,11 @@
                         <h3>${escapeHTML(item.name)}</h3>
                         </div>
                         <div class="folder-controls">
+                        <div class="note-top-right-corner">
                         <button class="pin-button" title="${pinTitle}">
                             <i class="${pinIconClass}" style="color: ${pinColor};"></i>
                         </button>
+                        </div>
                         <button class="folder-options-btn" title="Options">⋮</button>
                         </div>
                     `;
@@ -3041,13 +3056,13 @@
 
                     li.innerHTML = `
                         <h3>${escapedTitle}</h3>
-                        <div class="note-preview">${item.note ? item.note : 'Empty note'}
+                        <div class="note-preview">${item.note ? item.note : 'Empty note'}</div>
+                        <div class="note-top-right-corner">
+                            ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
+                            <button class="pin-button" title="${pinTitle}" aria-label="${pinTitle}">
+                                <i class="${pinIconClass}" style="color: ${pinColor};"></i>
+                            </button>
                         </div>
-                        
-                        <button class="pin-button" title="${pinTitle}" aria-label="${pinTitle}">
-                            <i class="${pinIconClass}" style="color: ${pinColor};"></i>
-                        </button>
-                        ${item.tag ? `<span class="note-tag">${escapedTag}</span>` : ''}
                         <button class="share-button" title="Options">⋮</button>
                         
                     `;
@@ -5749,6 +5764,7 @@
                                 if (res.ok) {
                                     alert(body && body.message ? body.message : 'Restored.');
                                     modal.remove();
+                                    fetchAndRenderItems(); // refresh notes list
                                 } else if (res.status === 400 && body && body.missing_files) {
                                     // offer content-only restore
                                     const ok = confirm("Some attachments referenced by this version are missing. Restore note content only (attachments will not be restored)?");
@@ -5758,6 +5774,7 @@
                                         if (res2.ok) {
                                             alert(body2 && body2.message ? body2.message : 'Restored content-only.');
                                             modal.remove();
+                                            fetchAndRenderItems(); // refresh notes list
                                         } else {
                                             alert(body2 && body2.error ? body2.error : 'Restore failed.');
                                         }
@@ -5886,11 +5903,6 @@
         document.getElementById("floating-add-button").addEventListener("click", showFolderOrAddMenu);
         document.getElementById("add-note-button").addEventListener("click", addNote);
         document.getElementById("cancel-button").addEventListener("click", closeAddMenu);
-
-        document.getElementById("search-input").addEventListener("input", (event) => {
-            const query = event.target.value.toLowerCase();
-            searchNotes(query);
-        });
 
         sessionStorage.setItem("last_page", "/index");
     </script>
