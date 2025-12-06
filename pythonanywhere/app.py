@@ -59,6 +59,7 @@ import qrcode
 from cryptography.fernet import Fernet, InvalidToken
 import base64
 from collections import deque
+import difflib
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -910,13 +911,84 @@ class FlowCommit(db.Model):
     todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
+# helper to normalize upload attributes (works with both shapes)
+def _upload_metadata(up):
+    if up is None:
+        return {"upload_id": None, "filename": None, "size": None, "mime_type": None, "upload_deleted": True}
+    filename = getattr(up, "original_filename", None) or getattr(up, "filename", None)
+    size = getattr(up, "size_bytes", None) or getattr(up, "size", None)
+    mime = getattr(up, "mimetype", None) or getattr(up, "mime_type", None)
+    deleted = bool(getattr(up, "deleted", False))
+    return {"upload_id": up.id, "filename": filename, "size": size, "mime_type": mime, "upload_deleted": deleted}
+
+def _strip_html_tags(html):
+    # crude but effective for diffing purposes
+    return re.sub(r'<[^>]+>', '', html or '')
+
 def create_note_version(note, editor_id=None):
     """
     Create a NoteVersion snapshot of `note` and its current attachments.
-    Call after the note and NoteUpload rows are committed/persisted.
+    Avoid creating a new version if the latest version already matches current state.
+    Returns the created NoteVersion or the existing last version if identical.
     """
-    # find the next version number
     last_version = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.desc()).first()
+
+    # Build current snapshot dict
+    attached_rows = NoteUpload.query.filter_by(note_id=note.id).all()
+    current_uploads = []
+    for ar in attached_rows:
+        up = Upload.query.get(ar.upload_id)
+        current_uploads.append(_upload_metadata(up))
+
+    current_snapshot = {
+        "title": note.title,
+        "note": note.note,
+        "tag": note.tag,
+        "folder_id": note.folder_id,
+        "pinned": bool(note.pinned),
+        "uploads": current_uploads
+    }
+
+    # Build last snapshot dict for comparison (if exists)
+    if last_version:
+        last_uploads = []
+        for vu in last_version.uploads:
+            last_uploads.append({
+                "upload_id": vu.upload_id,
+                "filename": vu.filename,
+                "size": vu.size,
+                "mime_type": vu.mime_type,
+                "upload_deleted": bool(vu.upload_deleted)
+            })
+        last_snapshot = {
+            "title": last_version.title,
+            "note": last_version.note,
+            "tag": last_version.tag,
+            "folder_id": last_version.folder_id,
+            "pinned": bool(last_version.pinned),
+            "uploads": last_uploads
+        }
+
+        # Compare snapshots
+        if (current_snapshot["title"] == last_snapshot["title"] and
+            current_snapshot["note"] == last_snapshot["note"] and
+            (current_snapshot["tag"] or None) == (last_snapshot["tag"] or None) and
+            current_snapshot["folder_id"] == last_snapshot["folder_id"] and
+            current_snapshot["pinned"] == last_snapshot["pinned"] and
+            len(current_snapshot["uploads"]) == len(last_snapshot["uploads"]) and
+            all(
+                (cu["upload_id"] == lu["upload_id"] and
+                 (cu["filename"] or "") == (lu["filename"] or "") and
+                 (cu["size"] or 0) == (lu["size"] or 0) and
+                 (cu["mime_type"] or "") == (lu["mime_type"] or "") and
+                 bool(cu["upload_deleted"]) == bool(lu["upload_deleted"]))
+                for cu, lu in zip(current_snapshot["uploads"], last_snapshot["uploads"])
+            )):
+            # identical — do not create a duplicate version
+            current_app.logger.debug(f"Skipping version creation for note {note.id} — identical to last version #{last_version.version_number}")
+            return last_version
+
+    # Not identical -> create new version
     next_version_number = 1 if not last_version else last_version.version_number + 1
 
     nv = NoteVersion(
@@ -933,16 +1005,16 @@ def create_note_version(note, editor_id=None):
     db.session.flush()  # get nv.id
 
     # snapshot attachments that are currently attached to the note
-    attached_rows = NoteUpload.query.filter_by(note_id=note.id).all()
     for ar in attached_rows:
         up = Upload.query.get(ar.upload_id)
+        meta = _upload_metadata(up)
         vu = NoteVersionUpload(
             note_version_id=nv.id,
-            upload_id=up.id if up else None,
-            filename=getattr(up, "filename", None) if up else None,
-            size=getattr(up, "size", None) if up else None,
-            mime_type=getattr(up, "mime_type", None) if up else None,
-            upload_deleted=getattr(up, "deleted", None) if up else True
+            upload_id=meta["upload_id"],
+            filename=meta["filename"],
+            size=meta["size"],
+            mime_type=meta["mime_type"],
+            upload_deleted=meta["upload_deleted"]
         )
         db.session.add(vu)
 
@@ -10466,8 +10538,10 @@ def list_note_versions(note_id):
     if not note or note.user_id != g.user_id:
         return jsonify({"error": "Note not found"}), 404
 
-    versions = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.desc()).all()
+    # load versions ascending so we can compute diffs with previous
+    versions = NoteVersion.query.filter_by(note_id=note.id).order_by(NoteVersion.version_number.asc()).all()
     result = []
+    prev = None
     for v in versions:
         uploads = []
         for vu in v.uploads:
@@ -10485,6 +10559,55 @@ def list_note_versions(note_id):
                 "upload_deleted_at_snapshot": bool(vu.upload_deleted),
                 "present_now": present
             })
+
+        # compute field-level changes compared to prev
+        changes = []
+        if prev:
+            # title
+            if (prev.title or "") != (v.title or ""):
+                changes.append({"field": "title", "from": prev.title, "to": v.title})
+            if (prev.tag or "") != (v.tag or ""):
+                changes.append({"field": "tag", "from": prev.tag, "to": v.tag})
+            if (prev.folder_id) != (v.folder_id):
+                changes.append({"field": "folder_id", "from": prev.folder_id, "to": v.folder_id})
+            if bool(prev.pinned) != bool(v.pinned):
+                changes.append({"field": "pinned", "from": bool(prev.pinned), "to": bool(v.pinned)})
+
+            # attachments: compare by upload_id + filename
+            prev_uploads = [(x.upload_id, x.filename) for x in prev.uploads]
+            cur_uploads = [(x.upload_id, x.filename) for x in v.uploads]
+            if prev_uploads != cur_uploads:
+                # produce a compact attachments change description
+                changes.append({"field": "attachments", "from": prev_uploads, "to": cur_uploads})
+
+            # note content diff (strip tags before diffing)
+            prev_text = _strip_html_tags(prev.note)
+            cur_text = _strip_html_tags(v.note)
+            if prev_text != cur_text:
+                # unified diff lines (limited length)
+                ud = '\n'.join(difflib.unified_diff(
+                    prev_text.splitlines(), cur_text.splitlines(),
+                    fromfile=f"v{prev.version_number}", tofile=f"v{v.version_number}",
+                    lineterm=''
+                ))
+                # keep diff size-bounded
+                if len(ud) > 4000:
+                    ud = ud[:4000] + "\n... (truncated)\n"
+            else:
+                ud = ""
+        else:
+            # first version — everything is 'from' None
+            changes = []
+            if v.title:
+                changes.append({"field": "title", "from": None, "to": v.title})
+            if v.tag:
+                changes.append({"field": "tag", "from": None, "to": v.tag})
+            if v.folder_id:
+                changes.append({"field": "folder_id", "from": None, "to": v.folder_id})
+            if v.pinned:
+                changes.append({"field": "pinned", "from": None, "to": bool(v.pinned)})
+            ud = _strip_html_tags(v.note)  # for the first version we can include the note text as 'diff'
+
         result.append({
             "version_id": v.id,
             "version_number": v.version_number,
@@ -10495,8 +10618,14 @@ def list_note_versions(note_id):
             "tag": v.tag,
             "folder_id": v.folder_id,
             "pinned": v.pinned,
-            "uploads": uploads
+            "uploads": uploads,
+            "changes": changes,        # field-level changes from previous version
+            "note_diff": ud           # unified diff (plain text) or note text for first version
         })
+        prev = v
+
+    # return in descending order (most recent first) as before
+    result.reverse()
     return jsonify(result), 200
 
 @app.route('/notes/<int:note_id>/versions/<int:version_id>/restore', methods=['POST'])
