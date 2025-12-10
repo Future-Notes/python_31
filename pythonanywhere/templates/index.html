@@ -2869,7 +2869,7 @@
                         backendResultsList.remove();     // remove dropdown
                         backendResultsList = null;
                         // refresh search input so it searches locally again, but dont trigger backend search
-
+                        
                         searchInput.value = query;
                     });
                     backendResultsList.appendChild(li);
@@ -5659,15 +5659,6 @@
                 #note-version-modal .modal-content {
                     background: var(--ctr-color); padding:14px; overflow:auto; flex:1 1 auto; display:flex; flex-direction:column; gap:12px; max-height: 50vh;
                 }
-                /* Hide scrollbars for all elements */
-                * {
-                    scrollbar-width: none; /* Firefox */
-                    -ms-overflow-style: none; /* IE 10+ */
-                }
-
-                *::-webkit-scrollbar {
-                    display: none; /* Chrome, Safari, Edge */
-                }
                 #note-version-modal .version-entry {
                     border:1px solid var(--border-color); border-radius:8px; padding:10px; background:transparent;
                     display:flex; flex-direction:column; gap:8px;
@@ -5744,11 +5735,6 @@
 
                     let seenVersionNumbers = new Set();
 
-                    let highestVersion = Math.max(...versions.map(v => v.version_number));
-                    versions.forEach(v => {
-                        v.is_current = (v.version_number === highestVersion);
-                    });
-
                     versions.forEach(v => {
                         if (seenVersionNumbers.has(v.version_number)) return;
                         seenVersionNumbers.add(v.version_number);
@@ -5764,30 +5750,11 @@
                         meta.className = 'version-meta';
                         meta.textContent = `Version #${v.version_number} — ${dateStr}`;
 
-                        // Add restored label
-                        if (v.restored_from_version_id) {
-                            const restoredLabel = document.createElement('span');
-                            restoredLabel.textContent = ` (restored from v${v.restored_from_version_id})`;
-                            restoredLabel.style.fontStyle = 'italic';
-                            restoredLabel.style.color = 'var(--muted)';
-                            restoredLabel.style.backgroundColor = 'rgba(255,255,255,0.05)';
-                            restoredLabel.style.padding = '2px 0px';
-                            restoredLabel.style.borderRadius = '4px';
-                            restoredLabel.style.marginLeft = '6px';
-                            meta.appendChild(restoredLabel);
-                        }
-
                         const actions = document.createElement('div');
                         // rollback button
                         const rollbackBtn = document.createElement('button');
                         rollbackBtn.className = 'rollback-btn';
-                        // disable rollback if this version is the current version (highest version_number)
-                        if (v.is_current) {
-                            rollbackBtn.disabled = true;
-                            rollbackBtn.textContent = 'Current Version';
-                        } else {
-                            rollbackBtn.textContent = 'Rollback to this Version';
-                        }
+                        rollbackBtn.textContent = 'Rollback';
                         rollbackBtn.onclick = async () => {
                             if (!confirm(`Rollback to version #${v.version_number}?`)) return;
                             rollbackBtn.disabled = true;

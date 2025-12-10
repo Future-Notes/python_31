@@ -60,9 +60,6 @@ from cryptography.fernet import Fernet, InvalidToken
 import base64
 from collections import deque
 import difflib
-from fido2.server import Fido2Server
-from fido2.utils import websafe_decode, websafe_encode
-from fido2.webauthn import PublicKeyCredentialRequestOptions
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -331,20 +328,6 @@ def slugify(s):
     s = re.sub(r'-+', '-', s)
     return s[:200]
 
-class PasswordlessCredential(db.Model):
-    __tablename__ = 'passwordless_credentials'
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    credential_id = db.Column(db.LargeBinary, unique=True, nullable=False)
-    public_key = db.Column(db.LargeBinary, nullable=False)
-    sign_count = db.Column(db.BigInteger, default=0)
-    name = db.Column(db.String, nullable=True)  # optional device name
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Relationship to your user model
-    user = db.relationship('User', back_populates='passwordless_credentials')
-
 class User(db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
@@ -367,9 +350,6 @@ class User(db.Model):
     twofa_secret = db.Column(db.Text, nullable=True)  # encrypted string
     # hashed backup codes (optional)
     backup_codes_hash = db.Column(db.Text, nullable=True)
-
-    passwordless_credentials = db.relationship('PasswordlessCredential', back_populates='user', cascade="all, delete-orphan")
-
 
     base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
     storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
@@ -686,7 +666,6 @@ class NoteVersion(db.Model):
     version_number = db.Column(db.Integer, nullable=False, default=1)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     editor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
-    restored_from_version_id = db.Column(db.Integer, db.ForeignKey('note_version.id'), nullable=True)
 
     # snapshot fields
     title = db.Column(db.String(100), nullable=True)
@@ -2214,15 +2193,6 @@ def after_commit(session):
                 )
             )
 
-def get_fido2_server():
-    """
-    Returns a Fido2Server instance configured for your app.
-    """
-    rp = {
-        "id": "localhost",  # Use your actual domain in production
-        "name": "Future Notes"
-    }
-    return Fido2Server(rp)
 
 def ensure_user_colors(user_id):
     """
@@ -9885,14 +9855,12 @@ def undo_reset():
     resp.delete_cookie("session_key")
     return resp
 
-def b64url_encode(b: bytes) -> str:
-    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
 
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json(silent=True) or {}
 
-    # ----- 0) check for lasting key auto-login -----
+    # 1) lasting_key auto-login
     lk = request.cookies.get('lasting_key')
     if lk:
         user = User.query.filter_by(lasting_key=lk).first()
@@ -9906,47 +9874,70 @@ def login():
             resp.delete_cookie("session_key")
             return resp
 
-        # 2FA check (same as existing)
-        return handle_2fa_if_required(user, data)
+        # Check 2FA requirement
+        user_has_2fa = bool(user.twofa_enabled)
+        new_ip = False
+        if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
+            user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+            if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+                new_ip = True
 
-    # ----- 1) passwordless login -----
-    credential_id_b64 = data.get('credential_id')
-    auth_data = data.get('authenticator_data')
-    signature = data.get('signature')
-    user_handle = data.get('user_handle')
+        if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
+            login_token = secrets.token_urlsafe(32)
+            login_tokens[login_token] = {
+                "user_id": user.id,
+                "expires_at": datetime.now() + timedelta(minutes=5),
+                "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
+            }
+            login_2fa_attempts[login_token] = 0
 
-    if credential_id_b64 and auth_data and signature:
-        credential_id = websafe_decode(credential_id_b64)
+            resp = make_response(jsonify({
+                "2fa_required": True,
+                "message": "2FA required"
+            }), 200)
+            resp.set_cookie(
+                "pending_login_token", login_token,
+                httponly=False,
+                secure=not _is_local_request(),
+                samesite="Strict",
+                max_age=60*5
+            )
+            return resp
 
-        cred = PasswordlessCredential.query.filter_by(credential_id=credential_id).first()
-        if cred and cred.user_id:
-            user = cred.user
-            if user.suspended:
-                return jsonify({"error": "Account is suspended"}), 403
+        # No 2FA required → issue session_key
+        session_key = generate_session_key(user.id)
 
-            # Verify WebAuthn signature
-            # You need a Fido2Server instance configured with your RP ID & origin
-            server = get_fido2_server()
-            try:
-                server.authenticate_complete(
-                    credentials=[cred],
-                    credential_id=credential_id,
-                    client_data=auth_data,
-                    auth_data=auth_data,
-                    signature=signature,
-                    user_handle=user_handle.encode() if user_handle else None
-                )
-            except Exception:
-                return jsonify({"error": "Invalid credential"}), 400
-
-            # Increment sign_count for security
-            cred.sign_count += 1
+        # log IP if new
+        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+            db.session.add(IpAddres(user_id=user.id, ip=user_ip))
             db.session.commit()
 
-            # 2FA check (TOTP) if enabled
-            return handle_2fa_if_required(user, data)
+        payload = {
+            "message": "Login successful!",
+            "session_key": session_key,
+            "user_id": user.id,
+            "lasting_key": user.lasting_key,
+            "startpage": user.startpage
+        }
+        resp = make_response(jsonify(payload), 200)
+        resp.set_cookie(
+            "session_key", session_key,
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
+            max_age=60*60*24
+        )
+        resp.set_cookie(
+            "lasting_key", user.lasting_key,
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
+            max_age=60*60*24*30
+        )
+        return resp
 
-    # ----- 2) traditional username/password login -----
+    # 2) username/password login
     username = data.get('username')
     password = data.get('password')
     if not username or not password:
@@ -9958,133 +9949,7 @@ def login():
     if user.suspended:
         return jsonify({"error": "Account is suspended"}), 403
 
-    return handle_2fa_if_required(user, data)
-
-
-@app.route('/webauthn/register/start', methods=['POST'])
-@require_session_key
-def webauthn_register_start():
-    user_id = g.user_id
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    fido2_server = get_fido2_server()
-    registration_data, state = fido2_server.register_begin(
-        {
-            "id": str(user.id).encode(),
-            "name": user.username,
-            "displayName": user.username,
-        },
-        user_verification="discouraged",
-        authenticator_attachment="platform"
-    )
-
-    session["webauthn_register_state"] = state
-
-    # Extract public_key options
-    pk = registration_data.public_key
-
-    reg_dict = {
-        "challenge": b64url_encode(pk.challenge),
-        "rp": {
-            "name": pk.rp.name,
-            "id": pk.rp.id
-        },
-        "user": {
-            "id": b64url_encode(pk.user.id),
-            "name": pk.user.name,
-            "displayName": pk.user.display_name
-        },
-        "pubKeyCredParams": [
-            {"type": p.type.value, "alg": p.alg} for p in pk.pub_key_cred_params
-        ],
-        "timeout": getattr(pk, "timeout", None),
-        "attestation": getattr(pk, "attestation", "none"),
-        "excludeCredentials": [
-            {
-                "type": c.type,
-                "id": b64url_encode(c.id),
-                "transports": getattr(c, "transports", [])
-            }
-            for c in pk.exclude_credentials or []
-        ]
-    }
-
-
-    return jsonify({"publicKey": reg_dict})
-
-@app.route('/webauthn/register/finish', methods=['POST'])
-@require_session_key
-def webauthn_register_finish():
-    data = request.get_json() or {}
-    user_id = g.user_id
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    fido2_server = get_fido2_server()
-    state = session.pop("webauthn_register_state", None)
-    if not state:
-        return jsonify({"error": "No registration in progress"}), 400
-
-    # Decode the client response
-    client_data = data.get("clientDataJSON")
-    attestation_object = data.get("attestationObject")
-    if not client_data or not attestation_object:
-        return jsonify({"error": "Missing registration data"}), 400
-
-    try:
-        credential = fido2_server.register_complete(
-            state,
-            client_data=websafe_encode(bytes.fromhex(client_data)),
-            attestation_object=websafe_encode(bytes.fromhex(attestation_object)),
-        )
-    except Exception as e:
-        return jsonify({"error": f"Registration failed: {str(e)}"}), 400
-
-    # Save credential in DB
-    cred = PasswordlessCredential(
-        user_id=user.id,
-        credential_id=credential.credential_id.hex(),
-        public_key=credential.public_key,
-        sign_count=credential.sign_count,
-        name=data.get("device_name", f"My device {datetime.utcnow().isoformat()}")
-    )
-    db.session.add(cred)
-    db.session.commit()
-
-    return jsonify({"message": "Device registered successfully"})
-
-@app.route('/webauthn/device/remove', methods=['POST'])
-@require_session_key
-def webauthn_device_remove():
-    data = request.get_json() or {}
-    user_id = g.user_id
-    credential_id = data.get("credential_id")
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    cred = PasswordlessCredential.query.filter_by(user_id=user.id, credential_id=credential_id).first()
-    if not cred:
-        return jsonify({"error": "Device not found"}), 404
-
-    db.session.delete(cred)
-    db.session.commit()
-    return jsonify({"message": "Device removed successfully"})
-
-@app.route("/webauthn/devices", methods=["GET"])
-@require_session_key
-def get_webauthn_devices():
-    user_id = g.user_id
-    devices = PasswordlessCredential.query.filter_by(user_id=user_id).all()
-    return jsonify({
-        "devices": [{"id": d.id, "name": d.name} for d in devices]
-    })
-
-
-def handle_2fa_if_required(user, data):
+    # 2FA check
     user_has_2fa = bool(user.twofa_enabled)
     new_ip = False
     if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
@@ -10106,7 +9971,7 @@ def handle_2fa_if_required(user, data):
             "message": "2FA code required"
         }), 200
 
-    # Issue session (same as before)
+    # Issue session
     session_key = generate_session_key(user.id)
     user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
@@ -10791,8 +10656,7 @@ def list_note_versions(note_id):
             "pinned": v.pinned,
             "uploads": uploads,
             "changes": changes,        # Field-level changes from previous version
-            "note_diff": ud,           # Unified diff (plain text) or note text for first version
-            "restored_from_version_id": getattr(v, "restored_from_version_id", None)
+            "note_diff": ud           # Unified diff (plain text) or note text for first version
         })
         prev = v
 
@@ -10862,9 +10726,7 @@ def restore_note_version(note_id, version_id):
 
         db.session.commit()
         # create a new version for this restore operation
-        new_version = create_note_version(note, editor_id=g.user_id)
-        new_version.restored_from_version_id = v.id # v is the version being restored
-        db.session.commit()
+        create_note_version(note, editor_id=g.user_id)
         return jsonify({"message": "Note restored from version"}), 200
 
     except Exception as e:
