@@ -376,6 +376,40 @@ class User(db.Model):
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
 
+class Board(db.Model):
+    __tablename__ = "board"  # top-level collection of lists
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True, nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("boards", lazy="dynamic"))
+
+
+class List(db.Model):
+    __tablename__ = "list"  # formerly called 'board' in your old schema
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True, nullable=False)
+    board_id = db.Column(db.Integer, db.ForeignKey("board.id", ondelete="CASCADE"), index=True, nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    board = db.relationship("Board", backref=db.backref("lists", lazy="dynamic"))
+    user = db.relationship("User", backref=db.backref("lists", lazy="dynamic"))
+
+
+class Card(db.Model):
+    __tablename__ = "card"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True, nullable=False)
+    list_id = db.Column(db.Integer, db.ForeignKey("list.id", ondelete="CASCADE"), index=True, nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    position = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
+
 class InviteReferral(db.Model):
     __tablename__ = "invite_referral"
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -3645,6 +3679,13 @@ def flow_page():
     else:
         abort(404)
 
+@app.route('/trello_page')
+def trello_page():
+    if check("trello", "Nee") == "Ja":
+        return render_template("trello.html")
+    else:
+        abort(404)
+
 @app.route('/login_page')
 def login_page():
     args = request.args.to_dict()
@@ -4167,6 +4208,257 @@ def public_share_visit(token):
         db.session.rollback()
         current_app.logger.exception("Failed to record visit for share token=%s", token)
         return jsonify({"ok": False, "reason": "db_error"}), 500
+
+# -------------------
+# Board endpoints
+# -------------------
+
+@app.route('/api/boards', methods=['GET'])
+@require_session_key
+def api_get_boards():
+    """Return top-level boards for the user (no lists included)."""
+    user_id = g.user_id
+    boards = Board.query.filter_by(user_id=user_id).order_by(Board.id).all()
+    out = [{"id": b.id, "title": b.title, "created_at": b.created_at.isoformat()} for b in boards]
+    return jsonify(out)
+
+
+@app.route('/api/boards', methods=['POST'])
+@require_session_key
+def api_create_board():
+    user_id = g.user_id
+    payload = request.get_json() or {}
+    title = (payload.get('title') or '').strip()
+    if not title:
+        return jsonify({"error": "Title required"}), 400
+    board = Board(user_id=user_id, title=title)
+    db.session.add(board)
+    db.session.commit()
+    return jsonify({"id": board.id, "title": board.title}), 201
+
+
+@app.route('/api/boards/<int:board_id>', methods=['PATCH'])
+@require_session_key
+def api_rename_board(board_id):
+    user_id = g.user_id
+    b = Board.query.filter_by(id=board_id, user_id=user_id).first()
+    if not b:
+        return jsonify({"error": "Board not found"}), 404
+    payload = request.get_json() or {}
+    title = (payload.get('title') or '').strip()
+    if not title:
+        return jsonify({"error": "Title required"}), 400
+    b.title = title
+    db.session.commit()
+    return jsonify({"id": b.id, "title": b.title})
+
+
+@app.route('/api/boards/<int:board_id>', methods=['DELETE'])
+@require_session_key
+def api_delete_board(board_id):
+    user_id = g.user_id
+    b = Board.query.filter_by(id=board_id, user_id=user_id).first()
+    if not b:
+        return jsonify({"error": "Board not found"}), 404
+    # cascading deletes should remove lists & cards but delete them anyway to be sure
+    lists = List.query.filter_by(board_id=b.id, user_id=user_id).all()
+    for l in lists:
+        cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
+        for c in cards:
+            db.session.delete(c)
+        db.session.delete(l)
+    db.session.delete(b)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+# -------------------
+# List endpoints (these replace the old "boards as columns")
+# -------------------
+
+@app.route('/api/lists', methods=['GET'])
+@require_session_key
+def api_get_lists():
+    """
+    Query param: board_id (required)
+    Returns lists and their cards for the authenticated user belonging to the board.
+    """
+    user_id = g.user_id
+    board_id = request.args.get('board_id', type=int)
+    if board_id is None:
+        return jsonify({"error": "board_id required as query param"}), 400
+    lists = List.query.filter_by(user_id=user_id, board_id=board_id).order_by(List.id).all()
+    out = []
+    for l in lists:
+        cards = Card.query.filter_by(user_id=user_id, list_id=l.id).order_by(Card.position).all()
+        out.append({
+            "id": l.id,
+            "title": l.title,
+            "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position}
+                      for c in cards]
+        })
+    return jsonify(out)
+
+
+@app.route('/api/lists', methods=['POST'])
+@require_session_key
+def api_create_list():
+    user_id = g.user_id
+    payload = request.get_json() or {}
+    title = (payload.get('title') or '').strip()
+    board_id = payload.get('board_id') or payload.get('board')  # accept either name
+    if not title or board_id is None:
+        return jsonify({"error": "title and board_id required"}), 400
+    # ensure board belongs to user
+    if not Board.query.filter_by(id=board_id, user_id=user_id).first():
+        return jsonify({"error": "Board not found"}), 404
+    l = List(user_id=user_id, board_id=board_id, title=title)
+    db.session.add(l)
+    db.session.commit()
+    return jsonify({"id": l.id, "title": l.title}), 201
+
+
+@app.route('/api/lists/<int:list_id>', methods=['PATCH'])
+@require_session_key
+def api_rename_list(list_id):
+    user_id = g.user_id
+    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    if not l:
+        return jsonify({"error": "List not found"}), 404
+    payload = request.get_json() or {}
+    if 'title' in payload:
+        l.title = payload['title']
+        db.session.commit()
+    return jsonify({"id": l.id, "title": l.title})
+
+
+@app.route('/api/lists/<int:list_id>', methods=['DELETE'])
+@require_session_key
+def api_delete_list(list_id):
+    user_id = g.user_id
+    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    if not l:
+        return jsonify({"error": "List not found"}), 404
+    db.session.delete(l)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+# -------------------
+# Cards endpoints
+# -------------------
+
+@app.route('/api/cards', methods=['POST'])
+@require_session_key
+def api_create_card():
+    user_id = g.user_id
+    payload = request.get_json() or {}
+    title = (payload.get('title') or '').strip()
+    # accept either list_id (new) or board_id (compat)
+    list_id = payload.get('list_id') or payload.get('board_id') or payload.get('board')  # keep compat
+    description = payload.get('description') or ''
+    if not title or list_id is None:
+        return jsonify({"error": "title and list_id required"}), 400
+    # ensure list exists and belongs to user
+    list_obj = List.query.filter_by(id=list_id, user_id=user_id).first()
+    if not list_obj:
+        return jsonify({"error": "List not found"}), 404
+    max_pos = db.session.query(db.func.max(Card.position)).filter_by(user_id=user_id, list_id=list_id).scalar()
+    position = ((max_pos or 0) + 1000)
+    card = Card(user_id=user_id, list_id=list_id, title=title, description=description, position=position)
+    db.session.add(card)
+    db.session.commit()
+    return jsonify({"id": card.id, "title": card.title, "description": card.description or "", "position": card.position}), 201
+
+
+@app.route('/api/cards/<int:card_id>', methods=['PATCH'])
+@require_session_key
+def api_update_card(card_id):
+    user_id = g.user_id
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    payload = request.get_json() or {}
+    if 'title' in payload:
+        card.title = payload['title']
+    if 'description' in payload:
+        card.description = payload['description']
+    db.session.commit()
+    return jsonify({"id": card.id, "title": card.title, "description": card.description or ""})
+
+
+@app.route('/api/cards/<int:card_id>', methods=['DELETE'])
+@require_session_key
+def api_delete_card(card_id):
+    user_id = g.user_id
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    db.session.delete(card)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route('/api/cards/move', methods=['POST'])
+@require_session_key
+def api_move_card():
+    """
+    Move card to other list and reorder destination.
+    Payload:
+      { "card_id": int, "to_list_id": int OR "to_board_id" (compat),
+        "order_in_list": [card_id,...] }
+    """
+    user_id = g.user_id
+    payload = request.get_json() or {}
+    card_id = payload.get('card_id')
+    to_list_id = payload.get('to_list_id') or payload.get('to_board_id')  # accept old name for compatibility
+    order = payload.get('order_in_board') or payload.get('order_in_list') or []
+
+    if not card_id or to_list_id is None:
+        return jsonify({"error": "card_id and to_list_id required"}), 400
+
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    if not List.query.filter_by(id=to_list_id, user_id=user_id).first():
+        return jsonify({"error": "Destination list not found"}), 404
+
+    card.list_id = to_list_id
+    db.session.add(card)
+    try:
+        for idx, cid in enumerate(order):
+            c = Card.query.filter_by(id=cid, user_id=user_id).first()
+            if c:
+                c.position = (idx + 1) * 1000
+                db.session.add(c)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Could not reorder cards", "detail": str(e)}), 500
+
+    return jsonify({"ok": True})
+
+
+@app.route('/api/lists/<int:list_id>/reorder', methods=['POST'])
+@require_session_key
+def api_reorder_list(list_id):
+    """Reorder cards inside a list. Payload: {"order": [card_id,...]}"""
+    user_id = g.user_id
+    payload = request.get_json() or {}
+    order = payload.get('order', [])
+    if not List.query.filter_by(id=list_id, user_id=user_id).first():
+        return jsonify({"error": "List not found"}), 404
+    try:
+        for i, cid in enumerate(order):
+            c = Card.query.filter_by(id=cid, user_id=user_id, list_id=list_id).first()
+            if c:
+                c.position = (i + 1) * 1000
+                db.session.add(c)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Could not reorder", "detail": str(e)}), 500
+    return jsonify({"ok": True})
     
 import os
 from werkzeug.datastructures import FileStorage
