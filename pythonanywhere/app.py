@@ -387,12 +387,13 @@ class Board(db.Model):
 
 
 class List(db.Model):
-    __tablename__ = "list"  # formerly called 'board' in your old schema
+    __tablename__ = "list"  # formerly called 'board'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True, nullable=False)
     board_id = db.Column(db.Integer, db.ForeignKey("board.id", ondelete="CASCADE"), index=True, nullable=False)
     title = db.Column(db.String(200), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ordernr = db.Column(db.Integer, nullable=False, default=0)
 
     board = db.relationship("Board", backref=db.backref("lists", lazy="dynamic"))
     user = db.relationship("User", backref=db.backref("lists", lazy="dynamic"))
@@ -407,6 +408,7 @@ class Card(db.Model):
     description = db.Column(db.Text, nullable=True)
     position = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed = db.Column(db.Boolean, default=False)
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -3681,7 +3683,7 @@ def flow_page():
 
 @app.route('/trello_page')
 def trello_page():
-    if check("trello", "Nee") == "Ja":
+    if check("trello", "Ja") == "Ja":
         return render_template("trello.html")
     else:
         abort(404)
@@ -4233,6 +4235,11 @@ def api_create_board():
         return jsonify({"error": "Title required"}), 400
     board = Board(user_id=user_id, title=title)
     db.session.add(board)
+    db.session.flush()  # get board.id
+    default_lists = ['To Do', 'In Progress', 'Done']
+    for ordernr, list_title in enumerate(default_lists):
+        l = List(user_id=user_id, board_id=board.id, title=list_title, ordernr=ordernr)
+        db.session.add(l)
     db.session.commit()
     return jsonify({"id": board.id, "title": board.title}), 201
 
@@ -4294,7 +4301,8 @@ def api_get_lists():
         out.append({
             "id": l.id,
             "title": l.title,
-            "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position}
+            "order": l.ordernr,
+            "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position, "completed": c.completed}
                       for c in cards]
         })
     return jsonify(out)
@@ -4330,6 +4338,20 @@ def api_rename_list(list_id):
         l.title = payload['title']
         db.session.commit()
     return jsonify({"id": l.id, "title": l.title})
+
+# Make the list order adjustable
+@app.route('/api/lists/order/<int:list_id>', methods=['PATCH'])
+@require_session_key
+def api_order_list(list_id):
+    user_id = g.user_id
+    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    if not l:
+        return jsonify({"error": "List not found"}), 404
+    payload = request.get_json() or {}
+    if 'order' in payload:
+        l.ordernr = payload['order']
+        db.session.commit()
+    return jsonify({"id": l.id, "order": l.ordernr})
 
 
 @app.route('/api/lists/<int:list_id>', methods=['DELETE'])
@@ -4385,6 +4407,18 @@ def api_update_card(card_id):
     db.session.commit()
     return jsonify({"id": card.id, "title": card.title, "description": card.description or ""})
 
+@app.route('/api/cards/complete/<int:card_id>', methods=['PATCH'])
+@require_session_key
+def api_complete_card(card_id):
+    user_id = g.user_id
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    payload = request.get_json() or {}
+    if 'completed' in payload:
+        card.completed = bool(payload['completed'])
+        db.session.commit()
+    return jsonify({"id": card.id, "completed": card.completed})
 
 @app.route('/api/cards/<int:card_id>', methods=['DELETE'])
 @require_session_key
