@@ -5,7 +5,8 @@
     '/scheduler-page',
     '/todo_page',
     '/flow_page',
-    '/index'
+    '/index',
+    '/trello_page'
   ];
 
   // ——— STATE ———

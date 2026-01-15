@@ -1,0 +1,1977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Future Notes — Trello</title>
+    <script src="/static/js/loader.js"></script>
+    <script src="/static/custom-alert.js"></script>
+    <script src="/static/admin.js"></script>
+    <script src="/static/js/notifications.js"></script>
+    <!-- DO NOT MODIFY this style block (color scheme / project-wide contract) -->
+    <style>
+        :root {
+            --bg-color:  #2c2c2c;
+            --hdr-color: #3a3a3a;
+            --ctr-color: #1e1e1e;
+            --btn-color: #424242;
+        }
+    </style>
+
+    <script>
+        fetch("/user-colors")
+            .then(res => {
+                if (!res.ok) throw new Error("Could not load colors");
+                return res.json();
+            })
+            .then(cfg => {
+                document.documentElement.style.setProperty("--bg-color", cfg.background_color);
+                document.documentElement.style.setProperty("--hdr-color", cfg.header_color);
+                document.documentElement.style.setProperty("--ctr-color", cfg.contrasting_color);
+                document.documentElement.style.setProperty("--btn-color", cfg.button_color);
+
+                window.appConfig = {
+                    backgroundColor: cfg.background_color,
+                    headerColor: cfg.header_color,
+                    contrastingColor: cfg.contrasting_color,
+                    buttonColor: cfg.button_color
+                };
+            })
+            .catch(err => console.error(err));
+    </script>
+
+    <!-- MAIN STYLES (You allowed edits below - header and the first small block above remain untouched) -->
+    <style>
+        /* Keep the color variables defined above; only extend/override other presentation styles here. */
+
+        /* Base and layout */
+        :root {
+            --gap: 12px;
+            --radius: 10px;
+            --muted-text: rgba(224,224,224,0.75);
+            --muted-2: rgba(224,224,224,0.55);
+            --accent: #ffcc00;
+            --danger-grad: linear-gradient(90deg,#ffb74d,#e53935);
+            --success-grad: linear-gradient(90deg,#4caf50,#81c784);
+            --glass: rgba(255,255,255,0.02);
+            --transition: 180ms cubic-bezier(.2,.9,.2,1);
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: #e0e0e0;
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
+        }
+
+        /* header is application-wide and must remain visually compatible with other pages.
+           We keep structure intact while only adding subtle improvements via non-invasive selectors. */
+        header {
+            background-color: var(--hdr-color);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            position: relative;
+        }
+
+        /* Navigation */
+        .desktop-nav { display:flex; gap: 18px; align-items:center; }
+        .nav-link { position: relative; color: white; font-size: 16px; padding: 6px 4px; border-radius: 6px; transition: background var(--transition), color var(--transition); text-decoration: none; }
+        .nav-link:hover { background: rgba(255,255,255,0.03); }
+        .nav-link::after { content: ""; display:block; height:2px; width:0; background:transparent; transition: width var(--transition), background var(--transition); }
+        .nav-link:hover::after { width:100%; background: lightgray; }
+        .nav-link.active::after { width:100%; background: white; }
+
+        .homepage-link { text-decoration: none; background-color: var(--ctr-color); color: #e0e0e0; padding: 8px 14px; border-radius: 8px; font-size: 16px; display:flex; align-items:center; gap:8px; }
+        .homepage-link h1 { margin:0; font-size:20px; font-weight:700; color: #f2f2f2; }
+
+        .mobile-sub-header { display:none; background-color: var(--bg-color); padding: 10px 0; text-align:center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index:1000; position: relative; }
+        .mobile-sub-header a { display:block; color: white; text-decoration:none; padding: 8px 10px; font-size: 16px; }
+
+        .toggle-mobile-nav { background:none; border:none; color:#f2f2f2; font-size:24px; cursor:pointer; display:none; }
+
+        /* Storage indicator (compact, unobtrusive) */
+        #storage-container {
+            display:flex;
+            flex-direction:column;
+            align-items:flex-end;
+            width: 220px;
+            font-size: 12px;
+            margin: 0 10px;
+            gap:6px;
+        }
+        #storage-counter { font-weight:600; color: #ffffff; font-size: 13px; }
+        #storage-bar-bg { width:100%; height:10px; background: var(--glass); border-radius: 999px; overflow:hidden; border: 1px solid rgba(255,255,255,0.02); }
+        #storage-bar-fill { width:0%; height:100%; background: linear-gradient(90deg,#4caf50,#81c784); transition: width 300ms ease, background 300ms ease; border-radius:999px; }
+
+        /* Small interactive hints */
+        #storage-container[role="button"], #profile-pic { cursor: pointer; }
+        #storage-container:focus { outline: 2px solid rgba(255,204,0,0.15); border-radius:8px; }
+
+        /* Profile */
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--hdr-color);
+            color: #e0e0e0;
+            display:flex; justify-content:center; align-items:center;
+            font-size:18px; font-weight:700; text-transform:uppercase; cursor:pointer;
+            background-size:cover; background-position:center;
+            transition: transform var(--transition);
+        }
+        .profile-pic:active { transform: translateY(1px); }
+
+        /* App layout */
+        .app-wrap { display:flex; height: calc(100vh - 64px); gap: var(--gap); }
+        .sidebar { width: 240px; background: linear-gradient(180deg,var(--ctr-color), #111); padding: 14px; box-shadow: 2px 0 8px rgba(0,0,0,0.6); overflow:auto; border-right: 1px solid rgba(255,255,255,0.02); }
+        .sidebar h3 { margin:0 0 8px 0; font-size:14px; color:#fff; }
+        .boards-list { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+        .board-item { padding:8px 10px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; transition: background var(--transition), transform var(--transition); }
+        .board-item:hover { background: rgba(255,255,255,0.03); transform: translateY(-1px); }
+        .board-item.active { background: rgba(255,255,255,0.04); font-weight:700; }
+
+        .small-btn { background: var(--btn-color); border:none; padding:6px 8px; border-radius:6px; cursor:pointer; color:#e0e0e0; font-size:13px; transition: transform var(--transition), background var(--transition); }
+        .small-btn:hover { transform: translateY(-1px); opacity:0.95; }
+
+        /* Main area & boards */
+        .main { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+        .board-header { background: transparent; padding:12px 16px; border-bottom:1px solid rgba(255,255,255,0.03); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+        .board-title { font-size:18px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80%; }
+
+        .lists-wrap { padding:12px; display:flex; gap:16px; overflow-x:auto; align-items:flex-start; height:100%; align-content:flex-start; }
+        .list { min-width:280px; max-width:340px; background: linear-gradient(180deg,var(--ctr-color), #131313); padding:12px; border-radius:10px; box-shadow: 0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:10px; }
+        .list h4 { margin:0; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:6px; }
+        .card-list { min-height:40px; display:flex; flex-direction:column; gap:10px; }
+
+        /* Smooth expansion and subtle visual cues for drop areas */
+        .card-list {
+        transition: min-height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                    background-color 180ms ease,
+                    box-shadow 180ms ease,
+                    transform 120ms ease;
+        min-height: 40px; /* base small height when not expanded */
+        border-radius: 8px;
+        padding: 8px;
+        background-clip: padding-box;
+        }
+
+        /* When dragging starts, enlarge to available space */
+        .card-list--active {
+        background-color: rgba(0,0,0,0.03);
+        }
+
+        /* Visual indicator of the current drop target */
+        .card-list--hover {
+        outline: 2px dashed rgba(0,0,0,0.12);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+        transform: translateY(-4px);
+        }
+
+        /* Animations for optimistic card insertion/removal */
+        .card {
+        transition: transform 220ms cubic-bezier(.2,.9,.3,1),
+                    opacity 200ms ease,
+                    max-height 260ms ease,
+                    margin 200ms ease,
+                    padding 200ms ease;
+        overflow: hidden;
+        will-change: transform, opacity, max-height;
+        }
+
+        /* Initial state when newly inserted */
+        .card--enter {
+        transform: translateY(-8px) scale(0.995);
+        opacity: 0;
+        max-height: 0;
+        margin-top: 0;
+        margin-bottom: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        }
+
+        /* When enter animation is triggered, remove the enter class asynchronously */
+        .card--entered {
+        transform: none;
+        opacity: 1;
+        max-height: 1200px; /* large enough to show full content */
+        }
+
+        /* Exit animation before actually removing from DOM */
+        .card--exit {
+        transform: translateY(-8px) scale(0.995);
+        opacity: 0;
+        max-height: 0;
+        margin-top: 0;
+        margin-bottom: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        }
+
+        /* slightly dim temporary cards until server confirms */
+        .card--temp {
+            opacity: 0.95;
+            filter: saturate(0.98);
+        }
+
+        /* ===== Card base (keep other card surface rules you already have) ===== */
+        /* Ensure base left padding is small so title has full width by default */
+        .card {
+        position: relative;
+        padding-left: 12px; /* small, not reserving checkbox space */
+        transition: transform var(--transition), box-shadow var(--transition);
+        /* keep your existing background/padding/border-radius etc. from the file */
+        }
+
+        /* Sliding title container (hardware-accelerated transform) */
+        .card .card-main {
+        transition: transform 160ms cubic-bezier(0.2,0.9,0.2,1);
+        transform: translateX(0);
+        will-change: transform;
+        min-width: 0; /* preserve ellipsis/truncation */
+        }
+
+        /* Checkbox button - absolute so it doesn't affect layout */
+        .card-complete {
+        position: absolute;
+        left: 8px;
+        top: 12px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.12); /* visible on dark bg */
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0;
+        transform: translateX(-8px) scale(0.92);
+        transition: opacity 160ms ease, transform 160ms cubic-bezier(0.2,0.8,0.2,1),
+                    background 180ms ease, border-color 160ms ease;
+        z-index: 6;
+        pointer-events: auto;
+        }
+
+        /* Show hover background only if NOT completed */
+        .card:not(.card--completed):hover .card-complete,
+        .card:not(.card--completed):focus-within .card-complete {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+        background: rgba(255,255,255,0.02);
+        border-color: rgba(255,255,255,0.18);
+        }
+
+
+        /* Slide title only if not completed */
+        .card:not(.card--completed):hover .card-main,
+        .card:not(.card--completed):focus-within .card-main {
+        transform: translateX(25px);
+        }
+
+        /* Completed cards: always shifted */
+        .card--completed .card-main {
+        transform: translateX(25px);
+        }
+        
+
+        .card-complete svg {
+        width: 16px;   /* slightly bigger */
+        height: 16px;
+        opacity: 0;
+        transform: scale(0.85);
+        transition: opacity 140ms ease, transform 140ms cubic-bezier(0.2,0.8,0.2,1);
+        fill: transparent;
+        pointer-events: none;
+        }
+
+        /* Show check when completed */
+        .card--completed .card-complete svg {
+        opacity: 1;
+        transform: scale(1);
+        fill: white;
+        }
+
+
+        /* Completed state: filled green background + white check visible + title remains shifted */
+        .card--completed .card-complete {
+        background: #82B536;
+        border-color: rgba(0,0,0,0.06);
+        opacity: 1;
+        transform: translateX(0) scale(1);
+        }
+        .card--completed .card-complete svg {
+        opacity: 1;
+        transform: scale(1);
+        fill: white;           /* show the check as white */
+        }
+
+        .card-complete {
+        width: 24px;
+        height: 24px;
+        left: 8px;
+        top: 12px;
+        }
+
+
+        /* temp state (pending create) - dim the control */
+        .card--temp .card-complete {
+        opacity: 0.6;
+        pointer-events: none;
+        }
+
+        /* accessibility focus ring */
+        .card-complete:focus {
+        outline: 3px solid rgba(46,204,113,0.18);
+        outline-offset: 2px;
+        }
+
+        /* Card surface improvements */
+        .card { background: linear-gradient(180deg,#0f0f0f,#0a0a0a); padding:10px 12px; border-radius:8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); cursor:grab; user-select:none; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; transition: transform var(--transition), box-shadow var(--transition); }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.6); }
+        .card .card-main { flex:1; min-width:0; }
+        .card .card-title-text { margin:0 0 6px 0; font-weight:700; font-size:14px; color: #f3f3f3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .card .card-desc-text { font-size:13px; color: var(--muted-text); white-space:pre-wrap; max-height:72px; overflow:hidden; text-overflow:ellipsis; }
+
+        .card .card-actions { display:flex; flex-direction:column; gap:8px; margin-left:6px; }
+        .card .small-btn { padding:6px 8px; font-size:13px; }
+
+        /* Modal / overlay */
+        .modal-overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,0.6); z-index:2000; }
+        .modal { width:760px; max-width:96%; background: linear-gradient(90deg,#1b1b1b,#121212); color:white; border-radius:12px; padding:20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 3px solid var(--accent); }
+
+        /* Form controls unified */
+        input, textarea { background-color: var(--btn-color); color: #E0E0E0; border: 1px solid rgba(255,255,255,0.04); padding:10px; border-radius:8px; outline:none; transition: box-shadow var(--transition), border var(--transition); font-size:14px; width:100%; }
+        input:focus, textarea:focus { box-shadow: 0 6px 20px rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.08); }
+
+        /* Inline editors for cards (improved) */
+        .inline-card-edit { display:flex; flex-direction:column; gap:8px; padding:8px; border-radius:8px; background: linear-gradient(180deg,#101010,#0b0b0b); border: 1px solid rgba(255,255,255,0.03); }
+        .inline-card-edit .inline-card-title { font-weight:700; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); background:transparent; color:#fff; }
+        .inline-card-edit textarea { min-height:72px; max-height:320px; resize:vertical; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); background:transparent; color:#eaeaea; line-height:1.35; }
+        .inline-editor-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:6px; }
+        .btn { padding:8px 12px; border-radius:8px; cursor:pointer; border: none; }
+        .btn.primary { background: linear-gradient(90deg,var(--accent),#ff8a00); color:#111; font-weight:700; }
+        .btn.ghost { background:transparent; border:1px solid rgba(255,255,255,0.04); color:var(--muted-text); }
+
+        /* small screens */
+        @media (max-width: 900px) {
+            .sidebar { display:none; }
+            .desktop-nav { display:none; }
+            .toggle-mobile-nav { display:block; }
+            .mobile-sub-header { display:block; }
+            #storage-container { display:none; }
+            .lists-wrap { padding:12px; gap:10px; }
+            .list { min-width:260px; }
+        }
+    </style>
+
+    <!-- SortableJS CDN (drag & drop) -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+</head>
+<body>
+<header>
+    <div class="mobile-header">
+        <button id="toggle-mobile-nav" class="toggle-mobile-nav">☰</button>
+        <input type="password" style="position: absolute; left: -9999px; opacity: 0;">
+    </div>
+    
+    <a href="/" class="homepage-link"><h1>Future Notes</h1></a>
+    <nav class="desktop-nav">
+        <a href="/index" class="nav-link">Notes</a>
+        <a href="/scheduler-page" class="nav-link">Calendar</a>
+        <a href="/todo_page" class="nav-link">Todo</a>
+        <a href="/trello_page" class="nav-link active">Trello</a>
+    </nav>
+    <div id="storage-container" style="margin: 0px 100px;">
+        <span id="storage-counter">0 / 0 MB</span>
+        <div id="storage-bar-bg">
+            <div id="storage-bar-fill"></div>
+        </div>
+    </div>
+    <div id="profile-pic" class="profile-pic no-picture"></div>
+</header>
+      
+<nav id="mobileSubHeader" class="mobile-sub-header">
+    <a href="/index" class="nav-link">Notes</a>
+    <a href="/scheduler-page" class="nav-link">Calendar</a>
+    <a href="/todo_page" class="nav-link">Todo</a>
+    <a href="/trello_page" class="nav-link active">Trello</a>
+</nav>
+
+<div id="storage-modal" role="dialog" aria-hidden="true" class="modal-overlay">
+    <div class="modal panel" role="document">
+        <div class="header" style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div class="logo-badge" style="background:#ffcc00;color:#111;padding:8px 12px;border-radius:8px;font-weight:800">FUTURE NOTES</div>
+            <div style="flex:1">
+                <div class="big" style="font-size:20px;font-weight:800">Your storage — make it bigger!</div>
+                <div style="opacity:0.8">Store notes, files, memories. Invite friends to grow your quota.</div>
+            </div>
+        </div>
+        <div><button id="storage-modal-close" class="btn ghost">✕</button></div>
+        </div>
+
+        <div class="advert" style="margin-top:12px;background: linear-gradient(90deg,#ff7a18,#af002d);padding:12px;border-radius:8px;text-align:center;font-weight:700;">
+            Invite friends → get <strong>+5MB</strong> per verified signup. Limit: <span id="per-day-limit">3</span>/day.
+        </div>
+
+        <div class="invites" style="margin-top:16px;display:flex;gap:12px;">
+        <div class="left" style="flex:1">
+            <h4>Current storage</h4>
+            <div style="display:flex; align-items:center; gap:12px;">
+            <div style="flex:1; background:#222; height:18px; border-radius:12px; padding:3px;">
+                <div id="storage-bar-fill-modal" style="width:0%; height:100%; border-radius:9px; background:linear-gradient(90deg,#ffd166,#ff8a00);"></div>
+            </div>
+            <div id="storage-counter-modal" style="color:var(--muted-text)">0 / 0 MB</div>
+            </div>
+
+            <div style="margin-top:12px;">
+            <h4>Invite someone</h4>
+            <div>Remaining invites today: <strong id="remaining-today">3</strong></div>
+            <div class="input-row" style="display:flex;gap:8px;margin-top:8px;">
+                <input id="invite-email" type="email" placeholder="friend@example.com" style="flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:#0f0f0f; color:white;">
+                <button id="send-invite-btn" class="btn primary">Send Invite</button>
+            </div>
+            <div id="invite-feedback" style="margin-top:8px; color:#f1c40f;"></div>
+            </div>
+        </div>
+
+        <div class="right" style="width:260px">
+            <h4>Pending invites</h4>
+            <div class="pending-list" id="pending-invites-list" style="max-height:220px;overflow:auto;margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;">
+            <div style="opacity:0.6">Loading...</div>
+            </div>
+
+            <h4 style="margin-top:12px;">Daily stats</h4>
+            <div>Sent today: <strong id="sent-today">0</strong></div>
+        </div>
+        </div>
+    </div>
+</div>
+
+<div class="app-wrap">
+    <aside class="sidebar">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <h3>Your Boards</h3>
+            <div>
+                <button id="create-board-btn" class="small-btn">+ Board</button>
+            </div>
+        </div>
+
+        <div class="boards-list" id="boards-list">
+            <!-- list of boards - intentionally not populated on initial start page load -->
+        </div>
+
+        <div style="margin-top:12px">
+            <input id="new-board-input" placeholder="+ Add board" style="width:100%; padding:8px; border-radius:6px; background:var(--btn-color); border:1px solid #333; color:#e0e0e0;">
+        </div>
+    </aside>
+
+    <main class="main">
+        <!-- Start page container (shows when no board is open) -->
+        <div id="start-page" class="start-page" style="display:block;padding:24px;">
+            <h2 style="margin-top:0">All boards</h2>
+            <div id="start-grid" class="start-grid" style="display:grid;grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));gap:16px;">
+                <!-- populated by loadStartPageBoards() -->
+            </div>
+        </div>
+
+        <!-- Board area (hidden until a board is opened) -->
+        <div id="board-area" style="display:none; flex:1; flex-direction:column;">
+            <div class="board-header">
+                <div class="board-title" id="board-title">Select a board</div>
+                <div>
+                    <button id="rename-board-btn" class="small-btn" style="display:none">Rename</button>
+                    <button id="delete-board-btn" class="small-btn" style="display:none">Delete</button>
+                </div>
+            </div>
+
+            <div class="lists-wrap" id="lists-wrap">
+                <!-- lists (columns) inserted here -->
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- Modals (kept but not used for create/rename flows) -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal" style="display:none;">
+        <h3 id="modal-title">Add</h3>
+        <div class="modal-body">
+            <input id="modal-input" placeholder="Title">
+        </div>
+        <div class="actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button id="modal-cancel" class="small-btn">Cancel</button>
+            <button id="modal-ok" class="small-btn" style="background:var(--accent); color:#111;">OK</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/* Global state */
+let currentBoardId = null;
+let boardsCache = []; // list of boards
+
+document.addEventListener("DOMContentLoaded", async () => {
+    // Ensure fetch sends cookies
+    if (!window.__fetchPatched) {
+        const _f = window.fetch;
+        window.fetch = (url, opts = {}) => {
+            opts.credentials = 'include';
+            return _f(url, opts);
+        };
+        window.__fetchPatched = true;
+    }
+
+    // Ping to check session
+    async function validateSession() {
+        try {
+            const res = await fetch("/test-session", { method: "GET" });
+            if (res.status === 200) {
+                updateStorageCounter();
+                loadUserProfile();
+                return true;
+            }
+            if (res.status === 403) {
+                window.location.href = '/login_page?suspended=true';
+                return false;
+            }
+            return false;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    // Try auto-login
+    async function attemptAutoLogin() {
+        try {
+            const res = await fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+                credentials: 'include'
+            });
+            if (res.ok) {
+                updateStorageCounter();
+                loadUserProfile();
+                return true;
+            }
+            // redirect to login page
+            window.location.href = '/login_page?suspend=true';
+            return false;
+        } catch (err) {
+            // redirect
+            window.location.href = '/login_page?suspend=true';
+            return false;
+        }
+    }
+
+    const ok = await validateSession();
+    if (!ok) {
+        await attemptAutoLogin();
+    }
+
+    // if URL contains a hash like #board-123 -> load that board immediately
+    const hashMatch = location.hash.match(/^#board-(\d+)$/);
+    if (hashMatch) {
+        // populate sidebar and then open board
+        await loadBoards();
+        const id = parseInt(hashMatch[1], 10);
+        // only select if that board actually exists
+        if (boardsCache.some(b => b.id === id)) {
+            await selectBoard(id);
+        } else {
+            // fallback: show start page
+            await loadStartPageBoards();
+            showStartPage();
+        }
+    } else {
+        // initial start page load: fetch boards and render start page cards
+        await loadStartPageBoards();
+        showStartPage();
+    }
+
+    // board rename/delete header buttons handlers
+    document.getElementById('rename-board-btn').addEventListener('click', () => {
+        const b = boardsCache.find(x => x.id === currentBoardId);
+        if (!b) return;
+        inlineRenameBoard(b.id, b.title);
+    });
+    document.getElementById('delete-board-btn').addEventListener('click', async () => {
+        if (!currentBoardId) return;
+        if (!confirm('Delete board and everything inside?')) return;
+        const res = await apiDELETE(`/api/boards/${currentBoardId}`);
+        if (res.ok) {
+            currentBoardId = null;
+            document.getElementById('board-title').textContent = 'Select a board';
+            document.getElementById('lists-wrap').innerHTML = '';
+            // update URL and show start page
+            location.hash = '';
+            await loadStartPageBoards();
+            showStartPage();
+            // refresh sidebar list
+            await loadBoards();
+        } else {
+            const j = await res.json();
+            alert(j.error || 'Failed');
+        }
+    });
+
+    // respond to hash changes (allow navigation between boards without reload)
+    window.addEventListener('hashchange', async () => {
+        const m = location.hash.match(/^#board-(\d+)$/);
+        if (!m) {
+            // show start
+            currentBoardId = null;
+            document.getElementById('board-title').textContent = 'Select a board';
+            document.getElementById('lists-wrap').innerHTML = '';
+            showStartPage();
+            return;
+        }
+        const id = parseInt(m[1], 10);
+        // ensure sidebar is populated
+        if (!boardsCache || boardsCache.length === 0) await loadBoards();
+        if (boardsCache.some(b => b.id === id)) {
+            await selectBoard(id);
+        } else {
+            showStartPage();
+        }
+    });
+});
+
+/* Storage and profile */
+
+async function updateStorageCounter() {
+    try {
+        const res = await fetch('/user/storage', { credentials: 'include' });
+        if (!res.ok) throw new Error("Failed to fetch storage info");
+        const data = await res.json();
+
+        const barHeader = document.getElementById('storage-bar-fill');
+
+        let usedText, totalText, percentUsed;
+
+        if (data.unlimited) {
+            usedText = "∞";
+            totalText = "Unlimited";
+            percentUsed = 100; // fill bar fully for effect
+            barHeader.classList.add('infinite-storage');
+        } else {
+            usedText = (data.used_bytes / 1024 / 1024).toFixed(2);
+            totalText = (data.total_bytes / 1024 / 1024).toFixed(2);
+            percentUsed = Math.min((data.used_bytes / data.total_bytes) * 100, 100);
+            barHeader.classList.remove('infinite-storage');
+        }
+
+        document.getElementById('storage-counter').textContent = `${usedText} / ${totalText} MB`;
+        document.getElementById('storage-bar-fill').style.width = `${percentUsed}%`;
+
+        if (percentUsed > 90 && !data.unlimited) {
+            document.getElementById('storage-bar-fill').style.background = 'linear-gradient(90deg,#ffb74d,#e53935)';
+        } else {
+            document.getElementById('storage-bar-fill').style.background = 'linear-gradient(90deg,#4caf50,#81c784)';
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+document.getElementById('storage-container').style.cursor = 'pointer';
+document.getElementById('storage-container').addEventListener('click', openStorageModal);
+document.getElementById('storage-modal-close').addEventListener('click', closeStorageModal);
+document.getElementById('send-invite-btn').addEventListener('click', sendInvite)
+
+async function openStorageModal(e){
+    e && e.preventDefault();
+    document.getElementById('storage-modal').style.display = 'flex';
+    await refreshModalData();
+}
+
+function closeStorageModal(){
+    document.getElementById('storage-modal').style.display = 'none';
+    document.getElementById('invite-feedback').textContent = '';
+}
+
+async function refreshModalData() {
+    try {
+        const res = await fetch('/invites/status', { credentials: 'include' });
+        if (!res.ok) throw new Error('Failed to load status');
+        const data = await res.json();
+
+        const barModal = document.getElementById('storage-bar-fill-modal');
+
+        let usedText, totalText, percent;
+
+        if (data.total_mb === null || data.storage_message) {
+            usedText = "∞";
+            totalText = "Unlimited";
+            percent = 100; // fill bar fully for effect
+            barModal.classList.add('infinite-storage');
+        } else {
+            usedText = data.used_mb.toFixed(2);
+            totalText = data.total_mb.toFixed(2);
+            percent = Math.min((data.used_mb / Math.max(data.total_mb, 1)) * 100, 100);
+            barModal.classList.remove('infinite-storage');
+        }
+
+        document.getElementById('storage-counter-modal').textContent = `${usedText} / ${totalText} MB`;
+        document.getElementById('storage-bar-fill-modal').style.width = percent + '%';
+
+        if (percent > 90 && !(data.total_mb === null || data.storage_message)) {
+            barModal.classList.add('almost-full');
+        } else {
+            barModal.classList.remove('almost-full');
+        }
+
+        document.getElementById('remaining-today').textContent = data.remaining_today;
+        document.getElementById('sent-today').textContent = data.sent_today;
+        document.getElementById('per-day-limit').textContent = data.per_day_limit;
+
+        const pendingList = document.getElementById('pending-invites-list');
+        pendingList.innerHTML = '';
+        if (!data.pending_invites || data.pending_invites.length === 0) {
+            pendingList.innerHTML = '<div style="opacity:0.6">No pending invites</div>';
+        } else {
+            for (const p of data.pending_invites) {
+                const el = document.createElement('div');
+                el.style.padding = '8px';
+                el.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                el.innerHTML = `<div style="font-weight:700">${p.email}</div>
+                                <div style="opacity:0.6; font-size:12px">Sent ${new Date(p.created_at).toLocaleString()}</div>
+                                <button onclick="cancelInvite('${p.id}')" class="cancel-invite-btn">Cancel</button>`;
+                pendingList.appendChild(el);
+            }
+        }
+    } catch (err) {
+        console.error(err);
+        document.getElementById('invite-feedback').textContent = 'Could not load invite status.';
+    }
+}
+
+
+async function sendInvite(){
+    const email = document.getElementById('invite-email').value.trim();
+    if (!email) {
+        document.getElementById('invite-feedback').textContent = 'Enter an email first.';
+        return;
+    }
+    document.getElementById('send-invite-btn').disabled = true;
+    document.getElementById('invite-feedback').textContent = 'Sending...';
+
+    try {
+        const res = await fetch('/invites/send', {
+        method:'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({email}),
+        credentials: 'include'
+        });
+        const j = await res.json();
+        if (!res.ok) {
+        document.getElementById('invite-feedback').textContent = j.error || 'Failed to send';
+        } else {
+        document.getElementById('invite-feedback').textContent = 'Invite sent! They must sign up via the link to redeem.';
+        document.getElementById('invite-email').value = '';
+        // refresh
+        await refreshModalData();
+        }
+    } catch (err) {
+        console.error(err);
+        document.getElementById('invite-feedback').textContent = 'Network error';
+    } finally {
+        document.getElementById('send-invite-btn').disabled = false;
+    }
+}
+
+/* Mobile nav toggle */
+document.addEventListener("DOMContentLoaded", function() {
+    const toggleButton = document.getElementById("toggle-mobile-nav");
+    const mobileNav = document.getElementById("mobileSubHeader");
+
+    if (toggleButton && mobileNav) {
+        toggleButton.addEventListener("click", function() {
+            if (mobileNav.style.display === "block") {
+                mobileNav.style.display = "none";
+            } else {
+                mobileNav.style.display = "block";
+            }
+        });
+    }
+});
+
+document.getElementById("profile-pic").addEventListener("click", () => {
+    window.location.href = "/account_page";
+});
+
+
+async function loadUserProfile() {
+    try {
+        const userInfoResponse = await fetch("/user-info", { credentials: 'include' });
+        if (userInfoResponse.ok) {
+            const userInfo = await userInfoResponse.json();
+            const profilePicElement = document.getElementById("profile-pic");
+            
+            if (userInfo.profile_picture) {
+                const correctedProfilePic = userInfo.profile_picture.replace(/\\/g, "/");
+                profilePicElement.style.backgroundImage = `url(${correctedProfilePic})`;
+                profilePicElement.classList.remove("no-picture");
+                profilePicElement.textContent = "";
+            } else {
+                profilePicElement.textContent = userInfo.username ? userInfo.username[0].toUpperCase() : 'U';
+                profilePicElement.classList.add("no-picture");
+            }
+        }
+    } catch (error) {
+        console.error("Error loading user profile:", error);
+    }
+}
+
+/* API helpers */
+async function apiGET(path) {
+    const res = await fetch(path, { credentials: 'include' });
+    if (!res.ok) throw res;
+    return await res.json();
+}
+async function apiPOST(path, body) {
+    const res = await fetch(path, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    return res;
+}
+async function apiPATCH(path, body) {
+    const res = await fetch(path, { method:'PATCH', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    return res;
+}
+async function apiDELETE(path) {
+    const res = await fetch(path, { method:'DELETE', credentials:'include' });
+    return res;
+}
+
+/* START PAGE: fetch boards and render as cards */
+async function loadStartPageBoards() {
+    try {
+        // reuse same API used by sidebar; keep in memory
+        boardsCache = await apiGET('/api/boards');
+        const grid = document.getElementById('start-grid');
+        grid.innerHTML = '';
+
+        if (!boardsCache || boardsCache.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'board-card create-large';
+            empty.style.display='flex'; empty.style.alignItems='center'; empty.style.justifyContent='center'; empty.style.height='120px';
+            empty.innerHTML = `<div style="text-align:center; width:100%"><div style="font-size:36px;">＋</div><div style="opacity:0.8; margin-top:8px">Create your first board</div></div>`;
+            empty.addEventListener('click', () => {
+                // open inline new board input (will create board)
+                showInlineNewBoard();
+            });
+            grid.appendChild(empty);
+            return;
+        }
+
+        for (const b of boardsCache) {
+            const card = document.createElement('div');
+            card.className = 'board-card';
+            card.dataset.boardId = b.id;
+            card.style.borderRadius = '10px';
+            card.style.padding = '12px';
+            card.style.background = 'linear-gradient(180deg,#161616,#0f0f0f)';
+            card.innerHTML = `<h3 style="margin:0 0 8px 0;font-size:16px">${escapeHtml(b.title)}</h3><p style="margin:0;color:var(--muted-2);font-size:13px">${b.cards_count ? `${b.cards_count} ${b.cards_count === 1 ? 'card' : 'cards'}` : 'No cards yet'}</p>`;
+            card.addEventListener('click', async () => {
+                // when a board card is clicked, populate the sidebar and open the board
+                await loadBoards();
+                await selectBoard(b.id);
+            });
+            grid.appendChild(card);
+        }
+
+    } catch (err) {
+        console.error('Failed to load start page boards', err);
+        const grid = document.getElementById('start-grid');
+        grid.innerHTML = '<div style="opacity:0.6">Failed to load boards</div>';
+    }
+}
+
+function showStartPage() {
+    document.getElementById('start-page').style.display = 'block';
+    document.getElementById('board-area').style.display = 'none';
+}
+function hideStartPage() {
+    document.getElementById('start-page').style.display = 'none';
+    document.getElementById('board-area').style.display = 'flex';
+}
+
+/* Load boards for sidebar */
+async function loadBoards() {
+    try {
+        boardsCache = await apiGET('/api/boards');
+        const list = document.getElementById('boards-list');
+        list.innerHTML = '';
+        for (const b of boardsCache) {
+            const el = document.createElement('div');
+            el.className = 'board-item';
+            el.dataset.boardId = b.id;
+            el.innerHTML = `<div style="display:flex;gap:8px;align-items:center;max-width:160px;overflow:hidden;"><div class="board-title-text" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(b.title)}</div></div>
+                            <div class="board-actions">
+                                <button class="small-btn rename-board" title="Rename">✎</button>
+                                <button class="small-btn delete-board" title="Delete">🗑</button>
+                            </div>`;
+            // single click selects
+            el.addEventListener('click', (e) => {
+                if (e.target.closest('.rename-board') || e.target.closest('.delete-board')) return;
+                selectBoard(b.id);
+            });
+            // double click to inline rename
+            el.addEventListener('dblclick', (e) => {
+                if (e.target.closest('.rename-board') || e.target.closest('.delete-board')) return;
+                inlineRenameBoard(b.id, b.title);
+            });
+            el.querySelector('.rename-board').addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                inlineRenameBoard(b.id, b.title);
+            });
+            el.querySelector('.delete-board').addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                if (!confirm('Delete board and all its lists/cards?')) return;
+                const res = await apiDELETE(`/api/boards/${b.id}`);
+                if (res.ok) {
+                    if (b.id === currentBoardId) {
+                        window.location.hash = '';
+                        currentBoardId = null;
+                        document.getElementById('board-title').textContent = 'Select a board';
+                        document.getElementById('lists-wrap').innerHTML = '';
+                    }
+                    await loadBoards();
+                    await loadStartPageBoards();
+                } else {
+                    const j = await res.json();
+                    alert(j.error || 'Failed to delete');
+                }
+            });
+            list.appendChild(el);
+        }
+
+        // do not auto-select any board here - selection happens only when user clicks a card or loads via hash
+        highlightActiveBoard();
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function highlightActiveBoard() {
+    document.querySelectorAll('.board-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.boardId,10) === currentBoardId);
+    });
+    document.getElementById('rename-board-btn').style.display = currentBoardId ? 'inline-block' : 'none';
+    document.getElementById('delete-board-btn').style.display = currentBoardId ? 'inline-block' : 'none';
+}
+
+/* Inline board create / rename UI */
+document.getElementById('create-board-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showInlineNewBoard();
+});
+
+/* ---------- Inline Add/Edit for Boards ---------- */
+
+/* Sidebar: Add an input at the bottom of the boards list for new board
+   (we already added an input in the markup for better accessibility) */
+
+/* ---------- Inline Editing for Boards ---------- */
+async function enableBoardInlineEdit(boardEl, boardId) {
+    const titleEl = boardEl.querySelector('div:first-child div');
+    const currentTitle = titleEl.textContent;
+    const input = document.createElement('input');
+    input.value = currentTitle;
+    input.className = 'inline-board-input input';
+    input.style.width = '100%';
+    input.style.padding = '6px';
+    input.style.borderRadius = '6px';
+    input.style.border = '1px solid rgba(255,255,255,0.04)';
+    input.style.backgroundColor = 'var(--btn-color)';
+    input.style.color = '#e0e0e0';
+    titleEl.replaceWith(input);
+    input.focus();
+
+    input.addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const newTitle = input.value.trim();
+            if (!newTitle) return;
+            const res = await apiPATCH(`/api/boards/${boardId}`, { title: newTitle });
+            if (res.ok) {
+                await loadBoards();
+            } else {
+                const j = await res.json();
+                alert(j.error || 'Failed');
+            }
+        }
+    });
+
+    input.addEventListener('blur', async () => {
+        await loadBoards();
+    });
+}
+
+/* Attach double-click edit on boards */
+function attachBoardEditHandlers() {
+    document.querySelectorAll('.board-item > div:first-child').forEach(div => {
+        const boardId = parseInt(div.closest('.board-item').dataset.boardId, 10);
+        div.ondblclick = () => enableBoardInlineEdit(div.closest('.board-item'), boardId);
+    });
+}
+
+// Make sure after loadBoards we reattach the inline edit
+const originalLoadBoards = loadBoards;
+loadBoards = async function() {
+    await originalLoadBoards();
+    attachBoardEditHandlers();
+};
+
+async function createNewBoard(title) {
+    const res = await apiPOST('/api/boards', { title });
+    return res;
+}
+
+document.getElementById('new-board-input').addEventListener('keydown', async (ev) => {
+    if (ev.key === 'Enter') {
+        const input = ev.target;
+        const title = input.value.trim();
+        if (!title) return;
+        const res = await createNewBoard(title);
+        if (res.ok) {
+            input.value = '';
+            await loadBoards();
+            await loadStartPageBoards();
+        } else {
+            const j = await res.json();
+            alert(j.error || 'Failed to create board');
+        }
+    }
+});
+
+function showInlineNewBoard() {
+    const input = document.getElementById('new-board-input');
+    input.focus();
+    return;
+}
+
+/* ---------- Inline rename for boards ---------- */
+async function inlineRenameBoard(boardId, currentTitle) {
+    const boardEl = document.querySelector(`.board-item[data-board-id="${boardId}"]`);
+    if (!boardEl) return;
+    // avoid creating multiple editors
+    if (boardEl.querySelector('.inline-board-edit')) {
+        boardEl.querySelector('input.inline-board-input')?.focus();
+        return;
+    }
+    const titleDiv = boardEl.querySelector('.board-title-text');
+    const original = titleDiv.textContent;
+    titleDiv.style.display = 'none';
+    const input = document.createElement('input');
+    input.className = 'inline-board-input inline-board-edit input-reset';
+    input.value = currentTitle;
+    input.style.padding = '6px';
+    input.style.borderRadius = '6px';
+    input.style.border = '1px solid #333';
+    input.style.background = 'var(--btn-color)';
+    input.style.color = '#e0e0e0';
+    input.style.width = '160px';
+    titleDiv.parentElement.prepend(input);
+    input.focus();
+    input.select();
+
+    input.addEventListener('keydown', async (ev) => {
+        if (ev.key === 'Enter') {
+            const title = input.value.trim();
+            if (!title) return;
+            const res = await apiPATCH(`/api/boards/${boardId}`, { title });
+            if (res.ok) {
+                await loadBoards();
+                if (currentBoardId === boardId) document.getElementById('board-title').textContent = title;
+            } else {
+                const j = await res.json();
+                alert(j.error || 'Failed to rename');
+            }
+        } else if (ev.key === 'Escape') {
+            // cancel
+            cleanup();
+        }
+    });
+
+    input.addEventListener('blur', cleanup);
+
+    function cleanup() {
+        input.remove();
+        titleDiv.style.display = '';
+    }
+}
+
+/* Select board */
+async function selectBoard(boardId) {
+    currentBoardId = boardId;
+    const board = boardsCache.find(b => b.id === boardId);
+    document.getElementById('board-title').textContent = board ? board.title : 'Select a board';
+    highlightActiveBoard();
+    // update URL hash (doesn't reload page)
+    location.hash = `#board-${boardId}`;
+    // show board area and hide start page
+    hideStartPage();
+    window._currentBoardId = boardId; // make globally accessible for inline new list
+    // load lists for that board
+    await loadLists(boardId);
+}
+
+function renderAddListButton() {
+    const container = document.getElementById('lists-wrap');
+    if (document.getElementById('add-list-button')) return;
+
+    const btnCol = document.createElement('div');
+    btnCol.id = 'add-list-button';
+    btnCol.innerHTML = `
+        <div class="add-list-btn">
+            <span class="plus">＋</span>
+            <span class="text">Add another list</span>
+        </div>
+    `;
+    btnCol.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        showInlineNewList();
+    });
+    container.appendChild(btnCol);
+
+    // Apply styling
+    const style = document.createElement('style');
+    style.innerHTML = `
+        .add-list-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            min-width: 180px;
+            background: var(--btn-color, rgba(255,255,255,0.08));
+            color: #e0e0e0;
+            font-weight: 500;
+            font-size: 14px;
+            transition: background 0.15s ease;
+        }
+        .add-list-btn:hover {
+            background: rgba(255,255,255,0.16);
+        }
+        .add-list-btn .plus {
+            font-weight: 700;
+            font-size: 16px;
+            line-height: 1;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function removeAddListButton() {
+    const existing = document.getElementById('add-list-button');
+    if (existing) existing.remove();
+}
+
+// ---------- Implement removeInlineNewList (used by showInlineNewList) ----------
+function removeInlineNewList() {
+    const inline = document.getElementById('inline-new-list');
+    if (inline) inline.remove();
+    // restore the persistent add button
+    renderAddListButton();
+}
+
+// ---------- Updated showInlineNewList (small tweak: hide the CTA when inline is shown) ----------
+function showInlineNewList() {
+    const container = document.getElementById('lists-wrap');
+    // avoid duplicate
+    if (document.getElementById('inline-new-list')) {
+        const existingInput = document.getElementById('inline-new-list-input');
+        if (existingInput) existingInput.focus();
+        return;
+    }
+    // hide/remove the persistent CTA while inline editor is active
+    removeAddListButton();
+
+    const col = document.createElement('div');
+    col.id = 'inline-new-list';
+    col.className = 'list';
+    col.innerHTML = `<h4><span><input id="inline-new-list-input" placeholder="New list title" style="width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0;" /></span>
+                    <span style="display:flex;gap:6px;">
+                    <button class="small-btn" id="inline-new-list-cancel">✕</button>
+                    </span></h4>
+                    <div class="card-list" id="cards-for-inline-new"></div>`;
+    // Insert inline editor before the CTA area — place at the end for horizontal boards
+    container.appendChild(col);
+
+    const input = document.getElementById('inline-new-list-input');
+    input.focus();
+    input.addEventListener('keydown', async (ev) => {
+        if (ev.key === 'Enter') {
+            const title = input.value.trim();
+            if (!title) return;
+            // disable input while posting to avoid duplicates
+            input.disabled = true;
+            try {
+                const res = await apiPOST('/api/lists', { title, board_id: currentBoardId });
+                if (res.ok) {
+                    await loadLists(currentBoardId);
+                } else {
+                    const j = await res.json();
+                    alert(j.error || 'Failed to create list');
+                    removeInlineNewList();
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Failed to create list');
+                removeInlineNewList();
+            } finally {
+                input.disabled = false;
+            }
+        } else if (ev.key === 'Escape') {
+            removeInlineNewList();
+        }
+    });
+    document.getElementById('inline-new-list-cancel').addEventListener('click', removeInlineNewList);
+    input.addEventListener('blur', () => {
+        // short timeout so Enter doesn't trigger immediate removal before submission
+        setTimeout(() => {
+            if (document.activeElement !== input) removeInlineNewList(); renderAddListButton();
+        }, 150);
+    });
+}
+
+function removeInlineNewList() {
+    const el = document.getElementById('inline-new-list');
+    if (el) el.remove();
+}
+
+// Helpers: temporarily expand all .card-list elements to fill their .list parent
+function expandCardLists() {
+    document.querySelectorAll('.card-list').forEach(cl => {
+        const listWrap = cl.closest('.list');
+        if (!listWrap) return;
+
+        // find header and footer controls inside the list to compute remaining height
+        const header = listWrap.querySelector('h4');
+        // footer is the last div containing the input/add button; choose a more robust selector if you have it
+        const footer = listWrap.querySelector('div[style*="margin-top"]');
+
+        const headerH = header ? header.getBoundingClientRect().height : 0;
+        const footerH = footer ? footer.getBoundingClientRect().height : 0;
+
+        // available height inside the list for the card-list (add small safety padding)
+        const available = Math.max(listWrap.clientHeight - headerH - footerH - 8, 120);
+
+        // Use minHeight with transition so content can still shrink naturally otherwise
+        cl.style.minHeight = available + 'px';
+        cl.classList.add('card-list--active');
+    });
+}
+
+function collapseCardLists() {
+    document.querySelectorAll('.card-list').forEach(cl => {
+        cl.style.minHeight = ''; // remove inline style
+        cl.classList.remove('card-list--active', 'card-list--hover');
+    });
+}
+
+// toggle UI class + ARIA
+function setCardCompletedUI(cardEl, completed) {
+    if (completed) {
+        cardEl.classList.add('card--completed');
+    } else {
+        cardEl.classList.remove('card--completed');
+    }
+    const btn = cardEl.querySelector('.card-complete');
+    if (btn) {
+        btn.setAttribute('aria-pressed', completed ? 'true' : 'false');
+        btn.title = completed ? 'Mark as not done' : 'Mark as done';
+        btn.setAttribute('aria-label', completed ? 'Mark as not done' : 'Mark as done');
+    }
+}
+
+function attachCardCompleteHandler(cardEl) {
+    const btn = cardEl.querySelector('.card-complete');
+    if (!btn) return;
+
+    if (btn._hasCompleteHandler) return;
+    btn._hasCompleteHandler = true;
+
+    const allowToggleWhenTemp = false;
+
+    // Track how the user activated the control: pointer vs keyboard
+    btn._usedPointer = false;
+    btn.addEventListener('pointerdown', () => { btn._usedPointer = true; });
+    btn.addEventListener('keydown', (ev) => {
+        // mark as keyboard interaction so we DON'T blur after toggling
+        btn._usedPointer = false;
+        // Allow space/enter to still activate via keydown handler (you had one already)
+        if (ev.key === ' ' || ev.key === 'Enter') {
+            ev.preventDefault();
+            // keep keyboard focus; the click handler will run after this
+        }
+    });
+
+    const handler = async (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+
+        if (cardEl.classList.contains('card--temp') && !allowToggleWhenTemp) return;
+
+        const was = cardEl.classList.contains('card--completed');
+        const next = !was;
+
+        // optimistic UI toggle
+        setCardCompletedUI(cardEl, next);
+
+        const cardId = cardEl.dataset.cardId;
+        if (String(cardId).startsWith('temp-')) {
+            if (!allowToggleWhenTemp) {
+                setCardCompletedUI(cardEl, was);
+                return;
+            }
+        }
+
+        try {
+            const res = await apiPATCH(`/api/cards/complete/${encodeURIComponent(cardId)}`, { completed: next });
+            if (!res.ok) {
+                setCardCompletedUI(cardEl, was);
+                try {
+                    const j = await res.json();
+                    alert(j.error || 'Failed to update card completion');
+                } catch (e) {
+                    alert('Failed to update card completion');
+                }
+            } else {
+                try {
+                    const body = await res.json();
+                    if (body && typeof body.completed !== 'undefined') {
+                        setCardCompletedUI(cardEl, !!body.completed);
+                    }
+                } catch (e) { /* ignore if no json */ }
+            }
+        } catch (err) {
+            console.error(err);
+            setCardCompletedUI(cardEl, was);
+            alert('Network error while updating card status');
+        } finally {
+            // If this was a pointer interaction (mouse/touch), blur the button so :focus-within no longer applies
+            if (btn._usedPointer) {
+                // small timeout to let any native focus changes settle
+                setTimeout(() => {
+                    try { btn.blur(); } catch (e) { /* ignore */ }
+                    btn._usedPointer = false;
+                }, 40);
+            }
+        }
+    };
+
+    btn.addEventListener('click', handler);
+
+    // Keep keyboard activation working for accessibility (Space/Enter)
+    btn.addEventListener('keydown', (ev) => {
+        if (ev.key === ' ' || ev.key === 'Enter') {
+            ev.preventDefault();
+            // user is keyboard-activating; keep focus, but trigger click logic
+            // click() will call the handler (and usedPointer is false because of keydown listener)
+            btn.click();
+        }
+    });
+}
+
+
+// Create a DOM node for a card. If isTemp is true, the card will be styled as temporary.
+function createCardElement({ id, title = '', description = '', isTemp = false, completed = false }) {
+    const cardEl = document.createElement('div');
+    cardEl.className = 'card';
+    if (isTemp) cardEl.classList.add('card--temp');
+    if (completed) cardEl.classList.add('card--completed');
+
+    cardEl.dataset.cardId = id;
+
+    // control markup: a button (accessible) with an inline SVG checkmark
+    const checkHtml = `
+      <button class="card-complete" aria-pressed="${completed ? 'true' : 'false'}" aria-label="${completed ? 'Mark as not done' : 'Mark as done'}" title="${completed ? 'Mark as not done' : 'Mark as done'}" tabindex="0">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M20.285 6.708a1 1 0 0 0-1.414-1.416l-9.08 9.08-4.09-4.09A1 1 0 0 0 4.3 11.3l4.99 4.99a1 1 0 0 0 1.414 0l9.58-9.582z"></path>
+        </svg>
+      </button>
+    `;
+
+    cardEl.innerHTML = `
+      ${checkHtml}
+      <div class="card-main">
+        <div style="font-weight:700" class="card-title-text">${escapeHtml(title)}</div>
+        <div class="meta card-desc-text">${escapeHtml(description || '')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button class="small-btn edit-card" title="Edit">✎</button>
+        <button class="small-btn delete-card" title="Delete">🗑</button>
+      </div>
+    `;
+
+    if (isTemp) {
+        const editBtn = cardEl.querySelector('.edit-card');
+        const delBtn = cardEl.querySelector('.delete-card');
+        editBtn.disabled = true;
+        delBtn.disabled = true;
+        editBtn.title = 'Saving...';
+        delBtn.title = 'Saving...';
+    } else {
+        attachCardActionHandlers(cardEl);
+    }
+
+    // attach the completion handler even for temp cards (handler will ignore if pointer events disabled)
+    attachCardCompleteHandler(cardEl);
+
+    return cardEl;
+}
+
+// Attach edit/delete handlers for a real card element
+function attachCardActionHandlers(cardEl) {
+    const cardId = parseInt(cardEl.dataset.cardId, 10);
+    const editBtn = cardEl.querySelector('.edit-card');
+    const delBtn = cardEl.querySelector('.delete-card');
+
+    // avoid adding duplicate handlers
+    if (!editBtn._hasHandler) {
+        editBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            inlineEditCard(cardId, cardEl.querySelector('.card-title-text').textContent, cardEl.querySelector('.card-desc-text').textContent, window._currentBoardId);
+        });
+        editBtn._hasHandler = true;
+    }
+    if (!delBtn._hasHandler) {
+        delBtn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            if (!confirm('Delete card?')) return;
+            const res = await apiDELETE(`/api/cards/${cardId}`);
+            if (res.ok) {
+                // remove card from DOM
+                cardEl.parentElement && cardEl.parentElement.removeChild(cardEl);
+            } else {
+                const j = await res.json();
+                alert(j.error || 'Failed to delete card');
+            }
+        });
+        delBtn._hasHandler = true;
+    }
+
+    // double-click to edit
+    if (!cardEl._dblHandler) {
+        cardEl.addEventListener('dblclick', (ev) => {
+            if (ev.target.closest('.edit-card') || ev.target.closest('.delete-card') || ev.target.closest('.card-complete')) return;
+            inlineEditCard(cardId, cardEl.querySelector('.card-title-text').textContent, cardEl.querySelector('.card-desc-text').textContent, window._currentBoardId);
+        });
+        cardEl._dblHandler = true;
+    }
+}
+
+// animate insertion: apply enter class then after a tick make it entered
+function animateInsert(cardEl) {
+    cardEl.classList.add('card--enter');
+    // force reflow then remove enter to trigger transition to normal state
+    requestAnimationFrame(() => {
+        // a small timeout yields a smoother animation in some browsers
+        setTimeout(() => {
+            cardEl.classList.remove('card--enter');
+            cardEl.classList.add('card--entered');
+        }, 8);
+    });
+}
+
+// animate removal: add exit class and remove after transition
+function animateRemove(cardEl, cb) {
+    // ensure it's not also an enter animation
+    cardEl.classList.remove('card--enter', 'card--entered');
+    cardEl.classList.add('card--exit');
+    const duration = 260; // should match the CSS transition timing
+    setTimeout(() => {
+        if (cardEl.parentElement) cardEl.parentElement.removeChild(cardEl);
+        if (typeof cb === 'function') cb();
+    }, duration);
+}
+
+// Utility: generate a stable temporary id
+function makeTempId() {
+    return 'temp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+}
+
+// ---------- Updated loadLists: separate sortable area and protect CTA ----------
+async function loadLists(boardId) {
+    try {
+        const lists = await apiGET(`/api/lists?board_id=${boardId}`);
+        const listsWrap = document.getElementById('lists-wrap');
+        // clear outer wrapper but keep structure
+        listsWrap.innerHTML = '';
+
+        // create an inner container that will be the only sortable area
+        let inner = document.createElement('div');
+        inner.id = 'lists-inner';
+        // keep display: flex or whatever layout you used previously
+        inner.style.display = 'flex';
+        inner.style.gap = '12px';
+        inner.style.alignItems = 'flex-start';
+        listsWrap.appendChild(inner);
+
+        // render all the lists in order of their order value
+        lists.sort((a, b) => a.order - b.order);
+
+        // Make lists sortable (horizontal) — but only the .list elements are draggable.
+        // Destroy prior instance if exists to avoid duplicates.
+        if (window.Sortable) {
+            if (window.listsSortable && typeof window.listsSortable.destroy === 'function') {
+                try { window.listsSortable.destroy(); } catch (e) { /* ignore */ }
+            }
+            window.listsSortable = Sortable.create(inner, {
+                animation: 150,
+                handle: '.list h4',
+                draggable: '.list',     // IMPORTANT: only .list items are draggable
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                onEnd: async (evt) => {
+                    // when drag ends, update the order of lists in backend using only .list children
+                    const listEls = inner.querySelectorAll('.list');
+                    for (let i = 0; i < listEls.length; i++) {
+                        const listId = parseInt(listEls[i].dataset.listId, 10);
+                        // Only patch when order actually changed? (optional optimization)
+                        await apiPATCH(`/api/lists/order/${listId}`, { order: i });
+                    }
+                    // reload lists to reflect any changes
+                    await loadLists(boardId);
+                }
+            });
+        }
+
+        for (const l of lists) {
+            const col = document.createElement('div');
+            col.className = 'list';
+            col.dataset.listId = l.id;
+            col.innerHTML = `<h4 style="display:flex;align-items:center;gap:8px">
+                    <span class="list-title-text">${escapeHtml(l.title)}</span>
+                    <span style="display:flex;gap:6px;">
+                        <button class="small-btn rename-list" title="Rename">✎</button>
+                        <button class="small-btn delete-list" title="Delete">🗑</button>
+                    </span>
+                </h4>
+                <div class="card-list" id="cards-for-${l.id}"></div>
+                <div style="margin-top:8px; display:flex; gap:8px;">
+                    <input placeholder="Card title" id="new-card-${l.id}" style="flex:1; padding:8px; border-radius:6px; background:var(--btn-color); border:1px solid #333; color:#e0e0e0;">
+                    <button class="small-btn add-card" data-list="${l.id}">Add</button>
+                </div>`;
+            inner.appendChild(col);
+
+            // attach rename-on-dblclick for list title
+            const titleSpan = col.querySelector('.list-title-text');
+            titleSpan.addEventListener('dblclick', () => inlineRenameList(l.id, l.title));
+
+            // attach rename/delete handlers (rename now inline)
+            col.querySelector('.rename-list').addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                inlineRenameList(l.id, l.title);
+            });
+            col.querySelector('.delete-list').addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                if (!confirm('Delete list and its cards?')) return;
+                const res = await apiDELETE(`/api/lists/${l.id}`);
+                if (res.ok) {
+                    await loadLists(boardId);
+                } else {
+                    const j = await res.json();
+                    alert(j.error || 'Failed to delete list');
+                }
+            });
+
+            const listEl = col.querySelector('.card-list');
+            for (const c of l.cards) {
+                const cardEl = createCardElement({
+                    id: c.id,
+                    title: c.title,
+                    description: c.description || '',
+                    isTemp: false,
+                    completed: !!c.completed
+                });
+
+                // Ensure UI reflects server state
+                setCardCompletedUI(cardEl, !!c.completed);
+
+                // attach edit/delete handlers (createCardElement attaches complete handler already)
+                attachCardActionHandlers(cardEl);
+
+                listEl.appendChild(cardEl);
+            }
+
+        }
+
+        // ---------- optimistic add-card handlers (replace existing block) ----------
+        inner.querySelectorAll('.add-card').forEach(btn => {
+            const listId = btn.dataset.list;
+            const inp = document.getElementById(`new-card-${listId}`);
+
+            // helper to perform optimistic insert + async request
+            async function optimisticCreateCard(title) {
+                // create temp element and append immediately
+                const tempId = makeTempId();
+                const tempCardEl = createCardElement({ id: tempId, title, description: '', isTemp: true });
+
+                const listContainer = document.getElementById(`cards-for-${listId}`);
+                // append to end (consistent with current behavior)
+                listContainer.appendChild(tempCardEl);
+                animateInsert(tempCardEl);
+
+                // fire-and-forget create request
+                try {
+                    const res = await apiPOST('/api/cards', { title, list_id: parseInt(listId, 10) });
+                    if (!res.ok) {
+                        // remove temp with animation and notify
+                        animateRemove(tempCardEl, () => {
+                            res.json().then(j => {
+                                alert(j.error || 'Failed to create card');
+                            }).catch(() => {
+                                alert('Failed to create card');
+                            });
+                        });
+                        return;
+                    }
+
+                    // success: try to get returned card data
+                    const body = await res.json();
+                    // expected: body.id (numeric) and optionally body.title/body.description
+                    if (!body || !body.id) {
+                        // server didn't return an id; fallback to full reload to ensure consistency
+                        await loadLists(window._currentBoardId);
+                        return;
+                    }
+
+                    // convert temp element into a real card
+                    tempCardEl.dataset.cardId = body.id;
+                    tempCardEl.classList.remove('card--temp');
+
+                    // update content if server provided full object (title/description)
+                    const titleNode = tempCardEl.querySelector('.card-title-text');
+                    const descNode = tempCardEl.querySelector('.card-desc-text');
+                    if (body.title) titleNode.textContent = body.title;
+                    if (body.description) descNode.textContent = body.description;
+
+                    // enable and attach action handlers
+                    const editBtn = tempCardEl.querySelector('.edit-card');
+                    const delBtn = tempCardEl.querySelector('.delete-card');
+                    editBtn.disabled = false;
+                    delBtn.disabled = false;
+                    editBtn.title = 'Edit';
+                    delBtn.title = 'Delete';
+
+                    // attach handlers (use updated dataset)
+                    attachCardActionHandlers(tempCardEl);
+
+                    // Optionally: ensure Sortable acknowledges new child; Sortable watches DOM so it's fine.
+                } catch (err) {
+                    console.error(err);
+                    animateRemove(tempCardEl, () => {
+                        alert('Network error while creating card');
+                    });
+                }
+            }
+
+            // Enter key behavior
+            inp.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    const title = inp.value.trim();
+                    if (!title) return;
+                    btn.disabled = true;
+                    // optimistic: clear input immediately for snappy UX
+                    inp.value = '';
+                    optimisticCreateCard(title).finally(() => {
+                        btn.disabled = false;
+                    });
+                } else if (ev.key === 'Escape') {
+                    inp.value = '';
+                    inp.blur();
+                }
+            });
+
+            // Click behavior
+            btn.addEventListener('click', () => {
+                const title = inp.value.trim();
+                if (!title) return;
+                btn.disabled = true;
+                inp.value = '';
+                optimisticCreateCard(title).finally(() => {
+                    btn.disabled = false;
+                });
+            });
+        });
+
+       // When creating Sortable instances for each .card-list, use these event handlers.
+        // Replace your existing per-list Sortable block with the following:
+        document.querySelectorAll('.card-list').forEach(list => {
+            // destroy prior instance if stored (defensive)
+            if (list._sortableInstance && typeof list._sortableInstance.destroy === 'function') {
+                try { list._sortableInstance.destroy(); } catch (e) { /* ignore */ }
+            }
+
+            list._sortableInstance = new Sortable(list, {
+                group: 'boards',
+                animation: 150,
+                onStart: function (evt) {
+                    // expanding all lists when a drag begins
+                    expandCardLists();
+                },
+                onMove: function (evt, originalEvent) {
+                    // highlight the list currently under the dragged item (evt.to)
+                    const to = evt.to;
+                    document.querySelectorAll('.card-list').forEach(cl => {
+                        cl.classList.toggle('card-list--hover', cl === to);
+                    });
+                    // return true to allow the move; if you need to block, return false conditionally
+                    return true;
+                },
+                onEnd: async function (evt) {
+                    // collapse visual state immediately when drag ends
+                    collapseCardLists();
+
+                    // handle the change (existing logic kept)
+                    const toList = evt.to;
+                    const toListEl = toList.closest('.list');
+                    const listId = parseInt(toListEl.dataset.listId, 10);
+                    const cardIds = Array.from(toList.children).map(c => parseInt(c.dataset.cardId, 10));
+                    const movedCardId = parseInt(evt.item.dataset.cardId, 10);
+                    try {
+                        const res = await apiPOST('/api/cards/move', {
+                            card_id: movedCardId,
+                            to_list_id: listId,
+                            order_in_list: cardIds
+                        });
+                        if (!res.ok) {
+                            const j = await res.json();
+                            console.error('Move failed', j);
+                            await loadLists(boardId);
+                        } else {
+                            await loadLists(boardId);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        await loadLists(boardId);
+                    }
+                },
+                // keep your existing events like onAdd/onRemove if you use them separately
+            });
+        });
+
+        // After rendering lists, ensure the persistent CTA is present and outside the inner sortable area
+        // NOTE: renderAddListButton should append the CTA to listsWrap (the outer wrapper), not to #lists-inner.
+        // If your renderAddListButton currently appends to listsWrap, this will work. If it appends into the inner container,
+        // update it (example implementation provided below).
+        if (!document.getElementById('inline-new-list')) {
+            renderAddListButton(listsWrap); // pass the outer wrapper so CTA is put outside #lists-inner
+        }
+
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+/* Inline Rename List */
+function inlineRenameList(listId, currentTitle) {
+    const listEl = document.querySelector(`.list[data-list-id="${listId}"]`);
+    if (!listEl) return;
+    const titleSpan = listEl.querySelector('.list-title-text');
+    if (!titleSpan) return;
+    if (listEl.querySelector('.inline-list-edit')) {
+        listEl.querySelector('.inline-list-input')?.focus();
+        return;
+    }
+    titleSpan.style.display = 'none';
+    const input = document.createElement('input');
+    input.className = 'inline-list-input inline-list-edit';
+    input.value = currentTitle;
+    input.style.padding = '6px';
+    input.style.borderRadius = '6px';
+    input.style.border = '1px solid #333';
+    input.style.background = 'var(--btn-color)';
+    input.style.color = '#e0e0e0';
+    input.style.width = '160px';
+    titleSpan.parentElement.prepend(input);
+    input.focus();
+    input.select();
+
+    input.addEventListener('keydown', async (ev) => {
+        if (ev.key === 'Enter') {
+            const title = input.value.trim();
+            if (!title) return;
+            const res = await apiPATCH(`/api/lists/${listId}`, { title });
+            if (res.ok) {
+                await loadLists(currentBoardId);
+            } else {
+                const j = await res.json();
+                alert(j.error || 'Failed to rename list');
+            }
+        } else if (ev.key === 'Escape') {
+            cleanup();
+        }
+    });
+    input.addEventListener('blur', cleanup);
+    function cleanup() {
+        input.remove();
+        titleSpan.style.display = '';
+    }
+}
+
+/* Improved inline edit card
+   - replaces previous single-line editing with a properly autosizing textarea
+   - provides explicit Save / Cancel buttons
+   - keyboard shortcuts: Enter on title saves, Ctrl+Enter in description saves, Esc cancels
+   - lives inside the card element to minimize context switching
+*/
+function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
+    const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+    if (!cardEl) return;
+    // if already open, focus
+    if (cardEl.querySelector('.inline-card-edit')) {
+        cardEl.querySelector('.inline-card-title')?.focus();
+        return;
+    }
+
+    const main = cardEl.querySelector('.card-main');
+    const actions = cardEl.querySelector('div:last-child');
+    main.style.display = 'none';
+    actions.style.display = 'none';
+
+    // create editor
+    const editor = document.createElement('div');
+    editor.className = 'inline-card-edit';
+    editor.innerHTML = `
+        <input class="inline-card-title" value="${escapeAttr(currentTitle)}" placeholder="Card title">
+        <textarea class="inline-card-desc" placeholder="Add a description...">${escapeAttr(currentDesc || '')}</textarea>
+        <div class="inline-editor-actions">
+            <button class="btn ghost cancel-edit">Cancel</button>
+            <button class="btn primary save-edit">Save</button>
+        </div>
+    `;
+    cardEl.prepend(editor);
+
+    const titleInput = editor.querySelector('.inline-card-title');
+    const descInput = editor.querySelector('.inline-card-desc');
+    const btnSave = editor.querySelector('.save-edit');
+    const btnCancel = editor.querySelector('.cancel-edit');
+
+    // autosize textarea
+    function autosize(el) {
+        el.style.height = 'auto';
+        const newHeight = Math.max(64, el.scrollHeight);
+        el.style.height = newHeight + 'px';
+    }
+    autosize(descInput);
+    descInput.addEventListener('input', () => autosize(descInput));
+
+    // helper for cleanup
+    function cleanup() {
+        editor.remove();
+        main.style.display = '';
+        actions.style.display = '';
+    }
+
+    // save handler
+    let saving = false;
+    async function save() {
+        if (saving) return;
+        const title = titleInput.value.trim();
+        const description = descInput.value.trim();
+        if (!title) {
+            alert('Title cannot be empty');
+            titleInput.focus();
+            return;
+        }
+        saving = true;
+        btnSave.disabled = true;
+        btnSave.textContent = 'Saving...';
+        try {
+            const res = await apiPATCH(`/api/cards/${cardId}`, { title, description });
+            if (res.ok) {
+                await loadLists(boardId);
+            } else {
+                const j = await res.json();
+                alert(j.error || 'Failed to update card');
+                cleanup();
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Network error');
+            cleanup();
+        } finally {
+            saving = false;
+        }
+    }
+
+    // keyboard handling
+    titleInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            save();
+        } else if (e.key === 'Escape') {
+            cleanup();
+        }
+    });
+    descInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            cleanup();
+        } else if (e.key === 'Enter' && e.ctrlKey) { // Ctrl+Enter to save description
+            e.preventDefault();
+            save();
+        }
+    });
+
+    btnCancel.addEventListener('click', (e) => {
+        e.stopPropagation();
+        cleanup();
+    });
+    btnSave.addEventListener('click', (e) => {
+        e.stopPropagation();
+        save();
+    });
+
+    // focus first input
+    titleInput.focus();
+    titleInput.select();
+}
+
+/* Utility */
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, (m) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;" })[m]);
+}
+function escapeAttr(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* cancel modal overlay bindings for old modal (kept in DOM but not used heavily) */
+document.getElementById('modal-cancel').addEventListener('click', () => {
+    document.getElementById('modal-overlay').style.display = 'none';
+});
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-overlay')) document.getElementById('modal-overlay').style.display = 'none';
+});
+
+/* pending-invite cancel helper used by dynamically inserted buttons */
+async function cancelInvite(id) {
+    if (!confirm('Cancel this invite?')) return;
+    try {
+        const res = await apiDELETE(`/invites/${id}`);
+        if (res.ok) await refreshModalData();
+        else {
+            const j = await res.json();
+            alert(j.error || 'Failed to cancel invite');
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+</script>
+</body>
+</html>
