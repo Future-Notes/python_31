@@ -629,10 +629,6 @@
         /* small screens */
         @media (max-width: 900px) {
             .sidebar { display:none; }
-            .desktop-nav { display:none; }
-            .toggle-mobile-nav { display:block; }
-            .mobile-sub-header { display:block; }
-            #storage-container { display:none; }
             .lists-wrap { padding:12px; gap:10px; }
             .list { min-width:260px; }
         }
@@ -1129,11 +1125,12 @@ async function loadStartPageBoards() {
         if (!boardsCache || boardsCache.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'board-card create-large';
+            empty.id = 'start-page-new-board';
             empty.style.display='flex'; empty.style.alignItems='center'; empty.style.justifyContent='center'; empty.style.height='120px';
             empty.innerHTML = `<div style="text-align:center; width:100%"><div style="font-size:36px;">＋</div><div style="opacity:0.8; margin-top:8px">Create your first board</div></div>`;
             empty.addEventListener('click', () => {
                 // open inline new board input (will create board)
-                showInlineNewBoard();
+                showInlineNewBoard(empty.id);
             });
             grid.appendChild(empty);
             return;
@@ -1239,7 +1236,9 @@ function highlightActiveBoard() {
 /* Inline board create / rename UI */
 document.getElementById('create-board-btn').addEventListener('click', (e) => {
     e.stopPropagation();
-    showInlineNewBoard();
+    const input = document.getElementById('new-board-input');
+    input.focus();
+    return;
 });
 
 /* ---------- Inline Add/Edit for Boards ---------- */
@@ -1319,11 +1318,83 @@ document.getElementById('new-board-input').addEventListener('keydown', async (ev
     }
 });
 
-function showInlineNewBoard() {
-    const input = document.getElementById('new-board-input');
+function showInlineNewBoard(wrapperId = 'boards-wrapper') {
+    const wrapper = document.getElementById(wrapperId);
+    if (!wrapper) return;
+
+    // Prevent multiple inline editors
+    if (document.getElementById('inline-new-board-input')) return;
+
+    // Clone original content
+    const originalNodes = Array.from(wrapper.childNodes).map(node => node.cloneNode(true));
+
+    // Clear wrapper
+    wrapper.innerHTML = '';
+
+    // Create container for layout
+    const inlineContainer = document.createElement('div');
+    inlineContainer.id = 'inline-new-board-container';
+    inlineContainer.style.display = 'flex';
+    inlineContainer.style.alignItems = 'center';
+    inlineContainer.style.gap = '8px';
+    inlineContainer.style.flexWrap = 'wrap';
+
+    // Create input
+    const input = document.createElement('input');
+    input.id = 'inline-new-board-input';
+    input.type = 'text';
+    input.placeholder = 'Enter board name';
+
+    // Create OK button
+    const okButton = document.createElement('button');
+    okButton.textContent = 'OK';
+
+    // Create Cancel button
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel';
+
+    // Append input and buttons to container
+    inlineContainer.appendChild(input);
+    inlineContainer.appendChild(okButton);
+    inlineContainer.appendChild(cancelButton);
+
+    // Append container to wrapper
+    wrapper.appendChild(inlineContainer);
+
     input.focus();
-    return;
+
+    async function finalizeCreation() {
+        const title = input.value.trim();
+        if (!title) return;
+
+        const res = await createNewBoard(title);
+        if (res.ok) {
+            // Restore original content
+            wrapper.innerHTML = '';
+            originalNodes.forEach(node => wrapper.appendChild(node.cloneNode(true)));
+            await loadBoards();
+            await loadStartPageBoards();
+        } else {
+            const j = await res.json();
+            alert(j.error || 'Failed to create board');
+        }
+    }
+
+    function cancelCreation() {
+        wrapper.innerHTML = '';
+        originalNodes.forEach(node => wrapper.appendChild(node.cloneNode(true)));
+    }
+
+    // Event listeners
+    input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') finalizeCreation();
+        else if (ev.key === 'Escape') cancelCreation();
+    });
+
+    okButton.addEventListener('click', finalizeCreation);
+    cancelButton.addEventListener('click', cancelCreation);
 }
+
 
 /* ---------- Inline rename for boards ---------- */
 async function inlineRenameBoard(boardId, currentTitle) {
