@@ -40,10 +40,344 @@
             .catch(err => console.error(err));
     </script>
 
-    <!-- MAIN STYLES (You allowed edits below - header and the first small block above remain untouched) -->
     <style>
-        /* Keep the color variables defined above; only extend/override other presentation styles here. */
+        :root {
+        --bg-color:  #2c2c2c;
+        --ctr-color: #1e1e1e;
+        --btn-color: #424242;
+        }
 
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: #e0e0e0;
+        }
+
+        header {
+            background-color: var(--hdr-color);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            position: relative;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: #f2f2f2;
+        }
+
+        nav {
+            display: flex;
+            gap: 20px;
+        }
+
+        nav a {
+            text-decoration: none;
+        }
+
+        .nav-link {
+            position: relative;
+            color: white;
+            font-size: 18px;
+            padding: 5px 0;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 0;
+            background-color: transparent;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        .nav-link:hover::after {
+            width: 100%;
+            background-color: lightgray;
+        }
+
+        .nav-link.active::after {
+            width: 100%;
+            background-color: white;
+        }
+
+        .homepage-link {
+            text-decoration: none;
+            background-color: var(--ctr-color);
+            color: #e0e0e0;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        header a:hover {
+            background-color: #5c5c5c;
+        }
+
+        .mobile-sub-header {
+            display: none;
+            background-color: var(--bg-color);
+            padding: 10px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            position: relative;
+        }
+
+        .mobile-sub-header a {
+            display: block;
+            color: white;
+            text-decoration: none;
+            padding: 10px;
+            font-size: 18px;
+        }
+
+        .mobile-sub-header a.active::after {
+            content: "";
+            display: block;
+            height: 2px;
+            width: 100%;
+            background-color: white;
+        }
+
+        .mobile-sub-header a:hover::after {
+            background-color: lightgray;
+        }
+
+        .desktop-nav {
+            display: flex;
+            gap: 20px;
+            margin: 0 auto;
+        }
+
+        .toggle-mobile-nav {
+            background: none;
+            border: none;
+            color: #f2f2f2;
+            font-size: 24px;
+            cursor: pointer;
+            display: none;
+            margin-right: 10px;
+        }
+
+        .mobile-header {
+            display: none;
+            align-items: center;
+        }
+
+        @media (max-width: 600px) {
+            .desktop-nav {
+                display: none;
+            }
+            
+            .mobile-header {
+                display: flex;
+            }
+            
+            .toggle-mobile-nav {
+                display: block;
+            }
+            
+            .homepage-link {
+                display: none;
+            }
+            #storage-container {
+                margin: 0 0 !important;
+                margin-right: 166px !important;
+            }
+        }
+
+        /* Container for counter + bar */
+        #storage-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            width: 200px;  /* adjust to your header size */
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            margin: 0 10px;
+        }
+
+        /* Text counter */
+        #storage-counter {
+            margin-bottom: 4px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        /* Background of progress bar */
+        #storage-bar-bg {
+            width: 100%;
+            height: 8px;
+            background-color: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        /* Filled portion */
+        #storage-bar-fill {
+            width: 0%; /* dynamically updated by JS */
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #81c784);
+            border-radius: 4px 0 0 4px;
+            transition: width 0.3s ease, background 0.3s ease;
+        }
+
+        /* Red when almost full */
+        #storage-bar-fill.almost-full {
+            background: linear-gradient(90deg, #ffb74d , #e53935);
+        }
+
+        #storage-modal { position: fixed; inset:0; display:none; align-items:center; justify-content:center; background: rgba(0,0,0,0.6); z-index:2000; }
+        #storage-modal .panel { width: 760px; max-width:96%; background: linear-gradient(90deg,#1b1b1b,#121212); color:white; border-radius:12px; padding:20px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 3px solid #ffcc00; }
+        #storage-modal .header { display:flex; align-items:center; gap:12px; }
+        #storage-modal .logo-badge { background:#ffcc00; color:#111; padding:8px 12px; border-radius:8px; font-weight:800; }
+        #storage-modal .big { font-size:28px; font-weight:800; }
+        #storage-modal .advert { margin-top:12px; background: linear-gradient(90deg,#ff7a18,#af002d); padding:12px; border-radius:8px; text-align:center; font-weight:700; }
+        #storage-modal .invites { margin-top:16px; display:flex; gap:12px; }
+        #storage-modal .invites .left, #storage-modal .invites .right { flex:1; }
+        #storage-modal .input-row { display:flex; gap:8px; margin-top:8px; }
+        #storage-modal .btn { padding:10px 14px; border-radius:8px; background:#333; color:white; border:none; cursor:pointer; }
+        #storage-modal .btn.primary { background: linear-gradient(90deg,#ffcc00,#ff8a00); color:#111; font-weight:700; }
+        #storage-modal .pending-list { max-height:220px; overflow:auto; margin-top:8px; border-top:1px solid rgba(255,255,255,0.06); padding-top:8px; }
+        .almost-full { background: linear-gradient(90deg,#e74c3c,#c0392b) !important; }
+        
+        /* Infinite storage rainbow bar */
+        .infinite-storage {
+            background-image: linear-gradient(
+                270deg,
+                #ff0000,
+                #ff7f00,
+                #ffff00,
+                #00ff00,
+                #0000ff,
+                #4b0082,
+                #8f00ff
+            ) !important;
+            background-size: 1400% 1400% !important;
+            background-position: 0% 50% !important;
+            animation: rainbowSlide 5s linear infinite !important;
+        }
+
+        @keyframes rainbowSlide {
+            0% {
+                background-position: 0% 50% !important;
+            }
+            50% {
+                background-position: 100% 50% !important;
+            }
+            100% {
+                background-position: 0% 50% !important;
+            }
+        }
+
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #modal {
+            background-color: var(--ctr-color);
+            padding: 20px 30px;
+            border-radius: 12px;
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+        }
+
+        #username, #password {
+            width: calc(100% - 24px);
+            margin: 10px 0;
+            background-color: var(--btn-color);
+            border: 1px solid #424242;
+            color: #E0E0E0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        input {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 10px;
+            outline: none;
+            transition: background-color 0.2s;
+        }
+
+        button {
+            background-color: var(--btn-color);
+            color: #e0e0e0;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        input:focus {
+            background-color: #5a5a5a;
+        }
+
+        button:hover {
+            background-color: #616161;
+        }
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--hdr-color);
+            color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            background-size: cover;
+            background-position: center;
+        }
+        
+        .profile-pic.no-picture {
+            background-color: #cc4f4f;
+            color: white;
+            border-radius: 50%;
+        }
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            animation: fadeIn 0.2s forwards 0.3s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
         /* Base and layout */
         :root {
             --gap: 12px;
@@ -56,78 +390,10 @@
             --glass: rgba(255,255,255,0.02);
             --transition: 180ms cubic-bezier(.2,.9,.2,1);
         }
+    </style>
 
-        * { box-sizing: border-box; }
-        html, body { height: 100%; }
-        body {
-            margin: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            color: #e0e0e0;
-            -webkit-font-smoothing:antialiased;
-            -moz-osx-font-smoothing:grayscale;
-        }
-
-        /* header is application-wide and must remain visually compatible with other pages.
-           We keep structure intact while only adding subtle improvements via non-invasive selectors. */
-        header {
-            background-color: var(--hdr-color);
-            padding: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-            position: relative;
-        }
-
-        /* Navigation */
-        .desktop-nav { display:flex; gap: 18px; align-items:center; }
-        .nav-link { position: relative; color: white; font-size: 16px; padding: 6px 4px; border-radius: 6px; transition: background var(--transition), color var(--transition); text-decoration: none; }
-        .nav-link:hover { background: rgba(255,255,255,0.03); }
-        .nav-link::after { content: ""; display:block; height:2px; width:0; background:transparent; transition: width var(--transition), background var(--transition); }
-        .nav-link:hover::after { width:100%; background: lightgray; }
-        .nav-link.active::after { width:100%; background: white; }
-
-        .homepage-link { text-decoration: none; background-color: var(--ctr-color); color: #e0e0e0; padding: 8px 14px; border-radius: 8px; font-size: 16px; display:flex; align-items:center; gap:8px; }
-        .homepage-link h1 { margin:0; font-size:20px; font-weight:700; color: #f2f2f2; }
-
-        .mobile-sub-header { display:none; background-color: var(--bg-color); padding: 10px 0; text-align:center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index:1000; position: relative; }
-        .mobile-sub-header a { display:block; color: white; text-decoration:none; padding: 8px 10px; font-size: 16px; }
-
-        .toggle-mobile-nav { background:none; border:none; color:#f2f2f2; font-size:24px; cursor:pointer; display:none; }
-
-        /* Storage indicator (compact, unobtrusive) */
-        #storage-container {
-            display:flex;
-            flex-direction:column;
-            align-items:flex-end;
-            width: 220px;
-            font-size: 12px;
-            margin: 0 10px;
-            gap:6px;
-        }
-        #storage-counter { font-weight:600; color: #ffffff; font-size: 13px; }
-        #storage-bar-bg { width:100%; height:10px; background: var(--glass); border-radius: 999px; overflow:hidden; border: 1px solid rgba(255,255,255,0.02); }
-        #storage-bar-fill { width:0%; height:100%; background: linear-gradient(90deg,#4caf50,#81c784); transition: width 300ms ease, background 300ms ease; border-radius:999px; }
-
-        /* Small interactive hints */
-        #storage-container[role="button"], #profile-pic { cursor: pointer; }
-        #storage-container:focus { outline: 2px solid rgba(255,204,0,0.15); border-radius:8px; }
-
-        /* Profile */
-        .profile-pic {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background-color: var(--hdr-color);
-            color: #e0e0e0;
-            display:flex; justify-content:center; align-items:center;
-            font-size:18px; font-weight:700; text-transform:uppercase; cursor:pointer;
-            background-size:cover; background-position:center;
-            transition: transform var(--transition);
-        }
-        .profile-pic:active { transform: translateY(1px); }
+    <!-- MAIN STYLES (You allowed edits below - header and the first small block above remain untouched) -->
+    <style>
 
         /* App layout */
         .app-wrap { display:flex; height: calc(100vh - 64px); gap: var(--gap); }
