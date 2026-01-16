@@ -389,14 +389,15 @@
             --success-grad: linear-gradient(90deg,#4caf50,#81c784);
             --glass: rgba(255,255,255,0.02);
             --transition: 180ms cubic-bezier(.2,.9,.2,1);
+            --list-bg-color: linear-gradient(180deg,var(--ctr-color), #131313);
         }
     </style>
-
+ 
     <!-- MAIN STYLES (You allowed edits below - header and the first small block above remain untouched) -->
     <style>
 
         /* App layout */
-        .app-wrap { display:flex; height: calc(100vh - 64px); gap: var(--gap); }
+        .app-wrap { display:flex; height: calc(100vh - 100px); gap: var(--gap); }
         .sidebar { width: 240px; background: linear-gradient(180deg,var(--ctr-color), #111); padding: 14px; box-shadow: 2px 0 8px rgba(0,0,0,0.6); overflow:auto; border-right: 1px solid rgba(255,255,255,0.02); }
         .sidebar h3 { margin:0 0 8px 0; font-size:14px; color:#fff; }
         .boards-list { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
@@ -413,7 +414,7 @@
         .board-title { font-size:18px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80%; }
 
         .lists-wrap { padding:12px; display:flex; gap:16px; overflow-x:auto; align-items:flex-start; height:100%; align-content:flex-start; }
-        .list { min-width:280px; max-width:340px; background: linear-gradient(180deg,var(--ctr-color), #131313); padding:12px; border-radius:10px; box-shadow: 0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:10px; }
+        .list { min-width:280px; max-width:340px; background: var(--list-bg-color); padding:12px; border-radius:10px; box-shadow: 0 6px 18px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:10px; }
         .list h4 { margin:0; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:6px; }
         .card-list { min-height:40px; display:flex; flex-direction:column; gap:10px; }
 
@@ -645,6 +646,13 @@
             .lists-wrap { padding:12px; gap:10px; }
             .list { min-width:260px; }
         }
+        .options-menu-color-swatch {
+            transition: transform 0.15s, border 0.15s;
+        }
+        .options-menu-color-swatch:hover {
+            transform: scale(1.1);
+        }
+
     </style>
 
     <!-- SortableJS CDN (drag & drop) -->
@@ -745,7 +753,7 @@
         </div>
 
         <div style="margin-top:12px">
-            <input id="new-board-input" placeholder="+ Add board" style="width:100%; padding:8px; border-radius:6px; background:var(--btn-color); border:1px solid #333; color:#e0e0e0;">
+            <input id="new-board-input" placeholder="+ Add board" style="width:96%; padding:8px; border-radius:6px; background:var(--btn-color); border:1px solid #333; color:#e0e0e0;">
         </div>
     </aside>
 
@@ -763,8 +771,7 @@
             <div class="board-header">
                 <div class="board-title" id="board-title">Select a board</div>
                 <div>
-                    <button id="rename-board-btn" class="small-btn" style="display:none">Rename</button>
-                    <button id="delete-board-btn" class="small-btn" style="display:none">Delete</button>
+                    <button id="actions-menu-btn" class="small-btn">•••</button>
                 </div>
             </div>
 
@@ -774,6 +781,11 @@
         </div>
 
     </main>
+</div>
+
+<div id="actions-menu-board">
+    <button id="rename-board-btn" class="menu-item">Rename</button>
+    <button id="delete-board-btn" class="menu-item">Delete</button>
 </div>
 
 <!-- Modals (kept but not used for create/rename flows) -->
@@ -813,6 +825,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (res.status === 200) {
                 updateStorageCounter();
                 loadUserProfile();
+                let currentUserId = (await res.json()).user_id;
+                sessionStorage.setItem('current_user_id', currentUserId);
                 return true;
             }
             if (res.status === 403) {
@@ -974,6 +988,56 @@ function closeStorageModal(){
     document.getElementById('storage-modal').style.display = 'none';
     document.getElementById('invite-feedback').textContent = '';
 }
+
+function adjustColor(hex, amount = 20) {
+    let usePound = false;
+    if (hex[0] === '#') { hex = hex.slice(1); usePound = true; }
+    let num = parseInt(hex, 16);
+    let r = (num >> 16) + amount;
+    let g = ((num >> 8) & 0x00FF) + amount;
+    let b = (num & 0x0000FF) + amount;
+
+    r = Math.min(255, Math.max(0, r));
+    g = Math.min(255, Math.max(0, g));
+    b = Math.min(255, Math.max(0, b));
+
+    const newHex = (r << 16 | g << 8 | b).toString(16).padStart(6, '0');
+    return (usePound ? '#' : '') + newHex;
+}
+
+function getContrastYIQ(hexcolor){
+    hexcolor = hexcolor.replace('#','');
+    const r = parseInt(hexcolor.substr(0,2),16);
+    const g = parseInt(hexcolor.substr(2,2),16);
+    const b = parseInt(hexcolor.substr(4,2),16);
+    const yiq = ((r*299)+(g*587)+(b*114))/1000;
+    return (yiq >= 128) ? '#000' : '#fff';
+}
+
+function applyListTheme(listEl, listColor) {
+    if (!listColor) return;
+    listEl.style.background = listColor;
+    listEl.style.color = getContrastYIQ(listColor);
+
+    // Select all interactive or visual child elements
+    const elements = listEl.querySelectorAll('input, textarea, button, .card');
+    const lighterColor = adjustColor(listColor, 30); // lighter background for elements
+
+    elements.forEach(el => {
+        // Set background if element is input, textarea, card, etc.
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.classList.contains('card')) {
+            el.style.backgroundColor = lighterColor;
+            el.style.color = getContrastYIQ(lighterColor);
+            el.style.borderColor = adjustColor(listColor, -20); // optional border tint
+        }
+        if (el.tagName === 'BUTTON') {
+            el.style.backgroundColor = adjustColor(listColor, -10);
+            el.style.color = getContrastYIQ(adjustColor(listColor, -10));
+        }
+    });
+}
+
+
 
 async function refreshModalData() {
     try {
@@ -1336,13 +1400,13 @@ function showInlineNewBoard(wrapperId = 'boards-wrapper') {
     if (!wrapper) return;
 
     // Prevent multiple inline editors
-    if (document.getElementById('inline-new-board-input')) return;
+    if (document.getElementById('inline-new-board-container')) return;
 
-    // Clone original content
-    const originalNodes = Array.from(wrapper.childNodes).map(node => node.cloneNode(true));
-
-    // Clear wrapper
-    wrapper.innerHTML = '';
+    // Move original children into a fragment (this preserves event listeners and state)
+    const originalFragment = document.createDocumentFragment();
+    while (wrapper.firstChild) {
+        originalFragment.appendChild(wrapper.firstChild);
+    }
 
     // Create container for layout
     const inlineContainer = document.createElement('div');
@@ -1373,7 +1437,6 @@ function showInlineNewBoard(wrapperId = 'boards-wrapper') {
 
     // Append container to wrapper
     wrapper.appendChild(inlineContainer);
-
     input.focus();
 
     async function finalizeCreation() {
@@ -1382,9 +1445,10 @@ function showInlineNewBoard(wrapperId = 'boards-wrapper') {
 
         const res = await createNewBoard(title);
         if (res.ok) {
-            // Restore original content
+            // Clear wrapper and call loader (or re-render as needed)
             wrapper.innerHTML = '';
-            originalNodes.forEach(node => wrapper.appendChild(node.cloneNode(true)));
+            // If you want to put original content back after successful creation, append originalFragment.
+            // But typically loadBoards() will replace the UI so we just call it.
             await loadBoards();
             await loadStartPageBoards();
         } else {
@@ -1395,17 +1459,22 @@ function showInlineNewBoard(wrapperId = 'boards-wrapper') {
 
     function cancelCreation() {
         wrapper.innerHTML = '';
-        originalNodes.forEach(node => wrapper.appendChild(node.cloneNode(true)));
+        loadStartPageBoards();
     }
 
     // Event listeners
     input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') finalizeCreation();
-        else if (ev.key === 'Escape') cancelCreation();
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            finalizeCreation();
+        } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            cancelCreation();
+        }
     });
 
-    okButton.addEventListener('click', finalizeCreation);
-    cancelButton.addEventListener('click', cancelCreation);
+    okButton.addEventListener('click', (e) => { e.preventDefault(); finalizeCreation(); });
+    cancelButton.addEventListener('click', (e) => { e.preventDefault(); cancelCreation(); });
 }
 
 
@@ -1470,9 +1539,102 @@ async function selectBoard(boardId) {
     location.hash = `#board-${boardId}`;
     // show board area and hide start page
     hideStartPage();
+    setupActionsMenuButton();
     window._currentBoardId = boardId; // make globally accessible for inline new list
     // load lists for that board
     await loadLists(boardId);
+}
+
+function setupActionsMenuButton() {
+    const btn = document.getElementById('actions-menu-btn');
+    const menu = document.getElementById('actions-menu-board');
+
+    // Apply dynamic styles to the menu container
+    Object.assign(menu.style, {
+        position: 'absolute',
+        display: 'none',
+        background: 'var(--ctr-color)',
+        borderRadius: '6px',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.15)',
+        padding: '4px 0',
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '0',
+    });
+
+    // Apply dynamic styles to all menu items
+    menu.querySelectorAll('.menu-item').forEach(item => {
+        Object.assign(item.style, {
+            all: 'unset',          // isolate from global styles
+            display: 'block',      // stack vertically
+            width: 'auto',         // do not stretch full width
+            padding: '6px 12px',
+            fontSize: '14px',
+            lineHeight: '1.4',
+            cursor: 'pointer',
+            borderRadius: '4px',
+        });
+
+        // Add hover effect dynamically
+        item.addEventListener('mouseenter', () => {
+            item.style.backgroundColor = 'var(--hdr-color)';
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.backgroundColor = '';
+        });
+    });
+
+    btn.onclick = (ev) => {
+        ev.stopPropagation();
+
+        // Show temporarily to measure
+        menu.style.display = 'block';
+        menu.style.visibility = 'hidden';
+
+        const btnRect = btn.getBoundingClientRect();
+        const menuRect = menu.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        const spaceBelow = viewportHeight - btnRect.bottom;
+        const spaceAbove = btnRect.top;
+        const spaceRight = viewportWidth - btnRect.left;
+        const spaceLeft = btnRect.right;
+
+        let top, left;
+
+        // Vertical placement
+        if (spaceBelow >= menuRect.height) {
+            top = btnRect.bottom;
+        } else if (spaceAbove >= menuRect.height) {
+            top = btnRect.top - menuRect.height;
+        } else {
+            top = Math.max(8, Math.min(btnRect.bottom, viewportHeight - menuRect.height - 8));
+        }
+
+        // Horizontal placement
+        if (spaceRight >= menuRect.width) {
+            left = btnRect.left;
+        } else if (spaceLeft >= menuRect.width) {
+            left = btnRect.right - menuRect.width;
+        } else {
+            left = Math.max(8, Math.min(btnRect.left, viewportWidth - menuRect.width - 8));
+        }
+
+        menu.style.top = (top + window.scrollY) + 'px';
+        menu.style.left = (left + window.scrollX) + 'px';
+        menu.style.visibility = 'visible';
+        menu.style.display = 'block';
+
+        function hideMenu() {
+            menu.style.display = 'none';
+            document.removeEventListener('click', hideMenu);
+        }
+
+        document.addEventListener('click', hideMenu);
+    };
 }
 
 function renderAddListButton() {
@@ -1852,7 +2014,7 @@ function makeTempId() {
     return 'temp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 }
 
-// ---------- Updated loadLists: separate sortable area and protect CTA ----------
+// ---------- Updated loadLists: single options button with generated menu ----------
 async function loadLists(boardId) {
     try {
         const lists = await apiGET(`/api/lists?board_id=${boardId}`);
@@ -1869,8 +2031,275 @@ async function loadLists(boardId) {
         inner.style.alignItems = 'flex-start';
         listsWrap.appendChild(inner);
 
+        // inject options menu styles (once)
+        ensureOptionsMenuStyles();
+
         // render all the lists in order of their order value
         lists.sort((a, b) => a.order - b.order);
+
+        // maintain single open menu reference so we can close when necessary
+        let openMenu = null;
+        let openMenuCleanup = null;
+
+        // function to create and show the options menu for a given list
+        function showOptionsMenu(listId, listTitle, anchorBtn) {
+            // close any open menu first
+            if (openMenu) {
+                closeOptionsMenu();
+            }
+
+            const menu = document.createElement('div');
+            menu.className = 'options-menu';
+            menu.setAttribute('role', 'menu');
+            menu.tabIndex = -1; // allow programmatic focus
+
+            // add a header section with a close button and a title and vissualy separate
+            const header = document.createElement('div');
+            // style the header with js styling
+            header.style.padding = '8px 12px';
+            header.style.borderBottom = '1px solid var(--hdr-color)';
+            header.style.position = 'relative';
+            const headerTitle = document.createElement('div');
+            headerTitle.className = 'options-menu-header-title';
+            headerTitle.textContent = `List: ${listTitle}`;
+            const headerCloseBtn = document.createElement('button');
+            headerCloseBtn.className = 'options-menu-header-close';
+            headerCloseBtn.type = 'button';
+            headerCloseBtn.innerHTML = '&times;';
+            // Overwrite some default button styles and position it in the header of the menu
+            headerCloseBtn.style.position = 'absolute';
+            headerCloseBtn.style.top = '0px';
+            headerCloseBtn.style.right = '0px';
+            headerCloseBtn.style.margin = '5px';
+            headerCloseBtn.style.padding = '5px';
+            headerCloseBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeOptionsMenu();
+            });
+            header.appendChild(headerTitle);
+            header.appendChild(headerCloseBtn);
+            menu.appendChild(header);
+            //add a divider
+            const headerDivider = document.createElement('div');
+            headerDivider.className = 'options-menu-header-divider';
+            menu.appendChild(headerDivider);
+
+            // --- Menu content ---
+            // Copy this list with the same title and cards
+            const copyItem = document.createElement('button');
+            copyItem.className = 'options-menu-item';
+            copyItem.type = 'button';
+            copyItem.textContent = 'Copy List';
+            copyItem.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                closeOptionsMenu();
+                // Immediately proceed to making a copy since the backend already has the title, only provide list id in the url
+                const res = await apiPOST(`/api/lists/copy/${listId}`);
+                if (res.ok) {
+                    await loadLists(boardId);
+                } else {
+                    const j = await res.json().catch(() => ({}));
+                    alert(j.error || 'Failed to copy list');
+                }
+            });
+            // Rename
+            const renameItem = document.createElement('button');
+            renameItem.className = 'options-menu-item';
+            renameItem.type = 'button';
+            renameItem.textContent = 'Rename';
+            renameItem.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                closeOptionsMenu();
+                // call existing inline rename helper
+                inlineRenameList(listId, listTitle);
+            });
+
+            // Delete
+            const deleteItem = document.createElement('button');
+            deleteItem.className = 'options-menu-item options-menu-item--danger';
+            deleteItem.type = 'button';
+            deleteItem.textContent = 'Delete';
+            deleteItem.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                if (!confirm('Delete list and its cards?')) {
+                    return;
+                }
+                // show immediate feedback by disabling menu while request in progress
+                deleteItem.disabled = true;
+                try {
+                    const res = await apiDELETE(`/api/lists/${listId}`);
+                    if (res.ok) {
+                        closeOptionsMenu();
+                        await loadLists(boardId);
+                    } else {
+                        const j = await res.json().catch(() => ({}));
+                        alert(j.error || 'Failed to delete list');
+                        deleteItem.disabled = false;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while deleting list');
+                    deleteItem.disabled = false;
+                }
+            });
+
+            // Divider
+            const hr = document.createElement('div');
+            hr.className = 'options-menu-divider';
+
+            // --- Color picker grid ---
+            const colorContainer = document.createElement('div');
+            colorContainer.className = 'options-menu-color-container';
+            colorContainer.style.display = 'flex';
+            colorContainer.style.flexWrap = 'wrap';
+            colorContainer.style.gap = '6px';
+            colorContainer.style.margin = '6px 0';
+            colorContainer.style.justifyContent = 'flex-start';
+
+            const colors = [
+                '#FF6B6B', // Red
+                '#FFAD69', // Orange
+                '#FFD93D', // Yellow
+                '#6BCB77', // Green
+                '#4D96FF', // Blue
+                '#845EC2', // Purple
+                '#FF70A6', // Pink
+                '#00C9A7', // Teal
+                '#F9F871', // Light yellow
+                null       // Default / no color
+            ];
+
+            colors.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'options-menu-color-swatch';
+                swatch.style.width = '32px';
+                swatch.style.height = '32px';
+                swatch.style.borderRadius = '8px';
+                swatch.style.cursor = 'pointer';
+                swatch.style.backgroundColor = color || 'var(--btn-color)'; // show default theme if null
+                swatch.style.border = '2px solid transparent';
+                swatch.title = color || 'Default';
+
+                swatch.addEventListener('mouseover', () => swatch.style.border = '2px solid #fff');
+                swatch.addEventListener('mouseout', () => swatch.style.border = '2px solid transparent');
+
+                swatch.addEventListener('click', async (ev) => {
+                    ev.stopPropagation();
+                    try {
+                        // send null to backend if no color
+                        const payloadColor = color === null ? null : color;
+                        const res = await apiPATCH(`/api/lists/color/${listId}`, { color: payloadColor });
+                        if (!res.ok) {
+                            const j = await res.json().catch(() => ({}));
+                            alert(j.error || 'Failed to update color');
+                            return;
+                        }
+                        // apply instantly without reload
+                        const listEl = document.querySelector(`.list[data-list-id="${listId}"]`);
+                        if (color === null) {
+                            loadLists(boardId); // reload to reset to default theme
+                            closeOptionsMenu();
+                        } else {
+                            if (listEl) applyListTheme(listEl, payloadColor);
+                            closeOptionsMenu();
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('Network error while updating color');
+                    }
+                });
+
+                colorContainer.appendChild(swatch);
+            });
+
+            // Cancel / Close button
+            const cancelItem = document.createElement('button');
+            cancelItem.className = 'options-menu-item';
+            cancelItem.type = 'button';
+            cancelItem.textContent = 'Close';
+            cancelItem.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeOptionsMenu();
+            });
+
+            // assemble
+            menu.appendChild(colorContainer);
+            menu.appendChild(hr.cloneNode());
+            menu.appendChild(copyItem);
+            menu.appendChild(renameItem);
+            menu.appendChild(deleteItem);
+            menu.appendChild(hr);
+            menu.appendChild(cancelItem);
+            // --- end menu content ---
+
+            document.body.appendChild(menu);
+
+            // Position the menu relative to the anchor button
+            positionMenuNear(menu, anchorBtn);
+
+            // focus management
+            menu.focus();
+
+            // close on outside click or Escape
+            function onDocClick(e) {
+                if (!menu.contains(e.target) && e.target !== anchorBtn) {
+                    closeOptionsMenu();
+                }
+            }
+            function onKeyDown(e) {
+                if (e.key === 'Escape') closeOptionsMenu();
+            }
+            function onScrollOrResize() {
+                // reposition so it stays near anchor
+                positionMenuNear(menu, anchorBtn);
+            }
+
+            document.addEventListener('click', onDocClick);
+            window.addEventListener('resize', onScrollOrResize);
+            window.addEventListener('scroll', onScrollOrResize, true);
+            document.addEventListener('keydown', onKeyDown);
+
+            openMenu = menu;
+            openMenuCleanup = () => {
+                document.removeEventListener('click', onDocClick);
+                window.removeEventListener('resize', onScrollOrResize);
+                window.removeEventListener('scroll', onScrollOrResize, true);
+                document.removeEventListener('keydown', onKeyDown);
+            };
+        }
+
+        function closeOptionsMenu() {
+            if (!openMenu) return;
+            try { openMenuCleanup && openMenuCleanup(); } catch (e) { /* ignore */ }
+            try { openMenu.remove(); } catch (e) { /* ignore */ }
+            openMenu = null;
+            openMenuCleanup = null;
+        }
+
+        // positions an absolutely positioned menu near the anchor button with viewport clipping
+        function positionMenuNear(menu, anchorBtn) {
+            const rect = anchorBtn.getBoundingClientRect();
+            const menuWidth = 260; // fixed suggested width
+            const menuHeight = 200; // estimate; adjust after insertion
+            menu.style.position = 'absolute';
+            menu.style.minWidth = menuWidth + 'px';
+            menu.style.zIndex = 10000;
+
+            // default: below and aligned to right edge of anchor
+            let left = rect.right - menuWidth;
+            let top = rect.bottom + window.scrollY + 6;
+
+            // ensure left not off-screen
+            if (left < 8) left = 8;
+            // ensure top not off-screen bottom
+            if (top + menuHeight > window.scrollY + window.innerHeight) {
+                // place above anchor instead
+                top = rect.top + window.scrollY - menuHeight - 6;
+            }
+
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+        }
 
         // Make lists sortable (horizontal) — but only the .list elements are draggable.
         // Destroy prior instance if exists to avoid duplicates.
@@ -1901,12 +2330,12 @@ async function loadLists(boardId) {
         for (const l of lists) {
             const col = document.createElement('div');
             col.className = 'list';
+            col.style.background = l.color || 'var(--list-bg-color)';
             col.dataset.listId = l.id;
             col.innerHTML = `<h4 style="display:flex;align-items:center;gap:8px">
                     <span class="list-title-text">${escapeHtml(l.title)}</span>
                     <span style="display:flex;gap:6px;">
-                        <button class="small-btn rename-list" title="Rename">✎</button>
-                        <button class="small-btn delete-list" title="Delete">🗑</button>
+                        <button class="small-btn options-btn" title="Options" aria-haspopup="true" aria-expanded="false">⋯</button>
                     </span>
                 </h4>
                 <div class="card-list" id="cards-for-${l.id}"></div>
@@ -1916,25 +2345,28 @@ async function loadLists(boardId) {
                 </div>`;
             inner.appendChild(col);
 
+            applyListTheme(col, l.color);
+
             // attach rename-on-dblclick for list title
             const titleSpan = col.querySelector('.list-title-text');
             titleSpan.addEventListener('dblclick', () => inlineRenameList(l.id, l.title));
 
-            // attach rename/delete handlers (rename now inline)
-            col.querySelector('.rename-list').addEventListener('click', (ev) => {
+            // attach options handler to the newly created options button
+            const optionsBtn = col.querySelector('.options-btn');
+            optionsBtn.addEventListener('click', (ev) => {
                 ev.stopPropagation();
-                inlineRenameList(l.id, l.title);
-            });
-            col.querySelector('.delete-list').addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                if (!confirm('Delete list and its cards?')) return;
-                const res = await apiDELETE(`/api/lists/${l.id}`);
-                if (res.ok) {
-                    await loadLists(boardId);
-                } else {
-                    const j = await res.json();
-                    alert(j.error || 'Failed to delete list');
+                // toggle menu
+                if (openMenu) {
+                    closeOptionsMenu();
+                    return;
                 }
+                showOptionsMenu(l.id, l.title, optionsBtn);
+            });
+
+            // close menu if user clicks the list area (prevent menu from staying open when interacting with cards)
+            col.addEventListener('click', () => {
+                // nothing else; clicking list should close open menu if any
+                if (openMenu) closeOptionsMenu();
             });
 
             const listEl = col.querySelector('.card-list');
@@ -2011,10 +2443,8 @@ async function loadLists(boardId) {
                     // enable and attach action handlers
                     const editBtn = tempCardEl.querySelector('.edit-card');
                     const delBtn = tempCardEl.querySelector('.delete-card');
-                    editBtn.disabled = false;
-                    delBtn.disabled = false;
-                    editBtn.title = 'Edit';
-                    delBtn.title = 'Delete';
+                    if (editBtn) { editBtn.disabled = false; editBtn.title = 'Edit'; }
+                    if (delBtn) { delBtn.disabled = false; delBtn.title = 'Delete'; }
 
                     // attach handlers (use updated dataset)
                     attachCardActionHandlers(tempCardEl);
@@ -2115,9 +2545,6 @@ async function loadLists(boardId) {
         });
 
         // After rendering lists, ensure the persistent CTA is present and outside the inner sortable area
-        // NOTE: renderAddListButton should append the CTA to listsWrap (the outer wrapper), not to #lists-inner.
-        // If your renderAddListButton currently appends to listsWrap, this will work. If it appends into the inner container,
-        // update it (example implementation provided below).
         if (!document.getElementById('inline-new-list')) {
             renderAddListButton(listsWrap); // pass the outer wrapper so CTA is put outside #lists-inner
         }
@@ -2125,7 +2552,52 @@ async function loadLists(boardId) {
     } catch (err) {
         console.error(err);
     }
+
+    // --- helper: inject minimal CSS for the generated options menu ---
+    function ensureOptionsMenuStyles() {
+        if (document.getElementById('generated-options-menu-styles')) return;
+        const css = `
+        .options-menu {
+            background: #222;
+            color: #eee;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            padding: 8px;
+            min-width: 220px;
+            max-width: 320px;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        }
+        .options-menu-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 8px 10px;
+            margin: 4px 0;
+            border-radius: 6px;
+            background: transparent;
+            color: inherit;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .options-menu-item:hover { background: rgba(255,255,255,0.03); }
+        .options-menu-item:disabled { opacity: 0.5; cursor: default; }
+        .options-menu-item--danger { color: #ff7b7b; }
+        .options-menu-divider { height: 1px; background: rgba(255,255,255,0.03); margin: 6px 0; border-radius: 1px; }
+        .options-menu-color-container { display:flex; align-items:center; gap:8px; padding:6px 2px; margin:4px 0; }
+        .options-menu-color { width:40px; height:28px; border:none; background:transparent; cursor:pointer; }
+        .options-menu-color-label { font-size: 12px; opacity:0.9; min-width:48px; }
+        .options-menu-item--inline { padding:6px 10px; margin-left:auto; font-size:12px; align-self:center; }
+        .options-menu-more { margin:6px 2px; padding:6px 8px; font-size:12px; color: #cfcfcf; }
+        `;
+        const style = document.createElement('style');
+        style.id = 'generated-options-menu-styles';
+        style.appendChild(document.createTextNode(css));
+        document.head.appendChild(style);
+    }
 }
+
 
 /* Inline Rename List */
 function inlineRenameList(listId, currentTitle) {
@@ -2138,18 +2610,25 @@ function inlineRenameList(listId, currentTitle) {
         return;
     }
     titleSpan.style.display = 'none';
+    // create input
     const input = document.createElement('input');
     input.className = 'inline-list-input inline-list-edit';
     input.value = currentTitle;
     input.style.padding = '6px';
     input.style.borderRadius = '6px';
     input.style.border = '1px solid #333';
-    input.style.background = 'var(--btn-color)';
-    input.style.color = '#e0e0e0';
     input.style.width = '160px';
+
+    // append first so we can style
     titleSpan.parentElement.prepend(input);
+
+    // apply the list's theme
+    applyListTheme(listEl, listEl.style.background || null);
+
+    // focus/select
     input.focus();
     input.select();
+
 
     input.addEventListener('keydown', async (ev) => {
         if (ev.key === 'Enter') {
@@ -2200,6 +2679,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             <div class="card-modal-backdrop" tabindex="-1"></div>
             <section class="card-modal-panel" role="dialog" aria-modal="true" aria-labelledby="card-modal-title">
                 <div class="card-modal-inner">
+                    <button id="card-modal-cancel" class="btn ghost x-right-top-close-button">X</button>
                     <div class="card-modal-left">
                         <header class="card-modal-header">
                             <input id="card-modal-title" class="card-modal-title" placeholder="Card title">
@@ -2214,7 +2694,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                         </div>
 
                         <footer class="card-modal-footer">
-                            <button id="card-modal-cancel" class="btn ghost">Cancel</button>
                             <button id="card-modal-save" class="btn">Save</button>
                         </footer>
                     </div>
@@ -2256,6 +2735,18 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             box-shadow: 0 10px 40px rgba(0,0,0,0.6);
         }
         .card-modal-inner { display:flex; width:100%; box-shadow: -20px 0 40px rgba(0,0,0,0.6); height:100%; }
+        .x-right-top-close-button {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: var(--btn-color);
+            color: #e0e0e0;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
         .card-modal-left {
             width: 60%;
             background: var(--ctr-color, #0f0f0f);
@@ -2314,6 +2805,12 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         ensureCardModal();
         _cardModalState.cardId = cardId;
 
+        // show modal
+        _cardModal.style.display = 'block';
+
+        // load card details & activity
+        await refreshCardModal();
+
         // fetch current user id (if available) to gate edit/delete on comment items
         try {
             const ui = await apiGET('/user-info'); // expected to return { id, username, profile_picture, ...}
@@ -2321,18 +2818,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         } catch (e) {
             _cardModalState.currentUserId = null;
         }
-
-        // show modal
-        _cardModal.style.display = 'block';
-
-        // Focus management: move focus to title input after open
-        setTimeout(() => {
-            const ti = _cardModal.querySelector('#card-modal-title');
-            ti && ti.focus();
-        }, 90);
-
-        // load card details & activity
-        await refreshCardModal();
     }
 
     // Close modal
@@ -2361,6 +2846,9 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             titleEl.value = card.title || '';
             descEl.value = card.description || '';
 
+            titleEl.focus();
+            titleEl.select();
+
             // GET activity (server should return both history and comment items sorted desc by created_at)
             let activity = [];
             try {
@@ -2370,7 +2858,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 activity = [];
             }
 
-            renderActivityList(activityListEl, activity);
+            renderActivityList(activityListEl, activity, currentUserId = sessionStorage.getItem('current_user_id'));
         } catch (err) {
             console.error('Failed to load card modal data', err);
             activityListEl.innerHTML = '<div style="opacity:0.6">Failed to load activity</div>';
@@ -2378,7 +2866,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
     }
 
     // Render activity list; activity is an array of { id, card_id, user_id, username, type, action, content, created_at, editable }
-    function renderActivityList(container, items) {
+    function renderActivityList(container, items, currentUserId = sessionStorage.getItem('current_user_id')) {
         container.innerHTML = '';
         if (!items || items.length === 0) {
             container.innerHTML = '<div style="opacity:0.6">No activity yet</div>';
@@ -2410,8 +2898,11 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             el.appendChild(meta);
             el.appendChild(content);
 
+            // first make sure both it.user_id and currentUserId are strings for comparison
+            const uidStr = it.user_id ? String(it.user_id) : null;
+
             // controls for comment items that belong to current user
-            if (it.type === 'comment' && _cardModalState.currentUserId && it.user_id === _cardModalState.currentUserId) {
+            if (it.type === 'comment' && uidStr === currentUserId) {
                 const controls = document.createElement('div');
                 controls.className = 'activity-controls';
                 const btnEdit = document.createElement('button');
@@ -2460,7 +2951,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         contentEl.innerHTML = '';
         const ta = document.createElement('textarea');
         ta.value = orig;
-        ta.style.width = '100%';
+        ta.style.width = '96%';
         ta.style.minHeight = '64px';
         ta.style.padding = '8px';
         ta.style.borderRadius = '6px';
@@ -2477,7 +2968,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         btnCancel.className = 'btn ghost';
         btnCancel.textContent = 'Cancel';
         const btnSave = document.createElement('button');
-        btnSave.className = 'btn primary';
+        btnSave.className = 'btn';
         btnSave.textContent = 'Save';
 
         actions.appendChild(btnCancel);
@@ -2502,7 +2993,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             }
             btnSave.disabled = true;
             try {
-                const res = await apiPATCH(`/api/card/comments/${encodeURIComponent(activityObj.id)}`, { content: newContent });
+                const res = await apiPATCH(`/api/card/comment/${encodeURIComponent(activityObj.id)}`, { content: newContent });
                 if (res.ok) {
                     // update UI
                     contentEl.textContent = newContent;
@@ -2544,7 +3035,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             renderActivityList(activityListEl, [newComment].concat(Array.from(activityListEl.children).map(node => {
                 // we don't have the full object for existing DOM nodes; do a full refresh instead
                 return null;
-            }).filter(Boolean)));
+            }).filter(Boolean)), sessionStorage.getItem('current_user_id'));
             // Simpler: refresh entire activity list
             await refreshCardModal();
             ta.value = '';
@@ -2580,8 +3071,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 alert(j.error || 'Failed to save card');
                 return;
             }
-            // success -> refresh modal and update lists UI
-            await refreshCardModal();
             // update any card DOM elements on the page (title text)
             const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
             if (cardEl) {
@@ -2590,11 +3079,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 const descNode = cardEl.querySelector('.card-desc-text');
                 if (descNode) descNode.textContent = description;
             }
-            // reload lists to update server-side ordering/summary if needed
-            if (typeof loadLists === 'function' && window._currentBoardId) {
-                // best-effort update of lists
-                await loadLists(window._currentBoardId);
-            }
+            closeCardModal();
         } catch (err) {
             console.error(err);
             alert('Network error while saving card');

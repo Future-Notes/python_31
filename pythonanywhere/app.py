@@ -380,6 +380,7 @@ class Board(db.Model):
     __tablename__ = "board"  # top-level collection of lists
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True, nullable=False)
+    background_color = db.Column(db.String(7), nullable=False, default="#2c2c2c")
     title = db.Column(db.String(200), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -394,6 +395,7 @@ class List(db.Model):
     title = db.Column(db.String(200), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     ordernr = db.Column(db.Integer, nullable=False, default=0)
+    background_color = db.Column(db.String(7), nullable=True, default=None)  # New field for list background color
 
     board = db.relationship("Board", backref=db.backref("lists", lazy="dynamic"))
     user = db.relationship("User", backref=db.backref("lists", lazy="dynamic"))
@@ -4283,6 +4285,10 @@ def api_delete_board(board_id):
     for l in lists:
         cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
         for c in cards:
+            # delete card activities
+            activities = CardActivity.query.filter_by(card_id=c.id).all()
+            for a in activities:
+                db.session.delete(a)
             db.session.delete(c)
         db.session.delete(l)
     db.session.delete(b)
@@ -4313,6 +4319,7 @@ def api_get_lists():
             "id": l.id,
             "title": l.title,
             "order": l.ordernr,
+            "color": l.background_color,
             "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position, "completed": c.completed}
                       for c in cards]
         })
@@ -4331,11 +4338,50 @@ def api_create_list():
     # ensure board belongs to user
     if not Board.query.filter_by(id=board_id, user_id=user_id).first():
         return jsonify({"error": "Board not found"}), 404
-    l = List(user_id=user_id, board_id=board_id, title=title)
+    # make sure the new list always gets the highest ordernr
+    max_ordernr = db.session.query(db.func.max(List.ordernr)).filter_by(user_id=user_id, board_id=board_id).scalar()
+    if max_ordernr is None:
+        max_ordernr = 0
+    else:
+        max_ordernr += 1
+    l = List(user_id=user_id, board_id=board_id, title=title, ordernr=max_ordernr)
     db.session.add(l)
     db.session.commit()
     return jsonify({"id": l.id, "title": l.title}), 201
 
+@app.route('/api/lists/copy/<int:list_id>', methods=['POST'])
+@require_session_key
+def api_copy_list(list_id):
+    user_id = g.user_id
+    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    if not l:
+        return jsonify({"error": "List not found"}), 404
+    # ensure board belongs to user
+    if not Board.query.filter_by(id=l.board_id, user_id=user_id).first():
+        return jsonify({"error": "Board not found"}), 404
+    # make sure the new list always gets the highest ordernr
+    max_ordernr = db.session.query(db.func.max(List.ordernr)).filter_by(user_id=user_id, board_id=l.board_id).scalar()
+    if max_ordernr is None:
+        max_ordernr = 0
+    else:
+        max_ordernr += 1
+    new_list = List(user_id=user_id, board_id=l.board_id, title=f"Copy of {l.title}", ordernr=max_ordernr)
+    db.session.add(new_list)
+    db.session.commit()
+    # copy cards from the original list to the new list
+    cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
+    for c in cards:
+        new_card = Card(
+            user_id=user_id,
+            list_id=new_list.id,
+            title=c.title,
+            description=c.description,
+            position=c.position,
+            completed=c.completed
+        )
+        db.session.add(new_card)
+        db.session.commit()
+    return jsonify({"id": new_list.id, "title": new_list.title}), 201
 
 @app.route('/api/lists/<int:list_id>', methods=['PATCH'])
 @require_session_key
@@ -4364,6 +4410,21 @@ def api_order_list(list_id):
         db.session.commit()
     return jsonify({"id": l.id, "order": l.ordernr})
 
+@app.route('/api/lists/color/<int:list_id>', methods=['PATCH'])
+@require_session_key
+def api_color_list(list_id):
+    user_id = g.user_id
+    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    if not l:
+        return jsonify({"error": "List not found"}), 404
+    payload = request.get_json() or {}
+    if 'color' in payload:
+        print(payload['color'])
+        if payload['color'] == "none":
+            l.background_color = None
+        l.background_color = payload['color']
+        db.session.commit()
+    return jsonify({"id": l.id, "color": l.background_color})
 
 @app.route('/api/lists/<int:list_id>', methods=['DELETE'])
 @require_session_key
@@ -4372,6 +4433,15 @@ def api_delete_list(list_id):
     l = List.query.filter_by(id=list_id, user_id=user_id).first()
     if not l:
         return jsonify({"error": "List not found"}), 404
+    # delete cards in the list
+    cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
+    for c in cards:
+        # delete card activities
+        activities = CardActivity.query.filter_by(card_id=c.id).all()
+        for a in activities:
+            db.session.delete(a)
+        db.session.delete(c)
+
     db.session.delete(l)
     db.session.commit()
     return jsonify({"ok": True})
@@ -4431,6 +4501,36 @@ def api_add_comment(card_id):
     db.session.add(comment)
     db.session.commit()
     return jsonify({"id": comment.id, "user_id": comment.user_id, "username": username, "content": comment.content})
+
+@app.route('/api/card/comment/<int:comment_id>', methods=['PATCH'])
+@require_session_key
+def api_edit_comment(comment_id):
+    user_id = g.user_id
+    comment = CardActivity.query.filter_by(id=comment_id, user_id=user_id).first()
+    if not comment:
+        return jsonify({"error": "Comment not found"}), 404
+    if not comment.activity_type == "comment":
+        return jsonify({"error": "Not a comment"}), 400
+    payload = request.get_json() or {}
+    content = payload.get('content', '').strip()
+    if not content:
+        return jsonify({"error": "Comment content required"}), 400
+    comment.content = content
+    db.session.commit()
+    return jsonify({"id": comment.id, "user_id": comment.user_id, "content": comment.content})
+
+@app.route('/api/card/comment/<int:comment_id>', methods=['DELETE'])
+@require_session_key
+def api_delete_comment(comment_id):
+    user_id = g.user_id
+    comment = CardActivity.query.filter_by(id=comment_id, user_id=user_id).first()
+    if not comment:
+        return jsonify({"error": "Comment not found"}), 404
+    if not comment.activity_type == "comment":
+        return jsonify({"error": "Not a comment"}), 400
+    db.session.delete(comment)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 @app.route('/api/cards', methods=['POST'])
 @require_session_key
