@@ -534,6 +534,19 @@
         background: rgba(255,255,255,0.02);
         border-color: rgba(255,255,255,0.18);
         }
+        .card-complete {
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            padding: 0;
+            margin: 0;
+            min-width: 0;
+            min-height: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            box-sizing: border-box;
+        }
 
 
         /* Slide title only if not completed */
@@ -2167,117 +2180,481 @@ function inlineRenameList(listId, currentTitle) {
    - lives inside the card element to minimize context switching
 */
 function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
-    const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
-    if (!cardEl) return;
-    // if already open, focus
-    if (cardEl.querySelector('.inline-card-edit')) {
-        cardEl.querySelector('.inline-card-title')?.focus();
-        return;
+    openCardModal(cardId);
+}
+
+(function () {
+    // Ensure modal is created once
+    let _cardModal = null;
+    let _cardModalState = { cardId: null, currentUserId: null };
+
+    // Create modal DOM and return reference
+    function ensureCardModal() {
+        if (_cardModal) return _cardModal;
+
+        const modal = document.createElement('div');
+        modal.id = 'card-modal';
+        modal.className = 'card-modal';
+        modal.style.display = 'none';
+        modal.innerHTML = `
+            <div class="card-modal-backdrop" tabindex="-1"></div>
+            <section class="card-modal-panel" role="dialog" aria-modal="true" aria-labelledby="card-modal-title">
+                <div class="card-modal-inner">
+                    <div class="card-modal-left">
+                        <header class="card-modal-header">
+                            <input id="card-modal-title" class="card-modal-title" placeholder="Card title">
+                            <div class="card-modal-actions" id="card-modal-actions">
+                                <!-- Action buttons placeholder -->
+                            </div>
+                        </header>
+
+                        <div class="card-modal-body">
+                            <label class="label">Description</label>
+                            <textarea id="card-modal-desc" class="card-modal-desc" placeholder="Add a description..."></textarea>
+                        </div>
+
+                        <footer class="card-modal-footer">
+                            <button id="card-modal-cancel" class="btn ghost">Cancel</button>
+                            <button id="card-modal-save" class="btn">Save</button>
+                        </footer>
+                    </div>
+
+                    <aside class="card-modal-right">
+                        <h4 class="activity-title">Activity</h4>
+                        <div id="card-activity-list" class="activity-list"></div>
+
+                        <div class="add-comment">
+                            <textarea id="card-new-comment" placeholder="Write a comment..."></textarea>
+                            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+                                <button id="card-add-comment" class="btn">Comment</button>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </section>
+        `;
+
+        // Minimal styles (scoped)
+        const style = document.createElement('style');
+        style.textContent = `
+        /* Modal backdrop/panel */
+        .card-modal { position:fixed; inset:0; z-index:1200; font-family:inherit; }
+        .card-modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.45); backdrop-filter: blur(2px); }
+        .card-modal-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 1100px;
+            height: 50vh;
+            max-height: 900px;
+
+            display: flex;
+            border-radius: 16px;          /* Rounded corners on the outer modal */
+            overflow: hidden;             /* Important: clip inner content to the rounded corners */
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+        }
+        .card-modal-inner { display:flex; width:100%; box-shadow: -20px 0 40px rgba(0,0,0,0.6); height:100%; }
+        .card-modal-left {
+            width: 60%;
+            background: var(--ctr-color, #0f0f0f);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow: auto;
+            border-top-left-radius: 16px;    /* Rounded top-left corner */
+            border-bottom-left-radius: 16px; /* Rounded bottom-left corner */
+        }
+        .card-modal-right {
+            width: 40%;
+            background: var(--bg-color, #141a2b);
+            color: #e0e0e0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            overflow: auto;
+            border-top-right-radius: 16px;   /* Rounded top-right corner */
+            border-bottom-right-radius: 16px;/* Rounded bottom-right corner */
+        }
+        .card-modal-header { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+        .card-modal-title { font-size:20px; width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; }
+        .card-modal-body { display:flex; flex-direction:column; gap:8px; }
+        .card-modal-desc { width:96%; min-height:200px; padding:12px; border-radius:8px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; resize:vertical; }
+        .card-modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-top:8px; }
+        .activity-title { margin:0 0 4px 0; font-weight:700; font-size:14px; color:#fff; }
+        .activity-list { display:flex; flex-direction:column; gap:10px; }
+        .activity-item { padding:10px; border-radius:8px; background: rgba(255,255,255,0.02); font-size:13px; }
+        .activity-item .meta { font-size:12px; opacity:0.7; margin-bottom:6px; }
+        .activity-item .content { white-space:pre-wrap; }
+        .activity-controls { display:flex; gap:6px; margin-top:8px; }
+        .add-comment textarea { width:96%; min-height:80px; padding:10px; border-radius:8px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; resize:vertical; }
+        .activity-item .you { font-weight:700; }
+        `;
+
+        document.head.appendChild(style);
+        document.body.appendChild(modal);
+
+        // Close / cancel handlers
+        modal.querySelector('.card-modal-backdrop').addEventListener('click', () => closeCardModal());
+        modal.querySelector('#card-modal-cancel').addEventListener('click', () => closeCardModal());
+        modal.querySelector('#card-modal-save').addEventListener('click', () => saveCardModal());
+
+        // Add comment
+        modal.querySelector('#card-add-comment').addEventListener('click', () => addCommentFromModal());
+
+        _cardModal = modal;
+        return _cardModal;
     }
 
-    const main = cardEl.querySelector('.card-main');
-    const actions = cardEl.querySelector('div:last-child');
-    main.style.display = 'none';
-    actions.style.display = 'none';
+    // Open modal for cardId
+    async function openCardModal(cardId) {
+        ensureCardModal();
+        _cardModalState.cardId = cardId;
 
-    // create editor
-    const editor = document.createElement('div');
-    editor.className = 'inline-card-edit';
-    editor.innerHTML = `
-        <input class="inline-card-title" value="${escapeAttr(currentTitle)}" placeholder="Card title">
-        <textarea class="inline-card-desc" placeholder="Add a description...">${escapeAttr(currentDesc || '')}</textarea>
-        <div class="inline-editor-actions">
-            <button class="btn ghost cancel-edit">Cancel</button>
-            <button class="btn primary save-edit">Save</button>
-        </div>
-    `;
-    cardEl.prepend(editor);
+        // fetch current user id (if available) to gate edit/delete on comment items
+        try {
+            const ui = await apiGET('/user-info'); // expected to return { id, username, profile_picture, ...}
+            _cardModalState.currentUserId = ui && ui.id ? ui.id : null;
+        } catch (e) {
+            _cardModalState.currentUserId = null;
+        }
 
-    const titleInput = editor.querySelector('.inline-card-title');
-    const descInput = editor.querySelector('.inline-card-desc');
-    const btnSave = editor.querySelector('.save-edit');
-    const btnCancel = editor.querySelector('.cancel-edit');
+        // show modal
+        _cardModal.style.display = 'block';
 
-    // autosize textarea
-    function autosize(el) {
-        el.style.height = 'auto';
-        const newHeight = Math.max(64, el.scrollHeight);
-        el.style.height = newHeight + 'px';
-    }
-    autosize(descInput);
-    descInput.addEventListener('input', () => autosize(descInput));
+        // Focus management: move focus to title input after open
+        setTimeout(() => {
+            const ti = _cardModal.querySelector('#card-modal-title');
+            ti && ti.focus();
+        }, 90);
 
-    // helper for cleanup
-    function cleanup() {
-        editor.remove();
-        main.style.display = '';
-        actions.style.display = '';
+        // load card details & activity
+        await refreshCardModal();
     }
 
-    // save handler
-    let saving = false;
-    async function save() {
-        if (saving) return;
-        const title = titleInput.value.trim();
-        const description = descInput.value.trim();
-        if (!title) {
-            alert('Title cannot be empty');
-            titleInput.focus();
+    // Close modal
+    function closeCardModal() {
+        if (!_cardModal) return;
+        _cardModal.style.display = 'none';
+        _cardModalState.cardId = null;
+    }
+
+    // Refresh entire modal from backend
+    async function refreshCardModal() {
+        const cardId = _cardModalState.cardId;
+        if (!cardId) return;
+
+        // show placeholders while loading
+        const titleEl = _cardModal.querySelector('#card-modal-title');
+        const descEl = _cardModal.querySelector('#card-modal-desc');
+        const activityListEl = _cardModal.querySelector('#card-activity-list');
+        titleEl.value = 'Loading...';
+        descEl.value = '';
+        activityListEl.innerHTML = '<div style="opacity:0.6">Loading activity...</div>';
+
+        try {
+            // GET card data
+            const card = await apiGET(`/api/cards/info/${cardId}`);
+            titleEl.value = card.title || '';
+            descEl.value = card.description || '';
+
+            // GET activity (server should return both history and comment items sorted desc by created_at)
+            let activity = [];
+            try {
+                activity = await apiGET(`/api/cards/${cardId}/activity`);
+            } catch (e) {
+                // if endpoint not available, fallback to empty
+                activity = [];
+            }
+
+            renderActivityList(activityListEl, activity);
+        } catch (err) {
+            console.error('Failed to load card modal data', err);
+            activityListEl.innerHTML = '<div style="opacity:0.6">Failed to load activity</div>';
+        }
+    }
+
+    // Render activity list; activity is an array of { id, card_id, user_id, username, type, action, content, created_at, editable }
+    function renderActivityList(container, items) {
+        container.innerHTML = '';
+        if (!items || items.length === 0) {
+            container.innerHTML = '<div style="opacity:0.6">No activity yet</div>';
             return;
         }
-        saving = true;
-        btnSave.disabled = true;
-        btnSave.textContent = 'Saving...';
+        // show newest first (assume server returns sorted but ensure it)
+        items.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+        for (const it of items) {
+            const el = document.createElement('div');
+            el.className = 'activity-item';
+            el.dataset.activityId = it.id;
+
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            const when = new Date(it.created_at).toLocaleString();
+            const who = it.username ? escapeHtml(it.username) : ('User ' + (it.user_id || ''));
+            meta.innerHTML = `<span class="who">${who}</span> • <span class="when">${when}</span>`;
+
+            const content = document.createElement('div');
+            content.className = 'content';
+            // If it's a comment, allow edit/delete for items the current user owns
+            if (it.type === 'comment') {
+                content.innerHTML = escapeHtml(it.content || '');
+            } else { // history / activity
+                content.innerHTML = escapeHtml(it.content || it.action || '(activity)');
+            }
+
+            el.appendChild(meta);
+            el.appendChild(content);
+
+            // controls for comment items that belong to current user
+            if (it.type === 'comment' && _cardModalState.currentUserId && it.user_id === _cardModalState.currentUserId) {
+                const controls = document.createElement('div');
+                controls.className = 'activity-controls';
+                const btnEdit = document.createElement('button');
+                btnEdit.className = 'btn ghost small';
+                btnEdit.textContent = 'Edit';
+                const btnDel = document.createElement('button');
+                btnDel.className = 'btn ghost small';
+                btnDel.textContent = 'Delete';
+                controls.appendChild(btnEdit);
+                controls.appendChild(btnDel);
+
+                btnEdit.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    startEditComment(el, it);
+                });
+                btnDel.addEventListener('click', async (ev) => {
+                    ev.stopPropagation();
+                    if (!confirm('Delete this comment?')) return;
+                    try {
+                        const res = await apiDELETE(`/api/card/comment/${encodeURIComponent(it.id)}`);
+                        if (res.ok) {
+                            // Remove from DOM and optionally refresh
+                            el.remove();
+                        } else {
+                            const j = await res.json();
+                            alert(j.error || 'Failed to delete comment');
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('Network error while deleting comment');
+                    }
+                });
+                el.appendChild(controls);
+            }
+
+            container.appendChild(el);
+        }
+    }
+
+    // Start inline editing of a comment item inside activity list
+    function startEditComment(activityEl, activityObj) {
+        // activityEl contains .content element
+        const contentEl = activityEl.querySelector('.content');
+        const orig = activityObj.content || '';
+        // replace content with textarea + save/cancel
+        contentEl.innerHTML = '';
+        const ta = document.createElement('textarea');
+        ta.value = orig;
+        ta.style.width = '100%';
+        ta.style.minHeight = '64px';
+        ta.style.padding = '8px';
+        ta.style.borderRadius = '6px';
+        ta.style.border = '1px solid #333';
+        ta.style.background = 'var(--btn-color)';
+        ta.style.color = '#e0e0e0';
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+        actions.style.marginTop = '8px';
+        const btnCancel = document.createElement('button');
+        btnCancel.className = 'btn ghost';
+        btnCancel.textContent = 'Cancel';
+        const btnSave = document.createElement('button');
+        btnSave.className = 'btn primary';
+        btnSave.textContent = 'Save';
+
+        actions.appendChild(btnCancel);
+        actions.appendChild(btnSave);
+
+        contentEl.appendChild(ta);
+        contentEl.appendChild(actions);
+        ta.focus();
+        ta.select();
+
+        btnCancel.addEventListener('click', () => {
+            // restore original content text
+            contentEl.textContent = orig;
+        });
+
+        btnSave.addEventListener('click', async () => {
+            const newContent = ta.value.trim();
+            if (!newContent) {
+                alert('Comment cannot be empty');
+                ta.focus();
+                return;
+            }
+            btnSave.disabled = true;
+            try {
+                const res = await apiPATCH(`/api/card/comments/${encodeURIComponent(activityObj.id)}`, { content: newContent });
+                if (res.ok) {
+                    // update UI
+                    contentEl.textContent = newContent;
+                } else {
+                    const j = await res.json();
+                    alert(j.error || 'Failed to update comment');
+                    contentEl.textContent = orig;
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Network error while updating comment');
+                contentEl.textContent = orig;
+            } finally {
+                btnSave.disabled = false;
+            }
+        });
+    }
+
+    // Add comment handler (from new comment box)
+    async function addCommentFromModal() {
+        const cardId = _cardModalState.cardId;
+        if (!cardId) return;
+        const ta = _cardModal.querySelector('#card-new-comment');
+        const content = ta.value.trim();
+        if (!content) return;
+        const addBtn = _cardModal.querySelector('#card-add-comment');
+        addBtn.disabled = true;
         try {
-            const res = await apiPATCH(`/api/cards/${cardId}`, { title, description });
-            if (res.ok) {
-                await loadLists(boardId);
-            } else {
+            const res = await apiPOST(`/api/card/${encodeURIComponent(cardId)}/comment`, { content });
+            if (!res.ok) {
                 const j = await res.json();
-                alert(j.error || 'Failed to update card');
-                cleanup();
+                alert(j.error || 'Failed to add comment');
+                return;
+            }
+            // Success: backend should return created comment object (including id, user_id, username, created_at)
+            const newComment = await res.json();
+            // Prepend to activity list so newest shows on top
+            const activityListEl = _cardModal.querySelector('#card-activity-list');
+            renderActivityList(activityListEl, [newComment].concat(Array.from(activityListEl.children).map(node => {
+                // we don't have the full object for existing DOM nodes; do a full refresh instead
+                return null;
+            }).filter(Boolean)));
+            // Simpler: refresh entire activity list
+            await refreshCardModal();
+            ta.value = '';
+        } catch (err) {
+            console.error(err);
+            alert('Network error while adding comment');
+        } finally {
+            addBtn.disabled = false;
+        }
+    }
+
+    // Save card (title + description)
+    async function saveCardModal() {
+        const cardId = _cardModalState.cardId;
+        if (!cardId) return;
+        const titleEl = _cardModal.querySelector('#card-modal-title');
+        const descEl = _cardModal.querySelector('#card-modal-desc');
+        const title = titleEl.value.trim();
+        const description = descEl.value.trim();
+
+        if (!title) {
+            alert('Title cannot be empty');
+            titleEl.focus();
+            return;
+        }
+        const btn = _cardModal.querySelector('#card-modal-save');
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        try {
+            const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { title, description });
+            if (!res.ok) {
+                const j = await res.json();
+                alert(j.error || 'Failed to save card');
+                return;
+            }
+            // success -> refresh modal and update lists UI
+            await refreshCardModal();
+            // update any card DOM elements on the page (title text)
+            const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+            if (cardEl) {
+                const titleNode = cardEl.querySelector('.card-title-text');
+                if (titleNode) titleNode.textContent = title;
+                const descNode = cardEl.querySelector('.card-desc-text');
+                if (descNode) descNode.textContent = description;
+            }
+            // reload lists to update server-side ordering/summary if needed
+            if (typeof loadLists === 'function' && window._currentBoardId) {
+                // best-effort update of lists
+                await loadLists(window._currentBoardId);
             }
         } catch (err) {
             console.error(err);
-            alert('Network error');
-            cleanup();
+            alert('Network error while saving card');
         } finally {
-            saving = false;
+            btn.disabled = false;
+            btn.textContent = 'Save';
         }
     }
 
-    // keyboard handling
-    titleInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            save();
-        } else if (e.key === 'Escape') {
-            cleanup();
-        }
-    });
-    descInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            cleanup();
-        } else if (e.key === 'Enter' && e.ctrlKey) { // Ctrl+Enter to save description
-            e.preventDefault();
-            save();
-        }
-    });
+    // Expose functions globally so other code can call them
+    window.openCardModal = openCardModal;
+    window.closeCardModal = closeCardModal;
+    window.refreshCardModal = refreshCardModal;
 
-    btnCancel.addEventListener('click', (e) => {
-        e.stopPropagation();
-        cleanup();
-    });
-    btnSave.addEventListener('click', (e) => {
-        e.stopPropagation();
-        save();
-    });
+    // Update attachCardActionHandlers to open modal instead of inline edit
+    // Replace your existing attachCardActionHandlers implementation with this one:
+    window.attachCardActionHandlers = function (cardEl) {
+        const cardId = parseInt(cardEl.dataset.cardId, 10);
+        const editBtn = cardEl.querySelector('.edit-card');
+        const delBtn = cardEl.querySelector('.delete-card');
 
-    // focus first input
-    titleInput.focus();
-    titleInput.select();
-}
+        // avoid adding duplicate handlers
+        if (!editBtn._hasHandler) {
+            editBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                // open modal
+                openCardModal(cardId);
+            });
+            editBtn._hasHandler = true;
+        }
+        if (!delBtn._hasHandler) {
+            delBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                if (!confirm('Delete card?')) return;
+                const res = await apiDELETE(`/api/cards/${cardId}`);
+                if (res.ok) {
+                    // remove card from DOM
+                    cardEl.parentElement && cardEl.parentElement.removeChild(cardEl);
+                } else {
+                    const j = await res.json();
+                    alert(j.error || 'Failed to delete card');
+                }
+            });
+            delBtn._hasHandler = true;
+        }
+
+        // double-click to open modal
+        if (!cardEl._dblHandler) {
+            cardEl.addEventListener('dblclick', (ev) => {
+                if (ev.target.closest('.edit-card') || ev.target.closest('.delete-card') || ev.target.closest('.card-complete')) return;
+                openCardModal(cardId);
+            });
+            cardEl._dblHandler = true;
+        }
+
+        // ensure completion handler still attached
+        attachCardCompleteHandler(cardEl);
+    };
+
+})();
 
 /* Utility */
 function escapeHtml(s) {
