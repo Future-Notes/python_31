@@ -412,6 +412,17 @@ class Card(db.Model):
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
+class CardActivity(db.Model):
+    __tablename__ = "card_activity"
+    id = db.Column(db.Integer, primary_key=True)
+    card_id = db.Column(db.Integer, db.ForeignKey("card.id", ondelete="CASCADE"), index=True, nullable=False)
+    activity_type = db.Column(db.String(25), nullable=False)  # this is user or activity, indicating wether it is a manually added comment or an automatic activity log
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), index=True, nullable=True)
+
+    card = db.relationship("Card", backref=db.backref("activities", lazy="dynamic"))
+
 class InviteReferral(db.Model):
     __tablename__ = "invite_referral"
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -4368,6 +4379,58 @@ def api_delete_list(list_id):
 # -------------------
 # Cards endpoints
 # -------------------
+
+@app.route('/api/cards/info/<int:card_id>', methods=['GET'])
+@require_session_key
+def api_get_card_info(card_id):
+    user_id = g.user_id
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    return jsonify({
+        "id": card.id,
+        "title": card.title,
+        "description": card.description or "",
+        "position": card.position,
+        "completed": card.completed
+    })
+
+@app.route('/api/cards/<int:card_id>/activity', methods=['GET'])
+@require_session_key
+def api_get_card_activity(card_id):
+    user_id = g.user_id
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    card_username = User.query.filter_by(id=card.user_id).first().username
+    activities = CardActivity.query.filter_by(card_id=card.id).order_by(CardActivity.created_at.desc()).all()
+    return jsonify([{
+        "id": a.id,
+        "type": a.activity_type,
+        "card_id": a.card_id,
+        "user_id": a.user_id,
+        "username": card_username,
+        "content": a.content,
+        "created_at": a.created_at
+    } for a in activities])
+
+@app.route('/api/card/<int:card_id>/comment', methods=['POST'])
+@require_session_key
+def api_add_comment(card_id):
+    user_id = g.user_id
+    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    
+    username = User.query.filter_by(id=user_id).first().username
+    payload = request.get_json() or {}
+    content = payload.get('content', '').strip()
+    if not content:
+        return jsonify({"error": "Comment content required"}), 400
+    comment = CardActivity(user_id=user_id, card_id=card.id, activity_type="comment", content=content)
+    db.session.add(comment)
+    db.session.commit()
+    return jsonify({"id": comment.id, "user_id": comment.user_id, "username": username, "content": comment.content})
 
 @app.route('/api/cards', methods=['POST'])
 @require_session_key
