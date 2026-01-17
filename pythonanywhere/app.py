@@ -236,6 +236,17 @@ class NoteUpload(db.Model):
     note_id = db.Column(db.Integer, db.ForeignKey('note.id'), nullable=False)
     upload_id = db.Column(db.Integer, db.ForeignKey('uploads.id'), nullable=False)
 
+class BoardBackgroundUpload(db.Model):
+    __tablename__ = 'board_background_uploads'
+    id = db.Column(db.Integer, primary_key=True)
+    board_id = db.Column(db.Integer, db.ForeignKey('board.id'), nullable=False)
+    upload_id = db.Column(db.Integer, db.ForeignKey('uploads.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    board = db.relationship('Board', backref=db.backref('background_upload', uselist=False))
+    upload = db.relationship('Upload')
+
+
 class Upload(db.Model):
     __tablename__ = 'uploads'
     id = db.Column(db.Integer, primary_key=True)
@@ -1079,6 +1090,10 @@ def delete_version_history(note_id):
         NoteVersionUpload.query.filter_by(note_version_id=nv.id).delete()
         db.session.delete(nv)
     db.session.commit()
+
+def get_upload_url(upload):
+    # simple inline URL for images
+    return f'/uploads/{upload.id}/download?inline=1'
 
 
 def collect_folder_tree_ids(root_folder_id):
@@ -4237,7 +4252,6 @@ def api_get_boards():
     out = [{"id": b.id, "title": b.title, "created_at": b.created_at.isoformat()} for b in boards]
     return jsonify(out)
 
-
 @app.route('/api/boards', methods=['POST'])
 @require_session_key
 def api_create_board():
@@ -4256,6 +4270,45 @@ def api_create_board():
     db.session.commit()
     return jsonify({"id": board.id, "title": board.title}), 201
 
+@app.route('/api/boards/<int:board_id>/background_uploads', methods=['POST'])
+@require_session_key
+def attach_board_background(board_id):
+    """
+    Body JSON: { "upload_id": <int> }
+    Attaches an existing upload (already validated & stored by /uploads) as the board background.
+    If a previous background exists it will be unlinked (deleted from BoardBackgroundUpload),
+    but the actual Upload row is NOT deleted here.
+    """
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    board = Board.query.filter_by(id=board_id, user_id=user.id).first()
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+
+    data = request.get_json() or {}
+    upload_id = data.get('upload_id')
+    if not upload_id:
+        return jsonify({"error": "upload_id required"}), 400
+
+    upload = Upload.query.filter_by(id=upload_id, user_id=user.id, deleted=False).first()
+    if not upload:
+        return jsonify({"error": "Upload not found"}), 404
+
+    # remove any existing background link for this board
+    existing = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
+    if existing:
+        db.session.delete(existing)
+
+    # IMPORTANT: remove any existing background color setting
+    board.background_color = None
+
+    bbu = BoardBackgroundUpload(board_id=board.id, upload_id=upload.id)
+    db.session.add(bbu)
+    db.session.commit()
+
+    return jsonify({
+        "upload_id": upload.id,
+        "url": get_upload_url(upload)
+    }), 201
 
 @app.route('/api/boards/<int:board_id>', methods=['PATCH'])
 @require_session_key
@@ -4271,6 +4324,44 @@ def api_rename_board(board_id):
     b.title = title
     db.session.commit()
     return jsonify({"id": b.id, "title": b.title})
+
+@app.route('/api/boards/color/<int:board_id>', methods=['PATCH'])
+@require_session_key
+def api_change_board_color(board_id):
+    user_id = g.user_id
+    b = Board.query.filter_by(id=board_id, user_id=user_id).first()
+    if not b:
+        return jsonify({"error": "Board not found"}), 404
+    payload = request.get_json() or {}
+    color = payload.get('color')
+    if payload['color'] == "none":
+        b.background_color = None
+    else:
+        b.background_color = color
+    db.session.commit()
+    return jsonify({"id": b.id, "color": b.background_color})
+
+@app.route('/api/boards/<int:board_id>/background_uploads', methods=['DELETE'])
+@require_session_key
+def detach_board_background(board_id):
+    """
+    Removes the association between board and upload.
+    Returns the upload_id so the frontend may call the generic upload-delete endpoint if desired.
+    """
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    board = Board.query.filter_by(id=board_id, user_id=user.id).first()
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+
+    existing = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
+    if not existing:
+        return jsonify({"error": "No background image attached"}), 404
+
+    upload_id = existing.upload_id
+    db.session.delete(existing)
+    db.session.commit()
+
+    return jsonify({"upload_id": upload_id}), 200
 
 
 @app.route('/api/boards/<int:board_id>', methods=['DELETE'])
@@ -4311,6 +4402,18 @@ def api_get_lists():
     board_id = request.args.get('board_id', type=int)
     if board_id is None:
         return jsonify({"error": "board_id required as query param"}), 400
+    # ensure board exists and belongs to user
+    board = Board.query.filter_by(id=board_id, user_id=user_id).first()
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+        # determine board background image url if present
+    board_bg = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
+    board_background_image_url = None
+    if board_bg:
+        upload = Upload.query.filter_by(id=board_bg.upload_id, deleted=False).first()
+        if upload:
+            board_background_image_url = get_upload_url(upload)
+
     lists = List.query.filter_by(user_id=user_id, board_id=board_id).order_by(List.id).all()
     out = []
     for l in lists:
@@ -4323,7 +4426,12 @@ def api_get_lists():
             "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position, "completed": c.completed}
                       for c in cards]
         })
-    return jsonify(out)
+    # Return an object that includes the board's background color plus the lists array
+    return jsonify({
+        "board_color": board.background_color,
+        "board_background_image_url": board_background_image_url,
+        "lists": out
+    })
 
 
 @app.route('/api/lists', methods=['POST'])
@@ -7986,7 +8094,6 @@ def update_delete_group_folder(group_id, folder_id):
 @app.route('/uploads/<int:upload_id>/download', methods=['GET'])
 @require_session_key
 def download_upload(upload_id):
-    # get current user object (assumes require_session_key sets g.user or g.user_id)
     user = getattr(g, 'user', None)
     if not user and getattr(g, 'user_id', None):
         user = User.query.get(g.user_id)
@@ -7998,13 +8105,9 @@ def download_upload(upload_id):
     if not upload or upload.deleted:
         return jsonify({"error": "Not found"}), 404
 
-    # Permission: allow if the uploader is the requester
-    if upload.user_id == user.id:
-        permitted = True
-    else:
+    if upload.user_id != user.id:
+        # optional: leave your old group note check
         permitted = False
-        # Otherwise, allow only if this upload is attached to a group note in a group the user is a member of
-        # Query notes that reference this upload and check membership
         group_note = (
             db.session.query(Note)
             .join(NoteUpload, Note.id == NoteUpload.note_id)
@@ -8014,11 +8117,9 @@ def download_upload(upload_id):
         )
         if group_note:
             permitted = True
+        if not permitted:
+            return jsonify({"error": "Forbidden"}), 403
 
-    if not permitted:
-        return jsonify({"error": "Forbidden"}), 403
-
-    # Serve file
     stored_filename = upload.stored_filename
     if not stored_filename:
         return jsonify({"error": "File missing"}), 404
@@ -8027,21 +8128,21 @@ def download_upload(upload_id):
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
-    # try to send with original filename
+    # determine inline vs download
+    inline = request.args.get('inline', '0') in ['1', 'true', 'yes']
+
     try:
-        # Use attachment_filename for compatibility with older Flask versions
         return send_from_directory(
             UPLOAD_FOLDER,
             stored_filename,
-            as_attachment=True,
-            attachment_filename=upload.original_filename
+            as_attachment=not inline,  # only download if not inline
+            attachment_filename=upload.original_filename  # fallback for older Flask
         )
     except TypeError:
-        # fallback if attachment_filename is not supported: try download_name
         return send_from_directory(
             UPLOAD_FOLDER,
             stored_filename,
-            as_attachment=True,
+            as_attachment=not inline,
             download_name=upload.original_filename
         )
 

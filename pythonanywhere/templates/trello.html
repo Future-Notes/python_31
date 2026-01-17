@@ -520,7 +520,7 @@
         height: 20px;
         border-radius: 50%;
         border: 2px solid rgba(255,255,255,0.12); /* visible on dark bg */
-        background: transparent;
+        background: transparent !important;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -588,7 +588,7 @@
 
         /* Completed state: filled green background + white check visible + title remains shifted */
         .card--completed .card-complete {
-        background: #82B536;
+        background: #82B536 !important;
         border-color: rgba(0,0,0,0.06);
         opacity: 1;
         transform: translateX(0) scale(1);
@@ -789,11 +789,6 @@
     </main>
 </div>
 
-<div id="actions-menu-board">
-    <button id="rename-board-btn" class="menu-item">Rename</button>
-    <button id="delete-board-btn" class="menu-item">Delete</button>
-</div>
-
 <!-- Modals (kept but not used for create/rename flows) -->
 <div class="modal-overlay" id="modal-overlay">
     <div class="modal" id="modal" style="display:none;">
@@ -811,6 +806,7 @@
 <script>
 /* Global state */
 let currentBoardId = null;
+let globalBoardBackgroundUrl = null
 let boardsCache = []; // list of boards
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -893,32 +889,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         await loadStartPageBoards();
         showStartPage();
     }
-
-    // board rename/delete header buttons handlers
-    document.getElementById('rename-board-btn').addEventListener('click', () => {
-        const b = boardsCache.find(x => x.id === currentBoardId);
-        if (!b) return;
-        inlineRenameBoard(b.id, b.title);
-    });
-    document.getElementById('delete-board-btn').addEventListener('click', async () => {
-        if (!currentBoardId) return;
-        if (!confirm('Delete board and everything inside?')) return;
-        const res = await apiDELETE(`/api/boards/${currentBoardId}`);
-        if (res.ok) {
-            currentBoardId = null;
-            document.getElementById('board-title').textContent = 'Select a board';
-            document.getElementById('lists-wrap').innerHTML = '';
-            // update URL and show start page
-            location.hash = '';
-            await loadStartPageBoards();
-            showStartPage();
-            // refresh sidebar list
-            await loadBoards();
-        } else {
-            const j = await res.json();
-            alert(j.error || 'Failed');
-        }
-    });
 
     // respond to hash changes (allow navigation between boards without reload)
     window.addEventListener('hashchange', async () => {
@@ -1312,8 +1282,6 @@ function highlightActiveBoard() {
     document.querySelectorAll('.board-item').forEach(el => {
         el.classList.toggle('active', parseInt(el.dataset.boardId,10) === currentBoardId);
     });
-    document.getElementById('rename-board-btn').style.display = currentBoardId ? 'inline-block' : 'none';
-    document.getElementById('delete-board-btn').style.display = currentBoardId ? 'inline-block' : 'none';
 }
 
 /* Inline board create / rename UI */
@@ -1545,102 +1513,10 @@ async function selectBoard(boardId) {
     location.hash = `#board-${boardId}`;
     // show board area and hide start page
     hideStartPage();
-    setupActionsMenuButton();
     window._currentBoardId = boardId; // make globally accessible for inline new list
     // load lists for that board
+    initBoardActionsMenu();
     await loadLists(boardId);
-}
-
-function setupActionsMenuButton() {
-    const btn = document.getElementById('actions-menu-btn');
-    const menu = document.getElementById('actions-menu-board');
-
-    // Apply dynamic styles to the menu container
-    Object.assign(menu.style, {
-        position: 'absolute',
-        display: 'none',
-        background: 'var(--ctr-color)',
-        borderRadius: '6px',
-        boxShadow: '0 6px 18px rgba(0,0,0,0.15)',
-        padding: '4px 0',
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: '0',
-    });
-
-    // Apply dynamic styles to all menu items
-    menu.querySelectorAll('.menu-item').forEach(item => {
-        Object.assign(item.style, {
-            all: 'unset',          // isolate from global styles
-            display: 'block',      // stack vertically
-            width: 'auto',         // do not stretch full width
-            padding: '6px 12px',
-            fontSize: '14px',
-            lineHeight: '1.4',
-            cursor: 'pointer',
-            borderRadius: '4px',
-        });
-
-        // Add hover effect dynamically
-        item.addEventListener('mouseenter', () => {
-            item.style.backgroundColor = 'var(--hdr-color)';
-        });
-        item.addEventListener('mouseleave', () => {
-            item.style.backgroundColor = '';
-        });
-    });
-
-    btn.onclick = (ev) => {
-        ev.stopPropagation();
-
-        // Show temporarily to measure
-        menu.style.display = 'block';
-        menu.style.visibility = 'hidden';
-
-        const btnRect = btn.getBoundingClientRect();
-        const menuRect = menu.getBoundingClientRect();
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-
-        const spaceBelow = viewportHeight - btnRect.bottom;
-        const spaceAbove = btnRect.top;
-        const spaceRight = viewportWidth - btnRect.left;
-        const spaceLeft = btnRect.right;
-
-        let top, left;
-
-        // Vertical placement
-        if (spaceBelow >= menuRect.height) {
-            top = btnRect.bottom;
-        } else if (spaceAbove >= menuRect.height) {
-            top = btnRect.top - menuRect.height;
-        } else {
-            top = Math.max(8, Math.min(btnRect.bottom, viewportHeight - menuRect.height - 8));
-        }
-
-        // Horizontal placement
-        if (spaceRight >= menuRect.width) {
-            left = btnRect.left;
-        } else if (spaceLeft >= menuRect.width) {
-            left = btnRect.right - menuRect.width;
-        } else {
-            left = Math.max(8, Math.min(btnRect.left, viewportWidth - menuRect.width - 8));
-        }
-
-        menu.style.top = (top + window.scrollY) + 'px';
-        menu.style.left = (left + window.scrollX) + 'px';
-        menu.style.visibility = 'visible';
-        menu.style.display = 'block';
-
-        function hideMenu() {
-            menu.style.display = 'none';
-            document.removeEventListener('click', hideMenu);
-        }
-
-        document.addEventListener('click', hideMenu);
-    };
 }
 
 function renderAddListButton() {
@@ -2023,7 +1899,46 @@ function makeTempId() {
 // ---------- Updated loadLists: single options button with generated menu ----------
 async function loadLists(boardId) {
     try {
-        const lists = await apiGET(`/api/lists?board_id=${boardId}`);
+        // fetch payload; API now returns { board_color: string|null, lists: [...] }
+        // but keep compatibility if API returns an array (old shape)
+        const payload = await apiGET(`/api/lists?board_id=${boardId}`);
+        let lists;
+        if (Array.isArray(payload)) {
+            // backward compatible: API returned array of lists only
+            lists = payload;
+        } else if (payload && typeof payload === 'object') {
+            lists = payload.lists || [];
+            boardColor = payload.board_color || null;
+            boardBackgroundUrl = payload.board_background_image_url || null;
+        } else {
+            lists = [];
+        }
+        if (boardBackgroundUrl) {
+            globalBoardBackgroundUrl = boardBackgroundUrl;
+            updateBoardMenuUi();
+        } else {
+            globalBoardBackgroundUrl = null;
+        }
+
+        const boardEl = document.getElementById('lists-wrap');
+        const boardTitleEl = document.getElementById('board-title');
+
+        if (boardEl) {
+            if (boardBackgroundUrl) {
+                // use background-image when there is an image
+                boardEl.style.background = `url('${boardBackgroundUrl}') center/cover no-repeat`;
+                // color contrast on title: use default (white or black) or leave as-is
+                if (boardTitleEl) boardTitleEl.style.color = ''; // default contrast for images
+            } else if (boardColor) {
+                // just a color background
+                boardEl.style.background = boardColor;
+            } else {
+                // reset to default
+                boardEl.style.background = '';
+                if (boardTitleEl) boardTitleEl.style.color = '';
+            }
+        }
+
         const listsWrap = document.getElementById('lists-wrap');
         // clear outer wrapper but keep structure
         listsWrap.innerHTML = '';
@@ -2315,7 +2230,7 @@ async function loadLists(boardId) {
             }
             window.listsSortable = Sortable.create(inner, {
                 animation: 150,
-                handle: '.list h4',
+                handle: '.drag-handle',
                 draggable: '.list',     // IMPORTANT: only .list items are draggable
                 ghostClass: 'sortable-ghost',
                 chosenClass: 'sortable-chosen',
@@ -2338,11 +2253,17 @@ async function loadLists(boardId) {
             col.className = 'list';
             col.style.background = l.color || 'var(--list-bg-color)';
             col.dataset.listId = l.id;
-            col.innerHTML = `<h4 style="display:flex;align-items:center;gap:8px">
-                    <span class="list-title-text">${escapeHtml(l.title)}</span>
-                    <span style="display:flex;gap:6px;">
-                        <button class="small-btn options-btn" title="Options" aria-haspopup="true" aria-expanded="false">⋯</button>
+            col.innerHTML = `<h4 class="list-header">
+                    <span class="list-title-text drag-handle">
+                        ${escapeHtml(l.title)}
                     </span>
+                    <button
+                        class="small-btn options-btn"
+                        title="Options"
+                        aria-haspopup="true"
+                        aria-expanded="false">
+                        ⋯
+                    </button>
                 </h4>
                 <div class="card-list" id="cards-for-${l.id}"></div>
                 <div style="margin-top:8px; display:flex; gap:8px;">
@@ -2574,6 +2495,19 @@ async function loadLists(boardId) {
             max-width: 320px;
             font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
         }
+        .list-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .list-title-text.drag-handle {
+            flex: 1;
+            cursor: grab;
+            user-select: none;
+        }
+        .options-btn {
+            touch-action: manipulation;
+        }
         .options-menu-item {
             display: block;
             width: 100%;
@@ -2633,7 +2567,6 @@ function inlineRenameList(listId, currentTitle) {
 
     // focus/select
     input.focus();
-    input.select();
 
 
     input.addEventListener('keydown', async (ev) => {
@@ -2853,7 +2786,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             descEl.value = card.description || '';
 
             titleEl.focus();
-            titleEl.select();
 
             // GET activity (server should return both history and comment items sorted desc by created_at)
             let activity = [];
@@ -2983,7 +2915,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         contentEl.appendChild(ta);
         contentEl.appendChild(actions);
         ta.focus();
-        ta.select();
 
         btnCancel.addEventListener('click', () => {
             // restore original content text
@@ -3177,6 +3108,559 @@ async function cancelInvite(id) {
         console.error(err);
     }
 }
+
+// Board actions menu generator (replaces #actions-menu-board if present).
+// - Uses original buttons: #rename-board-btn and #delete-board-btn (class "menu-item").
+// - Removes duplicate/toggle/labels controls.
+// - Color swatch uses apiPATCH('/api/boards/color/<id>', { color }) similar to list menu sample.
+// - Rename/Delete logic moved inside the IIFE (uses existing inlineRenameBoard + apiDELETE + loaders).
+function initBoardActionsMenu() {
+    let openMenu = null;
+    let openMenuCleanup = null;
+    const existing = document.getElementById('actions-menu-board');
+    if (existing) existing.remove();
+
+    // CSS injected so menu is self-contained
+    const style = document.createElement('style');
+    style.textContent = `
+    #actions-menu-board.generated {
+        position: absolute;
+        min-width: 240px;
+        max-width: 360px;
+        background: var(--ctr-color, #1f1f1f);
+        color: var(--text-color, #e8e8e8);
+        border-radius: 8px;
+        box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+        padding: 0;
+        z-index: 20000;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    #actions-menu-board .bm-header {
+        padding: 10px 12px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:8px;
+        border-top-left-radius:8px;
+        border-top-right-radius:8px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    }
+    #actions-menu-board .bm-header-title { font-weight:600; font-size:14px; }
+    #actions-menu-board .bm-sub { font-size:12px; opacity:0.8; }
+    #actions-menu-board .bm-close { all: unset; cursor:pointer; padding:6px; border-radius:6px; }
+    #actions-menu-board .bm-divider { height:1px; background:var(--hdr-color, rgba(255,255,255,0.06)); margin:6px 0; }
+    #actions-menu-board .bm-section { padding:10px 12px; }
+    #actions-menu-board .menu-item {
+        all: unset;
+        display:block;
+        width:100%;
+        padding:8px 10px;
+        font-size:14px;
+        cursor:pointer;
+        border-radius:6px;
+        text-align:left;
+    }
+    #actions-menu-board .menu-item:focus, #actions-menu-board .menu-item:hover { background: rgba(255,255,255,0.02); outline:none; }
+    #actions-menu-board .menu-item--danger { color:#ff6b6b; font-weight:600; }
+    #actions-menu-board .swatch-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+    #actions-menu-board .swatch { width:34px; height:34px; border-radius:8px; cursor:pointer; border:2px solid transparent; box-sizing:border-box; }
+    #actions-menu-board .swatch:focus, #actions-menu-board .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
+    #actions-menu-board .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; }
+    `;
+    document.head.appendChild(style);
+
+    // Build the menu root
+    const menu = document.createElement('div');
+    menu.id = 'actions-menu-board';
+    menu.className = 'generated';
+    menu.setAttribute('role', 'menu');
+    menu.tabIndex = -1;
+
+    // Header (title + close)
+    const header = document.createElement('div');
+    header.className = 'bm-header';
+    const headLeft = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'bm-header-title';
+    title.textContent = 'Board actions';
+    const sub = document.createElement('div');
+    sub.className = 'bm-sub';
+    sub.textContent = 'Manage this board';
+    headLeft.appendChild(title);
+    headLeft.appendChild(sub);
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'bm-close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Close menu');
+    closeBtn.innerHTML = '&#10005;';
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeMenu(); });
+    header.appendChild(headLeft);
+    header.appendChild(closeBtn);
+    menu.appendChild(header);
+
+    // divider
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
+
+    // Color section (swatches) - will call apiPATCH('/api/boards/color/<id>', { color })
+    const colorSection = document.createElement('div');
+    colorSection.className = 'bm-section';
+    const colorLabel = document.createElement('div');
+    colorLabel.textContent = 'Board color';
+    colorLabel.style.fontSize = '13px';
+    colorLabel.style.marginBottom = '6px';
+    colorSection.appendChild(colorLabel);
+
+    const swGrid = document.createElement('div');
+    swGrid.className = 'swatch-grid';
+
+    const colors = [
+        '#FF6B6B', '#FFAD69', '#FFD93D', '#6BCB77', '#4D96FF', '#845EC2', '#FF70A6', '#00C9A7', '#F9F871', null
+    ];
+
+    // helper: resolve board id from anchor or UI
+    function resolveBoardId() {
+        try {
+            if (typeof currentBoardId !== 'undefined' && currentBoardId) return currentBoardId;
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    // swatch click handler - uses apiPATCH exactly as you required
+    async function onSwatchClick(colorValue, anchor) {
+        const boardId = resolveBoardId();
+        if (!boardId) {
+            console.warn('No boardId found for color change');
+            return;
+        }
+        const payloadColor = colorValue === null ? null : colorValue;
+        try {
+            // apiPATCH must exist in your environment (same as your list menu example)
+            const res = await apiPATCH(`/api/boards/color/${boardId}`, { color: payloadColor });
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                alert(j.error || 'Failed to update board color');
+                return;
+            }
+            // Apply instantly if possible (try a few common hooks)
+            const boardEl = document.getElementById('lists-wrap');
+            if (payloadColor === null) {
+                await loadLists(boardId); // reload to reset
+            } else {
+                boardEl.style.background = payloadColor;
+            }
+            closeMenu();
+        } catch (err) {
+            console.error(err);
+            alert('Network error while updating color');
+        }
+    }
+
+    // create swatches
+    colors.forEach(col => {
+        const sw = document.createElement('button');
+        sw.className = 'swatch';
+        sw.type = 'button';
+        sw.tabIndex = 0;
+        sw.setAttribute('data-color', col === null ? '' : col);
+        sw.title = col || 'Default';
+        if (col === null) {
+            sw.classList.add('swatch--default');
+            sw.textContent = 'Default';
+        } else {
+            sw.style.backgroundColor = col;
+        }
+        sw.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            onSwatchClick(col, currentAnchor);
+        });
+        sw.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                sw.click();
+            }
+        });
+        swGrid.appendChild(sw);
+    });
+
+    colorSection.appendChild(swGrid);
+    menu.appendChild(colorSection);
+
+    // divider
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
+
+    // --- Upload background controls (board-level) ---
+    const uploadContainer = document.createElement('div');
+    uploadContainer.classList.add('bm-section');
+    uploadContainer.style.marginTop = '12px';
+
+    // Visual label
+    const uploadLabel = document.createElement('div');
+    uploadLabel.className = 'options-menu-color-label';
+    uploadLabel.textContent = 'Board background image';
+    uploadLabel.style.fontSize = '13px';
+    uploadLabel.style.opacity = '0.95';
+    uploadContainer.appendChild(uploadLabel);
+
+    // file input (hidden) + visible button to trigger it
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+
+    const uploadBtn = document.createElement('button');
+    uploadBtn.type = 'button';
+    uploadBtn.className = 'options-menu-item options-menu-more';
+    console.log('globalBoardBackgroundUrl at init:', globalBoardBackgroundUrl);
+    uploadBtn.textContent = (globalBoardBackgroundUrl ? 'Change background image' : 'Upload background image');
+    uploadBtn.addEventListener('click', () => fileInput.click());
+
+    boardId = resolveBoardId();
+    if (!boardId) {
+        alert('Cannot determine board ID for upload');
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = (globalBoardBackgroundUrl ? 'Change background image' : 'Upload background image');
+        fileInput.value = '';
+        return;
+    }
+
+    fileInput.addEventListener('change', async (ev) => {
+        if (!fileInput.files || fileInput.files.length === 0) return;
+        const f = fileInput.files[0];
+        uploadBtn.disabled = true;
+        deleteBgBtn.disabled = true;
+        uploadBtn.textContent = 'Uploading…';
+
+        boardArea = document.getElementById('lists-wrap');
+
+        try {
+            // Step 1: POST to generic /uploads (multipart)
+            const form = new FormData();
+            form.append('file', f);
+            const res1 = await fetch('/uploads', {
+                method: 'POST',
+                body: form
+            });
+
+            if (!res1.ok) {
+                const err = await res1.json().catch(() => ({}));
+                alert(err.error || 'Upload failed');
+                return;
+            }
+            const body = await res1.json();
+            const uploadId = body.upload_id;
+            if (!uploadId) {
+                alert('Upload returned unexpected response');
+                return;
+            }
+
+            // Step 2: attach that upload to the board
+            const res2 = await fetch(`/api/boards/${boardId}/background_uploads`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ upload_id: uploadId })
+            });
+
+            if (!res2.ok) {
+                const err = await res2.json().catch(() => ({}));
+                alert(err.error || 'Failed to attach background to board');
+                return;
+            }
+
+            const attachBody = await res2.json();
+            globalBoardBackgroundUrl = attachBody.url || null;
+
+            // apply image immediately (image overrides color)
+            if (boardArea && globalBoardBackgroundUrl) {
+                boardArea.style.background = `url('${globalBoardBackgroundUrl}') center/cover no-repeat`;
+            }
+
+            // update menu button label
+            uploadBtn.textContent = 'Change background image';
+            // optionally show thumbnail / change delete button state below (we will create those next)
+            renderBgControlsState();
+
+        } catch (err) {
+            console.error(err);
+            alert('Network error while uploading background');
+        } finally {
+            fileInput.value = '';
+            uploadBtn.disabled = false;
+            deleteBgBtn.disabled = false;
+        }
+    });
+
+    // create a small thumbnail + delete button area (will be populated if an image exists)
+    const bgControls = document.createElement('div');
+    bgControls.style.display = 'flex';
+    bgControls.style.alignItems = 'center';
+    bgControls.style.gap = '8px';
+    bgControls.style.marginTop = '4px';
+
+    const thumb = document.createElement('img');
+    thumb.style.width = '64px';
+    thumb.style.height = '40px';
+    thumb.style.objectFit = 'cover';
+    thumb.style.borderRadius = '6px';
+    thumb.style.display = 'none'; // shown when image exists
+
+    const deleteBgBtn = document.createElement('button');
+    deleteBgBtn.type = 'button';
+    deleteBgBtn.className = 'options-menu-item options-menu-item--danger';
+    deleteBgBtn.textContent = 'Remove background';
+    deleteBgBtn.style.display = 'none';
+
+    // handler for delete: two requests (unlink, then frontend deletes upload)
+    deleteBgBtn.addEventListener('click', async () => {
+        if (!confirm('Remove board background image?')) return;
+        deleteBgBtn.disabled = true;
+        try {
+            // Step 1: unlink in board table
+            const res = await fetch(`/api/boards/${boardId}/background_uploads`, { method: 'DELETE' });
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                alert(j.error || 'Failed to remove background');
+                deleteBgBtn.disabled = false;
+                return;
+            }
+            const j = await res.json();
+            const uploadId = j.upload_id;
+
+            // Step 2: delete actual upload via generic endpoint (frontend performs second request)
+            if (uploadId) {
+                const res2 = await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
+                if (!res2.ok) {
+                    // not fatal — log and continue, but notify
+                    console.warn('Failed to delete upload at /uploads/:', res2.status);
+                }
+            }
+
+            // remove image from UI; restore color if present
+            globalBoardBackgroundUrl = null;
+            await loadLists(boardId);
+            renderBgControlsState();
+            deleteBgBtn.disabled = false;
+
+        } catch (err) {
+            console.error(err);
+            alert('Network error while removing background');
+            deleteBgBtn.disabled = false;
+        }
+    });
+
+    // helper: update thumbnail + visibility based on current state
+    function renderBgControlsState() {
+        if (globalBoardBackgroundUrl) {
+            thumb.src = globalBoardBackgroundUrl;
+            thumb.style.display = 'block';
+            deleteBgBtn.style.display = 'inline-block';
+            uploadBtn.textContent = 'Change background image';
+        } else {
+            thumb.style.display = 'none';
+            deleteBgBtn.style.display = 'none';
+            uploadBtn.textContent = 'Upload background image';
+        }
+    }
+
+    uploadContainer.appendChild(fileInput);
+    uploadContainer.appendChild(uploadBtn);
+    uploadContainer.appendChild(bgControls);
+    bgControls.appendChild(thumb);
+    bgControls.appendChild(deleteBgBtn);
+
+    // initialize view
+    renderBgControlsState();
+
+    // append uploadContainer to menu just after color container
+    menu.appendChild(uploadContainer);
+
+
+    // divider
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
+
+    // Actions section: use original Rename/Delete buttons (IDs + class menu-item)
+    const actionSection = document.createElement('div');
+    actionSection.className = 'bm-section';
+
+    const renameBtn = document.createElement('button');
+    renameBtn.id = 'rename-board-btn';
+    renameBtn.className = 'menu-item';
+    renameBtn.type = 'button';
+    renameBtn.textContent = 'Rename';
+
+    // Move original rename logic here: use boardsCache, currentBoardId, inlineRenameBoard
+    renameBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        // original logic: find board in boardsCache and call inlineRenameBoard(b.id, b.title);
+        try {
+            const b = (typeof boardsCache !== 'undefined' && Array.isArray(boardsCache)) ? boardsCache.find(x => x.id === currentBoardId) : null;
+            if (!b) return;
+            if (typeof inlineRenameBoard === 'function') {
+                inlineRenameBoard(b.id, b.title);
+            } else {
+                // fallback: dispatch event
+                document.dispatchEvent(new CustomEvent('board:rename', { detail: { boardId: b.id, title: b.title } }));
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            closeMenu();
+        }
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.id = 'delete-board-btn';
+    deleteBtn.className = 'menu-item menu-item--danger';
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = 'Delete';
+
+    // Move original delete logic here (async)
+    deleteBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        try {
+            if (!currentBoardId) return;
+            if (!confirm('Delete board and everything inside?')) return;
+            const res = await apiDELETE(`/api/boards/${currentBoardId}`);
+            if (res.ok) {
+                // follow original behavior
+                currentBoardId = null;
+                const bt = document.getElementById('board-title');
+                if (bt) bt.textContent = 'Select a board';
+                const listsWrap = document.getElementById('lists-wrap');
+                if (listsWrap) listsWrap.innerHTML = '';
+                // update URL and show start page
+                location.hash = '';
+                if (typeof loadStartPageBoards === 'function') await loadStartPageBoards();
+                if (typeof showStartPage === 'function') showStartPage();
+                if (typeof loadBoards === 'function') await loadBoards();
+                closeMenu();
+            } else {
+                const j = await res.json().catch(() => ({}));
+                alert(j.error || 'Failed');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Network error while deleting board');
+        }
+    });
+
+    // Close button (action) to match original menu behaviour
+    const closeAction = document.createElement('button');
+    closeAction.className = 'menu-item';
+    closeAction.type = 'button';
+    closeAction.textContent = 'Close';
+    closeAction.addEventListener('click', (ev) => { ev.stopPropagation(); closeMenu(); });
+
+    actionSection.appendChild(renameBtn);
+    actionSection.appendChild(deleteBtn);
+    actionSection.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
+    actionSection.appendChild(closeAction);
+
+    menu.appendChild(actionSection);
+
+    // Inserted into DOM on open only
+    let currentAnchor = null;
+
+    function positionMenuNear(menuEl, anchorBtn) {
+        const rect = anchorBtn.getBoundingClientRect();
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        if (!document.body.contains(menuEl)) document.body.appendChild(menuEl);
+        const menuRect = menuEl.getBoundingClientRect();
+        const menuWidth = Math.max(menuRect.width || 260, 240);
+        const menuHeight = menuRect.height || 220;
+
+        let left = rect.right - menuWidth + window.scrollX;
+        let top = rect.bottom + 8 + window.scrollY;
+
+        if (left < 8 + window.scrollX) left = Math.max(8 + window.scrollX, rect.left + window.scrollX);
+        if (top + menuHeight > window.scrollY + viewportHeight - 8) {
+            top = rect.top + window.scrollY - menuHeight - 8;
+        }
+        if (top < 8 + window.scrollY) top = 8 + window.scrollY;
+
+        menuEl.style.left = Math.round(left) + 'px';
+        menuEl.style.top = Math.round(top) + 'px';
+    }
+
+    function openAt(anchorBtn) {
+        if (openMenu) closeMenu();
+        currentAnchor = anchorBtn;
+        document.body.appendChild(menu);
+        positionMenuNear(menu, anchorBtn);
+        menu.focus();
+
+        function onDocClick(e) {
+            if (!menu.contains(e.target) && e.target !== anchorBtn) closeMenu();
+        }
+        function onKeyDown(e) {
+            if (e.key === 'Escape') closeMenu();
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                focusNext(menu, e.key === 'ArrowDown' ? 1 : -1);
+            }
+        }
+        function onScrollResize() {
+            if (!currentAnchor) return;
+            positionMenuNear(menu, currentAnchor);
+        }
+
+        document.addEventListener('click', onDocClick);
+        document.addEventListener('keydown', onKeyDown);
+        window.addEventListener('resize', onScrollResize);
+        window.addEventListener('scroll', onScrollResize, true);
+
+        openMenu = menu;
+        openMenuCleanup = () => {
+            document.removeEventListener('click', onDocClick);
+            document.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('resize', onScrollResize);
+            window.removeEventListener('scroll', onScrollResize, true);
+        };
+    }
+
+    function closeMenu() {
+        if (!openMenu) return;
+        try { openMenuCleanup && openMenuCleanup(); } catch (e) { /* ignore */ }
+        try { openMenu.remove(); } catch (e) { /* ignore */ }
+        openMenu = null;
+        openMenuCleanup = null;
+        currentAnchor = null;
+    }
+
+    function focusNext(root, dir = 1) {
+        const items = Array.from(root.querySelectorAll('button, [tabindex]:not([tabindex="-1"])'))
+            .filter(el => !el.disabled && el.getAttribute('aria-hidden') !== 'true');
+        if (!items.length) return;
+        const idx = items.indexOf(document.activeElement);
+        const next = (idx + dir + items.length) % items.length;
+        items[next].focus();
+    }
+
+    // Wire trigger
+    const trigger = document.getElementById('actions-menu-btn');
+    if (trigger) {
+        trigger.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            if (openMenu && currentAnchor === trigger) {
+                closeMenu();
+            } else {
+                openAt(trigger);
+            }
+        });
+    } else {
+        console.warn('actions-menu-btn not found - create an element with id="actions-menu-btn" to open the board menu.');
+    }
+
+    // expose a programmatic API
+    window.openBoardActionsMenuAt = (el) => {
+        if (!el) throw new Error('anchor element required');
+        openAt(el);
+    };
+    window.closeBoardActionsMenu = closeMenu;
+    window.updateBoardMenuUi = renderBgControlsState
+}
+
+
 </script>
 </body>
 </html>
