@@ -2230,7 +2230,7 @@ async function loadLists(boardId) {
             }
             window.listsSortable = Sortable.create(inner, {
                 animation: 150,
-                handle: '.list h4',
+                handle: '.drag-handle',
                 draggable: '.list',     // IMPORTANT: only .list items are draggable
                 ghostClass: 'sortable-ghost',
                 chosenClass: 'sortable-chosen',
@@ -2253,11 +2253,17 @@ async function loadLists(boardId) {
             col.className = 'list';
             col.style.background = l.color || 'var(--list-bg-color)';
             col.dataset.listId = l.id;
-            col.innerHTML = `<h4 style="display:flex;align-items:center;gap:8px">
-                    <span class="list-title-text">${escapeHtml(l.title)}</span>
-                    <span style="display:flex;gap:6px;">
-                        <button class="small-btn options-btn" title="Options" aria-haspopup="true" aria-expanded="false">⋯</button>
+            col.innerHTML = `<h4 class="list-header">
+                    <span class="list-title-text drag-handle">
+                        ${escapeHtml(l.title)}
                     </span>
+                    <button
+                        class="small-btn options-btn"
+                        title="Options"
+                        aria-haspopup="true"
+                        aria-expanded="false">
+                        ⋯
+                    </button>
                 </h4>
                 <div class="card-list" id="cards-for-${l.id}"></div>
                 <div style="margin-top:8px; display:flex; gap:8px;">
@@ -2488,6 +2494,19 @@ async function loadLists(boardId) {
             min-width: 220px;
             max-width: 320px;
             font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        }
+        .list-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .list-title-text.drag-handle {
+            flex: 1;
+            cursor: grab;
+            user-select: none;
+        }
+        .options-btn {
+            touch-action: manipulation;
         }
         .options-menu-item {
             display: block;
