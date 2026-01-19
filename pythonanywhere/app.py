@@ -9616,7 +9616,7 @@ def deploy_all():
     # Step 3: Scan updates (check if remote master has new commits)
     scan_json, status = safe_extract_json(scan_updates())
     results['scan_updates'] = scan_json
-    if status != 200 or scan_json.get('update_available', True):
+    if status != 200:
         return jsonify({
             "status": "Aborted",
             "reason": "Remote master branch not ahead, PR may not have merged correctly",
