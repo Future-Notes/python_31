@@ -2321,8 +2321,6 @@ async function loadLists(boardId) {
                     background_image_url: c.background_image_url // new property
                 });
 
-                console.log(c.color);
-
                 // Ensure UI reflects server state
                 setCardCompletedUI(cardEl, !!c.completed);
 
