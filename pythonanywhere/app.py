@@ -9557,17 +9557,33 @@ def deploy_local():
     except requests.RequestException as e:
         return {"error": "Failed to reach remote deploy endpoint", "details": str(e)}, 500
 
+#new change
+
 def deploy_all():
     results = {}
 
-    # Step 1: Check dev vs master
-    dev_vs_master_resp = scan_dev_vs_master()
-    if isinstance(dev_vs_master_resp, tuple):
-        dev_vs_master_json, status = dev_vs_master_resp
-    else:
-        dev_vs_master_json = dev_vs_master_resp.get_json()
-        status = 200
+    def safe_extract_json(resp):
+        """
+        Safely extract JSON data and status code from a response-like object.
+        Handles:
+          - Flask Response objects
+          - Tuples of (data, status)
+          - Plain dicts
+        """
+        if isinstance(resp, tuple):
+            data, status = resp
+            if hasattr(data, "get_json"):
+                return data.get_json(), status
+            return data if isinstance(data, dict) else {}, status
+        if hasattr(resp, "get_json"):
+            return resp.get_json(), 200
+        if isinstance(resp, dict):
+            return resp, 200
+        # fallback for unknown types
+        return {}, 500
 
+    # Step 1: Check dev vs master
+    dev_vs_master_json, status = safe_extract_json(scan_dev_vs_master())
     results['scan_dev_vs_master'] = dev_vs_master_json
     if status != 200 or not dev_vs_master_json.get('dev_ahead_of_master', False):
         return jsonify({
@@ -9577,13 +9593,7 @@ def deploy_all():
         }), 400
 
     # Step 2: Merge dev into master
-    merge_resp = merge_dev_into_master()
-    if isinstance(merge_resp, tuple):
-        merge_json, status = merge_resp
-    else:
-        merge_json = merge_resp.get_json()
-        status = 200
-
+    merge_json, status = safe_extract_json(merge_dev_into_master())
     results['merge_dev_into_master'] = merge_json
     if status != 200:
         return jsonify({
@@ -9593,13 +9603,7 @@ def deploy_all():
         }), 500
 
     # Step 3: Scan updates (check if remote master has new commits)
-    scan_resp = scan_updates()
-    if isinstance(scan_resp, tuple):
-        scan_json, status = scan_resp
-    else:
-        scan_json = scan_resp.get_json()
-        status = 200
-
+    scan_json, status = safe_extract_json(scan_updates())
     results['scan_updates'] = scan_json
     if status != 200 or scan_json.get('update_available', False):
         return jsonify({
@@ -9609,13 +9613,7 @@ def deploy_all():
         }), 500
 
     # Step 4: Update code
-    update_resp = update_code()
-    if isinstance(update_resp, tuple):
-        update_json, status = update_resp
-    else:
-        update_json = update_resp.get_json()
-        status = 200
-
+    update_json, status = safe_extract_json(update_code())
     results['update_code'] = update_json
     if status != 200:
         return jsonify({
@@ -9623,6 +9621,7 @@ def deploy_all():
             "details": results
         }), 500
 
+    # Step 5: Everything succeeded
     return jsonify({
         "status": "Deployment completed successfully",
         "details": results
