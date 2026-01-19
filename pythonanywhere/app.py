@@ -106,6 +106,7 @@ app.config['COHERE_API_KEY'] = os.getenv("COHERE_API_KEY")
 app.config["TWOFA_FERNET_KEY"] = os.getenv("TWOFA_FERNET_KEY")
 app.config["DROPBOX_TOKEN"] = os.getenv("DROPBOX_TOKEN")
 app.config['GMAIL_APP_PASSWORD'] = os.getenv("GMAIL_APP_PASSWORD")
+CRONJOB_API_KEY = os.environ.get("CRONJOB_ORG_API_KEY")
 app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk'
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
@@ -298,19 +299,6 @@ class Upload(db.Model):
     deleted_at = db.Column(db.DateTime, nullable=True)
 
     user = db.relationship('User', backref=db.backref('uploads', lazy='dynamic'))
-
-class Task(db.Model):
-    __tablename__ = 'tasks'
-    
-    id             = db.Column(db.Integer, primary_key=True)
-    function_path  = db.Column(db.String(255), nullable=False)
-    args           = db.Column(db.JSON, nullable=True)    # e.g. ["user@example.com"]
-    kwargs         = db.Column(db.JSON, nullable=True)    # e.g. {"template": "weekly.html"}
-    interval_secs  = db.Column(db.Integer, nullable=False)  # seconds between runs
-    next_run       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    
-    def schedule_next(self):
-        self.next_run = datetime.utcnow() + timedelta(seconds=self.interval_secs)
 
 class AppSecret(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -911,6 +899,17 @@ class Notification(db.Model):
 
     user = db.relationship('User', back_populates='notifications')
 
+class NotificationLog(db.Model):
+    __tablename__ = 'notification_log'
+    id = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointment.id'), nullable=False)
+    minutes_before = db.Column(db.Integer, nullable=False)   # 15 or 30
+    sent_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('appointment_id', 'minutes_before', name='uq_appointment_minute'),
+    )
+
 # models.py
 class PasswordResetToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1417,27 +1416,6 @@ def _extract_text_from_cohere_response(response) -> str:
     except Exception:
         return ""
 
-
-def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_run=None):
-    """
-    Schedule a new task (or update an existing one).
-    
-    - function_path: "module.submodule:func_name"
-    - interval_secs: seconds between runs
-    - args: list of positional args for the function
-    - kwargs: dict of keyword args for the function
-    - first_run: datetime of first execution (defaults to now)
-    """
-    task = Task(
-        function_path=function_path,
-        interval_secs=interval_secs,
-        args=args or [],
-        kwargs=kwargs or {},
-        next_run=first_run or datetime.utcnow()
-    )
-    db.session.add(task)
-    db.session.commit()
-    return task
 
 @app.before_request
 def ensure_secrets_loaded():
@@ -5651,6 +5629,92 @@ def invite_accept():
     # Set a longer expiration (e.g., 7 days) so user can sign up later
     resp.set_cookie("referral_session", ref.id, httponly=True, secure=False, samesite="Lax", max_age=60*60*24*7)
     return resp
+
+@app.route('/cron/notifications', methods=["GET", "POST"])
+def cron_notifications():
+    now = datetime.now(timezone.utc)
+
+    # Query upcoming appointments: not deleted, not already ended
+    # Adjust filters to your app conventions (deleted_at usage, timezone handling, etc.)
+    appts = Appointment.query.filter(
+        Appointment.deleted_at.is_(None),
+        Appointment.end_datetime >= now
+    ).all()
+
+    sent_count = 0
+    skipped_count = 0
+    errors = []
+
+    for appt in appts:
+        try:
+            # Ensure appointment.start_datetime is timezone-aware in UTC
+            start = appt.start_datetime
+            if start.tzinfo is None:
+                # assume UTC if naive (adjust if your DB stores local times)
+                start = start.replace(tzinfo=timezone.utc)
+            # minutes until start (float)
+            minutes_until = (start - now).total_seconds() / 60.0
+
+            # only future events
+            if minutes_until < 0:
+                skipped_count += 1
+                continue
+
+            # Decide whether we should send 30 or 15 minute notice
+            notice_minutes = None
+            # Prefer 15 if within 15 minutes, otherwise 30 if within 30.
+            if minutes_until <= 15:
+                notice_minutes = 15
+            elif minutes_until <= 30:
+                notice_minutes = 30
+
+            if notice_minutes is None:
+                skipped_count += 1
+                continue
+
+            # check NotificationLog to avoid duplicates
+            already = NotificationLog.query.filter_by(
+                appointment_id=appt.id,
+                minutes_before=notice_minutes
+            ).first()
+
+            if already:
+                skipped_count += 1
+                continue
+
+            # send notification (assumed function already in your codebase)
+            minutes_text = f"{int(round(minutes_until))} minutes"
+            title = appt.title
+            text = f"You have appointment \"{appt.title}\" coming up in {minutes_text}"
+
+            # send_notification should be non-blocking/robust; handle exceptions
+            send_notification(
+                user_id=appt.user_id,
+                title=title,
+                text=text,
+                module="/scheduler-page"
+            )
+
+            # record it
+            log = NotificationLog(
+                appointment_id=appt.id,
+                minutes_before=notice_minutes
+            )
+            db.session.add(log)
+            db.session.commit()
+            sent_count += 1
+
+        except Exception as exc:
+            db.session.rollback()
+            errors.append({"appointment_id": getattr(appt, "id", None), "error": str(exc)})
+
+    return jsonify({
+        "now": now.isoformat(),
+        "processed": len(appts),
+        "sent": sent_count,
+        "skipped": skipped_count,
+        "errors": errors
+    }), (500 if errors else 200)
 
 
 @app.route('/flow/projects', methods=['GET'])
