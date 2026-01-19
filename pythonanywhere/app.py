@@ -9389,6 +9389,7 @@ def user_status():
 @require_admin
 def update_code_route():
     return update_code()
+
 def update_code():
     thread = threading.Thread(target=run_update_script)
     thread.start()
