@@ -67,6 +67,7 @@ try:
 except ImportError:
     pass
 # It should all work now!!!!
+#nope it doesnt
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
