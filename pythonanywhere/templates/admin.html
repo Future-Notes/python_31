@@ -448,7 +448,6 @@
             </div>
         </div>
 
-
         <!-- Messages Table -->
         <h2 class="section-title">Messages</h2>
         <table id="messages-table">
@@ -495,6 +494,10 @@
 
     </div>
 
+    <div class="container">
+        <div id="hn-container"></div>
+    </div>
+
     <script>
 
         function showModal() {
@@ -529,6 +532,51 @@
                 alert("An unexpected error occurred during deployment.");
             }
         });
+
+        function loadHackerNews(containerId, count = 10) {
+            const container = document.getElementById(containerId);
+            if (!container) return console.error("Container not found:", containerId);
+
+            // Clear container
+            container.innerHTML = '';
+
+            // Add some basic styles
+            const style = document.createElement('style');
+            style.textContent = `
+                #${containerId} { font-family: Arial, sans-serif; max-width: 800px; margin: auto; }
+                #${containerId} .hn-story { padding: 12px; border-bottom: 1px solid #ddd; }
+                #${containerId} .hn-story a { text-decoration: none; color: #333; font-weight: bold; }
+                #${containerId} .hn-story a:hover { color: #0077cc; }
+                #${containerId} .hn-meta { color: #666; font-size: 0.85em; margin-top: 4px; }
+            `;
+            document.head.appendChild(style);
+
+            // Fetch top stories IDs
+            fetch('https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty')
+                .then(res => res.json())
+                .then(ids => {
+                    const topIds = ids.slice(0, count);
+                    topIds.forEach(id => {
+                        fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json?print=pretty`)
+                            .then(res => res.json())
+                            .then(item => {
+                                if (!item) return;
+                                const storyDiv = document.createElement('div');
+                                storyDiv.className = 'hn-story';
+                                storyDiv.innerHTML = `
+                                    <a href="${item.url || '#'}" target="_blank">${item.title}</a>
+                                    <div class="hn-meta">by ${item.by} | ${item.score} points | ${item.descendants || 0} comments</div>
+                                `;
+                                container.appendChild(storyDiv);
+                            })
+                            .catch(err => console.error('Failed to fetch item', id, err));
+                    });
+                })
+                .catch(err => {
+                    console.error('Failed to fetch top stories', err);
+                    container.innerHTML = '<p>Failed to load Hacker News stories.</p>';
+                });
+        }
 
 
         document.getElementById('create-backup-btn').addEventListener('click', async () => {
@@ -690,6 +738,7 @@
                     populateMessagesTable(data.messages);
                     populateUsersTable(data.users);
                     fetchBackups();
+                    loadHackerNews("hn-container", 50);
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
