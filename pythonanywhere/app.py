@@ -9387,6 +9387,8 @@ def user_status():
 @require_pythonanywhere_domain
 @require_session_key
 @require_admin
+def update_code_route():
+    return update_code()
 def update_code():
     thread = threading.Thread(target=run_update_script)
     thread.start()
@@ -9397,6 +9399,9 @@ def update_code():
 @require_pythonanywhere_domain
 @require_session_key
 @require_admin
+def scan_updates_route():
+    return scan_updates()
+
 def scan_updates():
     try:
         repo = get_repo(REPO_PATH)
@@ -9428,6 +9433,9 @@ def scan_updates():
 @require_pythonanywhere_domain
 @require_session_key
 @require_admin
+def scan_dev_vs_master_route():
+    return scan_dev_vs_master()
+
 def scan_dev_vs_master():
     try:
         repo = get_repo(REPO_PATH)
@@ -9459,6 +9467,9 @@ def scan_dev_vs_master():
 @require_pythonanywhere_domain
 @require_session_key
 @require_admin
+def merge_dev_into_master_route():
+    return merge_dev_into_master()
+
 def merge_dev_into_master():
     # GitHub API configuration
     GITHUB_TOKEN = app.config["GITHUB_PERSONAL_ACCESS_TOKEN"]
@@ -9556,8 +9567,6 @@ def deploy_local():
         }
     except requests.RequestException as e:
         return {"error": "Failed to reach remote deploy endpoint", "details": str(e)}, 500
-
-#new change
 
 def deploy_all():
     results = {}
