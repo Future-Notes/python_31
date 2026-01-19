@@ -246,6 +246,15 @@ class BoardBackgroundUpload(db.Model):
     board = db.relationship('Board', backref=db.backref('background_upload', uselist=False))
     upload = db.relationship('Upload')
 
+class CardBackgroundUpload(db.Model):
+    __tablename__ = 'card_background_uploads'
+    id = db.Column(db.Integer, primary_key=True)
+    card_id = db.Column(db.Integer, db.ForeignKey('card.id'), nullable=False)
+    upload_id = db.Column(db.Integer, db.ForeignKey('uploads.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    card = db.relationship('Card', backref=db.backref('background_upload', uselist=False))
+    upload = db.relationship('Upload')
 
 class Upload(db.Model):
     __tablename__ = 'uploads'
@@ -422,6 +431,7 @@ class Card(db.Model):
     position = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed = db.Column(db.Boolean, default=False)
+    background_color = db.Column(db.String(7), nullable=True, default=None)  # New field for list background color
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -4429,16 +4439,19 @@ def api_get_lists():
     """
     Query param: board_id (required)
     Returns lists and their cards for the authenticated user belonging to the board.
+    Includes card background images.
     """
     user_id = g.user_id
     board_id = request.args.get('board_id', type=int)
     if board_id is None:
         return jsonify({"error": "board_id required as query param"}), 400
+
     # ensure board exists and belongs to user
     board = Board.query.filter_by(id=board_id, user_id=user_id).first()
     if not board:
         return jsonify({"error": "Board not found"}), 404
-        # determine board background image url if present
+
+    # determine board background image url if present
     board_bg = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
     board_background_image_url = None
     if board_bg:
@@ -4446,19 +4459,50 @@ def api_get_lists():
         if upload:
             board_background_image_url = get_upload_url(upload)
 
+    # fetch all lists for board
     lists = List.query.filter_by(user_id=user_id, board_id=board_id).order_by(List.id).all()
+    list_ids = [l.id for l in lists]
+
+    # fetch all cards for those lists
+    cards = Card.query.filter(Card.user_id==user_id, Card.list_id.in_(list_ids)).order_by(Card.position).all()
+    card_ids = [c.id for c in cards]
+
+    # fetch all card background uploads in one query
+    card_bg_map = {}
+    if card_ids:
+        card_bgs = CardBackgroundUpload.query.filter(CardBackgroundUpload.card_id.in_(card_ids)).all()
+        upload_ids = [bg.upload_id for bg in card_bgs]
+        uploads = {u.id: u for u in Upload.query.filter(Upload.id.in_(upload_ids), Upload.deleted==False).all()}
+
+        # map card_id -> background url
+        for bg in card_bgs:
+            u = uploads.get(bg.upload_id)
+            if u:
+                card_bg_map[bg.card_id] = get_upload_url(u)
+
+    # build output
     out = []
     for l in lists:
-        cards = Card.query.filter_by(user_id=user_id, list_id=l.id).order_by(Card.position).all()
+        l_cards = [c for c in cards if c.list_id == l.id]
         out.append({
             "id": l.id,
             "title": l.title,
             "order": l.ordernr,
             "color": l.background_color,
-            "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position, "completed": c.completed}
-                      for c in cards]
+            "cards": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "description": c.description or "",
+                    "position": c.position,
+                    "completed": c.completed,
+                    "color": c.background_color,
+                    "background_image_url": card_bg_map.get(c.id)  # None if no background
+                }
+                for c in l_cards
+            ]
         })
-    # Return an object that includes the board's background color plus the lists array
+
     return jsonify({
         "board_color": board.background_color,
         "board_background_image_url": board_background_image_url,
@@ -4597,12 +4641,23 @@ def api_get_card_info(card_id):
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    # Determine background image for the card
+    card_bg = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    card_background_image_url = None
+    if card_bg:
+        upload = Upload.query.filter_by(id=card_bg.upload_id, deleted=False).first()
+        if upload:
+            card_background_image_url = get_upload_url(upload)
+
     return jsonify({
         "id": card.id,
         "title": card.title,
         "description": card.description or "",
         "position": card.position,
-        "completed": card.completed
+        "completed": card.completed,
+        "color": card.background_color,
+        "background_image_url": card_background_image_url
     })
 
 @app.route('/api/cards/<int:card_id>/activity', methods=['GET'])
@@ -4659,6 +4714,22 @@ def api_edit_comment(comment_id):
     db.session.commit()
     return jsonify({"id": comment.id, "user_id": comment.user_id, "content": comment.content})
 
+@app.route('/api/cards/color/<int:card_id>', methods=['PATCH'])
+@require_session_key
+def api_change_card_color(card_id):
+    user_id = g.user_id
+    c = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not c:
+        return jsonify({"error": "Card not found"}), 404
+    payload = request.get_json() or {}
+    color = payload.get('color')
+    if payload['color'] == "none":
+        c.background_color = None
+    else:
+        c.background_color = color
+    db.session.commit()
+    return jsonify({"id": c.id, "color": c.background_color})
+
 @app.route('/api/card/comment/<int:comment_id>', methods=['DELETE'])
 @require_session_key
 def api_delete_comment(comment_id):
@@ -4693,6 +4764,43 @@ def api_create_card():
     db.session.add(card)
     db.session.commit()
     return jsonify({"id": card.id, "title": card.title, "description": card.description or "", "position": card.position}), 201
+
+@app.route('/api/cards/<int:card_id>/background_uploads', methods=['POST'])
+@require_session_key
+def attach_card_background(card_id):
+    """
+    Body JSON: { "upload_id": <int> }
+    Attaches an existing upload (already validated & stored by /uploads) as the card background.
+    If a previous background exists it will be unlinked (deleted from CardBackgroundUpload),
+    but the actual Upload row is NOT deleted here.
+    """
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    card = Card.query.filter_by(id=card_id, user_id=user.id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    data = request.get_json() or {}
+    upload_id = data.get('upload_id')
+    if not upload_id:
+        return jsonify({"error": "upload_id required"}), 400
+
+    upload = Upload.query.filter_by(id=upload_id, user_id=user.id, deleted=False).first()
+    if not upload:
+        return jsonify({"error": "Upload not found"}), 404
+
+    # remove any existing background link for this board
+    existing = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    if existing:
+        db.session.delete(existing)
+
+    bbu = CardBackgroundUpload(card_id=card.id, upload_id=upload.id)
+    db.session.add(bbu)
+    db.session.commit()
+
+    return jsonify({
+        "upload_id": upload.id,
+        "url": get_upload_url(upload)
+    }), 201
 
 
 @app.route('/api/cards/<int:card_id>', methods=['PATCH'])
@@ -4766,6 +4874,28 @@ def api_complete_card(card_id):
         "id": card.id,
         "completed": card.completed
     })
+
+@app.route('/api/cards/<int:card_id>/background_uploads', methods=['DELETE'])
+@require_session_key
+def detach_card_background(card_id):
+    """
+    Removes the association between board and upload.
+    Returns the upload_id so the frontend may call the generic upload-delete endpoint if desired.
+    """
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    card = Card.query.filter_by(id=card_id, user_id=user.id).first()
+    if not card:
+        return jsonify({"error": "Board not found"}), 404
+
+    existing = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    if not existing:
+        return jsonify({"error": "No background image attached"}), 404
+
+    upload_id = existing.upload_id
+    db.session.delete(existing)
+    db.session.commit()
+
+    return jsonify({"upload_id": upload_id}), 200
 
 @app.route('/api/cards/<int:card_id>', methods=['DELETE'])
 @require_session_key
