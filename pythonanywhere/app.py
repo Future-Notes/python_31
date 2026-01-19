@@ -1095,6 +1095,30 @@ def get_upload_url(upload):
     # simple inline URL for images
     return f'/uploads/{upload.id}/download?inline=1'
 
+def insert_card_activity(user_id, card_id, content):
+    user = User.query.filter_by(id=user_id).first()
+    if not user:
+        return "User not found!"
+
+    card = Card.query.filter_by(id=card_id).first()
+    if not card:
+        return "Card not found!"
+
+    new_activity = CardActivity(
+        card_id=card_id,
+        activity_type="activity",
+        content=content,
+        user_id=user_id
+    )
+
+    try:
+        db.session.add(new_activity)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return "Error inserting card activity!"
+
+    return "Successfully inserted card activity!"
 
 def collect_folder_tree_ids(root_folder_id):
     """
@@ -4675,29 +4699,73 @@ def api_create_card():
 @require_session_key
 def api_update_card(card_id):
     user_id = g.user_id
+
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
     payload = request.get_json() or {}
-    if 'title' in payload:
+
+    title_changed = False
+    description_changed = False
+
+    if 'title' in payload and payload['title'] != card.title:
         card.title = payload['title']
-    if 'description' in payload:
+        title_changed = True
+
+    if 'description' in payload and payload['description'] != card.description:
         card.description = payload['description']
+        description_changed = True
+
+    if title_changed:
+        insert_card_activity(
+            user_id,
+            card.id,
+            f"Card title updated to '{card.title}'"
+        )
+
+    if description_changed:
+        insert_card_activity(
+            user_id,
+            card.id,
+            "Card description updated"
+        )
+
     db.session.commit()
-    return jsonify({"id": card.id, "title": card.title, "description": card.description or ""})
+
+    return jsonify({
+        "id": card.id,
+        "title": card.title,
+        "description": card.description or ""
+    })
 
 @app.route('/api/cards/complete/<int:card_id>', methods=['PATCH'])
 @require_session_key
 def api_complete_card(card_id):
     user_id = g.user_id
+
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
     payload = request.get_json() or {}
+
     if 'completed' in payload:
         card.completed = bool(payload['completed'])
+
+        status = "Complete" if card.completed else "Uncomplete"
+        insert_card_activity(
+            user_id,
+            card.id,
+            f"Card set to {status}"
+        )
+
         db.session.commit()
-    return jsonify({"id": card.id, "completed": card.completed})
+
+    return jsonify({
+        "id": card.id,
+        "completed": card.completed
+    })
 
 @app.route('/api/cards/<int:card_id>', methods=['DELETE'])
 @require_session_key
@@ -4706,6 +4774,10 @@ def api_delete_card(card_id):
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+    # delete card activities
+    activities = CardActivity.query.filter_by(card_id=card.id).all()
+    for a in activities:
+        db.session.delete(a)
     db.session.delete(card)
     db.session.commit()
     return jsonify({"ok": True})
@@ -4722,8 +4794,9 @@ def api_move_card():
     """
     user_id = g.user_id
     payload = request.get_json() or {}
+
     card_id = payload.get('card_id')
-    to_list_id = payload.get('to_list_id') or payload.get('to_board_id')  # accept old name for compatibility
+    to_list_id = payload.get('to_list_id') or payload.get('to_board_id')  # backward compatibility
     order = payload.get('order_in_board') or payload.get('order_in_list') or []
 
     if not card_id or to_list_id is None:
@@ -4733,21 +4806,40 @@ def api_move_card():
     if not card:
         return jsonify({"error": "Card not found"}), 404
 
-    if not List.query.filter_by(id=to_list_id, user_id=user_id).first():
+    dest_list = List.query.filter_by(id=to_list_id, user_id=user_id).first()
+    if not dest_list:
         return jsonify({"error": "Destination list not found"}), 404
+    
+    should_insert_activity = True
 
+    if card.list_id == to_list_id:
+        should_insert_activity = False
+
+    # Move card
     card.list_id = to_list_id
     db.session.add(card)
+
+    if should_insert_activity == True:
+        insert_card_activity(
+            user_id,
+            card_id,
+            f"Card moved to list '{dest_list.title}'"
+        )
+
     try:
         for idx, cid in enumerate(order):
             c = Card.query.filter_by(id=cid, user_id=user_id).first()
             if c:
                 c.position = (idx + 1) * 1000
                 db.session.add(c)
+
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Could not reorder cards", "detail": str(e)}), 500
+        return jsonify(
+            {"error": "Could not reorder cards", "detail": str(e)},
+            500
+        )
 
     return jsonify({"ok": True})
 
