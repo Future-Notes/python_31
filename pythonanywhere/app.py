@@ -209,7 +209,7 @@ DB_PATH = os.path.join(os.getcwd(), 'instance', 'data.db')
 if not os.path.isdir(BACKUP_DIR):
     os.makedirs(BACKUP_DIR, exist_ok=True)
 PRIME = 7919  # arbitrary prime number
-SALT = "ted2FrJNDRf3vgzZdyx2iWx1267OSaufRb6CZNVDfGg7Tg61kO"
+SALT = os.getenv("DEPLOY_SECRET")
 ERROR_MESSAGES = {
     "ERR-1001": "Something went wrong. Please try again later.",
     "DB-2002": "A database issue occurred. Please retry your request.",
@@ -9543,9 +9543,14 @@ def merge_dev_into_master():
 @require_session_key
 @require_admin
 def deploy_local():
-    # Optional: Commit and push local changes first
-    result = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
-    if result.stdout.strip():  # Only commit if changes exist
+    # Step 1: Commit and push local changes (if any)
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True
+    )
+
+    if result.stdout.strip():
         cmds = [
             ["git", "add", "."],
             ["git", "commit", "-m", "Auto deploy"],
@@ -9555,20 +9560,45 @@ def deploy_local():
             print(f"Running: {' '.join(cmd)}")
             subprocess.run(cmd, check=True)
 
-    # Step 2: Call remote deploy endpoint
-    DEPLOY_HASH = generate_deploy_hash()  # Must match server
-    print(f"Generated deploy hash: {DEPLOY_HASH}")
+    # Step 2: Trigger remote deploy
+    DEPLOY_HASH = generate_deploy_hash()
     url = "https://bosbes.eu.pythonanywhere.com/remote/deploy"
+
     try:
-        resp = requests.post(url, headers={"X-Deploy-Hash": DEPLOY_HASH}, timeout=60)
-        print(f"Remote deploy response: {resp.status_code} - {resp.text}")
-        return {
-            "status": "Remote deploy triggered",
-            "remote_response": resp.json() if resp.headers.get("Content-Type") == "application/json" else resp.text,
-            "http_status": resp.status_code
-        }
+        resp = requests.post(
+            url,
+            headers={"X-Deploy-Hash": DEPLOY_HASH},
+            timeout=60
+        )
+
+        # Attempt to parse JSON response
+        remote_payload = None
+        if "application/json" in resp.headers.get("Content-Type", ""):
+            remote_payload = resp.json()
+
+        return jsonify({
+            "status": "ok" if resp.ok else "error",
+            "message": "Remote deploy completed" if resp.ok else "Remote deploy failed",
+            "remote": {
+                "http_status": resp.status_code,
+                "payload": remote_payload,
+                "raw": None if remote_payload else resp.text
+            }
+        }), resp.status_code
+
+    except requests.Timeout:
+        return jsonify({
+            "status": "error",
+            "message": "Remote deploy timed out",
+            "remote": None
+        }), 504
+
     except requests.RequestException as e:
-        return {"error": "Failed to reach remote deploy endpoint", "details": str(e)}, 500
+        return jsonify({
+            "status": "error",
+            "message": "Failed to reach remote deploy endpoint",
+            "details": str(e)
+        }), 500
 #x
 def deploy_all():
     results = {}
