@@ -4298,9 +4298,6 @@ def attach_board_background(board_id):
     if existing:
         db.session.delete(existing)
 
-    # IMPORTANT: remove any existing background color setting
-    board.background_color = None
-
     bbu = BoardBackgroundUpload(board_id=board.id, upload_id=upload.id)
     db.session.add(bbu)
     db.session.commit()
@@ -4368,9 +4365,20 @@ def detach_board_background(board_id):
 @require_session_key
 def api_delete_board(board_id):
     user_id = g.user_id
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 401
+
     b = Board.query.filter_by(id=board_id, user_id=user_id).first()
     if not b:
         return jsonify({"error": "Board not found"}), 404
+    bg = BoardBackgroundUpload.query.filter_by(board_id=board_id).first()
+
+    if bg:
+        if bg.upload:
+            delete_upload(bg.upload.id, user)
+        db.session.delete(bg)
+
     # cascading deletes should remove lists & cards but delete them anyway to be sure
     lists = List.query.filter_by(board_id=b.id, user_id=user_id).all()
     for l in lists:
