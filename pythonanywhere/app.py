@@ -9557,10 +9557,6 @@ def deploy_local():
     except requests.RequestException as e:
         return {"error": "Failed to reach remote deploy endpoint", "details": str(e)}, 500
 
-@app.route('/admin/deploy-all', methods=['POST'])
-@require_pythonanywhere_domain
-@require_session_key
-@require_admin
 def deploy_all():
     results = {}
 
