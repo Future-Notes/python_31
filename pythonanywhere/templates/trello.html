@@ -992,6 +992,7 @@ function getContrastYIQ(hexcolor){
 
 function applyListTheme(listEl, listColor) {
     if (!listColor) return;
+
     listEl.style.background = listColor;
     listEl.style.color = getContrastYIQ(listColor);
 
@@ -1000,20 +1001,23 @@ function applyListTheme(listEl, listColor) {
     const lighterColor = adjustColor(listColor, 30); // lighter background for elements
 
     elements.forEach(el => {
-        // Set background if element is input, textarea, card, etc.
+        // Skip cards that already have their own background
+        if (el.classList.contains('card') && el.style.background) {
+            return;
+        }
+
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.classList.contains('card')) {
             el.style.backgroundColor = lighterColor;
             el.style.color = getContrastYIQ(lighterColor);
             el.style.borderColor = adjustColor(listColor, -20); // optional border tint
         }
         if (el.tagName === 'BUTTON') {
-            el.style.backgroundColor = adjustColor(listColor, -10);
-            el.style.color = getContrastYIQ(adjustColor(listColor, -10));
+            const btnColor = adjustColor(listColor, -10);
+            el.style.backgroundColor = btnColor;
+            el.style.color = getContrastYIQ(btnColor);
         }
     });
 }
-
-
 
 async function refreshModalData() {
     try {
@@ -1780,9 +1784,18 @@ function attachCardCompleteHandler(cardEl) {
 
 
 // Create a DOM node for a card. If isTemp is true, the card will be styled as temporary.
-function createCardElement({ id, title = '', description = '', isTemp = false, completed = false }) {
+// If background_image_url is provided, it takes precedence over background_color.
+function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null }) {
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
+
+    // Apply background: image takes precedence
+    if (background_image_url) {
+        cardEl.style.background = `url('${background_image_url}') center/cover no-repeat`;
+    } else if (background_color) {
+        cardEl.style.background = background_color;
+    }
+
     if (isTemp) cardEl.classList.add('card--temp');
     if (completed) cardEl.classList.add('card--completed');
 
@@ -2303,7 +2316,9 @@ async function loadLists(boardId) {
                     title: c.title,
                     description: c.description || '',
                     isTemp: false,
-                    completed: !!c.completed
+                    completed: !!c.completed,
+                    background_color: c.color,
+                    background_image_url: c.background_image_url // new property
                 });
 
                 // Ensure UI reflects server state
@@ -2627,6 +2642,15 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                             </div>
                         </header>
 
+                        <!-- Card color swatches inserted between title and description -->
+                        <div id="card-modal-color" class="card-modal-color" aria-label="Card color">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+                            <label class="label" style="margin:0;font-size:13px;">Card color</label>
+                            <div style="font-size:12px;opacity:0.8;">Pick a color</div>
+                            </div>
+                            <div id="card-modal-color-swatches" class="swatch-grid"></div>
+                        </div>
+
                         <div class="card-modal-body">
                             <label class="label">Description</label>
                             <textarea id="card-modal-desc" class="card-modal-desc" placeholder="Add a description..."></textarea>
@@ -2722,6 +2746,13 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         .activity-controls { display:flex; gap:6px; margin-top:8px; }
         .add-comment textarea { width:96%; min-height:80px; padding:10px; border-radius:8px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; resize:vertical; }
         .activity-item .you { font-weight:700; }
+        /* Card color swatches - mirrors board menu swatches */
+        .card-modal-color { display:flex; flex-direction:column; gap:8px; }
+        .card-modal-color .swatch-grid { display:flex; flex-wrap:wrap; gap:8px; }
+        .card-modal-color .swatch { width:28px; height:28px; border-radius:6px; cursor:pointer; border:2px solid transparent; box-sizing:border-box; }
+        .card-modal-color .swatch:focus, .card-modal-color .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
+        .card-modal-color .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; padding:0 6px; }
+        .card-modal-color .swatch.selected { border-color: rgba(255,255,255,0.35); box-shadow: 0 3px 8px rgba(0,0,0,0.45); }
         `;
 
         document.head.appendChild(style);
@@ -2735,8 +2766,334 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         // Add comment
         modal.querySelector('#card-add-comment').addEventListener('click', () => addCommentFromModal());
 
+        // initialize the color swatches UI
+        initCardColorSwatches(modal);
+
+        // --- Upload background controls (card-level) ---
+        initCardBackgroundUpload(modal);
+
+        function initCardBackgroundUpload(modalEl) {
+            const uploadContainer = document.createElement('div');
+            uploadContainer.classList.add('bm-section');
+            uploadContainer.style.marginTop = '8px';
+
+            // Visual label
+            const uploadLabel = document.createElement('div');
+            uploadLabel.className = 'options-menu-color-label';
+            uploadLabel.textContent = 'Card background image';
+            uploadLabel.style.fontSize = '13px';
+            uploadLabel.style.opacity = '0.95';
+            uploadContainer.appendChild(uploadLabel);
+
+            // file input (hidden) + visible button to trigger it
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            fileInput.style.display = 'none';
+
+            const uploadBtn = document.createElement('button');
+            uploadBtn.type = 'button';
+            uploadBtn.className = 'options-menu-item options-menu-more';
+            uploadBtn.textContent = (_cardModalState.cardBackgroundUrl ? 'Change background image' : 'Upload background image');
+            uploadBtn.addEventListener('click', () => fileInput.click());
+
+            const bgControls = document.createElement('div');
+            bgControls.style.display = 'flex';
+            bgControls.style.alignItems = 'center';
+            bgControls.style.gap = '8px';
+            bgControls.style.marginTop = '6px';
+
+            const thumb = document.createElement('img');
+            thumb.style.width = '64px';
+            thumb.style.height = '40px';
+            thumb.style.objectFit = 'cover';
+            thumb.style.borderRadius = '6px';
+            thumb.style.display = 'none'; // shown when image exists
+
+            const deleteBgBtn = document.createElement('button');
+            deleteBgBtn.type = 'button';
+            deleteBgBtn.className = 'options-menu-item options-menu-item--danger';
+            deleteBgBtn.textContent = 'Remove background';
+            deleteBgBtn.style.display = 'none';
+
+            uploadContainer.appendChild(fileInput);
+            uploadContainer.appendChild(uploadBtn);
+            uploadContainer.appendChild(bgControls);
+            bgControls.appendChild(thumb);
+            bgControls.appendChild(deleteBgBtn);
+
+            // helper: update thumbnail + visibility based on current state
+            function renderCardBgState() {
+                if (_cardModalState.cardBackgroundUrl) {
+                    thumb.src = _cardModalState.cardBackgroundUrl;
+                    thumb.style.display = 'block';
+                    deleteBgBtn.style.display = 'inline-block';
+                    uploadBtn.textContent = 'Change background image';
+                } else {
+                    thumb.style.display = 'none';
+                    deleteBgBtn.style.display = 'none';
+                    uploadBtn.textContent = 'Upload background image';
+                }
+            }
+
+            // helper: apply background (or clear it) to modal and board card immediately
+            function applyBackgroundToUI(cardId, backgroundUrl, color) {
+                // update modal state
+                _cardModalState.cardBackgroundUrl = backgroundUrl || null;
+                if (typeof color !== 'undefined') _cardModalState.cardColor = color || null;
+
+                // update left panel
+                const left = modalEl.querySelector('.card-modal-left');
+                if (left) {
+                    if (_cardModalState.cardBackgroundUrl) {
+                        left.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                    } else if (_cardModalState.cardColor) {
+                        left.style.background = _cardModalState.cardColor;
+                    } else {
+                        left.style.background = '';
+                    }
+                }
+
+                // update board card element if present
+                const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+                if (cardEl) {
+                    if (_cardModalState.cardBackgroundUrl) {
+                        cardEl.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                    } else if (_cardModalState.cardColor) {
+                        cardEl.style.background = _cardModalState.cardColor;
+                    } else {
+                        cardEl.style.background = '';
+                    }
+                }
+
+                // refresh upload UI (thumbnail + buttons)
+                if (modalEl && typeof modalEl._renderCardBgState === 'function') {
+                    modalEl._renderCardBgState();
+                }
+            }
+
+
+            fileInput.addEventListener('change', async (ev) => {
+                if (!fileInput.files || fileInput.files.length === 0) return;
+                const f = fileInput.files[0];
+                uploadBtn.disabled = true;
+                deleteBgBtn.disabled = true;
+                uploadBtn.textContent = 'Uploading…';
+
+                const cardId = _cardModalState.cardId;
+                try {
+                    // Step 1: POST to generic /uploads (multipart)
+                    const form = new FormData();
+                    form.append('file', f);
+                    const res1 = await fetch('/uploads', {
+                        method: 'POST',
+                        body: form
+                    });
+
+                    if (!res1.ok) {
+                        const err = await res1.json().catch(() => ({}));
+                        alert(err.error || 'Upload failed');
+                        return;
+                    }
+                    const body = await res1.json();
+                    const uploadId = body.upload_id || body.id || body.id_upload;
+
+                    if (!uploadId) {
+                        // try to find a direct url if server returns it
+                        const possibleUrl = body.url || body.file_url || body.upload_url;
+                        if (possibleUrl) {
+                            // attach step may not be required by API shape; continue with url
+                            applyBackgroundToUI(cardId, possibleUrl, _cardModalState.cardColor);
+                            return;
+                        }
+                        alert('Upload returned unexpected response');
+                        return;
+                    }
+
+                    // Step 2: attach that upload to the card
+                    const res2 = await fetch(`/api/cards/${cardId}/background_uploads`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ upload_id: uploadId })
+                    });
+
+                    if (!res2.ok) {
+                        const err = await res2.json().catch(() => ({}));
+                        alert(err.error || 'Failed to attach background to card');
+                        return;
+                    }
+
+                    const attachBody = await res2.json();
+
+                    // Extract a usable background URL from the attach response.
+                    // Be permissive: server might return a field named background_image_url, url, file_url, card_background_image_url, or nested card/background_image_url.
+                    const newUrl =
+                        attachBody.background_image_url ||
+                        attachBody.url ||
+                        attachBody.file_url ||
+                        attachBody.upload_url ||
+                        (attachBody.card && (attachBody.card.background_image_url || attachBody.card.image_url)) ||
+                        (attachBody.data && (attachBody.data.background_image_url || attachBody.data.url)) ||
+                        null;
+
+                    // Update UI immediately using helper
+                    applyBackgroundToUI(cardId, newUrl, _cardModalState.cardColor);
+
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while uploading background');
+                } finally {
+                    fileInput.value = '';
+                    uploadBtn.disabled = false;
+                    deleteBgBtn.disabled = false;
+                    uploadBtn.textContent = (_cardModalState.cardBackgroundUrl ? 'Change background image' : 'Upload background image');
+                }
+            });
+
+
+            deleteBgBtn.addEventListener('click', async () => {
+                if (!confirm('Remove card background image?')) return;
+                deleteBgBtn.disabled = true;
+                try {
+                    const cardId = _cardModalState.cardId;
+                    // Step 1: unlink in card table
+                    const res = await fetch(`/api/cards/${cardId}/background_uploads`, { method: 'DELETE' });
+                    if (!res.ok) {
+                        const j = await res.json().catch(() => ({}));
+                        alert(j.error || 'Failed to remove background');
+                        deleteBgBtn.disabled = false;
+                        return;
+                    }
+                    const j = await res.json();
+                    const uploadId = j.upload_id || j.id || null;
+
+                    // Step 2: delete actual upload via generic endpoint (frontend performs second request) if uploadId is present
+                    if (uploadId) {
+                        const res2 = await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
+                        if (!res2.ok) {
+                            console.warn('Failed to delete upload at /uploads/:', res2.status);
+                        }
+                    }
+
+                    // Remove image from UI; restore color if present
+                    applyBackgroundToUI(cardId, null, _cardModalState.cardColor);
+
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while removing background');
+                } finally {
+                    deleteBgBtn.disabled = false;
+                }
+            });
+
+
+            // append uploadContainer to modal just after color container
+            const colorContainer = modalEl.querySelector('#card-modal-color');
+            if (colorContainer && colorContainer.parentNode) {
+                colorContainer.parentNode.insertBefore(uploadContainer, colorContainer.nextSibling);
+            } else {
+                modalEl.querySelector('.card-modal-left').insertBefore(uploadContainer, modalEl.querySelector('.card-modal-body'));
+            }
+
+            // expose a render function so refreshCardModal can call it after loading card data
+            modalEl._renderCardBgState = renderCardBgState;
+            renderCardBgState();
+        }
+
         _cardModal = modal;
         return _cardModal;
+    }
+
+    // Initialize card-color swatch grid and handlers (called once)
+    function initCardColorSwatches(modal) {
+        const swGrid = modal.querySelector('#card-modal-color-swatches');
+        if (!swGrid) return;
+
+        const colors = [
+            '#FF6B6B', '#FFAD69', '#FFD93D', '#6BCB77', '#4D96FF', '#845EC2', '#FF70A6', '#00C9A7', '#F9F871', null
+        ];
+
+        function render() {
+            swGrid.innerHTML = '';
+            const current = _cardModalState.cardColor || null;
+            colors.forEach(col => {
+                const sw = document.createElement('button');
+                sw.className = 'swatch';
+                sw.type = 'button';
+                sw.tabIndex = 0;
+                sw.setAttribute('data-color', col === null ? '' : col);
+                sw.title = col || 'Default';
+                if (col === null) {
+                    sw.classList.add('swatch--default');
+                    sw.textContent = 'Default';
+                } else {
+                    sw.style.backgroundColor = col;
+                }
+                if (current === col || (current === null && col === null)) sw.classList.add('selected');
+
+                sw.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    onCardSwatchClick(col);
+                });
+                sw.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        sw.click();
+                    }
+                });
+
+                swGrid.appendChild(sw);
+            });
+        }
+
+        // call render initially (cardColor may be null until modal opened)
+        render();
+
+        // expose a way to refresh selection state after card data loads
+        modal._refreshCardColorSwatches = render;
+    }
+
+    // Handler for clicking a swatch in the modal
+    async function onCardSwatchClick(colorValue) {
+        const cardId = _cardModalState.cardId;
+        if (!cardId) {
+            console.warn('No cardId set while changing card color');
+            return;
+        }
+        const payloadColor = colorValue === null ? null : colorValue;
+        try {
+            const res = await apiPATCH(`/api/cards/color/${encodeURIComponent(cardId)}`, { color: payloadColor });
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                alert(j.error || 'Failed to update card color');
+                return;
+            }
+
+            // Update UI immediately: change left panel background (overrides var)
+            const left = _cardModal.querySelector('.card-modal-left');
+            if (payloadColor === null) {
+                left.style.background = '';
+            } else {
+                left.style.background = payloadColor;
+            }
+
+            const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+            if (cardEl) {
+                if (payloadColor === null) {
+                    cardEl.style.background = '';
+                } else {
+                    cardEl.style.background = payloadColor;
+                }
+            }
+
+            // store state and refresh swatch selection
+            _cardModalState.cardColor = payloadColor;
+            if (_cardModal && typeof _cardModal._refreshCardColorSwatches === 'function') _cardModal._refreshCardColorSwatches();
+
+        } catch (err) {
+            console.error(err);
+            alert('Network error while updating card color');
+        }
     }
 
     // Open modal for cardId
@@ -2766,7 +3123,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         _cardModalState.cardId = null;
     }
 
-    // Refresh entire modal from backend
     async function refreshCardModal() {
         const cardId = _cardModalState.cardId;
         if (!cardId) return;
@@ -2785,14 +3141,50 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             titleEl.value = card.title || '';
             descEl.value = card.description || '';
 
+            const left = _cardModal.querySelector('.card-modal-left');
+
+            // inside refreshCardModal()
+            _cardModalState.cardColor = (typeof card.color !== 'undefined') ? (card.color || null) : null;
+
+            // Always update modal state with server value so the modal reflects latest server-side background.
+            _cardModalState.cardBackgroundUrl = card.background_image_url || null;
+
+            if (_cardModalState.cardBackgroundUrl) {
+                left.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+            } else if (_cardModalState.cardColor) {
+                left.style.background = _cardModalState.cardColor;
+            } else {
+                left.style.background = '';
+            }
+
+            // Refresh upload UI (thumbnail + buttons)
+            if (_cardModal && typeof _cardModal._renderCardBgState === 'function') {
+                _cardModal._renderCardBgState();
+            }
+
+
+            // Also update board card element if present so board view matches modal
+            const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+            if (cardEl) {
+                if (_cardModalState.cardBackgroundUrl) {
+                    cardEl.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                } else if (_cardModalState.cardColor) {
+                    cardEl.style.background = _cardModalState.cardColor;
+                } else {
+                    cardEl.style.background = '';
+                }
+            }
+
+            // refresh swatch selection
+            if (_cardModal && typeof _cardModal._refreshCardColorSwatches === 'function') _cardModal._refreshCardColorSwatches();
+
             titleEl.focus();
 
-            // GET activity (server should return both history and comment items sorted desc by created_at)
+            // GET activity
             let activity = [];
             try {
                 activity = await apiGET(`/api/cards/${cardId}/activity`);
             } catch (e) {
-                // if endpoint not available, fallback to empty
                 activity = [];
             }
 
@@ -3310,7 +3702,6 @@ function initBoardActionsMenu() {
     const uploadBtn = document.createElement('button');
     uploadBtn.type = 'button';
     uploadBtn.className = 'options-menu-item options-menu-more';
-    console.log('globalBoardBackgroundUrl at init:', globalBoardBackgroundUrl);
     uploadBtn.textContent = (globalBoardBackgroundUrl ? 'Change background image' : 'Upload background image');
     uploadBtn.addEventListener('click', () => fileInput.click());
 

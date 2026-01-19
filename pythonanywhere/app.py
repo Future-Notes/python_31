@@ -60,6 +60,12 @@ from cryptography.fernet import Fernet, InvalidToken
 import base64
 from collections import deque
 import difflib
+import dropbox
+from dropbox.exceptions import ApiError
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    pass
 
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
@@ -76,14 +82,35 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'poolclass': NullPool
 }
-app.config['VAPID_PRIVATE_KEY'] = '9AJRZillMA-nZfyUdM2SrldUrXp8eGEDteL_yvbJGjk'
+def load_secrets():
+    with app.app_context():
+        secrets = AppSecret.query.all()
+        for secret in secrets:
+            app.config[secret.key] = secret.value
+
+def is_pythonanywhere():
+    home_dir = os.path.expanduser("~")
+    return home_dir.startswith("/home/")
+
+if not is_pythonanywhere():
+    # Only load .env locally
+    load_dotenv()
+    print("Loaded .env for local development")
+else:
+    print("Detected PythonAnywhere, skipping .env")
+
+app.config['VAPID_PRIVATE_KEY'] = os.getenv("VAPID_PRIVATE_KEY")
+app.config['ADMIN_EMAIL'] = os.getenv("ADMIN_EMAIL")
+app.config['COHERE_API_KEY'] = os.getenv("COHERE_API_KEY")
+app.config["TWOFA_FERNET_KEY"] = os.getenv("TWOFA_FERNET_KEY")
+app.config["DROPBOX_TOKEN"] = os.getenv("DROPBOX_TOKEN")
+app.config['GMAIL_APP_PASSWORD'] = os.getenv("GMAIL_APP_PASSWORD")
 app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk'
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
-app.config['ADMIN_EMAIL'] = 'nathanvcappellen@solcon.nl'
 MAX_NOTE_LENGTH = 3000
-COHERE_API_KEY = "qeLaZAnc8R6ljslvDUhHspgWyheKC5mgOIbFXpcw"
+COHERE_API_KEY = app.config["COHERE_API_KEY"]
 _TIME_EPS = timedelta(seconds=1)
 # Temporary in-memory stores (for demo). Replace with Redis for production.
 login_tokens = {}        # login_token -> {user_id, expires_at, ip}
@@ -92,12 +119,13 @@ login_2fa_attempts = {}  # login_token -> attempts
 # how long to consider a visit "the same visitor" (in seconds)
 SHARE_VISIT_WINDOW_SECONDS = 30 * 60  # 30 minutes — change as you like
 # Fernet key for encrypting TOTP secrets (store in env var)
-TWOFA_FERNET_KEY = "C7Pi0I9nSCWyVa79gIRKYH3aze1MKjilpUTSH9bJTxo="
+TWOFA_FERNET_KEY = app.config["TWOFA_FERNET_KEY"]
 if TWOFA_FERNET_KEY:
     fernet = Fernet(TWOFA_FERNET_KEY)
 else:
     fernet = None  # fall back to plain storage (not recommended)
-
+dbx = dropbox.Dropbox(app.config["DROPBOX_TOKEN"])
+DROPBOX_UPLOAD_FOLDER = "/uploads"  # root folder in Dropbox
 REQUIRE_2FA_ALWAYS = False
 REQUIRE_2FA_ON_NEW_IP = True
 RANDOM_REQUIRE_2FA = True
@@ -111,7 +139,6 @@ jinja_env = Environment(
 )
 app.config['LOGO_URL'] = 'https://bosbes.eu.pythonanywhere.com/static/android-chrome-512x512.png'
 app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
-app.config['GMAIL_APP_PASSWORD'] = 'iklaaawvfggxxoep'
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Disables HTTPS check
 GITHUB_REPO_OWNER = "BosbesplaysYT" 
 GITHUB_REPO_NAME = "python_31"
@@ -246,6 +273,15 @@ class BoardBackgroundUpload(db.Model):
     board = db.relationship('Board', backref=db.backref('background_upload', uselist=False))
     upload = db.relationship('Upload')
 
+class CardBackgroundUpload(db.Model):
+    __tablename__ = 'card_background_uploads'
+    id = db.Column(db.Integer, primary_key=True)
+    card_id = db.Column(db.Integer, db.ForeignKey('card.id'), nullable=False)
+    upload_id = db.Column(db.Integer, db.ForeignKey('uploads.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    card = db.relationship('Card', backref=db.backref('background_upload', uselist=False))
+    upload = db.relationship('Upload')
 
 class Upload(db.Model):
     __tablename__ = 'uploads'
@@ -253,6 +289,7 @@ class Upload(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     original_filename = db.Column(db.String(512), nullable=False)
     stored_filename = db.Column(db.String(512), nullable=False)  # actual filename on disk
+    storage_backend = db.Column(db.String(50), default="local")  # "dropbox" or "local"
     mimetype = db.Column(db.String(128))
     size_bytes = db.Column(db.Integer, nullable=False)
     deleted = db.Column(db.Boolean, default=False)
@@ -422,6 +459,7 @@ class Card(db.Model):
     position = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed = db.Column(db.Boolean, default=False)
+    background_color = db.Column(db.String(7), nullable=True, default=None)  # New field for list background color
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -1095,6 +1133,43 @@ def get_upload_url(upload):
     # simple inline URL for images
     return f'/uploads/{upload.id}/download?inline=1'
 
+def dropbox_has_space(size_bytes: int) -> bool:
+    """
+    Returns True if Dropbox has enough free space for the file.
+    """
+    try:
+        usage = dbx.users_get_space_usage()
+        used = usage.used
+        allocated = usage.allocation.get_individual().allocated
+        return (used + size_bytes) <= allocated
+    except Exception:
+        # conservative fallback if API fails
+        return False
+
+def insert_card_activity(user_id, card_id, content):
+    user = User.query.filter_by(id=user_id).first()
+    if not user:
+        return "User not found!"
+
+    card = Card.query.filter_by(id=card_id).first()
+    if not card:
+        return "Card not found!"
+
+    new_activity = CardActivity(
+        card_id=card_id,
+        activity_type="activity",
+        content=content,
+        user_id=user_id
+    )
+
+    try:
+        db.session.add(new_activity)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return "Error inserting card activity!"
+
+    return "Successfully inserted card activity!"
 
 def collect_folder_tree_ids(root_folder_id):
     """
@@ -1362,12 +1437,6 @@ def schedule_task(function_path, interval_secs, args=None, kwargs=None, first_ru
     db.session.add(task)
     db.session.commit()
     return task
-
-def load_secrets():
-    with app.app_context():
-        secrets = AppSecret.query.all()
-        for secret in secrets:
-            app.config[secret.key] = secret.value
 
 @app.before_request
 def ensure_secrets_loaded():
@@ -3411,95 +3480,102 @@ def verify_file_content(file_path: str, mimetype: str) -> bool:
 
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
     """
-    Generic upload handler:
-      - file: werkzeug FileStorage
-      - user: user model instance
-      - max_size_bytes: maximum bytes allowed for this single upload
-    Returns tuple: (success, data) where data is Upload object on success or error message on failure.
+    Verifies file and uploads to Dropbox if space is available, else falls back to local storage.
     """
-    # Basic checks
     if file is None:
         return False, "No file provided."
 
     filename = secure_filename(file.filename)
     if not filename:
         return False, "Invalid filename."
-
     if not allowed_extension(filename):
         return False, f"Extension not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
 
-    # Try to determine file size without loading everything into memory:
+    # Determine file size
     file.stream.seek(0, os.SEEK_END)
     size = file.stream.tell()
     file.stream.seek(0)
-
     if size > max_size_bytes:
         return False, f"File too large: {size} bytes (max {max_size_bytes} bytes)."
 
-    # Check user storage quota
+    # Check user quota
     quota = get_user_quota_bytes(user)
+    if quota != float("inf") and (user.storage_used_bytes or 0) + size > quota:
+        return False, "User storage quota exceeded."
 
-    # Treat infinite quota as no limit
-    if quota != float("inf"):
-        if (user.storage_used_bytes or 0) + size > quota:
-            return False, "User storage quota exceeded."
-
-
-    # Determine mimetype
     mimetype = file.mimetype or ''
     if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith('image/'):
-        # be conservative:
         return False, "MIME type not allowed."
 
-    # Save to a temp file first
-    unique = f"{uuid.uuid4().hex}_{filename}"
-    stored_path = os.path.join(UPLOAD_FOLDER, unique)
-    try:
-        # Save the stream to disk
-        file.save(stored_path)
-    except Exception as e:
-        # cleanup if needed
-        if os.path.exists(stored_path):
-            os.remove(stored_path)
-        return False, "Failed to save uploaded file."
+    # Save to temp file for verification
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_name = tmp.name
+        file.save(tmp_name)
 
-    # Verify the content matches mimetype and allowed content
-    ok = verify_file_content(stored_path, mimetype)
+    ok = verify_file_content(tmp_name, mimetype)
     if not ok:
-        # delete file and return error
-        os.remove(stored_path)
-        try:
-            if user:
-                user.malicious_violations = (user.malicious_violations or 0) + 1
-                db.session.add(user)
-                db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            app.logger.exception("Failed to increment malicious_violations for user %s: %s", getattr(user, "id", None), e)
+        os.remove(tmp_name)
+        if user:
+            user.malicious_violations = (user.malicious_violations or 0) + 1
+            db.session.add(user)
+            db.session.commit()
         return False, "Uploaded file failed content verification."
 
-    # All good -> create DB record and update user's storage usage
+    # Decide storage backend: Dropbox or local
+    storage_backend = "local"
+    stored_path = None
+
+    if dropbox_has_space(size):
+        dropbox_path = f"{DROPBOX_UPLOAD_FOLDER}/{uuid.uuid4().hex}_{filename}"
+        try:
+            with open(tmp_name, "rb") as f:
+                dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+            storage_backend = "dropbox"
+            stored_path = dropbox_path
+        except Exception:
+            storage_backend = "local"
+
+    if storage_backend == "local":
+        # fallback to local storage
+        unique = f"{uuid.uuid4().hex}_{filename}"
+        stored_path = os.path.join(UPLOAD_FOLDER, unique)
+        try:
+            os.replace(tmp_name, stored_path)
+        except Exception:
+            os.remove(tmp_name)
+            return False, "Failed to save locally."
+    else:
+        # temp file already uploaded to Dropbox
+        os.remove(tmp_name)
+
+    # Record in DB
     try:
         upload = Upload(
             user_id=user.id,
             original_filename=filename,
-            stored_filename=unique,
+            stored_filename=stored_path,
+            storage_backend=storage_backend,
             mimetype=mimetype,
             size_bytes=size,
             created_at=datetime.utcnow(),
             deleted=False
         )
         db.session.add(upload)
-        # increment user's storage usage
         user.storage_used_bytes = (user.storage_used_bytes or 0) + size
         db.session.commit()
         return True, upload
     except Exception as e:
-        # cleanup file
-        if os.path.exists(stored_path):
+        # cleanup in case of DB failure
+        if storage_backend == "dropbox":
+            try:
+                dbx.files_delete_v2(stored_path)
+            except Exception:
+                pass
+        elif storage_backend == "local" and os.path.exists(stored_path):
             os.remove(stored_path)
         db.session.rollback()
-        return False, "Database error while recording upload."
+        return False, e
     
 # Force-delete an upload regardless of who the actor is (used for group flows)
 def force_delete_upload(upload_id, actor_user=None):
@@ -3547,9 +3623,10 @@ def _note_attachment_ids(note_id):
 
 def delete_upload(upload_id, user):
     """
-    Centralised delete handler.
-    Will mark upload deleted, remove file from disk, and subtract bytes from user's storage_used_bytes.
-    Only owner or admins should be allowed to delete (check before calling).
+    Centralized delete handler.
+    Marks upload deleted, removes file from storage (local or Dropbox),
+    and subtracts bytes from user's storage_used_bytes.
+    Only owner or admins should call this function.
     """
     upload = Upload.query.get(upload_id)
     if not upload:
@@ -3559,17 +3636,25 @@ def delete_upload(upload_id, user):
     if upload.deleted:
         return False, "Already deleted."
 
-    stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename)
     try:
-        # remove file from disk if exists
-        if os.path.exists(stored_path):
-            os.remove(stored_path)
-    except Exception as e:
-        # log but continue: we'll still mark deleted to keep DB consistent
-        pass
+        if upload.storage_backend == "dropbox":
+            # Delete from Dropbox
+            try:
+                dbx.files_delete_v2(upload.stored_filename)
+            except Exception as e:
+                # log but continue to mark as deleted
+                pass
+        else:
+            # Delete from local disk
+            stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename)
+            if os.path.exists(stored_path):
+                try:
+                    os.remove(stored_path)
+                except Exception as e:
+                    # log but continue
+                    pass
 
-    # update db
-    try:
+        # Update DB
         upload.deleted = True
         upload.deleted_at = datetime.utcnow()
         # subtract bytes from user
@@ -4298,9 +4383,6 @@ def attach_board_background(board_id):
     if existing:
         db.session.delete(existing)
 
-    # IMPORTANT: remove any existing background color setting
-    board.background_color = None
-
     bbu = BoardBackgroundUpload(board_id=board.id, upload_id=upload.id)
     db.session.add(bbu)
     db.session.commit()
@@ -4368,14 +4450,29 @@ def detach_board_background(board_id):
 @require_session_key
 def api_delete_board(board_id):
     user_id = g.user_id
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 401
+
     b = Board.query.filter_by(id=board_id, user_id=user_id).first()
     if not b:
         return jsonify({"error": "Board not found"}), 404
+    bg = BoardBackgroundUpload.query.filter_by(board_id=board_id).first()
+
+    if bg:
+        if bg.upload:
+            delete_upload(bg.upload.id, user)
+        db.session.delete(bg)
+
     # cascading deletes should remove lists & cards but delete them anyway to be sure
     lists = List.query.filter_by(board_id=b.id, user_id=user_id).all()
     for l in lists:
         cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
         for c in cards:
+            c_bg = CardBackgroundUpload.query.filter_by(card_id=c.id).first()
+            if c_bg:
+                delete_upload(c_bg.upload_id, user)
+                db.session.delete(c_bg)
             # delete card activities
             activities = CardActivity.query.filter_by(card_id=c.id).all()
             for a in activities:
@@ -4397,16 +4494,19 @@ def api_get_lists():
     """
     Query param: board_id (required)
     Returns lists and their cards for the authenticated user belonging to the board.
+    Includes card background images.
     """
     user_id = g.user_id
     board_id = request.args.get('board_id', type=int)
     if board_id is None:
         return jsonify({"error": "board_id required as query param"}), 400
+
     # ensure board exists and belongs to user
     board = Board.query.filter_by(id=board_id, user_id=user_id).first()
     if not board:
         return jsonify({"error": "Board not found"}), 404
-        # determine board background image url if present
+
+    # determine board background image url if present
     board_bg = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
     board_background_image_url = None
     if board_bg:
@@ -4414,19 +4514,50 @@ def api_get_lists():
         if upload:
             board_background_image_url = get_upload_url(upload)
 
+    # fetch all lists for board
     lists = List.query.filter_by(user_id=user_id, board_id=board_id).order_by(List.id).all()
+    list_ids = [l.id for l in lists]
+
+    # fetch all cards for those lists
+    cards = Card.query.filter(Card.user_id==user_id, Card.list_id.in_(list_ids)).order_by(Card.position).all()
+    card_ids = [c.id for c in cards]
+
+    # fetch all card background uploads in one query
+    card_bg_map = {}
+    if card_ids:
+        card_bgs = CardBackgroundUpload.query.filter(CardBackgroundUpload.card_id.in_(card_ids)).all()
+        upload_ids = [bg.upload_id for bg in card_bgs]
+        uploads = {u.id: u for u in Upload.query.filter(Upload.id.in_(upload_ids), Upload.deleted==False).all()}
+
+        # map card_id -> background url
+        for bg in card_bgs:
+            u = uploads.get(bg.upload_id)
+            if u:
+                card_bg_map[bg.card_id] = get_upload_url(u)
+
+    # build output
     out = []
     for l in lists:
-        cards = Card.query.filter_by(user_id=user_id, list_id=l.id).order_by(Card.position).all()
+        l_cards = [c for c in cards if c.list_id == l.id]
         out.append({
             "id": l.id,
             "title": l.title,
             "order": l.ordernr,
             "color": l.background_color,
-            "cards": [{"id": c.id, "title": c.title, "description": c.description or "", "position": c.position, "completed": c.completed}
-                      for c in cards]
+            "cards": [
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "description": c.description or "",
+                    "position": c.position,
+                    "completed": c.completed,
+                    "color": c.background_color,
+                    "background_image_url": card_bg_map.get(c.id)  # None if no background
+                }
+                for c in l_cards
+            ]
         })
-    # Return an object that includes the board's background color plus the lists array
+
     return jsonify({
         "board_color": board.background_color,
         "board_background_image_url": board_background_image_url,
@@ -4538,12 +4669,17 @@ def api_color_list(list_id):
 @require_session_key
 def api_delete_list(list_id):
     user_id = g.user_id
+    user = User.query.get(user_id)
     l = List.query.filter_by(id=list_id, user_id=user_id).first()
     if not l:
         return jsonify({"error": "List not found"}), 404
     # delete cards in the list
     cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
     for c in cards:
+        background_image = CardBackgroundUpload.query.filter_by(card_id=c.id).first()
+        if background_image:
+            delete_upload(background_image.upload_id, user)
+            db.session.delete(background_image)
         # delete card activities
         activities = CardActivity.query.filter_by(card_id=c.id).all()
         for a in activities:
@@ -4565,12 +4701,23 @@ def api_get_card_info(card_id):
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    # Determine background image for the card
+    card_bg = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    card_background_image_url = None
+    if card_bg:
+        upload = Upload.query.filter_by(id=card_bg.upload_id, deleted=False).first()
+        if upload:
+            card_background_image_url = get_upload_url(upload)
+
     return jsonify({
         "id": card.id,
         "title": card.title,
         "description": card.description or "",
         "position": card.position,
-        "completed": card.completed
+        "completed": card.completed,
+        "color": card.background_color,
+        "background_image_url": card_background_image_url
     })
 
 @app.route('/api/cards/<int:card_id>/activity', methods=['GET'])
@@ -4627,6 +4774,22 @@ def api_edit_comment(comment_id):
     db.session.commit()
     return jsonify({"id": comment.id, "user_id": comment.user_id, "content": comment.content})
 
+@app.route('/api/cards/color/<int:card_id>', methods=['PATCH'])
+@require_session_key
+def api_change_card_color(card_id):
+    user_id = g.user_id
+    c = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    if not c:
+        return jsonify({"error": "Card not found"}), 404
+    payload = request.get_json() or {}
+    color = payload.get('color')
+    if payload['color'] == "none":
+        c.background_color = None
+    else:
+        c.background_color = color
+    db.session.commit()
+    return jsonify({"id": c.id, "color": c.background_color})
+
 @app.route('/api/card/comment/<int:comment_id>', methods=['DELETE'])
 @require_session_key
 def api_delete_comment(comment_id):
@@ -4662,42 +4825,154 @@ def api_create_card():
     db.session.commit()
     return jsonify({"id": card.id, "title": card.title, "description": card.description or "", "position": card.position}), 201
 
+@app.route('/api/cards/<int:card_id>/background_uploads', methods=['POST'])
+@require_session_key
+def attach_card_background(card_id):
+    """
+    Body JSON: { "upload_id": <int> }
+    Attaches an existing upload (already validated & stored by /uploads) as the card background.
+    If a previous background exists it will be unlinked (deleted from CardBackgroundUpload),
+    but the actual Upload row is NOT deleted here.
+    """
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    card = Card.query.filter_by(id=card_id, user_id=user.id).first()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    data = request.get_json() or {}
+    upload_id = data.get('upload_id')
+    if not upload_id:
+        return jsonify({"error": "upload_id required"}), 400
+
+    upload = Upload.query.filter_by(id=upload_id, user_id=user.id, deleted=False).first()
+    if not upload:
+        return jsonify({"error": "Upload not found"}), 404
+
+    # remove any existing background link for this board
+    existing = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    if existing:
+        db.session.delete(existing)
+
+    bbu = CardBackgroundUpload(card_id=card.id, upload_id=upload.id)
+    db.session.add(bbu)
+    db.session.commit()
+
+    return jsonify({
+        "upload_id": upload.id,
+        "url": get_upload_url(upload)
+    }), 201
+
 
 @app.route('/api/cards/<int:card_id>', methods=['PATCH'])
 @require_session_key
 def api_update_card(card_id):
     user_id = g.user_id
+
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
     payload = request.get_json() or {}
-    if 'title' in payload:
+
+    title_changed = False
+    description_changed = False
+
+    if 'title' in payload and payload['title'] != card.title:
         card.title = payload['title']
-    if 'description' in payload:
+        title_changed = True
+
+    if 'description' in payload and payload['description'] != card.description:
         card.description = payload['description']
+        description_changed = True
+
+    if title_changed:
+        insert_card_activity(
+            user_id,
+            card.id,
+            f"Card title updated to '{card.title}'"
+        )
+
+    if description_changed:
+        insert_card_activity(
+            user_id,
+            card.id,
+            "Card description updated"
+        )
+
     db.session.commit()
-    return jsonify({"id": card.id, "title": card.title, "description": card.description or ""})
+
+    return jsonify({
+        "id": card.id,
+        "title": card.title,
+        "description": card.description or ""
+    })
 
 @app.route('/api/cards/complete/<int:card_id>', methods=['PATCH'])
 @require_session_key
 def api_complete_card(card_id):
     user_id = g.user_id
+
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
     payload = request.get_json() or {}
+
     if 'completed' in payload:
         card.completed = bool(payload['completed'])
+
+        status = "Complete" if card.completed else "Uncomplete"
+        insert_card_activity(
+            user_id,
+            card.id,
+            f"Card set to {status}"
+        )
+
         db.session.commit()
-    return jsonify({"id": card.id, "completed": card.completed})
+
+    return jsonify({
+        "id": card.id,
+        "completed": card.completed
+    })
+
+@app.route('/api/cards/<int:card_id>/background_uploads', methods=['DELETE'])
+@require_session_key
+def detach_card_background(card_id):
+    """
+    Removes the association between board and upload.
+    Returns the upload_id so the frontend may call the generic upload-delete endpoint if desired.
+    """
+    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
+    card = Card.query.filter_by(id=card_id, user_id=user.id).first()
+    if not card:
+        return jsonify({"error": "Board not found"}), 404
+
+    existing = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    if not existing:
+        return jsonify({"error": "No background image attached"}), 404
+
+    upload_id = existing.upload_id
+    db.session.delete(existing)
+    db.session.commit()
+
+    return jsonify({"upload_id": upload_id}), 200
 
 @app.route('/api/cards/<int:card_id>', methods=['DELETE'])
 @require_session_key
 def api_delete_card(card_id):
     user_id = g.user_id
+    user = User.query.get(g.user_id)
     card = Card.query.filter_by(id=card_id, user_id=user_id).first()
     if not card:
         return jsonify({"error": "Card not found"}), 404
+    background_image = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
+    if background_image:
+        delete_upload(background_image.upload_id, user)
+        db.session.delete(background_image)
+    # delete card activities
+    activities = CardActivity.query.filter_by(card_id=card.id).all()
+    for a in activities:
+        db.session.delete(a)
     db.session.delete(card)
     db.session.commit()
     return jsonify({"ok": True})
@@ -4714,8 +4989,9 @@ def api_move_card():
     """
     user_id = g.user_id
     payload = request.get_json() or {}
+
     card_id = payload.get('card_id')
-    to_list_id = payload.get('to_list_id') or payload.get('to_board_id')  # accept old name for compatibility
+    to_list_id = payload.get('to_list_id') or payload.get('to_board_id')  # backward compatibility
     order = payload.get('order_in_board') or payload.get('order_in_list') or []
 
     if not card_id or to_list_id is None:
@@ -4725,21 +5001,40 @@ def api_move_card():
     if not card:
         return jsonify({"error": "Card not found"}), 404
 
-    if not List.query.filter_by(id=to_list_id, user_id=user_id).first():
+    dest_list = List.query.filter_by(id=to_list_id, user_id=user_id).first()
+    if not dest_list:
         return jsonify({"error": "Destination list not found"}), 404
+    
+    should_insert_activity = True
 
+    if card.list_id == to_list_id:
+        should_insert_activity = False
+
+    # Move card
     card.list_id = to_list_id
     db.session.add(card)
+
+    if should_insert_activity == True:
+        insert_card_activity(
+            user_id,
+            card_id,
+            f"Card moved to list '{dest_list.title}'"
+        )
+
     try:
         for idx, cid in enumerate(order):
             c = Card.query.filter_by(id=cid, user_id=user_id).first()
             if c:
                 c.position = (idx + 1) * 1000
                 db.session.add(c)
+
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Could not reorder cards", "detail": str(e)}), 500
+        return jsonify(
+            {"error": "Could not reorder cards", "detail": str(e)},
+            500
+        )
 
     return jsonify({"ok": True})
 
@@ -4770,9 +5065,6 @@ from werkzeug.datastructures import FileStorage
 from flask import current_app, jsonify, abort, g
 from datetime import datetime
 
-# -------------------------------------------------------
-# Modified save endpoint - allows saving a specific shared note when token is for a folder
-# -------------------------------------------------------
 @app.route('/s/<token>/save', methods=["POST"])
 @require_session_key
 def save_note(token):
@@ -4787,22 +5079,17 @@ def save_note(token):
     if not share:
         abort(404)
 
-    # check any unexpired share for the token exists (we already do this above in public_share,
-    # but duplicate check here)
     now = datetime.utcnow()
     any_unexpired = any((s.expires_at is None or s.expires_at > now) for s in Share.query.filter_by(token=token).all())
     if not any_unexpired:
         abort(410)
-    requested_note_id = request.args.get('note_id', type=int)
 
-    # if this share row points to a note (old behaviour), use it
+    requested_note_id = request.args.get('note_id', type=int)
     if share.note_id and requested_note_id is None:
         target_note = Note.query.get(share.note_id)
     else:
-        # when token is a folder-share, client must provide note_id to save that particular note
         if not requested_note_id:
             abort(400, description="note_id required for folder share")
-        # ensure note_id is within the allowed set for this token
         if not token_has_access_to_note(token, requested_note_id):
             abort(404)
         target_note = Note.query.get(requested_note_id)
@@ -4810,44 +5097,31 @@ def save_note(token):
     if not target_note:
         abort(404)
 
-    # existing copy logic below unchanged, but replace 'original' with target_note
     original = target_note
-
-    # check expiry on share rows is done earlier
     created_uploads = []
 
     def cleanup_created_uploads():
+        """Remove partially copied uploads if we hit an error"""
         for up in created_uploads:
             try:
                 db_up = Upload.query.get(up.id)
                 if not db_up:
                     continue
+
                 stored_path = os.path.join(current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER, db_up.stored_filename)
-                try:
-                    if os.path.exists(stored_path):
-                        os.remove(stored_path)
-                except Exception:
-                    current_app.logger.exception("Failed to remove uploaded file during cleanup: %s", stored_path)
+                if os.path.exists(stored_path):
+                    os.remove(stored_path)
 
-                try:
-                    u = User.query.get(user.id)  # refresh
-                    u.storage_used_bytes = max(0, (u.storage_used_bytes or 0) - (db_up.size_bytes or 0))
-                    db.session.add(u)
-                except Exception:
-                    db.session.rollback()
-                    current_app.logger.exception("Failed to adjust user.storage_used_bytes during cleanup for user %s", getattr(user, "id", None))
-
-                try:
-                    db.session.delete(db_up)
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
-                    current_app.logger.exception("Failed to delete upload DB row during cleanup: %s", db_up.id)
+                u = User.query.get(user.id)
+                u.storage_used_bytes = max(0, (u.storage_used_bytes or 0) - (db_up.size_bytes or 0))
+                db.session.add(u)
+                db.session.delete(db_up)
+                db.session.commit()
             except Exception:
-                current_app.logger.exception("Unexpected error during cleanup of upload %s", getattr(up, "id", None))
+                db.session.rollback()
+                current_app.logger.exception("Cleanup failed for upload %s", getattr(up, "id", None))
 
     try:
-        # Create the new note owned by current user. Do not assign group/folder by default.
         new_note = Note(
             title=original.title,
             note=original.note,
@@ -4867,18 +5141,44 @@ def save_note(token):
             if not orig_upload or orig_upload.deleted:
                 continue
 
+            # Determine storage backend for the copied file
+            use_dropbox = False
             src_path = os.path.join(upload_folder, orig_upload.stored_filename)
-            if not os.path.isfile(src_path):
-                current_app.logger.warning("Original upload file missing: %s; skipping copy", src_path)
-                continue
+            file_size = orig_upload.size_bytes or 0
+
+            # Check if Dropbox has enough quota
+            try:
+                account_info = dbx.users_get_space_usage()
+                remaining = account_info.allocation.allocated - account_info.used
+                if remaining >= file_size:
+                    use_dropbox = True
+            except Exception:
+                # fail silently and fallback to local
+                use_dropbox = False
 
             try:
-                with open(src_path, "rb") as f:
-                    fs = FileStorage(stream=f, filename=orig_upload.original_filename or orig_upload.stored_filename,
-                                     content_type=orig_upload.mimetype or '')
-                    success, result = verify_and_record_upload(fs, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES)
+                if orig_upload.storage_backend == "dropbox":
+                    # Download from Dropbox
+                    _, res = dbx.files_download(orig_upload.stored_filename)
+                    file_content = res.content
+                else:
+                    # Read local file
+                    if not os.path.isfile(src_path):
+                        current_app.logger.warning("Original upload file missing: %s; skipping copy", src_path)
+                        continue
+                    with open(src_path, "rb") as f:
+                        file_content = f.read()
+
+                # Wrap as FileStorage for reuse of verify_and_record_upload
+                fs = FileStorage(stream=BytesIO(file_content),
+                                 filename=orig_upload.original_filename or orig_upload.stored_filename,
+                                 content_type=orig_upload.mimetype or '')
+
+                # If we want to store to Dropbox, set a special flag
+                success, result = verify_and_record_upload(fs, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES)
+
             except Exception:
-                current_app.logger.exception("Exception while wrapping/or calling verify_and_record_upload for %s", src_path)
+                current_app.logger.exception("Failed to copy attachment %s", orig_upload.id)
                 cleanup_created_uploads()
                 db.session.rollback()
                 abort(500, description="Internal error while copying attachments.")
@@ -4894,8 +5194,8 @@ def save_note(token):
             note_upload_link = NoteUpload(note_id=new_note.id, upload_id=new_upload.id)
             db.session.add(note_upload_link)
 
-        # increment canonical share access count (same as visit: pick first created share)
-        canonical = (Share.query.filter_by(token=token).order_by(Share.created_at.asc()).first())
+        # Increment access count
+        canonical = Share.query.filter_by(token=token).order_by(Share.created_at.asc()).first()
         if canonical:
             canonical.access_count = (canonical.access_count or 0) + 1
             db.session.add(canonical)
@@ -4904,17 +5204,14 @@ def save_note(token):
         return jsonify(new_note.to_dict()), 201
 
     except Exception:
-        current_app.logger.exception("Failed to copy shared note (final exception)")
+        current_app.logger.exception("Failed to save shared note (final exception)")
         try:
             cleanup_created_uploads()
         except Exception:
             current_app.logger.exception("Cleanup also failed")
         db.session.rollback()
-        abort(500, description="Failed to save shared note.")    
+        abort(500, description="Failed to save shared note.")
 
-# -------------------------------------------------------
-# Attachment download for notes inside folder shares
-# -------------------------------------------------------
 @app.route('/s/<token>/attachments/<int:upload_id>', methods=['GET'])
 def shared_attachment_download(token, upload_id):
     # check token exists and has some allowed nodes
@@ -4937,18 +5234,22 @@ def shared_attachment_download(token, upload_id):
         abort(404)
 
     # allow access if either:
-    #  - this specific note id is in the set of shared notes
-    #  - OR the note's folder is in the set of shared folders (because we created share rows for notes explicitly above,
-    #    the note should normally be in note_ids; but double check)
     allowed = (note.id in note_ids) or (note.folder_id in folder_ids)
     if not allowed:
         abort(404)
 
-    file_path = os.path.join(UPLOAD_FOLDER, up.stored_filename)
-    if not os.path.exists(file_path):
-        return jsonify({"error": "File not found"}), 404
-
-    return send_file(file_path, as_attachment=True, download_name=up.original_filename)
+    if up.storage_backend == "dropbox":
+        try:
+            temp_link = dbx.files_get_temporary_link(up.stored_filename).link
+            return redirect(temp_link)
+        except Exception:
+            return jsonify({"error": "Failed to generate Dropbox link"}), 500
+    else:
+        # local file fallback
+        file_path = os.path.join(UPLOAD_FOLDER, up.stored_filename)
+        if not os.path.exists(file_path):
+            return jsonify({"error": "File not found"}), 404
+        return send_file(file_path, as_attachment=True, download_name=up.original_filename)
 
 @app.route('/notes/<int:note_id>/share', methods=['GET'])
 @require_session_key
@@ -8091,13 +8392,13 @@ def update_delete_group_folder(group_id, folder_id):
         else:
             return jsonify({"error": "Unknown action."}), 400
     
+from io import BytesIO
+from flask import send_file
+
 @app.route('/uploads/<int:upload_id>/download', methods=['GET'])
 @require_session_key
-def download_upload(upload_id):
-    user = getattr(g, 'user', None)
-    if not user and getattr(g, 'user_id', None):
-        user = User.query.get(g.user_id)
-
+def download_upload_hybrid(upload_id):
+    user = getattr(g, 'user', None) or User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -8106,44 +8407,52 @@ def download_upload(upload_id):
         return jsonify({"error": "Not found"}), 404
 
     if upload.user_id != user.id:
-        # optional: leave your old group note check
-        permitted = False
-        group_note = (
-            db.session.query(Note)
-            .join(NoteUpload, Note.id == NoteUpload.note_id)
-            .join(GroupMember, GroupMember.group_id == Note.group_id)
-            .filter(NoteUpload.upload_id == upload_id, GroupMember.user_id == user.id)
-            .first()
-        )
-        if group_note:
-            permitted = True
-        if not permitted:
-            return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"error": "Forbidden"}), 403
 
-    stored_filename = upload.stored_filename
-    if not stored_filename:
-        return jsonify({"error": "File missing"}), 404
-
-    file_path = os.path.join(UPLOAD_FOLDER, stored_filename)
-    if not os.path.exists(file_path):
-        return jsonify({"error": "File not found"}), 404
-
-    # determine inline vs download
+    # Decide inline vs download
     inline = request.args.get('inline', '0') in ['1', 'true', 'yes']
+
+    # --- Dropbox files ---
+    if upload.storage_backend == "dropbox":
+        if inline:
+            # Proxy through Flask for inline display
+            try:
+                metadata, res = dbx.files_download(upload.stored_filename)
+                return send_file(
+                    BytesIO(res.content),
+                    mimetype=upload.mimetype,
+                    as_attachment=False,  # inline display
+                    download_name=upload.original_filename
+                )
+            except Exception:
+                return jsonify({"error": "Failed to proxy Dropbox file"}), 500
+        else:
+            # Direct download link for non-inline
+            try:
+                temp_link = dbx.files_get_temporary_link(upload.stored_filename).link
+                return redirect(temp_link)
+            except Exception:
+                return jsonify({"error": "Failed to generate Dropbox download link"}), 500
+
+    # --- Local files ---
+    file_path = upload.stored_filename
+    if not file_path or not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
 
     try:
         return send_from_directory(
             UPLOAD_FOLDER,
-            stored_filename,
-            as_attachment=not inline,  # only download if not inline
-            attachment_filename=upload.original_filename  # fallback for older Flask
-        )
-    except TypeError:
-        return send_from_directory(
-            UPLOAD_FOLDER,
-            stored_filename,
+            os.path.basename(file_path),
             as_attachment=not inline,
             download_name=upload.original_filename
+        )
+    except TypeError:
+        # fallback for older Flask versions
+        return send_from_directory(
+            UPLOAD_FOLDER,
+            os.path.basename(file_path),
+            as_attachment=not inline,
+            attachment_filename=upload.original_filename
         )
 
 # Sharing notes
