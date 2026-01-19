@@ -9557,6 +9557,8 @@ def deploy_local():
     except requests.RequestException as e:
         return {"error": "Failed to reach remote deploy endpoint", "details": str(e)}, 500
 
+#new change
+
 def deploy_all():
     results = {}
 
