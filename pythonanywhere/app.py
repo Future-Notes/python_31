@@ -8508,14 +8508,20 @@ def download_upload_hybrid(upload_id):
                 return jsonify({"error": "Failed to generate Dropbox download link"}), 500
 
     # --- Local files ---
-    file_path = upload.stored_filename
-    if not file_path or not os.path.exists(file_path):
+    filename = upload.stored_filename
+    if not filename:
+        return jsonify({"error": "File not found"}), 404
+
+    # Build full path based on new folder structure
+    file_path = os.path.join(app.config['UPLOAD_FOLDER_LOCAL_FILES'], os.path.basename(filename))
+
+    if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
     try:
         return send_from_directory(
-            UPLOAD_FOLDER_LOCAL_FILES,
-            os.path.basename(file_path),
+            app.config['UPLOAD_FOLDER_LOCAL_FILES'],
+            os.path.basename(filename),
             as_attachment=not inline,
             download_name=upload.original_filename
         )
