@@ -107,6 +107,9 @@ app.config["TWOFA_FERNET_KEY"] = os.getenv("TWOFA_FERNET_KEY")
 app.config['GMAIL_APP_PASSWORD'] = os.getenv("GMAIL_APP_PASSWORD")
 CRONJOB_API_KEY = os.environ.get("CRONJOB_ORG_API_KEY")
 app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk'
+app.config['GOOGLE_CLIENT_ID'] = os.getenv("GOOGLE_CLIENT_ID")
+app.config['GOOGLE_CLIENT_SECRET'] = os.getenv("GOOGLE_CLIENT_SECRET")
+app.config['GITHUB_PERSONAL_ACCESS_TOKEN'] = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
