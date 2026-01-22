@@ -190,10 +190,14 @@ ALLOWED_MIMETYPES = {
 app.json_provider_class = CustomJSONProvider
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
-UPLOAD_FOLDER = 'static/uploads/profile_pictures'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+UPLOAD_FOLDER_PROFILE_PICS = 'static/uploads/profile_pictures'
+UPLOAD_FOLDER_LOCAL_FILES = 'static/uploads/files'
+app.config['UPLOAD_FOLDER_PROFILE_PICTURES'] = UPLOAD_FOLDER_PROFILE_PICS
+app.config['UPLOAD_FOLDER_LOCAL_FILES'] = UPLOAD_FOLDER_LOCAL_FILES
+if not os.path.exists(UPLOAD_FOLDER_PROFILE_PICS):
+    os.makedirs(UPLOAD_FOLDER_PROFILE_PICS)
+if not os.path.exists(UPLOAD_FOLDER_LOCAL_FILES):
+    os.makedirs(UPLOAD_FOLDER_LOCAL_FILES)
 app.config['SECRET_KEY'] = os.urandom(24)
 # Token serializer
 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
@@ -2506,7 +2510,7 @@ def generate_deploy_hash():
 
 def delete_profile_pictures(username):
     """ Deletes all profile pictures associated with the given username. """
-    profile_pictures_path = os.path.join(UPLOAD_FOLDER)
+    profile_pictures_path = os.path.join(UPLOAD_FOLDER_PROFILE_PICS)
     user_pictures = glob.glob(os.path.join(profile_pictures_path, f"{username}_*"))
 
     for picture in user_pictures:
@@ -2521,8 +2525,8 @@ def sync_profile_pics_files_db():
     users = User.query.all()
 
     # Get all profile pictures in the folder
-    profile_pictures = os.listdir(app.config['UPLOAD_FOLDER'])
-    profile_pictures = [os.path.join(app.config['UPLOAD_FOLDER'], pic).replace("\\", "/") for pic in profile_pictures]
+    profile_pictures = os.listdir(app.config['UPLOAD_FOLDER_PROFILE_PICS'])
+    profile_pictures = [os.path.join(app.config['UPLOAD_FOLDER_PROFILE_PICS'], pic).replace("\\", "/") for pic in profile_pictures]
 
     # Ensure usernames dont have underscores before attempting to match them with files
     cleanup_bad_usernames()
@@ -3522,7 +3526,7 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
     if storage_backend == "local":
         # fallback to local storage
         unique = f"{uuid.uuid4().hex}_{filename}"
-        stored_path = os.path.join(UPLOAD_FOLDER, unique)
+        stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, unique)
         try:
             os.replace(tmp_name, stored_path)
         except Exception:
@@ -3576,7 +3580,7 @@ def force_delete_upload(upload_id, actor_user=None):
         return True, "Already deleted."
 
     owner = User.query.get(upload.user_id) if upload.user_id else None
-    stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename) if upload.stored_filename else None
+    stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, upload.stored_filename) if upload.stored_filename else None
 
     try:
         if stored_path and os.path.exists(stored_path):
@@ -3629,7 +3633,7 @@ def delete_upload(upload_id, user):
                 pass
         else:
             # Delete from local disk
-            stored_path = os.path.join(UPLOAD_FOLDER, upload.stored_filename)
+            stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, upload.stored_filename)
             if os.path.exists(stored_path):
                 try:
                     os.remove(stored_path)
@@ -5091,7 +5095,7 @@ def save_note(token):
                 if not db_up:
                     continue
 
-                stored_path = os.path.join(current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER, db_up.stored_filename)
+                stored_path = os.path.join(current_app.config.get("UPLOAD_FOLDER_LOCAL_FILES") or UPLOAD_FOLDER_LOCAL_FILES, db_up.stored_filename)
                 if os.path.exists(stored_path):
                     os.remove(stored_path)
 
@@ -5117,7 +5121,7 @@ def save_note(token):
         db.session.flush()
 
         note_uploads = NoteUpload.query.filter_by(note_id=original.id).all()
-        upload_folder = current_app.config.get("UPLOAD_FOLDER") or UPLOAD_FOLDER
+        upload_folder = current_app.config.get("UPLOAD_FOLDER_LOCAL_FILES") or UPLOAD_FOLDER_LOCAL_FILES
 
         for nu in note_uploads:
             orig_upload = Upload.query.get(nu.upload_id)
@@ -5229,7 +5233,7 @@ def shared_attachment_download(token, upload_id):
             return jsonify({"error": "Failed to generate Dropbox link"}), 500
     else:
         # local file fallback
-        file_path = os.path.join(UPLOAD_FOLDER, up.stored_filename)
+        file_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, up.stored_filename)
         if not os.path.exists(file_path):
             return jsonify({"error": "File not found"}), 404
         return send_file(file_path, as_attachment=True, download_name=up.original_filename)
@@ -8510,7 +8514,7 @@ def download_upload_hybrid(upload_id):
 
     try:
         return send_from_directory(
-            UPLOAD_FOLDER,
+            UPLOAD_FOLDER_LOCAL_FILES,
             os.path.basename(file_path),
             as_attachment=not inline,
             download_name=upload.original_filename
@@ -8518,7 +8522,7 @@ def download_upload_hybrid(upload_id):
     except TypeError:
         # fallback for older Flask versions
         return send_from_directory(
-            UPLOAD_FOLDER,
+            UPLOAD_FOLDER_LOCAL_FILES,
             os.path.basename(file_path),
             as_attachment=not inline,
             attachment_filename=upload.original_filename
@@ -8638,8 +8642,8 @@ def update_profile_picture():
         if file and allowed_file(file.filename):
             # Generate unique filename with .jpg extension
             filename = secure_filename(f"{user.username}_{uuid.uuid4().hex}.jpg")
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"temp_{filename}")
+            file_path = os.path.join(app.config['UPLOAD_FOLDER_PROFILE_PICS'], filename)
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER_PROFILE_PICS'], f"temp_{filename}")
 
             try:
                 # Save temporarily for processing
@@ -9005,7 +9009,7 @@ def admin_update_profile_picture(target_user_id):
 
         # Build filename using target username (keep .jpg), mirror your logic
         filename = secure_filename(f"{target.username}_{uuid.uuid4().hex}.jpg")
-        upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads')
+        upload_folder = app.config.get('UPLOAD_FOLDER_PROFILE_PICS')
         file_path = os.path.join(upload_folder, filename)
         temp_path = os.path.join(upload_folder, f"temp_{filename}")
 
