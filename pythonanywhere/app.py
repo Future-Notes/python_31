@@ -104,7 +104,6 @@ app.config['VAPID_PRIVATE_KEY'] = os.getenv("VAPID_PRIVATE_KEY")
 app.config['ADMIN_EMAIL'] = os.getenv("ADMIN_EMAIL")
 app.config['COHERE_API_KEY'] = os.getenv("COHERE_API_KEY")
 app.config["TWOFA_FERNET_KEY"] = os.getenv("TWOFA_FERNET_KEY")
-app.config["DROPBOX_TOKEN"] = os.getenv("DROPBOX_TOKEN")
 app.config['GMAIL_APP_PASSWORD'] = os.getenv("GMAIL_APP_PASSWORD")
 CRONJOB_API_KEY = os.environ.get("CRONJOB_ORG_API_KEY")
 app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfDDlN8nohDeErLxX08i86khPPCz153Ygc3DrC7w1ZJk'
@@ -126,7 +125,11 @@ if TWOFA_FERNET_KEY:
     fernet = Fernet(TWOFA_FERNET_KEY)
 else:
     fernet = None  # fall back to plain storage (not recommended)
-dbx = dropbox.Dropbox(app.config["DROPBOX_TOKEN"])
+dbx = dropbox.Dropbox(
+    oauth2_refresh_token=os.getenv("DROPBOX_REFRESH_TOKEN"),
+    app_key=os.getenv("DROPBOX_APP_KEY"),
+    app_secret=os.getenv("DROPBOX_APP_SECRET"),
+)
 DROPBOX_UPLOAD_FOLDER = "/uploads"  # root folder in Dropbox
 REQUIRE_2FA_ALWAYS = False
 REQUIRE_2FA_ON_NEW_IP = True
