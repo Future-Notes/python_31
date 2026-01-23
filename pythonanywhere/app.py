@@ -3474,6 +3474,173 @@ def get_user_quota_bytes(user):
 
     return int(base_mb) * 1024 * 1024
 
+import os
+import math
+import shutil
+from flask import jsonify, request
+from datetime import datetime
+
+@app.route("/admin/storage", methods=["GET"])
+@require_session_key
+@require_admin
+def admin_storage_overview():
+    """
+    Returns JSON with storage usage and availability for:
+      - local storage (files under UPLOAD_FOLDER_LOCAL_FILES)
+      - Dropbox (via dbx.users_get_space_usage())
+      - MEGA (via mega_account.get_storage_space())
+
+    If request is from localhost (127.0.0.1 or ::1), local total/free are returned as Infinity.
+    """
+    def make_inf_dict():
+        local_dir = os.path.abspath(UPLOAD_FOLDER_LOCAL_FILES)
+        # compute used by summing file sizes under upload folder
+        used = 0
+        if os.path.isdir(local_dir):
+            for root, _, files in os.walk(local_dir):
+                for fn in files:
+                    try:
+                        fp = os.path.join(root, fn)
+                        used += os.path.getsize(fp)
+                    except Exception:
+                        # ignore inaccessible files
+                        pass
+        return {
+            "used_bytes": used,
+            "total_bytes": None,   # null in JSON
+            "free_bytes": None,    # null in JSON
+            "free_percent": None,
+            "note": "local capacity reported as infinite for localhost requests"
+        }
+
+
+    def safe_int(v):
+        try:
+            return int(v)
+        except Exception:
+            return None
+
+    result = {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "local": {},
+        "dropbox": {},
+        "mega": {}
+    }
+
+    # -------------------
+    # Local storage stats
+    # -------------------
+    remote_addr = (request.remote_addr or "").split(",")[0].strip()  # defensive: in case of proxy header
+    try:
+        if remote_addr in ("127.0.0.1", "::1", "localhost"):
+            # Per requirement: when request originates from localhost, report infinite local capacity
+            result["local"] = make_inf_dict()
+        else:
+            local_dir = os.path.abspath(UPLOAD_FOLDER_LOCAL_FILES)
+            # compute used by summing file sizes under upload folder
+            used = 0
+            if os.path.isdir(local_dir):
+                for root, _, files in os.walk(local_dir):
+                    for fn in files:
+                        try:
+                            fp = os.path.join(root, fn)
+                            used += os.path.getsize(fp)
+                        except Exception:
+                            # ignore inaccessible files
+                            pass
+            # get filesystem total/free for the mount containing the folder
+            try:
+                du = shutil.disk_usage(local_dir)
+                total = du.total
+                free = du.free
+            except Exception:
+                # fallback: unknown totals
+                total = None
+                free = None
+
+            free_pct = None
+            if total and isinstance(total, int) and total > 0:
+                free_pct = round((free / total) * 100, 2) if free is not None else None
+
+            result["local"] = {
+                "used_bytes": used,
+                "total_bytes": total,
+                "free_bytes": free,
+                "free_percent": free_pct,
+                "path": local_dir
+            }
+    except Exception as e:
+        result["local"] = {
+            "error": f"Failed to determine local storage: {str(e)}"
+        }
+
+    # -------------------
+    # Dropbox stats
+    # -------------------
+    try:
+        usage = dbx.users_get_space_usage()
+        # usage.used (int)
+        used = safe_int(getattr(usage, "used", None))
+        total = None
+        try:
+            # allocation can be team or individual; prefer individual when available
+            alloc = getattr(usage, "allocation", None)
+            if alloc is not None:
+                # allocation might be of different shapes depending on account type
+                # try the individual allocation accessor used previously
+                try:
+                    total = safe_int(alloc.get_individual().allocated)
+                except Exception:
+                    # fall back to other possible fields
+                    total = safe_int(getattr(alloc, "allocated", None) or getattr(alloc, "team", None))
+        except Exception:
+            total = None
+
+        free = None
+        free_pct = None
+        if isinstance(total, int) and isinstance(used, int):
+            free = max(total - used, 0)
+            free_pct = round((free / total) * 100, 2) if total > 0 else None
+
+        result["dropbox"] = {
+            "used_bytes": used,
+            "total_bytes": total,
+            "free_bytes": free,
+            "free_percent": free_pct
+        }
+    except Exception as e:
+        # conservative fallback if API fails
+        result["dropbox"] = {
+            "error": f"Failed to query Dropbox: {str(e)}"
+        }
+
+    # -------------------
+    # MEGA stats
+    # -------------------
+    try:
+        info = mega_account.get_storage_space()  # expected {'used': X, 'total': Y}
+        used = safe_int(info.get("used")) if isinstance(info, dict) else None
+        total = safe_int(info.get("total")) if isinstance(info, dict) else None
+        free = None
+        free_pct = None
+        if isinstance(total, int) and isinstance(used, int):
+            free = max(total - used, 0)
+            free_pct = round((free / total) * 100, 2) if total > 0 else None
+
+        result["mega"] = {
+            "used_bytes": used,
+            "total_bytes": total,
+            "free_bytes": free,
+            "free_percent": free_pct
+        }
+    except Exception as e:
+        result["mega"] = {
+            "error": f"Failed to query MEGA: {str(e)}"
+        }
+
+    return jsonify(result), 200
+
+
 def verify_file_content(file_path: str, mimetype: str) -> bool:
     """
     Backwards-compatible wrapper.
