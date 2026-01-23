@@ -3527,13 +3527,11 @@ def admin_storage_overview():
         "mega": {}
     }
 
-    # -------------------
     # Local storage stats
     # -------------------
-    remote_addr = (request.remote_addr or "").split(",")[0].strip()  # defensive: in case of proxy header
+    remote_addr = (request.remote_addr or "").split(",")[0].strip()
     try:
         if remote_addr in ("127.0.0.1", "::1", "localhost"):
-            # Per requirement: when request originates from localhost, report infinite local capacity
             result["local"] = make_inf_dict()
         else:
             local_dir = os.path.abspath(UPLOAD_FOLDER_LOCAL_FILES)
@@ -3546,33 +3544,63 @@ def admin_storage_overview():
                             fp = os.path.join(root, fn)
                             used += os.path.getsize(fp)
                         except Exception:
-                            # ignore inaccessible files
                             pass
-            # get filesystem total/free for the mount containing the folder
-            try:
-                du = shutil.disk_usage(local_dir)
-                total = du.total
-                free = du.free
-            except Exception:
-                # fallback: unknown totals
-                total = None
-                free = None
 
+            # Prefer an explicit configured quota (app config or env), fallback to filesystem stats
+            quota = None
+            # try app config first (if running inside a Flask app)
+            try:
+                quota = current_app.config.get("LOCAL_UPLOAD_QUOTA_BYTES")
+            except Exception:
+                quota = None
+
+            # then check environment var
+            if not quota:
+                try:
+                    quota = safe_int(os.environ.get("LOCAL_UPLOAD_QUOTA_BYTES"))
+                except Exception:
+                    quota = None
+
+            # heuristic: if on PythonAnywhere and no explicit quota provided, assume free account 512MB
+            if quota is None and "PYTHONANYWHERE_DOMAIN" in os.environ:
+                quota = 512 * 1024 * 1024  # 512 MiB
+
+            total = None
+            free = None
             free_pct = None
-            if total and isinstance(total, int) and total > 0:
-                free_pct = round((free / total) * 100, 2) if free is not None else None
+            source = None
+
+            if isinstance(quota, int) and quota > 0:
+                total = quota
+                free = max(total - used, 0)
+                free_pct = round((free / total) * 100, 2) if total > 0 else None
+                source = "quota"
+            else:
+                # fallback to filesystem numbers (this will reflect the whole partition, not per-account)
+                try:
+                    du = shutil.disk_usage(local_dir)
+                    total = du.total
+                    free = du.free
+                    # Note: du.used is partition-used by everyone; we still report used as bytes in upload folder
+                    free_pct = round((free / total) * 100, 2) if total and total > 0 else None
+                    source = "filesystem"
+                except Exception:
+                    total = None
+                    free = None
+                    free_pct = None
+                    source = "unknown"
 
             result["local"] = {
                 "used_bytes": used,
                 "total_bytes": total,
                 "free_bytes": free,
                 "free_percent": free_pct,
-                "path": local_dir
+                "path": local_dir,
+                "reported_from": source
             }
     except Exception as e:
-        result["local"] = {
-            "error": f"Failed to determine local storage: {str(e)}"
-        }
+        result["local"] = {"error": f"Failed to determine local storage: {str(e)}"}
+
 
     # -------------------
     # Dropbox stats
