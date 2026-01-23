@@ -680,6 +680,7 @@
             const localUsed = safeNumber(local.used_bytes) || 0;
             const localTotal = safeNumber(local.total_bytes);
             const localFree = safeNumber(local.free_bytes);
+            const paTotalUsed = safeNumber(local.pythonanywhere_total_used_bytes); // may be null
             const dropUsed = safeNumber(dropbox.used_bytes) || 0;
             const dropTotal = safeNumber(dropbox.total_bytes);
             const dropFree = safeNumber(dropbox.free_bytes);
@@ -737,6 +738,29 @@
             }
 
             updatePlatform("local", localUsed, localTotal, localFree);
+            // --- show optional PythonAnywhere total-used under the local card, if present ---
+            (function updateLocalPATotal() {
+                const localCardNums = document.getElementById(`${containerId}-nums-local`);
+                if (!localCardNums) return;
+                let paNode = localCardNums.querySelector(".num-pa-used");
+                if (paTotalUsed !== null && isFinite(paTotalUsed)) {
+                    if (!paNode) {
+                        paNode = document.createElement("div");
+                        paNode.className = "num-pa-used";
+                        // insert after free node (if present) otherwise append
+                        const freeNode = localCardNums.querySelector(".num-free");
+                        if (freeNode && freeNode.nextSibling) {
+                            localCardNums.insertBefore(paNode, freeNode.nextSibling);
+                        } else {
+                            localCardNums.appendChild(paNode);
+                        }
+                    }
+                    paNode.textContent = `PA total used: ${humanBytes(paTotalUsed)}`;
+                } else {
+                    // remove if present and not available
+                    if (paNode) paNode.remove();
+                }
+            })();
             updatePlatform("dropbox", dropUsed, dropTotal, dropFree);
             updatePlatform("mega", megaUsed, megaTotal, megaFree);
             updatePlatform("total", combinedUsed, combinedTotal, combinedFree);

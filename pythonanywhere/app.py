@@ -3484,17 +3484,8 @@ from datetime import datetime
 @require_session_key
 @require_admin
 def admin_storage_overview():
-    """
-    Returns JSON with storage usage and availability for:
-      - local storage (files under UPLOAD_FOLDER_LOCAL_FILES)
-      - Dropbox (via dbx.users_get_space_usage())
-      - MEGA (via mega_account.get_storage_space())
-
-    If request is from localhost (127.0.0.1 or ::1), local total/free are returned as Infinity.
-    """
     def make_inf_dict():
         local_dir = os.path.abspath(UPLOAD_FOLDER_LOCAL_FILES)
-        # compute used by summing file sizes under upload folder
         used = 0
         if os.path.isdir(local_dir):
             for root, _, files in os.walk(local_dir):
@@ -3503,16 +3494,14 @@ def admin_storage_overview():
                         fp = os.path.join(root, fn)
                         used += os.path.getsize(fp)
                     except Exception:
-                        # ignore inaccessible files
                         pass
         return {
             "used_bytes": used,
-            "total_bytes": None,   # null in JSON
-            "free_bytes": None,    # null in JSON
+            "total_bytes": None,
+            "free_bytes": None,
             "free_percent": None,
             "note": "local capacity reported as infinite for localhost requests"
         }
-
 
     def safe_int(v):
         try:
@@ -3528,14 +3517,12 @@ def admin_storage_overview():
     }
 
     # Local storage stats
-    # -------------------
     remote_addr = (request.remote_addr or "").split(",")[0].strip()
     try:
         if remote_addr in ("127.0.0.1", "::1", "localhost"):
             result["local"] = make_inf_dict()
         else:
             local_dir = os.path.abspath(UPLOAD_FOLDER_LOCAL_FILES)
-            # compute used by summing file sizes under upload folder
             used = 0
             if os.path.isdir(local_dir):
                 for root, _, files in os.walk(local_dir):
@@ -3546,22 +3533,19 @@ def admin_storage_overview():
                         except Exception:
                             pass
 
-            # Prefer an explicit configured quota (app config or env), fallback to filesystem stats
+            # Prefer explicit configured quota
             quota = None
-            # try app config first (if running inside a Flask app)
             try:
                 quota = current_app.config.get("LOCAL_UPLOAD_QUOTA_BYTES")
             except Exception:
                 quota = None
 
-            # then check environment var
             if not quota:
                 try:
                     quota = safe_int(os.environ.get("LOCAL_UPLOAD_QUOTA_BYTES"))
                 except Exception:
                     quota = None
 
-            # heuristic: if on PythonAnywhere and no explicit quota provided, assume free account 512MB
             if quota is None and "PYTHONANYWHERE_DOMAIN" in os.environ:
                 quota = 512 * 1024 * 1024  # 512 MiB
 
@@ -3576,12 +3560,10 @@ def admin_storage_overview():
                 free_pct = round((free / total) * 100, 2) if total > 0 else None
                 source = "quota"
             else:
-                # fallback to filesystem numbers (this will reflect the whole partition, not per-account)
                 try:
                     du = shutil.disk_usage(local_dir)
                     total = du.total
                     free = du.free
-                    # Note: du.used is partition-used by everyone; we still report used as bytes in upload folder
                     free_pct = round((free / total) * 100, 2) if total and total > 0 else None
                     source = "filesystem"
                 except Exception:
@@ -3590,13 +3572,31 @@ def admin_storage_overview():
                     free_pct = None
                     source = "unknown"
 
+            # --- New: optional PythonAnywhere "du" total used value ---
+            pa_total_used = None
+            if "PYTHONANYWHERE_DOMAIN" in os.environ:
+                # run the command only on PythonAnywhere; guard with timeout and capture errors
+                try:
+                    # This command is the one PythonAnywhere recommends in their docs for user total:
+                    # du -s -B 1 /tmp ~/.[!.]* ~/* | awk '{s+=$1}END{print s}'
+                    cmd = "du -s -B 1 /tmp ~/.[!.]* ~/* | awk '{s+=$1}END{print s}'"
+                    proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+                    out = proc.stdout.strip()
+                    if out:
+                        pa_total_used = safe_int(out)
+                except Exception:
+                    # ignore failures (we don't want to break the whole endpoint)
+                    pa_total_used = None
+
             result["local"] = {
                 "used_bytes": used,
                 "total_bytes": total,
                 "free_bytes": free,
                 "free_percent": free_pct,
                 "path": local_dir,
-                "reported_from": source
+                "reported_from": source,
+                # optional field only present when running on PythonAnywhere and the command succeeded
+                "pythonanywhere_total_used_bytes": pa_total_used
             }
     except Exception as e:
         result["local"] = {"error": f"Failed to determine local storage: {str(e)}"}
