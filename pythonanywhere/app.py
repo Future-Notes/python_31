@@ -66,6 +66,9 @@ try:
     from dotenv import load_dotenv
 except ImportError:
     pass
+from mega import Mega
+import ast
+from pathlib import Path
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -108,6 +111,8 @@ app.config['VAPID_PUBLIC_KEY'] = 'BGcLDjMs3BA--QdukrxV24URwXLHYyptr6TZLR-j79YUfD
 app.config['GOOGLE_CLIENT_ID'] = os.getenv("GOOGLE_CLIENT_ID")
 app.config['GOOGLE_CLIENT_SECRET'] = os.getenv("GOOGLE_CLIENT_SECRET")
 app.config['GITHUB_PERSONAL_ACCESS_TOKEN'] = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+app.config['MEGA_EMAIL'] = os.getenv("MEGA_EMAIL")
+app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
@@ -131,6 +136,8 @@ dbx = dropbox.Dropbox(
     app_key=os.getenv("DROPBOX_APP_KEY"),
     app_secret=os.getenv("DROPBOX_APP_SECRET"),
 )
+mega_client = Mega()
+mega_account = mega_client.login(app.config['MEGA_EMAIL'], app.config["MEGA_PASSWORD"])
 DROPBOX_UPLOAD_FOLDER = "/uploads"  # root folder in Dropbox
 REQUIRE_2FA_ALWAYS = False
 REQUIRE_2FA_ON_NEW_IP = True
@@ -305,6 +312,7 @@ class Upload(db.Model):
     deleted = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     deleted_at = db.Column(db.DateTime, nullable=True)
+    mega_file_obj = db.Column(JSON, nullable=True)
 
     user = db.relationship('User', backref=db.backref('uploads', lazy='dynamic'))
 
@@ -1027,6 +1035,18 @@ def _upload_metadata(up):
     deleted = bool(getattr(up, "deleted", False))
     return {"upload_id": up.id, "filename": filename, "size": size, "mime_type": mime, "upload_deleted": deleted}
 
+def mega_has_space(required_bytes: int) -> bool:
+    """Check MEGA free space"""
+    info = mega_account.get_storage_space()
+    # info contains {'used': X, 'total': Y}
+    return (info['total'] - info['used']) >= required_bytes
+
+def upload_to_mega(local_path: str, filename: str):
+    """Uploads file to MEGA, returns dict with link and file object for deletion"""
+    uploaded_file = mega_account.upload(local_path, dest=None)  # root folder
+    link = mega_account.get_upload_link(uploaded_file)
+    return {"link": link, "file": uploaded_file}
+
 def _strip_html_tags(html):
     # crude but effective for diffing purposes
     return re.sub(r'<[^>]+>', '', html or '')
@@ -1145,14 +1165,15 @@ def dropbox_has_space(size_bytes: int) -> bool:
     """
     Returns True if Dropbox has enough free space for the file.
     """
-    try:
-        usage = dbx.users_get_space_usage()
-        used = usage.used
-        allocated = usage.allocation.get_individual().allocated
-        return (used + size_bytes) <= allocated
-    except Exception:
-        # conservative fallback if API fails
-        return False
+    #try:
+    #    usage = dbx.users_get_space_usage()
+    #    used = usage.used
+    #    allocated = usage.allocation.get_individual().allocated
+    #    return (used + size_bytes) <= allocated
+    #except Exception:
+    #    # conservative fallback if API fails
+    #    return False
+    return False
 
 def insert_card_activity(user_id, card_id, content):
     user = User.query.filter_by(id=user_id).first()
@@ -3467,108 +3488,144 @@ def verify_file_content(file_path: str, mimetype: str) -> bool:
 
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
     """
-    Verifies file and uploads to Dropbox if space is available, else falls back to local storage.
+    Verifies file and uploads to Dropbox if space is available,
+    then Mega if space is available, else falls back to local storage.
+    Returns (True, Upload) or (False, error_str).
+    All exceptions are converted to strings for JSON safety.
     """
-    if file is None:
-        return False, "No file provided."
-
-    filename = secure_filename(file.filename)
-    if not filename:
-        return False, "Invalid filename."
-    if not allowed_extension(filename):
-        return False, f"Extension not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
-
-    # Determine file size
-    file.stream.seek(0, os.SEEK_END)
-    size = file.stream.tell()
-    file.stream.seek(0)
-    if size > max_size_bytes:
-        return False, f"File too large: {size} bytes (max {max_size_bytes} bytes)."
-
-    # Check user quota
-    quota = get_user_quota_bytes(user)
-    if quota != float("inf") and (user.storage_used_bytes or 0) + size > quota:
-        return False, "User storage quota exceeded."
-
-    mimetype = file.mimetype or ''
-    if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith('image/'):
-        return False, "MIME type not allowed."
-
-    # Save to temp file for verification
-    import tempfile
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp_name = tmp.name
-        file.save(tmp_name)
-
-    ok = verify_file_content(tmp_name, mimetype)
-    if not ok:
-        os.remove(tmp_name)
-        if user:
-            user.malicious_violations = (user.malicious_violations or 0) + 1
-            db.session.add(user)
-            db.session.commit()
-        return False, "Uploaded file failed content verification."
-
-    # Decide storage backend: Dropbox or local
-    storage_backend = "local"
-    stored_path = None
-
-    if dropbox_has_space(size):
-        dropbox_path = f"{DROPBOX_UPLOAD_FOLDER}/{uuid.uuid4().hex}_{filename}"
-        try:
-            with open(tmp_name, "rb") as f:
-                dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-            storage_backend = "dropbox"
-            stored_path = dropbox_path
-        except Exception:
-            storage_backend = "local"
-
-    if storage_backend == "local":
-        # fallback to local storage
-        unique = f"{uuid.uuid4().hex}_{filename}"
-        stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, unique)
-        try:
-            os.replace(tmp_name, stored_path)
-        except Exception:
-            os.remove(tmp_name)
-            return False, "Failed to save locally."
-    else:
-        # temp file already uploaded to Dropbox
-        os.remove(tmp_name)
-
-    # Record in DB
     try:
-        upload = Upload(
-            user_id=user.id,
-            original_filename=filename,
-            stored_filename=stored_path,
-            storage_backend=storage_backend,
-            mimetype=mimetype,
-            size_bytes=size,
-            created_at=datetime.utcnow(),
-            deleted=False
-        )
-        db.session.add(upload)
-        user.storage_used_bytes = (user.storage_used_bytes or 0) + size
-        db.session.commit()
-        return True, upload
-    except Exception as e:
-        # cleanup in case of DB failure
-        if storage_backend == "dropbox":
+        if file is None:
+            return False, "No file provided."
+
+        filename = secure_filename(file.filename)
+        if not filename:
+            return False, "Invalid filename."
+        if not allowed_extension(filename):
+            return False, f"Extension not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
+
+        # Determine file size
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+        if size > max_size_bytes:
+            return False, f"File too large: {size} bytes (max {max_size_bytes} bytes)."
+
+        # Check user quota
+        quota = get_user_quota_bytes(user)
+        if quota != float("inf") and (user.storage_used_bytes or 0) + size > quota:
+            return False, "User storage quota exceeded."
+
+        mimetype = file.mimetype or ''
+        if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith('image/'):
+            return False, "MIME type not allowed."
+
+        # Save to temp file for verification
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_name = tmp.name
+            file.save(tmp_name)
+
+        if not verify_file_content(tmp_name, mimetype):
+            os.remove(tmp_name)
+            if user:
+                try:
+                    user.malicious_violations = (user.malicious_violations or 0) + 1
+                    db.session.add(user)
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+            return False, "Uploaded file failed content verification."
+
+        storage_backend = "local"
+        stored_path = None
+        mega_file_obj = None
+
+        # --- Read file bytes once for Mega / Dropbox ---
+        with open(tmp_name, "rb") as f:
+            file_bytes = f.read()
+
+        # --- Try Dropbox first ---
+        if dropbox_has_space(size):
+            dropbox_path = f"{DROPBOX_UPLOAD_FOLDER}/{uuid.uuid4().hex}_{filename}"
             try:
-                dbx.files_delete_v2(stored_path)
+                dbx.files_upload(file_bytes, dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+                storage_backend = "dropbox"
+                stored_path = dropbox_path
+            except Exception:
+                storage_backend = "local"
+
+        elif mega_has_space(size):
+            try:
+                mega_file_info = mega_account.upload(tmp_name, dest_filename=filename)
+
+                # IMPORTANT: store this immediately
+                mega_file_obj = json.dumps(mega_file_info)
+
+                # Generate public link AFTER storing
+                stored_path = mega_account.get_upload_link(mega_file_info)
+
+                storage_backend = "mega"
+            except Exception as e:
+                print(f"exception when uploading to mega!!!: {e}")
+                storage_backend = "local"
+
+
+        # --- Fallback to local ---
+        if storage_backend == "local":
+            unique = f"{uuid.uuid4().hex}_{filename}"
+            stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, unique)
+            try:
+                os.replace(tmp_name, stored_path)
+            except Exception as e:
+                os.remove(tmp_name)
+                return False, f"Failed to save locally: {str(e)}"
+        else:
+            # remove temp file after Mega / Dropbox upload
+            os.remove(tmp_name)
+
+        # --- Record in DB ---
+        try:
+            upload = Upload(
+                user_id=user.id,
+                original_filename=filename,
+                stored_filename=stored_path,
+                storage_backend=storage_backend,
+                mimetype=mimetype,
+                size_bytes=size,
+                created_at=datetime.utcnow(),
+                deleted=False,
+                mega_file_obj=str(mega_file_obj) if mega_file_obj else None  # store string for JSON/DB safety
+            )
+            db.session.add(upload)
+            user.storage_used_bytes = (user.storage_used_bytes or 0) + size
+            db.session.commit()
+            return True, upload
+        except Exception as e:
+            # Cleanup in case of DB failure
+            try:
+                if storage_backend == "dropbox":
+                    dbx.files_delete_v2(stored_path)
+                elif storage_backend == "local" and os.path.exists(stored_path):
+                    os.remove(stored_path)
+                elif storage_backend == "mega" and mega_file_obj:
+                    try:
+                        mega_account.delete(mega_file_obj)
+                    except Exception:
+                        pass
             except Exception:
                 pass
-        elif storage_backend == "local" and os.path.exists(stored_path):
-            os.remove(stored_path)
-        db.session.rollback()
-        return False, e
+            db.session.rollback()
+            return False, str(e)
+
+    except Exception as outer_e:
+        return False, str(outer_e)
     
 # Force-delete an upload regardless of who the actor is (used for group flows)
 def force_delete_upload(upload_id, actor_user=None):
     """
     Force-delete an upload:
       - remove file from disk if present
+      - delete from Dropbox or MEGA if applicable
       - mark Upload.deleted = True and set deleted_at
       - subtract size_bytes from the original uploader's storage_used_bytes
     Returns (True, "msg") or (False, "msg")
@@ -3583,11 +3640,24 @@ def force_delete_upload(upload_id, actor_user=None):
     stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, upload.stored_filename) if upload.stored_filename else None
 
     try:
-        if stored_path and os.path.exists(stored_path):
-            os.remove(stored_path)
-    except Exception as e:
-        app.logger.exception("Error removing upload file %s: %s", stored_path, e)
-        # continue — we still want to mark DB as deleted to keep things consistent
+        if upload.storage_backend == "dropbox":
+            try:
+                dbx.files_delete_v2(upload.stored_filename)
+            except Exception:
+                pass
+        elif upload.storage_backend == "mega" and getattr(upload, "mega_file_obj", None):
+            try:
+                mega_account.delete(upload.mega_file_obj)
+            except Exception:
+                app.logger.exception("Failed to delete MEGA file %s", upload.stored_filename)
+        elif stored_path and os.path.exists(stored_path):
+            try:
+                os.remove(stored_path)
+            except Exception as e:
+                app.logger.exception("Error removing upload file %s: %s", stored_path, e)
+    except Exception:
+        # ignore any deletion errors — we still want to mark DB as deleted
+        pass
 
     try:
         upload.deleted = True
@@ -3604,14 +3674,16 @@ def force_delete_upload(upload_id, actor_user=None):
         db.session.rollback()
         app.logger.exception("DB error while force-deleting upload %s: %s", upload_id, e)
         return False, "Database error while force-deleting upload."
-    
+
+
 def _note_attachment_ids(note_id):
     return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
+
 
 def delete_upload(upload_id, user):
     """
     Centralized delete handler.
-    Marks upload deleted, removes file from storage (local or Dropbox),
+    Marks upload deleted, removes file from storage (local, Dropbox, or MEGA),
     and subtracts bytes from user's storage_used_bytes.
     Only owner or admins should call this function.
     """
@@ -3625,12 +3697,25 @@ def delete_upload(upload_id, user):
 
     try:
         if upload.storage_backend == "dropbox":
-            # Delete from Dropbox
             try:
                 dbx.files_delete_v2(upload.stored_filename)
-            except Exception as e:
-                # log but continue to mark as deleted
+            except Exception:
                 pass
+        # inside your delete_upload function, in the Mega block:
+        elif upload.storage_backend == "mega" and getattr(upload, "mega_file_obj", None):
+            try:
+                # Convert string to dict if necessary
+                if isinstance(upload.mega_file_obj, str):
+                    mega_file_obj = ast.literal_eval(upload.mega_file_obj)
+                else:
+                    mega_file_obj = upload.mega_file_obj
+
+                # get public handle of first file
+                handle = mega_file_obj['f'][0]['h']
+                # request deletion directly
+                mega_account._api_request({'a': 'd', 'n': handle})
+            except Exception:
+                app.logger.exception("Failed to delete MEGA file %s", upload.stored_filename)
         else:
             # Delete from local disk
             stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, upload.stored_filename)
@@ -3638,18 +3723,17 @@ def delete_upload(upload_id, user):
                 try:
                     os.remove(stored_path)
                 except Exception as e:
-                    # log but continue
-                    pass
+                    app.logger.exception("Error removing upload file %s: %s", stored_path, e)
 
         # Update DB
         upload.deleted = True
         upload.deleted_at = datetime.utcnow()
-        # subtract bytes from user
-        user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - upload.size_bytes)
+        user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - (upload.size_bytes or 0))
         db.session.commit()
         return True, "Deleted."
     except Exception as e:
         db.session.rollback()
+        app.logger.exception("Database error on delete_upload %s: %s", upload_id, e)
         return False, "Database error on delete."
 
 def initialize_user_storage(user_id):
@@ -5095,9 +5179,30 @@ def save_note(token):
                 if not db_up:
                     continue
 
-                stored_path = os.path.join(current_app.config.get("UPLOAD_FOLDER_LOCAL_FILES") or UPLOAD_FOLDER_LOCAL_FILES, db_up.stored_filename)
-                if os.path.exists(stored_path):
-                    os.remove(stored_path)
+                stored_path = os.path.join(
+                    current_app.config.get("UPLOAD_FOLDER_LOCAL_FILES") or UPLOAD_FOLDER_LOCAL_FILES,
+                    db_up.stored_filename
+                )
+                # If stored in local filesystem, remove file
+                if db_up.storage_backend == "local" and os.path.exists(stored_path):
+                    try:
+                        os.remove(stored_path)
+                    except Exception:
+                        current_app.logger.exception("Failed to remove local file during cleanup %s", stored_path)
+
+                # If stored in dropbox, try to delete it (best-effort)
+                if db_up.storage_backend == "dropbox":
+                    try:
+                        dbx.files_delete_v2(db_up.stored_filename)
+                    except Exception:
+                        current_app.logger.exception("Failed to remove Dropbox file during cleanup %s", db_up.stored_filename)
+
+                # If MEGA, try to delete via mega_account (best-effort)
+                if db_up.storage_backend == "mega" and getattr(db_up, "mega_file_obj", None):
+                    try:
+                        mega_account.delete(db_up.mega_file_obj)
+                    except Exception:
+                        current_app.logger.exception("Failed to remove MEGA file during cleanup %s", db_up.stored_filename)
 
                 u = User.query.get(user.id)
                 u.storage_used_bytes = max(0, (u.storage_used_bytes or 0) - (db_up.size_bytes or 0))
@@ -5128,40 +5233,73 @@ def save_note(token):
             if not orig_upload or orig_upload.deleted:
                 continue
 
-            # Determine storage backend for the copied file
-            use_dropbox = False
-            src_path = os.path.join(upload_folder, orig_upload.stored_filename)
             file_size = orig_upload.size_bytes or 0
 
-            # Check if Dropbox has enough quota
-            try:
-                account_info = dbx.users_get_space_usage()
-                remaining = account_info.allocation.allocated - account_info.used
-                if remaining >= file_size:
-                    use_dropbox = True
-            except Exception:
-                # fail silently and fallback to local
-                use_dropbox = False
-
+            # --- Obtain file bytes from source backend ---
+            file_bytes = None
             try:
                 if orig_upload.storage_backend == "dropbox":
-                    # Download from Dropbox
-                    _, res = dbx.files_download(orig_upload.stored_filename)
-                    file_content = res.content
+                    try:
+                        _, res = dbx.files_download(orig_upload.stored_filename)
+                        file_bytes = res.content
+                    except Exception:
+                        current_app.logger.exception("Failed to download original from Dropbox %s", orig_upload.stored_filename)
+                        raise
+
+                elif orig_upload.storage_backend == "mega":
+                    # Prefer using the stored mega_file_obj if available
+                    mega_obj = getattr(orig_upload, "mega_file_obj", None)
+                    stored_link = orig_upload.stored_filename if orig_upload.stored_filename and str(orig_upload.stored_filename).startswith("http") else None
+
+                    # Attempt to download via mega client first
+                    if mega_obj:
+                        tmp_fd, tmp_path = tempfile.mkstemp()
+                        os.close(tmp_fd)
+                        try:
+                            # mega_account.download writes file to dest
+                            mega_account.download(mega_obj, dest=tmp_path)
+                            with open(tmp_path, "rb") as f:
+                                file_bytes = f.read()
+                        finally:
+                            try:
+                                if os.path.exists(tmp_path):
+                                    os.remove(tmp_path)
+                            except Exception:
+                                current_app.logger.exception("Failed to remove temporary MEGA download file %s", tmp_path)
+
+                    # If we don't have a mega_file_obj, try HTTP GET on the stored public link (best-effort)
+                    elif stored_link:
+                        try:
+                            r = requests.get(stored_link, timeout=60)
+                            r.raise_for_status()
+                            file_bytes = r.content
+                        except Exception:
+                            current_app.logger.exception("Failed to fetch MEGA public link %s", stored_link)
+                            raise
+                    else:
+                        current_app.logger.error("MEGA origin upload missing both file object and public link: %s", orig_upload.id)
+                        raise RuntimeError("Missing MEGA source metadata")
+
                 else:
-                    # Read local file
+                    # local or unknown stored backend -> read from local filesystem
+                    src_path = os.path.join(upload_folder, orig_upload.stored_filename or "")
                     if not os.path.isfile(src_path):
                         current_app.logger.warning("Original upload file missing: %s; skipping copy", src_path)
                         continue
                     with open(src_path, "rb") as f:
-                        file_content = f.read()
+                        file_bytes = f.read()
+
+                if file_bytes is None:
+                    current_app.logger.warning("No bytes obtained for original upload %s; skipping", orig_upload.id)
+                    continue
 
                 # Wrap as FileStorage for reuse of verify_and_record_upload
-                fs = FileStorage(stream=BytesIO(file_content),
-                                 filename=orig_upload.original_filename or orig_upload.stored_filename,
-                                 content_type=orig_upload.mimetype or '')
+                fs = FileStorage(
+                    stream=BytesIO(file_bytes),
+                    filename=orig_upload.original_filename or orig_upload.stored_filename or "attachment",
+                    content_type=orig_upload.mimetype or ''
+                )
 
-                # If we want to store to Dropbox, set a special flag
                 success, result = verify_and_record_upload(fs, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES)
 
             except Exception:
@@ -5225,18 +5363,93 @@ def shared_attachment_download(token, upload_id):
     if not allowed:
         abort(404)
 
+    # ---------- DROPBOX ----------
     if up.storage_backend == "dropbox":
         try:
             temp_link = dbx.files_get_temporary_link(up.stored_filename).link
             return redirect(temp_link)
         except Exception:
+            current_app.logger.exception("Failed to generate Dropbox shared link for upload %s", upload_id)
             return jsonify({"error": "Failed to generate Dropbox link"}), 500
-    else:
-        # local file fallback
-        file_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, up.stored_filename)
-        if not os.path.exists(file_path):
-            return jsonify({"error": "File not found"}), 404
-        return send_file(file_path, as_attachment=True, download_name=up.original_filename)
+
+    # ---------- MEGA ----------
+    if up.storage_backend == "mega":
+        mega_obj = getattr(up, "mega_file_obj", None)
+        stored_link = up.stored_filename if up.stored_filename and str(up.stored_filename).startswith("http") else None
+
+        # Prefer redirecting to a public link (no proxying)
+        if stored_link:
+            return redirect(stored_link)
+
+        try:
+            if mega_obj:
+                # try to generate a public link and redirect
+                try:
+                    link = mega_account.get_upload_link(mega_obj)
+                    return redirect(link)
+                except Exception:
+                    # log and fall through to proxying
+                    current_app.logger.exception("Failed to generate MEGA public link for upload %s", upload_id)
+            else:
+                # no mega object and no link — cannot redirect
+                current_app.logger.error("MEGA metadata missing for upload %s", upload_id)
+        except Exception:
+            current_app.logger.exception("Unexpected MEGA error for upload %s", upload_id)
+
+        # Fallback: proxy MEGA file through server (reads into memory then sends)
+        tmp_fd = None
+        tmp_path = None
+        try:
+            tmp_fd, tmp_path = tempfile.mkstemp()
+            os.close(tmp_fd)  # we only need the path; mega client will write to it
+            mega_account.download(mega_obj, dest=tmp_path)
+
+            # Read file bytes then remove temp file (reduces window file exists on disk)
+            with open(tmp_path, "rb") as f:
+                file_bytes = f.read()
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                current_app.logger.exception("Failed to remove temporary MEGA download file %s", tmp_path)
+
+            return send_file(
+                BytesIO(file_bytes),
+                as_attachment=True,
+                download_name=up.original_filename,
+                mimetype=up.mimetype or None
+            )
+        except Exception:
+            # ensure cleanup
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    current_app.logger.exception("Failed to cleanup temp file %s after MEGA error", tmp_path)
+            current_app.logger.exception("Failed to proxy MEGA file %s", upload_id)
+            return jsonify({"error": "Failed to generate or proxy MEGA file"}), 500
+
+    # ---------- LOCAL fallback ----------
+    # local file fallback
+    file_path = os.path.join(app.config.get('UPLOAD_FOLDER_LOCAL_FILES', UPLOAD_FOLDER_LOCAL_FILES),
+                             up.stored_filename or "")
+    if not os.path.exists(file_path):
+        return jsonify({"error": "File not found"}), 404
+
+    try:
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=up.original_filename,
+            mimetype=up.mimetype or None
+        )
+    except TypeError:
+        # older Flask versions
+        return send_file(
+            file_path,
+            as_attachment=True,
+            attachment_filename=up.original_filename,
+            mimetype=up.mimetype or None
+        )
 
 @app.route('/notes/<int:note_id>/share', methods=['GET'])
 @require_session_key
@@ -5724,6 +5937,117 @@ def cron_notifications():
         "errors": errors
     }), (500 if errors else 200)
 
+@app.route('/cron/cleanup_uploads', methods=['GET'])
+def cron_cleanup_uploads():
+    """
+    Cron endpoint: Deletes files in UPLOAD_FOLDER_LOCAL_FILES that are:
+      - not present in the uploads table for local storage and not marked active, OR
+      - present in the uploads table but marked deleted=True (for local storage).
+    Then deletes the corresponding DB records with deleted==True from uploads table.
+
+    NOTE: Ensure app.config['UPLOAD_FOLDER_LOCAL_FILES'] is set to the absolute path of your
+    local upload folder before calling this route (from cron).
+    """
+    upload_folder = current_app.config.get('UPLOAD_FOLDER_LOCAL_FILES')
+    if not upload_folder:
+        return jsonify({"error": "UPLOAD_FOLDER_LOCAL_FILES not configured"}), 500
+
+    upload_folder_path = Path(upload_folder).resolve()
+    if not upload_folder_path.exists():
+        return jsonify({"error": f"Upload folder does not exist: {upload_folder_path}"}), 500
+
+    # Query DB: local storage entries
+    local_uploads = db.session.query(Upload).filter(Upload.storage_backend == 'local').all()
+
+    # Build sets of normalized stored filenames for active and deleted records.
+    # Normalize using os.path.normpath and store relative forms.
+    def norm(p: str) -> str:
+        # treat None or empty as empty string
+        if not p:
+            return ''
+        return os.path.normpath(p).lstrip(os.sep)
+
+    active_files = set()
+    deleted_files_db = set()
+    for u in local_uploads:
+        stored = norm(u.stored_filename)
+        if u.deleted:
+            deleted_files_db.add(stored)
+        else:
+            active_files.add(stored)
+
+    deleted_files = []
+    failed_deletions = []
+    removed_empty_dirs = 0
+
+    # Walk the upload folder (top-down)
+    for root, dirs, files in os.walk(upload_folder_path, topdown=False):
+        root_path = Path(root)
+        for fname in files:
+            file_path = root_path / fname
+            try:
+                # compute relative path from upload folder, normalized for comparison
+                rel = os.path.relpath(file_path.resolve(), upload_folder_path)
+            except Exception:
+                # if resolving fails, skip file (safety)
+                continue
+
+            rel_norm = norm(rel)
+            base_name = fname  # basename fallback match
+
+            # Decide whether to delete:
+            # delete if file is either:
+            #  - marked deleted in DB (exists in deleted_files_db), OR
+            #  - not present in active_files (not in DB as local active)
+            in_deleted_db = rel_norm in deleted_files_db or base_name in deleted_files_db
+            in_active_db = rel_norm in active_files or base_name in active_files
+
+            if in_deleted_db or (not in_active_db):
+                # Safety: verify that file_path is inside upload_folder_path
+                try:
+                    abs_fp = file_path.resolve()
+                except Exception:
+                    failed_deletions.append(str(file_path))
+                    continue
+                if not str(abs_fp).startswith(str(upload_folder_path)):
+                    # skip deletion if outside folder (should not happen)
+                    failed_deletions.append(str(file_path))
+                    continue
+
+                try:
+                    os.remove(abs_fp)
+                    deleted_files.append(str(abs_fp))
+                except Exception as e:
+                    failed_deletions.append(f"{file_path} (err: {e})")
+
+    # Delete DB records where deleted == True
+    try:
+        deleted_records_q = db.session.query(Upload).filter(Upload.deleted == True)
+        # count before delete
+        deleted_records_count = deleted_records_q.count()
+        # bulk delete
+        deleted_records_q.delete(synchronize_session=False)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "Failed to delete DB records marked deleted",
+            "exception": str(e),
+            "deleted_files_attempted": len(deleted_files),
+            "deleted_files_failed": len(failed_deletions),
+        }), 500
+
+    summary = {
+        "upload_folder": str(upload_folder_path),
+        "deleted_files_count": len(deleted_files),
+        "deleted_files_sample": deleted_files[:50],  # limit listing to first 50
+        "failed_file_deletions_count": len(failed_deletions),
+        "failed_file_deletions_sample": failed_deletions[:20],
+        "removed_empty_directories": removed_empty_dirs,
+        "deleted_db_records_count": deleted_records_count
+    }
+
+    return jsonify(summary), 200
 
 @app.route('/flow/projects', methods=['GET'])
 @require_session_key
@@ -8468,6 +8792,10 @@ def update_delete_group_folder(group_id, folder_id):
 from io import BytesIO
 from flask import send_file
 
+from io import BytesIO
+from flask import send_file, send_from_directory, redirect, request, jsonify, g
+import tempfile
+
 @app.route('/uploads/<int:upload_id>/download', methods=['GET'])
 @require_session_key
 def download_upload_hybrid(upload_id):
@@ -8494,10 +8822,11 @@ def download_upload_hybrid(upload_id):
                 return send_file(
                     BytesIO(res.content),
                     mimetype=upload.mimetype,
-                    as_attachment=False,  # inline display
+                    as_attachment=False,
                     download_name=upload.original_filename
                 )
             except Exception:
+                app.logger.exception("Failed to proxy Dropbox file %s", upload.stored_filename)
                 return jsonify({"error": "Failed to proxy Dropbox file"}), 500
         else:
             # Direct download link for non-inline
@@ -8505,9 +8834,85 @@ def download_upload_hybrid(upload_id):
                 temp_link = dbx.files_get_temporary_link(upload.stored_filename).link
                 return redirect(temp_link)
             except Exception:
+                app.logger.exception("Failed to generate Dropbox download link %s", upload.stored_filename)
                 return jsonify({"error": "Failed to generate Dropbox download link"}), 500
 
+    # --- MEGA files ---
+    if upload.storage_backend == "mega":
+        mega_obj = getattr(upload, "mega_file_obj", None)
+        # Try to use any stored public link first for direct redirects
+        stored_link = upload.stored_filename if upload.stored_filename and str(upload.stored_filename).startswith("http") else None
+
+        if not mega_obj and not stored_link:
+            app.logger.error("MEGA file has no file object or stored link: upload_id=%s", upload_id)
+            return jsonify({"error": "MEGA file metadata missing"}), 500
+
+        # Non-inline: prefer redirect to public link to avoid proxying large files
+        if not inline:
+            # If we already stored a link, redirect to it
+            if stored_link:
+                return redirect(stored_link)
+            # Otherwise try to generate a link and redirect
+            try:
+                link = mega_account.get_upload_link(mega_obj)
+                return redirect(link)
+            except Exception:
+                app.logger.exception("Failed to generate MEGA public link for upload %s", upload_id)
+                # Fall through to proxying below
+
+        if inline:
+            try:
+                mega_obj_full = json.loads(upload.mega_file_obj)
+
+                if 'f' not in mega_obj_full or not mega_obj_full['f']:
+                    return jsonify({"error": "Invalid MEGA file object"}), 500
+
+                mega_handle = mega_obj_full['f'][0].get('h')
+                if not mega_handle:
+                    return jsonify({"error": "MEGA handle missing"}), 500
+
+                # Get all resolved files
+                all_files = mega_account.get_files()
+                resolved_file = all_files.get(mega_handle)
+                if not resolved_file:
+                    app.logger.error(
+                        "Resolved MEGA file not found for handle %s (upload_id=%s)",
+                        mega_handle,
+                        upload_id,
+                    )
+                    return jsonify({"error": "MEGA file not accessible"}), 404
+
+                # Let Mega write to its own temp file
+                downloaded_path = mega_account._download_file(
+                    None,  # file_handle
+                    None,  # file_key
+                    file=resolved_file,
+                    is_public=False
+                )
+
+                # Serve the downloaded file via Flask
+                return send_file(
+                    downloaded_path,
+                    mimetype=upload.mimetype,
+                    as_attachment=False,
+                    download_name=upload.original_filename
+                )
+
+            except Exception as e:
+                app.logger.exception("Failed to proxy MEGA file %s: %s", upload_id, e)
+                return jsonify({"error": "Failed to proxy MEGA file"}), 500
+
+            finally:
+                # safe deletion
+                try:
+                    if 'downloaded_path' in locals() and os.path.exists(downloaded_path):
+                        os.remove(downloaded_path)
+                except Exception:
+                    pass
+
+
     # --- Local files ---
+    # For local storage fallback and general local handling
     filename = upload.stored_filename
     if not filename:
         return jsonify({"error": "File not found"}), 404
