@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#2c2c2c">
     <script src="/static/js/check.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <title>Admin Page</title>
     <style>
+        :root {
+        --bg-color:  #2c2c2c;
+        --ctr-color: #1e1e1e;
+        --btn-color: #424242;
+        }
         body {
             margin: 0;
             font-family: Arial, sans-serif;
@@ -389,6 +395,31 @@
         transform: translateX(20px);
         }
 
+        /* Storage widget base */
+        .storage-widget-root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+        .storage-widget-header h3 { margin: 0 0 8px 0; font-size: 1.05rem; }
+        .storage-widget-counters { margin-bottom: 12px; display:flex; gap:12px; align-items:center; }
+        .storage-total-card { padding: 8px 12px; border-radius:8px; background: var(--bg-color); display:inline-block; }
+        .storage-total-title { font-weight:600; margin-bottom:6px; }
+        .storage-total-values { font-size:0.95rem; color:#eaedf3; }
+
+        /* Grid of gauges */
+        .storage-widget-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+        .storage-gauge-card { padding: 10px; border-radius:10px; background:var(--bg-color); box-shadow: 0 1px 3px rgba(0,0,0,0.06); min-height:220px; display:flex; flex-direction:column; align-items:center; }
+        .gauge-title { font-weight:600; margin-bottom:8px; }
+        .gauge-wrap { position: relative; width: 160px; height: 160px; }
+        .gauge-wrap canvas { width:100% !important; height:100% !important; display:block; }
+        .gauge-center { position:absolute; inset: 0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.05rem; pointer-events:none; }
+        .gauge-numbers { margin-top:8px; font-size:0.9rem; text-align:center; color:#fff; }
+        .gauge-numbers .num-used, .gauge-numbers .num-total, .gauge-numbers .num-free { margin:2px 0; }
+
+        /* Error */
+        .storage-widget-error { color:#b91c1c; margin-top:8px; }
+
+        /* Responsive tweaks */
+        @media (max-width:600px) {
+        .gauge-wrap { width: 130px; height:130px; }
+        }
     </style>
     <script>
         if ('serviceWorker' in navigator) {
@@ -436,6 +467,9 @@
             <button id="create-backup-btn">Create Backup</button>
             <button id="send-notification-all">Send Notification to All Users</button>
         </div>
+
+        <!-- Place where widget will be injected -->
+        <div id="storage-widget-container"></div>
 
         <!-- Password Confirmation Modal -->
         <div id="password-confirmation-overlay" style="display: none;">
@@ -494,11 +528,257 @@
 
     </div>
 
-    <div class="container">
-        <div id="hn-container"></div>
-    </div>
-
     <script>
+
+        /**
+         * createStorageWidget(containerId, dataOrUrl, options)
+         *
+         * containerId: string id of an existing element in which the widget will be inserted
+         * dataOrUrl: object (already-fetched JSON) OR string URL to fetch JSON from
+         * options: optional object {
+         *   autoFetch: boolean (if true and dataOrUrl is URL, will fetch immediately),
+         *   fetchIntervalMs: number (optional polling interval in ms; widget does NOT auto-poll unless you call updateFromUrl repeatedly)
+         * }
+         *
+         * Returns: {
+         *   update(newData)      // update the widget with already-fetched JSON
+         *   updateFromUrl(url)   // fetch JSON and update
+         *   destroy()            // remove DOM + event listeners + Chart instances
+         * }
+         *
+         * Expected JSON shape for each platform: { used_bytes, total_bytes, free_bytes, free_percent, path?, note? }
+         * If total_bytes is null/undefined or not finite (e.g. localhost), the widget will display '∞' and percent as '—'.
+         */
+        function createStorageWidget(containerId, dataOrUrl, options = {}) {
+        const container = document.getElementById(containerId);
+        if (!container) throw new Error("Container element not found: " + containerId);
+
+        const cfg = Object.assign({
+            autoFetch: true
+        }, options);
+
+        // Internal helpers
+        function humanBytes(bytes) {
+            if (bytes === null || bytes === undefined) return "—";
+            if (!isFinite(bytes)) return "∞";
+            const units = ["B","KB","MB","GB","TB","PB"];
+            let u = 0;
+            let n = Number(bytes);
+            while (n >= 1024 && u < units.length-1) { n /= 1024; u++; }
+            return `${n % 1 === 0 ? n : n.toFixed(2)} ${units[u]}`;
+        }
+        function safeNumber(v) {
+            if (v === null || v === undefined) return null;
+            if (typeof v === "number") return Number.isFinite(v) ? v : (v === Infinity ? Infinity : null);
+            // try parse strings like "Infinity" or numeric strings
+            if (typeof v === "string") {
+            if (v.toLowerCase() === "infinity" || v.toLowerCase() === "inf") return Infinity;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+            }
+            return null;
+        }
+        function pctString(used, total) {
+            if (!isFinite(total) || total === null) return "—";
+            if (total === 0) return "0%";
+            const pct = Math.max(0, Math.min(100, (used / total) * 100));
+            return `${pct.toFixed(1)}%`;
+        }
+
+        // Build DOM
+        container.innerHTML = ""; // clear
+        container.classList.add("storage-widget-root");
+
+        const header = document.createElement("div");
+        header.className = "storage-widget-header";
+        header.innerHTML = `<h3>Storage Overview</h3>`;
+        container.appendChild(header);
+
+        // Counters section (Total)
+        const counters = document.createElement("div");
+        counters.className = "storage-widget-counters";
+        counters.innerHTML = `
+            <div class="storage-total-card">
+            <div class="storage-total-title">Total</div>
+            <div class="storage-total-values">
+                <span class="storage-total-used">Used: —</span>
+                <span class="storage-total-sep"> / </span>
+                <span class="storage-total-total">Total: —</span>
+                <span class="storage-total-free">Free: —</span>
+            </div>
+            </div>
+        `;
+        container.appendChild(counters);
+
+        // Gauges grid
+        const grid = document.createElement("div");
+        grid.className = "storage-widget-grid";
+        const platforms = ["local", "dropbox", "mega", "total"];
+        platforms.forEach((p) => {
+            const card = document.createElement("div");
+            card.className = "storage-gauge-card";
+            card.id = `${containerId}-card-${p}`;
+            const title = p === "total" ? "Combined" : p[0].toUpperCase() + p.slice(1);
+            card.innerHTML = `
+            <div class="gauge-title">${title}</div>
+            <div class="gauge-wrap">
+                <canvas id="${containerId}-chart-${p}" width="200" height="200"></canvas>
+                <div class="gauge-center" id="${containerId}-center-${p}">—</div>
+            </div>
+            <div class="gauge-numbers" id="${containerId}-nums-${p}">
+                <div class="num-used">Used: —</div>
+                <div class="num-total">Total: —</div>
+                <div class="num-free">Free: —</div>
+            </div>
+            `;
+            grid.appendChild(card);
+        });
+        container.appendChild(grid);
+
+        // Chart.js instances map
+        const charts = {};
+
+        // Create Chart.js doughnuts
+        function createChart(canvasId) {
+            const ctx = document.getElementById(canvasId).getContext("2d");
+            const chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Used', 'Free'],
+                datasets: [{
+                data: [1, 1],
+                // default colors; you can override via CSS variables if you prefer
+                backgroundColor: ['#3b82f6','#e5e7eb'],
+                borderWidth: 0
+                }]
+            },
+            options: {
+                animation: { duration: 400 },
+                cutout: '75%',
+                maintainAspectRatio: false,
+                plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+                }
+            }
+            });
+            return chart;
+        }
+
+        platforms.forEach(p => {
+            charts[p] = createChart(`${containerId}-chart-${p}`);
+        });
+
+        // Update helper (data should be the JSON returned by server)
+        function applyData(data) {
+            if (!data) return;
+            // Normalise/interpret platform sections
+            const local = data.local || {};
+            const dropbox = data.dropbox || {};
+            const mega = data.mega || {};
+
+            const localUsed = safeNumber(local.used_bytes) || 0;
+            const localTotal = safeNumber(local.total_bytes);
+            const localFree = safeNumber(local.free_bytes);
+            const dropUsed = safeNumber(dropbox.used_bytes) || 0;
+            const dropTotal = safeNumber(dropbox.total_bytes);
+            const dropFree = safeNumber(dropbox.free_bytes);
+            const megaUsed = safeNumber(mega.used_bytes) || 0;
+            const megaTotal = safeNumber(mega.total_bytes);
+            const megaFree = safeNumber(mega.free_bytes);
+
+            // Combined totals: if any total is infinite/null treat combined total as infinite
+            let combinedUsed = 0, combinedTotal = 0, combinedHasInfinite = false;
+            [ {u: localUsed, t: localTotal},
+            {u: dropUsed, t: dropTotal},
+            {u: megaUsed, t: megaTotal}
+            ].forEach(x => {
+            combinedUsed += (x.u || 0);
+            if (!isFinite(x.t) || x.t === null) combinedHasInfinite = true;
+            else combinedTotal += (x.t || 0);
+            });
+            if (combinedHasInfinite) combinedTotal = Infinity;
+
+            // update numeric total counters area
+            const totalUsedNode = container.querySelector(".storage-total-used");
+            const totalTotalNode = container.querySelector(".storage-total-total");
+            const totalFreeNode = container.querySelector(".storage-total-free");
+            totalUsedNode.textContent = `Used: ${humanBytes(combinedUsed)}`;
+            totalTotalNode.textContent = `Total: ${humanBytes(combinedTotal)}`;
+            const combinedFree = isFinite(combinedTotal) ? Math.max(0, combinedTotal - combinedUsed) : Infinity;
+            totalFreeNode.textContent = `Free: ${humanBytes(combinedFree)}`;
+
+            // Helper to update chart and numbers for a platform key
+            function updatePlatform(key, used, total, free) {
+            const chart = charts[key];
+            const center = document.getElementById(`${containerId}-center-${key}`);
+            const nums = document.getElementById(`${containerId}-nums-${key}`);
+            const usedNode = nums.querySelector(".num-used");
+            const totalNode = nums.querySelector(".num-total");
+            const freeNode = nums.querySelector(".num-free");
+
+            usedNode.textContent = `Used: ${humanBytes(used)}`;
+            totalNode.textContent = `Total: ${humanBytes(total)}`;
+            freeNode.textContent = `Free: ${humanBytes(free)}`;
+
+            if (!isFinite(total) || total === null) {
+                // show indefinite / cannot compute percent
+                center.textContent = `${humanBytes(used)}`;
+                // Chart: show used slice only
+                chart.data.datasets[0].data = [used || 0, 0.000001]; // small second slice to render a full circle
+            } else {
+                const safeTotal = Math.max(1, total);
+                const safeFree = Math.max(0, safeTotal - (used || 0));
+                const percent = Math.max(0, Math.min(100, ((used || 0) / safeTotal) * 100));
+                center.textContent = `${percent.toFixed(1)}%`;
+                chart.data.datasets[0].data = [used || 0, safeFree];
+            }
+            chart.update();
+            }
+
+            updatePlatform("local", localUsed, localTotal, localFree);
+            updatePlatform("dropbox", dropUsed, dropTotal, dropFree);
+            updatePlatform("mega", megaUsed, megaTotal, megaFree);
+            updatePlatform("total", combinedUsed, combinedTotal, combinedFree);
+        }
+
+        // Public API
+        async function updateFromUrl(url) {
+            const res = await fetch(url, { credentials: 'same-origin' });
+            if (!res.ok) throw new Error("Failed to fetch storage data: " + res.status);
+            const data = await res.json();
+            applyData(data);
+            return data;
+        }
+
+        function update(newData) {
+            applyData(newData);
+        }
+
+        function destroy() {
+            // destroy Chart instances
+            Object.values(charts).forEach(c => {
+            try { c.destroy(); } catch (e) {}
+            });
+            container.innerHTML = "";
+        }
+
+        // initialize
+        if (typeof dataOrUrl === "string") {
+            if (cfg.autoFetch) {
+            updateFromUrl(dataOrUrl).catch(err => {
+                console.error("Storage widget fetch error:", err);
+                // show minimal UI error
+                container.querySelector(".storage-widget-header").insertAdjacentHTML("afterend",
+                `<div class="storage-widget-error">Error loading storage data</div>`);
+            });
+            }
+        } else if (typeof dataOrUrl === "object" && dataOrUrl !== null) {
+            update(dataOrUrl);
+        }
+
+        return { update, updateFromUrl, destroy };
+        }
 
         function showModal() {
             window.location.href = '/login_page?redirect=/admin_page&warning=true';
@@ -532,51 +812,6 @@
                 alert("An unexpected error occurred during deployment.");
             }
         });
-
-        function loadHackerNews(containerId, count = 10) {
-            const container = document.getElementById(containerId);
-            if (!container) return console.error("Container not found:", containerId);
-
-            // Clear container
-            container.innerHTML = '';
-
-            // Add some basic styles
-            const style = document.createElement('style');
-            style.textContent = `
-                #${containerId} { font-family: Arial, sans-serif; max-width: 800px; margin: auto; }
-                #${containerId} .hn-story { padding: 12px; border-bottom: 1px solid #ddd; }
-                #${containerId} .hn-story a { text-decoration: none; color: #333; font-weight: bold; }
-                #${containerId} .hn-story a:hover { color: #0077cc; }
-                #${containerId} .hn-meta { color: #666; font-size: 0.85em; margin-top: 4px; }
-            `;
-            document.head.appendChild(style);
-
-            // Fetch top stories IDs
-            fetch('https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty')
-                .then(res => res.json())
-                .then(ids => {
-                    const topIds = ids.slice(0, count);
-                    topIds.forEach(id => {
-                        fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json?print=pretty`)
-                            .then(res => res.json())
-                            .then(item => {
-                                if (!item) return;
-                                const storyDiv = document.createElement('div');
-                                storyDiv.className = 'hn-story';
-                                storyDiv.innerHTML = `
-                                    <a href="${item.url || '#'}" target="_blank">${item.title}</a>
-                                    <div class="hn-meta">by ${item.by} | ${item.score} points | ${item.descendants || 0} comments</div>
-                                `;
-                                container.appendChild(storyDiv);
-                            })
-                            .catch(err => console.error('Failed to fetch item', id, err));
-                    });
-                })
-                .catch(err => {
-                    console.error('Failed to fetch top stories', err);
-                    container.innerHTML = '<p>Failed to load Hacker News stories.</p>';
-                });
-        }
 
 
         document.getElementById('create-backup-btn').addEventListener('click', async () => {
@@ -738,7 +973,8 @@
                     populateMessagesTable(data.messages);
                     populateUsersTable(data.users);
                     fetchBackups();
-                    loadHackerNews("hn-container", 50);
+                    // creates and auto-fetches
+                    const widget = createStorageWidget("storage-widget-container", "/admin/storage", { autoFetch: true });
                 } else if (response.status === 401) {
                     alert("Session expired. Please log in again.");
                     sessionStorage.clear();
