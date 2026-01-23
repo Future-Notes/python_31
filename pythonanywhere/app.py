@@ -155,7 +155,7 @@ app.config['GMAIL_USER'] = 'noreplyfuturenotes@gmail.com'
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # Disables HTTPS check
 GITHUB_REPO_OWNER = "BosbesplaysYT" 
 GITHUB_REPO_NAME = "python_31"
-MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB default (changeable)
+MAX_UPLOAD_SIZE_BYTES = 30 * 1024 * 1024  # 5 MB default (changeable)
 # Allowed extensions and mimetypes
 ALLOWED_EXTENSIONS = {
     # Images
