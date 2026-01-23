@@ -1165,15 +1165,14 @@ def dropbox_has_space(size_bytes: int) -> bool:
     """
     Returns True if Dropbox has enough free space for the file.
     """
-    #try:
-    #    usage = dbx.users_get_space_usage()
-    #    used = usage.used
-    #    allocated = usage.allocation.get_individual().allocated
-    #    return (used + size_bytes) <= allocated
-    #except Exception:
-    #    # conservative fallback if API fails
-    #    return False
-    return False
+    try:
+        usage = dbx.users_get_space_usage()
+        used = usage.used
+        allocated = usage.allocation.get_individual().allocated
+        return (used + size_bytes) <= allocated
+    except Exception:
+        # conservative fallback if API fails
+        return False
 
 def insert_card_activity(user_id, card_id, content):
     user = User.query.filter_by(id=user_id).first()
