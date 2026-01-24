@@ -3940,7 +3940,7 @@ def initialize_user_storage(user_id):
         return False, "User not found."
 
     user.storage_used_bytes = 0
-    user.base_storage_mb = 10
+    user.base_storage_mb = 50
     db.session.add(user)
     db.session.commit()
     return True, "User storage initialized."
