@@ -1050,6 +1050,39 @@ class FlowCommit(db.Model):
     todo = db.relationship('Todo', backref='flow_commits')  # Changed backref name
 
 #---------------------------------Helper functions--------------------------------
+def get_user_default_calendar(user):
+    """Return the user's default calendar or None if none exists."""
+    return Calendar.query.filter_by(user_id=user.id, is_default=True).first()
+
+def resolve_local_calendar(user, calendar_id):
+    """
+    Resolve and return a Calendar object:
+      - if calendar_id provided: return that calendar if it belongs to user
+      - if not provided: return user's default calendar (if any)
+    Returns (calendar, error_tuple)
+      - calendar: Calendar or None
+      - error_tuple: None or (json_response, status_code)
+    """
+    if calendar_id is not None:
+        try:
+            cal_id_int = int(calendar_id)
+        except (ValueError, TypeError):
+            return None, (jsonify({"error": "invalid_calendar_id"}), 400)
+        cal = Calendar.query.filter_by(id=cal_id_int, user_id=user.id).first()
+        if not cal:
+            return None, (jsonify({"error": "calendar_not_found"}), 404)
+        return cal, None
+
+    # no calendar_id provided -> use default
+    cal = get_user_default_calendar(user)
+    if not cal:
+        return None, (jsonify({"error": "no_default_calendar", "message": "No calendar_id provided and no default calendar exists. Create a calendar or provide calendar_id."}), 400)
+    return cal, None
+
+def get_google_default_calendar_for_user(user):
+    """Return the user's default calendar, or None."""
+    return get_user_default_calendar(user)
+
 # helper to normalize upload attributes (works with both shapes)
 def _upload_metadata(up):
     if up is None:
@@ -7507,11 +7540,15 @@ def api_update_delete_calendar(calendar_id):
 @require_session_key
 def api_get_appointments():
     user = User.query.get(g.user_id)
-    q = Appointment.query.filter_by(user_id=user.id, deleted_at=None)
 
-    cal_id = request.args.get("calendar_id")
-    if cal_id:
-        q = q.filter_by(calendar_id=int(cal_id))
+    # Resolve calendar (allow query param calendar_id optional)
+    cal_param = request.args.get("calendar_id")
+    cal, err = resolve_local_calendar(user, cal_param if cal_param is not None else None)
+    if err:
+        return err  # (json_response, status_code)
+
+    # base query: only appointments belonging to that calendar and user, not deleted
+    q = Appointment.query.filter_by(user_id=user.id, deleted_at=None, calendar_id=cal.id)
 
     start = request.args.get("start")
     end = request.args.get("end")
@@ -7544,11 +7581,13 @@ def api_create_appointment():
     end = to_utc(data.get("end"))
     if not start or not end:
         return jsonify({"error":"start and end required"}), 400
+
+    # Resolve calendar (allow missing -> default)
     calendar_id = data.get("calendar_id")
-    # verify calendar exists and belongs to user
-    cal = Calendar.query.filter_by(id=calendar_id, user_id=user.id).first()
-    if not cal:
-        return jsonify({"error":"calendar not found"}), 404
+    cal, err = resolve_local_calendar(user, calendar_id if calendar_id is not None else None)
+    if err:
+        return err
+
     ap = Appointment(
         title=title,
         description=description,
@@ -7585,9 +7624,15 @@ def api_update_appointment(appt_id):
     if "is_all_day" in data: ap.is_all_day = bool(data["is_all_day"])
     if "color" in data: ap.color = data.get("color")
     if "calendar_id" in data:
-        cal = Calendar.query.filter_by(id=int(data["calendar_id"]), user_id=user.id).first()
+        # validate target calendar belongs to user
+        target_calendar_id = data.get("calendar_id")
+        if target_calendar_id is None:
+            return jsonify({"error": "invalid_calendar_id"}), 400
+        cal = Calendar.query.filter_by(id=int(target_calendar_id), user_id=user.id).first()
         if cal:
             ap.calendar_id = cal.id
+        else:
+            return jsonify({"error": "calendar_not_found"}), 404
     if "notes" in data:
         note_ids = data.get("notes") or []
         ap.notes = Note.query.filter(Note.id.in_(note_ids), Note.user_id==user.id).all()
@@ -7628,12 +7673,28 @@ def get_google_flow(state=None):
 @app.route("/api/google/connect", methods=["GET"])
 @require_session_key
 def api_google_connect():
-    # Return an authorization URL for the frontend to redirect the user
     user = User.query.get(g.user_id)
-    flow = get_google_flow()
-    auth_url, state = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent")
-    # Save state in DB or session if you want extra validation (omitted here)
-    return jsonify({"auth_url": auth_url}), 200
+    local_calendar_id = request.args.get("local_calendar_id")
+    
+    # resolve calendar
+    cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id is not None else None)
+    if err:
+        return err
+    
+    flow = get_google_flow(state=None)
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent"
+    )
+
+    # Save state and associated calendar_id somewhere (DB or session)
+    # For simplicity, associate in CalendarSync if needed after callback
+
+    return jsonify({
+        "auth_url": auth_url,
+        "local_calendar_id": cal.id  # frontend can keep this to pass back on callback
+    }), 200
 
 def get_user_id(session_key):
     current_key = request.cookies.get('session_key')
@@ -7645,48 +7706,81 @@ def get_user_id(session_key):
 
 @app.route("/google/callback")
 def google_callback():
-    # This route is registered in Google Console; it gets "code" & "state"
-    user = User.query.get(get_user_id(request.cookies.get("session_key")))
+    # get session user
+    user_id = get_user_id(request.cookies.get("session_key"))
+    user = User.query.get(user_id)
+
+    # fetch local_calendar_id from frontend query param or state (frontend should pass it)
+    local_calendar_id = request.args.get("local_calendar_id")
+    cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id else None)
+    if err:
+        return err
+
     flow = get_google_flow()
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials  # google.oauth2.credentials.Credentials
-    # Save tokens in DB
+
+    # Save or update Google credentials
     gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
     if not gcred:
         gcred = GoogleCalendarCredentials(user_id=user.id)
         db.session.add(gcred)
     gcred.access_token = creds.token
     gcred.refresh_token = creds.refresh_token or gcred.refresh_token
-    # token_expiry is a datetime
     gcred.token_expiry = creds.expiry
-    # save a default calendar id later after listing calendars
+    gcred.calendar_id = None  # actual Google calendar selected later
     gcred.last_sync = None
     db.session.commit()
-    # After exchange, redirect to scheduler page - frontend will call /api/google/calendars to list calendars
+
+    # Optionally, create a CalendarSync mapping for the local calendar
+    cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
+    if not cs:
+        cs = CalendarSync(user_id=user.id, local_calendar_id=cal.id, google_calendar_id=None, sync_enabled=True)
+        db.session.add(cs)
+        db.session.commit()
+
     return redirect(url_for("scheduler_page"))
 
 @app.route("/api/google/calendars", methods=["GET"])
 @require_session_key
 def api_google_list_calendars():
-    """List remote Google Calendars for the user (requires saved credentials)."""
     user = User.query.get(g.user_id)
+    local_calendar_id = request.args.get("local_calendar_id")
+    cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id else None)
+    if err:
+        return err
+
     gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
     if not gcred:
-        return jsonify({"error":"no_google_credentials"}), 404
-    creds = Credentials(token=gcred.access_token, refresh_token=gcred.refresh_token,
-                        token_uri="https://oauth2.googleapis.com/token",
-                        client_id=app.config['GOOGLE_CLIENT_ID'],
-                        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
-                        expiry=gcred.token_expiry)
+        return jsonify({"error": "no_google_credentials"}), 404
+
+    creds = Credentials(
+        token=gcred.access_token,
+        refresh_token=gcred.refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        expiry=gcred.token_expiry
+    )
+
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
     try:
-        service = build("calendar", "v3", credentials=creds, cache_discovery=False)
         resp = service.calendarList().list().execute()
         items = resp.get("items", [])
-        # return id and summary
-        calendars = [{"id": i["id"], "summary": i.get("summary"), "primary": i.get("primary", False)} for i in items]
+
+        # return id, summary, and optionally map it to local calendar
+        calendars = []
+        for i in items:
+            cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id, google_calendar_id=i["id"]).first()
+            calendars.append({
+                "id": i["id"],
+                "summary": i.get("summary"),
+                "primary": i.get("primary", False),
+                "linked": bool(cs)  # true if mapped to this local calendar
+            })
         return jsonify({"calendars": calendars}), 200
     except HttpError as e:
-        return jsonify({"error":"google_api_error", "details": str(e)}), 500
+        return jsonify({"error": "google_api_error", "details": str(e)}), 500
 
 def ensure_aware(dt):
     if dt is None:
@@ -7743,26 +7837,25 @@ def parse_google_event_datetime(event_time_dict):
 @app.route("/api/google/sync", methods=["POST"])
 @require_session_key
 def api_google_sync():
-    """
-    Two-way sync:
-      - Pulls remote changes using saved sync_token (if present), otherwise full list.
-      - Pushes local changes (create/update/delete) to Google.
-      - Resolves conflicts via last-updated timestamps: the newest wins.
-    Body: { google_calendar_id: str, local_calendar_id: int, direction: "pull"|"push"|"both" }
-    """
     user = User.query.get(g.user_id)
     body = request.json or {}
     google_calendar_id = body.get("google_calendar_id")
-    local_calendar_id = body.get("local_calendar_id")
+    local_calendar_id_param = body.get("local_calendar_id")
     direction = body.get("direction", "both")
-    if not google_calendar_id or not local_calendar_id:
-        return jsonify({"error": "google_calendar_id and local_calendar_id required"}), 400
+    if not google_calendar_id:
+        return jsonify({"error": "google_calendar_id required"}), 400
+
+    # Resolve local calendar (default if not provided)
+    cal, err = resolve_local_calendar(user, local_calendar_id_param if local_calendar_id_param is not None else None)
+    if err:
+        return err
+    local_calendar_id = cal.id
 
     gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
     if not gcred:
         return jsonify({"error":"no_google_credentials"}), 404
 
-    # find or create mapping row
+    # find or create mapping row (use resolved local_calendar_id)
     cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=local_calendar_id, google_calendar_id=google_calendar_id).first()
     if not cs:
         cs = CalendarSync(user_id=user.id, local_calendar_id=local_calendar_id, google_calendar_id=google_calendar_id, sync_enabled=True)
@@ -7814,16 +7907,11 @@ def api_google_sync():
             items = events_resp.get("items", [])
             app.logger.warning("Google returned %d items", len(items))
             for item in items:
-                app.logger.warning("===== GOOGLE EVENT START =====")
-                app.logger.warning("Event ID: %s", item.get("id"))
-                app.logger.warning("Raw start: %s", item.get("start"))
-                app.logger.warning("Raw end: %s", item.get("end"))
-                app.logger.warning("Raw updated: %s", item.get("updated"))
+                # ... (existing pull loop unchanged, but use local_calendar_id when creating new Appointment)
                 geid = item.get("id")
                 status = item.get("status")
                 google_updated = parse_google_dt(item.get("updated"))
 
-                # Map to local appointment (if exists)
                 local = Appointment.query.filter_by(google_event_id=geid, user_id=user.id).first()
 
                 # Handle cancelled events
@@ -7833,7 +7921,6 @@ def api_google_sync():
                         db.session.commit()
                     continue
 
-                # ---- Usage in your pull loop ----
                 s = item.get("start", {})
                 e = item.get("end", {})
 
@@ -7842,51 +7929,38 @@ def api_google_sync():
                     end_dt, _ = parse_google_event_datetime(e)
                     is_all_day = False
                 else:
-                    # date-only (all-day) -- Google may sometimes omit the end field.
                     start_date_str = s.get("date")
                     end_date_str = e.get("date") if e else None
-
-                    # parse start
-                    # dtparser.isoparse("YYYY-MM-DD") -> date -> convert to midnight UTC
                     start_dt = dtparser.isoparse(start_date_str).replace(tzinfo=UTC)
-
                     if end_date_str:
                         end_dt = dtparser.isoparse(end_date_str).replace(tzinfo=UTC)
                     else:
-                        # Google occasionally omits 'end' — treat single-day all-day event as exclusive end
                         end_dt = (start_dt + timedelta(days=1)).replace(tzinfo=UTC)
-
                     is_all_day = True
-
-                app.logger.warning("Parsed start_dt (UTC): %s (tz=%s)", start_dt, start_dt.tzinfo)
-                app.logger.warning("Parsed end_dt (UTC): %s (tz=%s)", end_dt, end_dt.tzinfo)
 
                 rrule = None
                 if item.get("recurrence"):
                     rrule = item["recurrence"][0] if len(item["recurrence"]) > 0 else None
 
                 if not local:
-                    # Create new local appointment
+                    # Create new local appointment against the resolved local_calendar_id
                     ap = Appointment(
                         title=item.get("summary") or "",
                         description=item.get("description"),
                         start_datetime=start_dt.astimezone(UTC),
                         end_datetime=end_dt.astimezone(UTC),
                         user_id=user.id,
-                        calendar_id=local_calendar_id,
+                        calendar_id=local_calendar_id,  # <- resolved calendar
                         recurrence_rule=rrule,
                         is_all_day=is_all_day,
                         google_event_id=geid,
                         updated_at=google_updated
                     )
                     db.session.add(ap)
-                    app.logger.warning("About to store in DB:")
-                    app.logger.warning("start_datetime: %s", ap.start_datetime)
-                    app.logger.warning("end_datetime: %s", ap.end_datetime)
                     db.session.commit()
                     results["pulled"] += 1
                 else:
-                    # Local exists — conflict resolution
+                    # existing local update logic unchanged
                     local_updated = local.updated_at or getattr(local, "created_at", None)
                     lu = ensure_aware(local_updated)
                     gu = ensure_aware(google_updated)
@@ -7898,7 +7972,6 @@ def api_google_sync():
                         update_from_google = True
 
                     if update_from_google:
-                        # Update local with Google changes
                         local.title = item.get("summary") or local.title
                         local.description = item.get("description")
                         local.start_datetime = start_dt.astimezone(UTC)
@@ -7922,7 +7995,7 @@ def api_google_sync():
     # ---- PUSH phase (local -> remote) ----
     if direction in ("push", "both"):
         try:
-            # fetch all local events for the calendar (excluding soft-deleted)
+            # fetch all local events for the resolved calendar (excluding soft-deleted)
             local_events = Appointment.query.filter_by(user_id=user.id, calendar_id=local_calendar_id).filter(Appointment.deleted_at == None).all()
 
             for le in local_events:
@@ -7930,27 +8003,20 @@ def api_google_sync():
                     "summary": le.title,
                     "description": le.description
                 }
-                # Ensure we treat DB datetimes as UTC-aware before serializing to Google
-                start_utc = ensure_dt_utc(le.start_datetime)   # returns aware UTC datetime
+                start_utc = ensure_dt_utc(le.start_datetime)
                 end_utc   = ensure_dt_utc(le.end_datetime)
 
                 if le.is_all_day:
                     body["start"] = {"date": start_utc.date().isoformat()}
                     body["end"] = {"date": end_utc.date().isoformat()}
                 else:
-                    # Send explicit UTC ISO (includes +00:00). Google accepts this and will display correctly.
                     body["start"] = {"dateTime": start_utc.isoformat()}
                     body["end"]   = {"dateTime": end_utc.isoformat()}
 
-                # optional: provide the calendar timezone name so Google knows the intended display tz
-                # Replace 'Europe/Amsterdam' with the actual calendar timezone if you track it per-calendar.
-                # body["start"]["timeZone"] = "Europe/Amsterdam"
-                # body["end"]["timeZone"]   = "Europe/Amsterdam"
                 if le.recurrence_rule:
                     body["recurrence"] = [le.recurrence_rule]
 
                 if le.google_event_id:
-                    # Try updating existing Google event
                     try:
                         ge = service.events().get(calendarId=google_calendar_id, eventId=le.google_event_id).execute()
                         google_updated = parse_google_dt(ge.get("updated"))
@@ -7959,14 +8025,10 @@ def api_google_sync():
                         local_updated_aware = ensure_aware(local_updated)
                         google_updated_aware = ensure_aware(google_updated)
 
-                        # now safe to compare
                         if local_updated_aware and (not google_updated_aware or local_updated_aware > google_updated_aware):
                             service.events().update(calendarId=google_calendar_id, eventId=le.google_event_id, body=body).execute()
                             results["pushed"] += 1
-
-                        # Else remote is newer or equal — do nothing
                     except HttpError as e:
-                        # Not found or gone? Create anew
                         if getattr(e, "status_code", None) in (404, 410):
                             created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
                             le.google_event_id = created.get("id")
@@ -7975,7 +8037,6 @@ def api_google_sync():
                         else:
                             results["errors"].append(str(e))
                 else:
-                    # Local has no Google ID — create
                     created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
                     le.google_event_id = created.get("id")
                     db.session.commit()
@@ -7988,14 +8049,12 @@ def api_google_sync():
                     try:
                         service.events().delete(calendarId=google_calendar_id, eventId=dl.google_event_id).execute()
                     except HttpError:
-                        # ignore errors if already deleted remotely
                         pass
 
         except HttpError as e:
             results["errors"].append(str(e))
             return jsonify({"error": "google_push_error", "details": str(e)}), 500
 
-    # Return the results including counts and any errors
     return jsonify(results), 200
 
 @app.route("/api/notes", methods=["GET"])
