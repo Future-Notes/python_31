@@ -15,16 +15,133 @@
       return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  async function api(path, opts={}) {
+  // Houdt het actieve ID bij (haal direct uit localStorage indien beschikbaar)
+  let currentCalendarId = localStorage.getItem("active_calendar_id") || null;
+
+  async function api(path, opts = {}) {
     opts.headers = opts.headers || {};
+
+    const paramName = path.includes('/google') ? 'local_calendar_id' : 'calendar_id';
+
+    // Only inject calendar_id for endpoints that actually want it
+    const skipInjection = path.startsWith('/api/calendars') && !path.includes('/api/calendars/');
+
+    if (currentCalendarId && !skipInjection) {
+      const method = (opts.method || 'GET').toUpperCase();
+      if (method === 'GET' || method === 'DELETE') {
+        const separator = path.includes('?') ? '&' : '?';
+        path = `${path}${separator}${paramName}=${currentCalendarId}`;
+      } else {
+        opts.body = opts.body || {};
+        if (typeof opts.body === "object" && !opts.body[paramName]) {
+          opts.body[paramName] = parseInt(currentCalendarId, 10);
+        }
+      }
+    }
+  // ... rest unchanged
+
     if (opts.body && typeof opts.body === "object") {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(opts.body);
     }
+
     const r = await fetch(path, opts);
-    const j = await r.json().catch(()=>({}));
+    const j = await r.json().catch(() => ({}));
     if (!r.ok) throw j;
     return j;
+  }
+
+  async function loadSidebarCalendars() {
+    try {
+      const calendars = await api("/api/calendars", { method: "GET" });
+      const container = document.getElementById("calendar-list");
+      container.innerHTML = "";
+
+      let foundCurrent = false;
+
+      calendars.forEach(cal => {
+        // If our stored ID exists among real calendars, keep it
+        if (cal.id == currentCalendarId) foundCurrent = true;
+
+        // Set default only if nothing is selected yet
+        if (!currentCalendarId && cal.is_default) setCalendar(cal.id);
+
+        const el = document.createElement("div");
+        el.className = "sidebar-calendar-item";
+        el.innerText = cal.name;
+        if (cal.id == currentCalendarId) el.classList.add("active-calendar");
+        el.onclick = () => switchCalendar(cal.id);
+        container.appendChild(el);
+      });
+
+      // Stale ID (deleted calendar) — fall back to first available
+      if (!foundCurrent && calendars.length > 0) {
+        setCalendar(calendars[0].id);
+        loadSidebarCalendars(); // re-render with correct active highlight
+        return;
+      }
+
+      updateGoogleSyncUI();
+    } catch (e) {
+      console.error("Fout bij ophalen kalenders:", e);
+    }
+  }
+
+  function switchCalendar(id) {
+    setCalendar(id);
+    loadSidebarCalendars(); // Refresh sidebar om de "active" class te updaten
+
+    // Ververs de main calendar view (ervan uitgaande dat je FullCalendar of iets dergelijks gebruikt)
+    if (window.calendar) {
+      loadCalendars();y
+    }
+
+    updateGoogleSyncUI(); // Zorg dat de Google knoppen kloppen bij de nieuwe kalender
+  }
+
+  function setCalendar(id) {
+    currentCalendarId = id;
+    localStorage.setItem("active_calendar_id", id);
+  }
+
+  async function updateGoogleSyncUI() {
+    const btnConnect = document.getElementById("connect-google-btn");
+    const syncControls = document.getElementById("google-sync-controls"); // Div met dropdown + sync knop
+
+    if (!btnConnect || !syncControls) return;
+
+    try {
+      // Probeer de Google kalenders op te halen voor het huidige local_calendar_id
+      const res = await api("/api/google/calendars", { method: "GET" });
+
+      // Als dit lukt (status 200), is de Google integratie actief
+      btnConnect.style.display = "none";
+      syncControls.style.display = "block";
+
+      await loadGoogleCalendars(); // Laad de Google kalenders in de dropdown
+
+    } catch (e) {
+      if (e.error === "no_google_credentials") {
+        // Geen actieve link: toon Connect knop, verberg de rest
+        btnConnect.style.display = "block";
+        syncControls.style.display = "none";
+      } else {
+        console.error("Fout bij ophalen Google status:", e);
+      }
+    }
+  }
+
+  // Voor de volledigheid: je onclick voor de "Connect Google" knop
+  async function startGoogleConnectFlow() {
+    try {
+      // De wrapper voegt automatisch ?local_calendar_id=... toe
+      const res = await api("/api/google/connect", { method: "GET" });
+      if (res.auth_url) {
+        window.location.href = res.auth_url;
+      }
+    } catch (e) {
+      console.error("Kon Google flow niet starten", e);
+    }
   }
 
   // ---------------- Notes loader & picker ----------------
@@ -718,6 +835,7 @@
   // Public bootstrap called by your auth flow after successful login check
   window.calendarBootstrap = async function() {
     try {
+      await loadSidebarCalendars();
       await loadCalendars();
       await loadNotes();
 

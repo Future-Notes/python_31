@@ -507,8 +507,11 @@
 
       <div style="margin-top:24px;">
         <button id="connect-google-btn">Connect Google</button>
-        <select id="google-calendar-select" style="margin-top:8px; width:100%; padding:8px; border-radius:8px; background:var(--ctr-color); color:#e0e0e0;"></select>
-        <button id="sync-google-btn" style="margin-top:8px;">Sync selected → local</button>
+        <div id="google-sync-controls" style="display:none;">
+          <select id="google-calendar-select" style="margin-top:8px; width:100%; padding:8px; border-radius:8px;
+                           background:var(--ctr-color); color:#e0e0e0;"></select>
+          <button id="sync-google-btn" style="margin-top:8px;">Sync selected → local</button>
+        </div>
       </div>
 
     </div>
