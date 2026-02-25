@@ -415,7 +415,6 @@
         /* main content flex: take rest of width */
         .main-content {
             flex: 1;
-            padding: 12px;
         }
 
         /* Close button inside the sliding sidebar (mobile) */
@@ -528,6 +527,46 @@
                 pointer-events: none;
                 transform: translateX(-6px);
             }
+        }
+
+        /* Buttons: use your color scheme and reduce padding */
+        .fc-button,
+        .fc-button-primary {
+          background-color: var(--btn-color) !important;
+          color: #fff !important;
+          border: none !important;
+          padding: 6px 8px !important;   /* smaller for mobile */
+          font-size: 14px !important;    /* optional smaller font */
+          border-radius: 8px !important;
+          box-shadow: none !important;
+          margin: 2px 0px 0px 2px !important; /* small margin between buttons */
+        }
+
+        .fc-button:hover,
+        .fc-button:focus {
+          background-color: #555 !important; /* slightly darker on hover */
+          outline: none !important;
+        }
+
+        /* FullCalendar container height — fix "square problem" */
+        #calendar {
+          height: 80vh !important; /* 80% of viewport height */
+          max-height: 80vh;        /* optional safeguard */
+        }
+
+        @media (max-width: 768px) {
+          /* Make header / toolbar more compact on mobile */
+          .fc-toolbar {
+            flex-wrap: wrap;
+            gap: 6px;
+          }
+
+          /* Event entries: make text smaller / fit better */
+          .fc-event {
+            font-size: 13px !important;
+            padding: 4px 6px !important;
+            border-radius: 6px !important;
+          }
         }
 
   </style>
@@ -863,6 +902,15 @@
         if (!ok) {
             await attemptAutoLogin();
         }
+        });
+
+        document.getElementById("toggle-mobile-nav")?.addEventListener("click", function() {
+            const mobileNav = document.getElementById("mobileSubHeader");
+            if (mobileNav.style.display === "block") {
+                mobileNav.style.display = "none";
+            } else {
+                mobileNav.style.display = "block";
+            }
         });
 
     // Example: update the bar along with the text

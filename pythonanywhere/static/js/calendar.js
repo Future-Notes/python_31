@@ -266,7 +266,11 @@
       const label = document.createElement("label");
       label.style.flex = "1";
       label.style.cursor = "pointer";
-      label.innerHTML = `<input type="checkbox" value="${n.id}" class="note-checkbox" style="margin-right:8px;"> <strong style="font-size:13px">${escapeHtml(n.title)}</strong><div style="opacity:0.6; font-size:12px">${escapeHtml(n.snippet || '')}</div>`;
+      label.innerHTML = `
+        <input type="checkbox" value="${n.id}" class="note-checkbox" style="margin-right:8px;">
+        <strong style="font-size:13px">${n.title || ''}</strong>
+        <div style="opacity:0.6; font-size:12px">${n.snippet || ''}</div>
+      `;
       row.appendChild(label);
       container.appendChild(row);
     }
