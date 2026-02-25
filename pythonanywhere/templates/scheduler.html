@@ -390,116 +390,144 @@
 
         /* layout basics */
         .layout-root {
-          display: flex;
-          gap: 12px;
-          align-items: stretch;
-          position: relative;
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            position: relative;
         }
 
         /* Sidebar default (desktop) */
         .calendar-sidebar {
-          min-width: 260px;
-          max-width: 320px;
-          background: var(--sidebar-bg, #fff);
-          border-radius: 8px;
-          box-shadow: none;
-          position: relative; /* static on desktop */
-          z-index: 1;
+            min-width: 260px;
+            max-width: 320px;
+            background: var(--sidebar-bg, #fff);
+            border-radius: 8px;
+            box-shadow: none;
+            position: relative; /* static on desktop */
+            z-index: 1;
         }
 
         /* inner wrapper so we can position the close button separately */
-        .sidebar-inner { position: relative; }
+        .sidebar-inner { 
+            position: relative; 
+        }
 
         /* main content flex: take rest of width */
         .main-content {
-          flex: 1;
-          padding: 12px;
-        }
-
-        /* Sidebar toggle (hamburger) — hidden on desktop, shown on small screens */
-        .sidebar-toggle {
-          display: none; /* show only on mobile */
-          position: fixed;
-          top: 12px;
-          left: 12px;
-          z-index: 40;
-          background: var(--btn-color);
-          color: #fff;
-          border: none;
-          padding: 8px 10px;
-          border-radius: 8px;
-          font-size: 18px;
-          box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+            flex: 1;
+            padding: 12px;
         }
 
         /* Close button inside the sliding sidebar (mobile) */
         .sidebar-close {
-          display: none;
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          border: none;
-          background: transparent;
-          font-size: 18px;
-          cursor: pointer;
+            display: none;
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            border: none;
+            background: transparent;
+            font-size: 18px;
+            cursor: pointer;
         }
 
         /* Overlay — initially hidden */
         .sidebar-overlay {
-          display: none;
-          position: fixed;
-          inset: 0; /* top/right/bottom/left 0 */
-          z-index: 30;
-          background: rgba(0,0,0,0.18);
-          backdrop-filter: blur(6px);
-          -webkit-backdrop-filter: blur(6px); /* Safari */
-          pointer-events: none; /* enabled when open */
+            display: none;
+            position: fixed;
+            inset: 0; /* top/right/bottom/left 0 */
+            z-index: 30;
+            background: rgba(0,0,0,0.18);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px); /* Safari */
+            pointer-events: none; /* enabled when open */
         }
 
-        /* MOBILE / narrow layout */
+        /* ================================
+          Sidebar toggle button (mobile only)
+          ================================ */
+
+        /* Desktop: keep hidden */
+        .sidebar-toggle {
+            display: none;
+        }
+
+        /* Mobile: fixed pill attached to left edge at bottom */
         @media (max-width: 768px) {
-          .layout-root {
-            align-items: stretch;
-          }
+            .sidebar-toggle {
+                display: flex;               /* visible on mobile */
+                align-items: center;
+                justify-content: center;
+                position: fixed;
+                left: 8px;                   /* glued to left side */
+                bottom: 18px;                /* attached near bottom */
+                z-index: 60;                 /* above most things */
+                width: 48px;
+                height: 48px;
+                border-radius: 0 10px 10px 0;/* pill with rounded right edge */
+                background: var(--btn-color);
+                color: #fff;
+                border: none;
+                padding: 6px;
+                box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+                cursor: pointer;
+                transition: transform 180ms ease, opacity 180ms ease;
+                -webkit-tap-highlight-color: transparent;
+            }
 
-          /* show hamburger */
-          .sidebar-toggle { display: block; }
+            /* Small chevron inside button */
+            .sidebar-toggle .chev {
+                font-size: 20px;
+                line-height: 1;
+                display: inline-block;
+                transform: translateX(1px);
+            }
 
-          /* sidebar becomes off-canvas by default */
-          .calendar-sidebar {
-            position: fixed;
-            top: 0;
-            left: -100%; /* hidden offscreen */
-            height: 100%;
-            width: min(88vw, 320px);
-            max-width: 320px;
-            min-width: 0;
-            margin: 0;
-            padding: 0;
-            transition: left 260ms cubic-bezier(.2,.9,.2,1);
-            z-index: 40; /* above overlay so it's visible */
-            box-shadow: 0 8px 28px rgba(0,0,0,0.28);
-            border-radius: 0 12px 12px 0;
-          }
+            /* show hamburger close button inside sidebar */
+            .sidebar-close { 
+                display: block; 
+            }
 
-          .sidebar-close { display: block; }
+            /* overlay visible, pointer-events toggled via JS */
+            .sidebar-overlay {
+                display: block;
+                opacity: 0;
+                transition: opacity 200ms ease;
+            }
 
-          .sidebar-overlay {
-            display: block;            /* visible element; pointer-events toggled via JS */
-            opacity: 0;
-            transition: opacity 200ms ease;
-          }
+            /* sidebar becomes off-canvas by default */
+            .calendar-sidebar {
+                position: fixed;
+                top: 0;
+                left: -100%; /* hidden offscreen */
+                height: 100%;
+                width: min(88vw, 320px);
+                max-width: 320px;
+                min-width: 0;
+                margin: 0;
+                padding: 0;
+                transition: left 260ms cubic-bezier(.2,.9,.2,1);
+                z-index: 40; /* above overlay so it's visible */
+                box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+                border-radius: 0 12px 12px 0;
+            }
 
-          /* when sidebar is open -> apply classes */
-          .calendar-sidebar.open {
-            left: 0;
-          }
-          .calendar-sidebar.open + .sidebar-overlay,
-          .calendar-sidebar.open ~ .sidebar-overlay {
-            /* overlay that covers the page (overlay sibling) becomes active */
-            opacity: 1;
-            pointer-events: auto;
-          }
+            /* when sidebar is open -> apply classes */
+            .calendar-sidebar.open {
+                left: 0;
+            }
+            .calendar-sidebar.open + .sidebar-overlay,
+            .calendar-sidebar.open ~ .sidebar-overlay {
+                opacity: 1;
+                pointer-events: auto;
+            }
+
+            /* Extra guard: hide toggle when sidebar is open (JS handles this, this is CSS backup) */
+            .calendar-sidebar.open ~ .sidebar-toggle,
+            .calendar-sidebar.open + .sidebar-toggle {
+                opacity: 0;
+                pointer-events: none;
+                transform: translateX(-6px);
+            }
         }
 
   </style>
@@ -630,9 +658,11 @@
   <!-- Calendar UI with Sidebar -->
   <!-- Calendar container -->
 <main class="layout-root">
-  <button id="calendar-sidebar-toggle" class="sidebar-toggle" aria-expanded="false" aria-controls="calendar-sidebar" aria-label="Open calendar sidebar">
-    ☰
-  </button>
+  <!-- mobile-attached arrow toggle (mobile only styling below) -->
+<button id="calendar-sidebar-toggle" class="sidebar-toggle" aria-expanded="false" aria-controls="calendar-sidebar" aria-label="Open calendar sidebar">
+  <!-- right-pointing chevron — indicates “open” since button sits at left edge -->
+  <span class="chev" aria-hidden="true">❯</span>
+</button>
 
   <aside id="calendar-sidebar" class="calendar-sidebar" aria-hidden="false">
     <div class="sidebar-inner">

@@ -998,6 +998,15 @@ document.addEventListener("DOMContentLoaded", () => {
       return window.innerWidth <= MOBILE_BREAKPOINT;
     }
 
+    function showToggleIfMobile() {
+      if (isMobile()) {
+        // remove inline style to fall back to CSS display rules
+        toggle.style.display = '';
+      } else {
+        toggle.style.display = 'none';
+      }
+    }
+
     function openSidebar() {
       sidebar.classList.add('open');
       sidebar.setAttribute('aria-hidden', 'false');
@@ -1006,7 +1015,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // prevent page scrolling while open
       document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
-      // focus first focusable in sidebar (optional)
+      // hide the attached toggle on mobile (we have close button inside)
+      if (isMobile()) toggle.style.display = 'none';
+      // focus first focusable in sidebar
       const focusable = sidebar.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
       if (focusable) focusable.focus();
     }
@@ -1018,12 +1029,19 @@ document.addEventListener("DOMContentLoaded", () => {
       overlay.setAttribute('aria-hidden', 'true');
       document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
-      // return focus to toggle
-      toggle.focus();
+      // show the attached toggle again if mobile
+      if (isMobile()) {
+        toggle.style.display = ''; // let CSS make it visible
+        // return focus to toggle
+        toggle.focus();
+      } else {
+        toggle.style.display = 'none';
+      }
     }
 
-    // Initialize: on mobile, keep it closed; on desktop, keep static (no class)
+    // Initialize: on mobile show toggle; on desktop keep it hidden
     function initState() {
+      showToggleIfMobile();
       if (isMobile()) {
         sidebar.setAttribute('aria-hidden', 'true');
         toggle.setAttribute('aria-expanded', 'false');
@@ -1035,7 +1053,6 @@ document.addEventListener("DOMContentLoaded", () => {
         toggle.setAttribute('aria-expanded', 'false');
         overlay.setAttribute('aria-hidden', 'true');
         sidebar.classList.remove('open');
-        // ensure page scrolling restored
         document.documentElement.style.overflow = '';
         document.body.style.overflow = '';
       }
@@ -1064,19 +1081,18 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    // respond to resizes: on desktop open -> ensure closed mobile state, and vice versa
+    // respond to resizes: on desktop ensure toggle hidden and sidebar static; on mobile show toggle
     let sbResizeTimer = null;
     window.addEventListener('resize', () => {
       clearTimeout(sbResizeTimer);
       sbResizeTimer = setTimeout(() => {
-        // if we moved to desktop, ensure overlay/lock cleared
         if (!isMobile()) {
           closeSidebar();
-          // ensure sidebar aria-hidden false on desktop (static)
           sidebar.setAttribute('aria-hidden', 'false');
         } else {
-          // mobile: keep sidebar closed by default on resize (don't auto-open)
+          // on mobile keep sidebar closed by default and show attached toggle
           sidebar.setAttribute('aria-hidden', 'true');
+          showToggleIfMobile();
         }
       }, 180);
     });
