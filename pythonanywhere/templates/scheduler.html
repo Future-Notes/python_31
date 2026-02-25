@@ -382,6 +382,126 @@
             font-weight: bold;
         }
 
+        #calendar-sidebar {
+            background-color: var(--ctr-color);
+            border-radius: 12px;
+            padding: 12px;
+        }
+
+        /* layout basics */
+        .layout-root {
+          display: flex;
+          gap: 12px;
+          align-items: stretch;
+          position: relative;
+        }
+
+        /* Sidebar default (desktop) */
+        .calendar-sidebar {
+          min-width: 260px;
+          max-width: 320px;
+          background: var(--sidebar-bg, #fff);
+          border-radius: 8px;
+          box-shadow: none;
+          position: relative; /* static on desktop */
+          z-index: 1;
+        }
+
+        /* inner wrapper so we can position the close button separately */
+        .sidebar-inner { position: relative; }
+
+        /* main content flex: take rest of width */
+        .main-content {
+          flex: 1;
+          padding: 12px;
+        }
+
+        /* Sidebar toggle (hamburger) — hidden on desktop, shown on small screens */
+        .sidebar-toggle {
+          display: none; /* show only on mobile */
+          position: fixed;
+          top: 12px;
+          left: 12px;
+          z-index: 40;
+          background: var(--btn-color);
+          color: #fff;
+          border: none;
+          padding: 8px 10px;
+          border-radius: 8px;
+          font-size: 18px;
+          box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+        }
+
+        /* Close button inside the sliding sidebar (mobile) */
+        .sidebar-close {
+          display: none;
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          border: none;
+          background: transparent;
+          font-size: 18px;
+          cursor: pointer;
+        }
+
+        /* Overlay — initially hidden */
+        .sidebar-overlay {
+          display: none;
+          position: fixed;
+          inset: 0; /* top/right/bottom/left 0 */
+          z-index: 30;
+          background: rgba(0,0,0,0.18);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px); /* Safari */
+          pointer-events: none; /* enabled when open */
+        }
+
+        /* MOBILE / narrow layout */
+        @media (max-width: 768px) {
+          .layout-root {
+            align-items: stretch;
+          }
+
+          /* show hamburger */
+          .sidebar-toggle { display: block; }
+
+          /* sidebar becomes off-canvas by default */
+          .calendar-sidebar {
+            position: fixed;
+            top: 0;
+            left: -100%; /* hidden offscreen */
+            height: 100%;
+            width: min(88vw, 320px);
+            max-width: 320px;
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            transition: left 260ms cubic-bezier(.2,.9,.2,1);
+            z-index: 40; /* above overlay so it's visible */
+            box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+            border-radius: 0 12px 12px 0;
+          }
+
+          .sidebar-close { display: block; }
+
+          .sidebar-overlay {
+            display: block;            /* visible element; pointer-events toggled via JS */
+            opacity: 0;
+            transition: opacity 200ms ease;
+          }
+
+          /* when sidebar is open -> apply classes */
+          .calendar-sidebar.open {
+            left: 0;
+          }
+          .calendar-sidebar.open + .sidebar-overlay,
+          .calendar-sidebar.open ~ .sidebar-overlay {
+            /* overlay that covers the page (overlay sibling) becomes active */
+            opacity: 1;
+            pointer-events: auto;
+          }
+        }
+
   </style>
 
   <script src="/static/admin.js"></script>
@@ -509,34 +629,41 @@
 
   <!-- Calendar UI with Sidebar -->
   <!-- Calendar container -->
-<main>
-  <aside id="calendar-sidebar" style="min-width:260px; max-width:320px;">
-    <div style="padding:12px;">
-      <h3 style="margin:0 0 10px 0;">My Calendars</h3>
-      <div id="calendar-list" style="display:flex; flex-direction:column; gap:8px;"></div>
-      <div style="margin-top:12px; display:flex; gap:8px;">
-        <input id="new-calendar-name" placeholder="New calendar name" style="flex:1; padding:8px; border-radius:8px; background:var(--btn-color); color:#e0e0e0; border:none;">
-        <button id="create-calendar-btn">Add</button>
-      </div>
+<main class="layout-root">
+  <button id="calendar-sidebar-toggle" class="sidebar-toggle" aria-expanded="false" aria-controls="calendar-sidebar" aria-label="Open calendar sidebar">
+    ☰
+  </button>
 
-      <div style="margin-top:24px;">
-        <button id="connect-google-btn">Connect Google</button>
+  <aside id="calendar-sidebar" class="calendar-sidebar" aria-hidden="false">
+    <div class="sidebar-inner">
+      <button id="calendar-sidebar-close" class="sidebar-close" aria-label="Close sidebar">✕</button>
 
-        <!-- simplified sync controls (no dropdown) -->
-        <div id="google-sync-controls" style="display:none;">
-          <div style="margin-top:8px; font-size:13px; color:var(--text-muted);">
-            Using Google calendar: <span id="google-calendar-name" style="font-weight:600">—</span>
+      <div style="padding:12px;">
+        <h3 style="margin:0 0 10px 0;">My Calendars</h3>
+        <div id="calendar-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+        <div style="margin-top:12px; display:flex; gap:8px;">
+          <input id="new-calendar-name" placeholder="New calendar name" style="flex:1; padding:8px; border-radius:8px; background:var(--btn-color); color:#e0e0e0; border:none;">
+          <button id="create-calendar-btn">Add</button>
+        </div>
+
+        <div style="margin-top:24px;">
+          <button id="connect-google-btn">Connect Google</button>
+          <div id="google-sync-controls" style="display:none;">
+            <div style="margin-top:8px; font-size:13px; color:var(--text-muted);">
+              Using Google calendar: <span id="google-calendar-name" style="font-weight:600">—</span>
+            </div>
+            <button id="sync-google-btn" style="margin-top:8px;">Sync ↔ Local</button>
+            <button id="disconnect-google-btn" style="margin-top:8px;">Disconnect Google</button>
           </div>
-          <button id="sync-google-btn" style="margin-top:8px;">Sync ↔ Local</button>
-          <button id="disconnect-google-btn" style="margin-top:8px;">Disconnect Google</button>
         </div>
       </div>
-
     </div>
   </aside>
 
-  <section style="flex:1; padding:12px;">
+  <!-- overlay for mobile when sidebar open (handles blur + click-to-close) -->
+  <div id="calendar-sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
 
+  <section class="main-content">
     <div id="calendar" style="background:var(--ctr-color); border-radius:12px; padding:8px;"></div>
   </section>
 </main>

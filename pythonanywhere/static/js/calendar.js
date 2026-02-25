@@ -568,17 +568,33 @@
     const calendarEl = document.getElementById("calendar");
     if (!calendarEl) return;
 
-    // Defensive: ensure calendars is a safe array and remove falsy entries
+    // -----------------------
+    // Responsive view helper
+    // -----------------------
+    // Choose views per width. Adjust breakpoints or views as you like.
+    const VIEW_BREAKPOINTS = {
+      small: 480,   // <=480px  -> timeGridDay (focus on single day)
+      medium: 768   // <=768px  -> listWeek (compact week list)
+      // >768px -> timeGridWeek (desktop)
+    };
+
+    function getResponsiveView(width = window.innerWidth) {
+      if (width <= VIEW_BREAKPOINTS.small) return 'timeGridDay';
+      if (width <= VIEW_BREAKPOINTS.medium) return 'listWeek';
+      return 'timeGridWeek';
+    }
+
+    // initialView determined before creating calendar
+    const initialResponsiveView = getResponsiveView();
+
+    // (rest of your defensive setup for calendars and fcCals)
     calendars = Array.isArray(calendars) ? calendars.filter(Boolean) : [];
-
-    // Build sanitized calendar list (not used directly by FC here but kept for debugging)
     const fcCals = calendars.map(c => ({
-        id: String(c && c.id != null ? c.id : ''),
-        title: (c && typeof c.name === 'string' && c.name.trim().length) ? c.name : (c && c.id ? `Calendar ${c.id}` : 'Default calendar'),
-        color: (c && c.color) || ((window.userColors && window.userColors.hdr) || '#444'),
-        googleCalendar: (c && c.google_event_id) || undefined
+      id: String(c && c.id != null ? c.id : ''),
+      title: (c && typeof c.name === 'string' && c.name.trim().length) ? c.name : (c && c.id ? `Calendar ${c.id}` : 'Default calendar'),
+      color: (c && c.color) || ((window.userColors && window.userColors.hdr) || '#444'),
+      googleCalendar: (c && c.google_event_id) || undefined
     }));
-
     console.log("initFullCalendar — sanitized fcCals:", fcCals, "userColors:", window.userColors);
 
     // Helper: convert fetchInfo start/end into event objects
@@ -773,22 +789,22 @@
 
     // Build calendar options
     const options = {
-        initialView: 'timeGridWeek',
-        timeZone: 'local',
-        headerToolbar: {
-            left: 'prev,next today',
-            center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
-        },
-        selectable: true,
-        selectMirror: true,
-        editable: true,
-        events: eventsLoader,
-        select: handleSelect,
-        dateClick: handleDateClick,
-        eventClick: handleEventClick,
-        eventDrop: handleEventDropOrResize,   // drag/move events
-        eventResize: handleEventDropOrResize // resize events
+      initialView: initialResponsiveView,     // <-- responsive initial view
+      timeZone: 'local',
+      headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'
+      },
+      selectable: true,
+      selectMirror: true,
+      editable: true,
+      events: eventsLoader,
+      select: handleSelect,
+      dateClick: handleDateClick,
+      eventClick: handleEventClick,
+      eventDrop: handleEventDropOrResize,
+      eventResize: handleEventDropOrResize
     };
 
     try {
@@ -809,6 +825,39 @@
         console.error("Fallback FullCalendar initialization also failed:", err2);
         }
     }
+
+     // -----------------------
+    // Watch for width changes and switch view when needed (debounced)
+    // -----------------------
+    let resizeTimer = null;
+    let lastAppliedView = initialResponsiveView;
+
+    function onResize() {
+      const newView = getResponsiveView();
+      if (newView === lastAppliedView) return;
+      lastAppliedView = newView;
+      try {
+        // preserve current date / focus when changing view
+        const currentDate = calendar.getDate(); // keeps displayed date
+        calendar.changeView(newView, currentDate);
+      } catch (e) {
+        console.warn("Failed to change FullCalendar view on resize:", e);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(onResize, 160); // debounce: 160ms
+    });
+
+    // also listen to orientationchange for mobile
+    window.addEventListener('orientationchange', () => {
+      // slight delay to allow orientation/layout to settle
+      setTimeout(onResize, 200);
+    });
+
+    // If you want immediate sync (e.g., when SPA route changes),
+    // call onResize() where appropriate.
   }
 
   // Helper: update swatch UI when appt-color value changes
@@ -929,3 +978,110 @@
   });
 
 })();
+
+document.addEventListener("DOMContentLoaded", () => {
+  (function setupSidebar() {
+    const SIDEBAR_ID = "calendar-sidebar";
+    const TOGGLE_ID = "calendar-sidebar-toggle";
+    const CLOSE_ID  = "calendar-sidebar-close";
+    const OVERLAY_ID = "calendar-sidebar-overlay";
+    const MOBILE_BREAKPOINT = 768;
+
+    const sidebar = document.getElementById(SIDEBAR_ID);
+    const toggle  = document.getElementById(TOGGLE_ID);
+    const closeBtn = document.getElementById(CLOSE_ID);
+    const overlay = document.getElementById(OVERLAY_ID);
+
+    if (!sidebar || !toggle || !overlay) return;
+
+    function isMobile() {
+      return window.innerWidth <= MOBILE_BREAKPOINT;
+    }
+
+    function openSidebar() {
+      sidebar.classList.add('open');
+      sidebar.setAttribute('aria-hidden', 'false');
+      toggle.setAttribute('aria-expanded', 'true');
+      overlay.setAttribute('aria-hidden', 'false');
+      // prevent page scrolling while open
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+      // focus first focusable in sidebar (optional)
+      const focusable = sidebar.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable) focusable.focus();
+    }
+
+    function closeSidebar() {
+      sidebar.classList.remove('open');
+      sidebar.setAttribute('aria-hidden', isMobile() ? 'true' : 'false');
+      toggle.setAttribute('aria-expanded', 'false');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+      // return focus to toggle
+      toggle.focus();
+    }
+
+    // Initialize: on mobile, keep it closed; on desktop, keep static (no class)
+    function initState() {
+      if (isMobile()) {
+        sidebar.setAttribute('aria-hidden', 'true');
+        toggle.setAttribute('aria-expanded', 'false');
+        overlay.setAttribute('aria-hidden', 'true');
+        sidebar.classList.remove('open');
+      } else {
+        // desktop: ensure sidebar is visible as static element
+        sidebar.setAttribute('aria-hidden', 'false');
+        toggle.setAttribute('aria-expanded', 'false');
+        overlay.setAttribute('aria-hidden', 'true');
+        sidebar.classList.remove('open');
+        // ensure page scrolling restored
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+      }
+    }
+
+    // events
+    toggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      openSidebar();
+    });
+
+    closeBtn && closeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeSidebar();
+    });
+
+    // clicking overlay closes sidebar
+    overlay.addEventListener('click', (e) => {
+      closeSidebar();
+    });
+
+    // close on Escape
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && sidebar.classList.contains('open')) {
+        closeSidebar();
+      }
+    });
+
+    // respond to resizes: on desktop open -> ensure closed mobile state, and vice versa
+    let sbResizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(sbResizeTimer);
+      sbResizeTimer = setTimeout(() => {
+        // if we moved to desktop, ensure overlay/lock cleared
+        if (!isMobile()) {
+          closeSidebar();
+          // ensure sidebar aria-hidden false on desktop (static)
+          sidebar.setAttribute('aria-hidden', 'false');
+        } else {
+          // mobile: keep sidebar closed by default on resize (don't auto-open)
+          sidebar.setAttribute('aria-hidden', 'true');
+        }
+      }, 180);
+    });
+
+    // init
+    initState();
+  })();
+});
