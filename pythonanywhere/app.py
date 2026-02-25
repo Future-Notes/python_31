@@ -678,12 +678,16 @@ class GoogleCalendarCredentials(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     access_token = db.Column(db.String(255), nullable=False)
-    refresh_token = db.Column(db.String(255), nullable=False)
+    refresh_token = db.Column(db.String(255), nullable=True)            # allow null, preserve existing
     token_expiry = db.Column(db.DateTime, nullable=False)
-    calendar_id = db.Column(db.String(255))  # Default Google Calendar ID
+    calendar_id = db.Column(db.String(255))  # (legacy) default Google Calendar ID
+    local_calendar_id = db.Column(db.Integer, db.ForeignKey('calendar.id'), nullable=True)  # NEW
     last_sync = db.Column(db.DateTime)
-    sync_token = db.Column(db.String(500))  # For incremental syncs
+    sync_token = db.Column(db.String(500))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # relationship (optional)
+    local_calendar = db.relationship('Calendar', foreign_keys=[local_calendar_id])
 
 # models (modify CalendarSync)
 class CalendarSync(db.Model):
@@ -1053,6 +1057,22 @@ class FlowCommit(db.Model):
 def get_user_default_calendar(user):
     """Return the user's default calendar or None if none exists."""
     return Calendar.query.filter_by(user_id=user.id, is_default=True).first()
+
+def make_oauth_state(payload: dict) -> str:
+    b = json.dumps(payload).encode('utf-8')
+    return base64.urlsafe_b64encode(b).decode('utf-8').rstrip('=')
+
+def parse_oauth_state(state: str) -> dict:
+    if not state:
+        return {}
+    # pad base64 if needed
+    padding = '=' * ((4 - len(state) % 4) % 4)
+    s = state + padding
+    try:
+        raw = base64.urlsafe_b64decode(s.encode('utf-8'))
+        return json.loads(raw.decode('utf-8'))
+    except Exception:
+        return {}
 
 def resolve_local_calendar(user, calendar_id):
     """
@@ -2239,7 +2259,7 @@ def validate_session_key(key=None):
     # 5) suspended?
     if user.suspended:
         del session_keys[key]
-        return False, "Account is suspended and cannot log in."
+        return False, "You have been suspended for violating the TOS"
     
     if (user.malicious_violations or 0) > 10:
         user.suspended = True
@@ -7652,7 +7672,6 @@ def api_delete_appointment(appt_id):
 # ---- Google OAuth / sync ----
 
 def get_google_flow(state=None):
-    # Construct flow, redirect URI must match your Google Console setting (/google/callback)
     client_config = {
         "web": {
             "client_id": app.config['GOOGLE_CLIENT_ID'],
@@ -7675,25 +7694,68 @@ def get_google_flow(state=None):
 def api_google_connect():
     user = User.query.get(g.user_id)
     local_calendar_id = request.args.get("local_calendar_id")
-    
-    # resolve calendar
     cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id is not None else None)
     if err:
         return err
-    
-    flow = get_google_flow(state=None)
-    auth_url, state = flow.authorization_url(
+
+    # enforce default-calendar-only rule
+    if cal and not getattr(cal, "is_default", False):
+        return jsonify({"error": "not allowed", "message": "Google sync is only allowed for the default calendar."}), 200
+
+    # If the user already has Google creds, reuse them: duplicate a credentials row
+    existing_gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
+    if existing_gcred:
+        # Create or update CalendarSync mapping for this local calendar
+        cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
+        if not cs:
+            cs = CalendarSync(
+                user_id=user.id,
+                local_calendar_id=cal.id,
+                google_calendar_id='primary',
+                sync_enabled=True
+            )
+            db.session.add(cs)
+        else:
+            cs.google_calendar_id = cs.google_calendar_id or 'primary'
+            cs.sync_enabled = True
+
+        # Duplicate the credentials row so each local calendar has its own credentials record
+        dup = GoogleCalendarCredentials(
+            user_id = existing_gcred.user_id,
+            access_token = existing_gcred.access_token,
+            refresh_token = existing_gcred.refresh_token,
+            token_expiry = existing_gcred.token_expiry,
+            calendar_id = existing_gcred.calendar_id,
+            local_calendar_id = cal.id,
+            last_sync = None,
+            sync_token = None
+        )
+        db.session.add(dup)
+        db.session.commit()
+
+        # Return a response indicating no OAuth required
+        return jsonify({
+            "already_connected": True,
+            "auth_url": None,
+            "local_calendar_id": cal.id,
+            "oauth_state": None
+        }), 200
+
+    # No existing credentials -> start OAuth as before
+    state_payload = {"local_calendar_id": cal.id, "user_id": user.id}
+    state = make_oauth_state(state_payload)
+
+    flow = get_google_flow(state=state)
+    auth_url, returned_state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent"
     )
 
-    # Save state and associated calendar_id somewhere (DB or session)
-    # For simplicity, associate in CalendarSync if needed after callback
-
     return jsonify({
         "auth_url": auth_url,
-        "local_calendar_id": cal.id  # frontend can keep this to pass back on callback
+        "local_calendar_id": cal.id,
+        "oauth_state": returned_state
     }), 200
 
 def get_user_id(session_key):
@@ -7710,77 +7772,155 @@ def google_callback():
     user_id = get_user_id(request.cookies.get("session_key"))
     user = User.query.get(user_id)
 
-    # fetch local_calendar_id from frontend query param or state (frontend should pass it)
-    local_calendar_id = request.args.get("local_calendar_id")
+    # parse state first (preferred). Also accept local_calendar_id query param as fallback.
+    raw_state = request.args.get("state")
+    state_payload = parse_oauth_state(raw_state) if raw_state else {}
+    local_calendar_id = state_payload.get("local_calendar_id") or request.args.get("local_calendar_id")
+
+    # resolve calendar (fallback to default calendar if None)
     cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id else None)
     if err:
         return err
 
-    flow = get_google_flow()
+    # Rebuild flow using provided state so Flow verifies integrity
+    flow = get_google_flow(state=raw_state)
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials  # google.oauth2.credentials.Credentials
 
-    # Save or update Google credentials
-    gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
+    # Instead of overwriting the first credentials row, create or update the credentials row
+    # associated with this local_calendar_id (so we don't clobber other calendar mappings).
+    gcred = None
+    if cal and cal.id is not None:
+        gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
+
+    # If no per-calendar row exists, create one (do NOT overwrite unrelated creds)
     if not gcred:
-        gcred = GoogleCalendarCredentials(user_id=user.id)
+        gcred = GoogleCalendarCredentials(user_id=user.id, local_calendar_id=cal.id)
         db.session.add(gcred)
+
     gcred.access_token = creds.token
-    gcred.refresh_token = creds.refresh_token or gcred.refresh_token
+    # Only overwrite refresh token if provided; otherwise keep existing
+    if getattr(creds, "refresh_token", None):
+        gcred.refresh_token = creds.refresh_token
     gcred.token_expiry = creds.expiry
-    gcred.calendar_id = None  # actual Google calendar selected later
+    # store the local calendar id that this OAuth flow was intended for
+    gcred.calendar_id = None
     gcred.last_sync = None
+    gcred.sync_token = None
     db.session.commit()
 
-    # Optionally, create a CalendarSync mapping for the local calendar
+    # Create or update CalendarSync linking the local calendar to the user's primary google calendar.
     cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
     if not cs:
-        cs = CalendarSync(user_id=user.id, local_calendar_id=cal.id, google_calendar_id=None, sync_enabled=True)
+        cs = CalendarSync(
+            user_id=user.id,
+            local_calendar_id=cal.id,
+            google_calendar_id='primary',   # pick primary by default
+            sync_enabled=True
+        )
         db.session.add(cs)
-        db.session.commit()
+    else:
+        # if existing, update google_calendar_id to 'primary' if empty
+        if not cs.google_calendar_id:
+            cs.google_calendar_id = 'primary'
+        cs.sync_enabled = True
+    db.session.commit()
 
     return redirect(url_for("scheduler_page"))
 
-@app.route("/api/google/calendars", methods=["GET"])
+@app.route("/api/google/disconnect", methods=["POST"])
 @require_session_key
-def api_google_list_calendars():
+def api_google_disconnect():
     user = User.query.get(g.user_id)
-    local_calendar_id = request.args.get("local_calendar_id")
-    cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id else None)
+    body = request.json or {}
+
+    # resolve local calendar (ensure frontend passed local_calendar_id param)
+    local_calendar_id = body.get("local_calendar_id") or request.args.get("local_calendar_id")
+    cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id is not None else None)
     if err:
         return err
 
-    gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
+    cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
+    if not cs:
+        return jsonify({"error": "no_mapping_for_calendar"}), 404
+
+    # Soft-disable the sync mapping (reversible). Do NOT delete events.
+    cs.sync_enabled = False
+    # optionally clear sync_token to force fresh sync on re-enable:
+    cs.sync_token = None
+    db.session.commit()
+
+    # Remove the credentials row that was specific to this local calendar (if any).
+    gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
+    if gcred:
+        db.session.delete(gcred)
+        db.session.commit()
+
+    return jsonify({"success": True}), 200
+
+@app.route("/api/google/status", methods=["GET"])
+@require_session_key
+def api_google_status():
+    user = User.query.get(g.user_id)
+
+    # resolve local calendar (frontend provides local_calendar_id via wrapper)
+    local_calendar_id = request.args.get("local_calendar_id")
+    cal, err = resolve_local_calendar(user, local_calendar_id if local_calendar_id is not None else None)
+    if err:
+        return err
+
+    # enforce that only the default calendar can be linked
+    if cal and not getattr(cal, "is_default", False):
+        return jsonify({"error": "not allowed", "message": "Google sync is only allowed for the default calendar."}), 200
+
+    # basic response structure
+    resp = {"connected": False, "linked": False, "google_calendar_id": None, "google_calendar_name": None}
+
+    # Prefer credentials tied to this local calendar (if present); otherwise fall back to any credential row for the user.
+    gcred = None
+    if cal and cal.id is not None:
+        gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
     if not gcred:
-        return jsonify({"error": "no_google_credentials"}), 404
+        gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
 
-    creds = Credentials(
-        token=gcred.access_token,
-        refresh_token=gcred.refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=app.config['GOOGLE_CLIENT_ID'],
-        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
-        expiry=gcred.token_expiry
-    )
+    if not gcred:
+        return jsonify(resp), 200
 
-    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-    try:
-        resp = service.calendarList().list().execute()
-        items = resp.get("items", [])
+    resp["connected"] = True
 
-        # return id, summary, and optionally map it to local calendar
-        calendars = []
-        for i in items:
-            cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id, google_calendar_id=i["id"]).first()
-            calendars.append({
-                "id": i["id"],
-                "summary": i.get("summary"),
-                "primary": i.get("primary", False),
-                "linked": bool(cs)  # true if mapped to this local calendar
-            })
-        return jsonify({"calendars": calendars}), 200
-    except HttpError as e:
-        return jsonify({"error": "google_api_error", "details": str(e)}), 500
+    # does a mapping exist for this local calendar?
+    cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=cal.id).first()
+    if cs and cs.sync_enabled:
+        resp["linked"] = True
+        # we always use 'primary'
+        resp["google_calendar_id"] = cs.google_calendar_id if getattr(cs, "google_calendar_id", None) else "primary"
+    else:
+        resp["linked"] = False
+        resp["google_calendar_id"] = None
+
+    # Optionally fetch a friendly name for the primary calendar if linked and credentials exist
+    if resp["linked"] and resp["google_calendar_id"]:
+        try:
+            creds = Credentials(
+                token=gcred.access_token,
+                refresh_token=gcred.refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=app.config['GOOGLE_CLIENT_ID'],
+                client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+                expiry=gcred.token_expiry
+            )
+            service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+
+            # fetch the calendar entry for 'primary' to grab the name
+            try:
+                cal_entry = service.calendarList().get(calendarId=resp["google_calendar_id"]).execute()
+                resp["google_calendar_name"] = cal_entry.get("summary")
+            except HttpError as he:
+                app.logger.warning("Could not fetch user's primary calendar summary: %s", str(he))
+        except Exception as e:
+            app.logger.exception("Error while fetching Google calendar name: %s", e)
+
+    return jsonify(resp), 200
 
 def ensure_aware(dt):
     if dt is None:
@@ -7839,34 +7979,65 @@ def parse_google_event_datetime(event_time_dict):
 def api_google_sync():
     user = User.query.get(g.user_id)
     body = request.json or {}
-    google_calendar_id = body.get("google_calendar_id")
-    local_calendar_id_param = body.get("local_calendar_id")
-    direction = body.get("direction", "both")
-    if not google_calendar_id:
-        return jsonify({"error": "google_calendar_id required"}), 400
 
-    # Resolve local calendar (default if not provided)
-    cal, err = resolve_local_calendar(user, local_calendar_id_param if local_calendar_id_param is not None else None)
+    # frontend MUST provide local_calendar_id
+    local_calendar_id_param = body.get("local_calendar_id")
+    if not local_calendar_id_param:
+        return jsonify({"error": "local_calendar_id required"}), 400
+
+    # direction option unchanged
+    direction = body.get("direction", "both")
+
+    # Resolve local calendar: DO NOT fall back silently — require the provided id.
+    cal, err = resolve_local_calendar(user, local_calendar_id_param)
     if err:
         return err
     local_calendar_id = cal.id
 
-    gcred = GoogleCalendarCredentials.query.filter_by(user_id=user.id).first()
+    # Ensure we have Google credentials for this user AND this local_calendar_id
+    gcred = GoogleCalendarCredentials.query.filter_by(
+        user_id=user.id,
+        local_calendar_id=local_calendar_id
+    ).first()
     if not gcred:
-        return jsonify({"error":"no_google_credentials"}), 404
+        return jsonify({"error": "no_google_credentials_for_calendar"}), 404
 
-    # find or create mapping row (use resolved local_calendar_id)
-    cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=local_calendar_id, google_calendar_id=google_calendar_id).first()
+    # We always use the user's primary Google calendar
+    google_calendar_id = "primary"
+
+    # find or create mapping row (match only by user_id + local_calendar_id)
+    cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=local_calendar_id).first()
     if not cs:
-        cs = CalendarSync(user_id=user.id, local_calendar_id=local_calendar_id, google_calendar_id=google_calendar_id, sync_enabled=True)
+        # create; if your model still has google_calendar_id, set it to 'primary'
+        if hasattr(CalendarSync, "google_calendar_id"):
+            cs = CalendarSync(
+                user_id=user.id,
+                local_calendar_id=local_calendar_id,
+                google_calendar_id=google_calendar_id,
+                sync_enabled=True
+            )
+        else:
+            cs = CalendarSync(
+                user_id=user.id,
+                local_calendar_id=local_calendar_id,
+                sync_enabled=True
+            )
         db.session.add(cs)
         db.session.commit()
+    else:
+        # If a row exists but google_calendar_id column exists and is empty, set to primary
+        if hasattr(CalendarSync, "google_calendar_id") and not getattr(cs, "google_calendar_id", None):
+            cs.google_calendar_id = google_calendar_id
+            db.session.commit()
 
-    creds = Credentials(token=gcred.access_token, refresh_token=gcred.refresh_token,
-                        token_uri="https://oauth2.googleapis.com/token",
-                        client_id=app.config['GOOGLE_CLIENT_ID'],
-                        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
-                        expiry=gcred.token_expiry)
+    creds = Credentials(
+        token=gcred.access_token,
+        refresh_token=gcred.refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        expiry=gcred.token_expiry
+    )
 
     service = build("calendar", "v3", credentials=creds, cache_discovery=False)
     results = {"pulled":0, "pushed":0, "errors":[]}

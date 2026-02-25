@@ -45,6 +45,9 @@
       opts.body = JSON.stringify(opts.body);
     }
 
+    // before calling fetch, ensure cookies are included
+    opts.credentials = opts.credentials || "include";
+
     const r = await fetch(path, opts);
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw j;
@@ -53,7 +56,9 @@
 
   async function loadSidebarCalendars() {
     try {
-      const calendars = await api("/api/calendars", { method: "GET" });
+      // after fetching:
+      const fetched = await api("/api/calendars", { method: "GET" });
+      calendars = Array.isArray(fetched) ? fetched : [];
       const container = document.getElementById("calendar-list");
       container.innerHTML = "";
 
@@ -91,9 +96,8 @@
     setCalendar(id);
     loadSidebarCalendars(); // Refresh sidebar om de "active" class te updaten
 
-    // Ververs de main calendar view (ervan uitgaande dat je FullCalendar of iets dergelijks gebruikt)
-    if (window.calendar) {
-      loadCalendars();y
+    if (window.fcInstance) {
+      window.fcInstance.refetchEvents(); // Trigger FullCalendar om opnieuw te laden met het nieuwe calendar_id
     }
 
     updateGoogleSyncUI(); // Zorg dat de Google knoppen kloppen bij de nieuwe kalender
@@ -106,41 +110,129 @@
 
   async function updateGoogleSyncUI() {
     const btnConnect = document.getElementById("connect-google-btn");
-    const syncControls = document.getElementById("google-sync-controls"); // Div met dropdown + sync knop
+    const syncControls = document.getElementById("google-sync-controls");
+    const googleNameEl = document.getElementById("google-calendar-name");
 
-    if (!btnConnect || !syncControls) return;
+    if (!btnConnect || !syncControls || !googleNameEl) return;
 
     try {
-      // Probeer de Google kalenders op te halen voor het huidige local_calendar_id
-      const res = await api("/api/google/calendars", { method: "GET" });
+      // Fetch status
+      const response = await api("/api/google/status", { method: "GET" });
 
-      // Als dit lukt (status 200), is de Google integratie actief
-      btnConnect.style.display = "none";
-      syncControls.style.display = "block";
+      // Ensure we have JSON
+      const res = await response.json?.() ?? response;
 
-      await loadGoogleCalendars(); // Laad de Google kalenders in de dropdown
+      // Hide all Google options if not allowed
+      if (res.error === "not allowed") {
+        btnConnect.style.display = "none";
+        syncControls.style.display = "none";
+        googleNameEl.textContent = "—";
+        return;
+      }
 
-    } catch (e) {
-      if (e.error === "no_google_credentials") {
-        // Geen actieve link: toon Connect knop, verberg de rest
+      // No credentials -> show Connect
+      if (!res.connected) {
         btnConnect.style.display = "block";
         syncControls.style.display = "none";
-      } else {
-        console.error("Fout bij ophalen Google status:", e);
+        googleNameEl.textContent = "—";
+        return;
       }
+
+      // Linked -> show sync controls
+      if (res.linked) {
+        btnConnect.style.display = "none";
+        syncControls.style.display = "block";
+        googleNameEl.textContent = res.google_calendar_name || res.google_calendar_id || "primary";
+      } else {
+        // Credentials exist but not linked
+        btnConnect.style.display = "block";
+        syncControls.style.display = "none";
+        googleNameEl.textContent = "—";
+      }
+    } catch (e) {
+      console.error("Error fetching Google status:", e);
+      btnConnect.style.display = "block";
+      syncControls.style.display = "none";
+      googleNameEl.textContent = "—";
     }
   }
 
-  // Voor de volledigheid: je onclick voor de "Connect Google" knop
-  async function startGoogleConnectFlow() {
+  // startGoogleConnectFlow still calls /api/google/connect through connectGoogle()
+  async function connectGoogle() {
     try {
-      // De wrapper voegt automatisch ?local_calendar_id=... toe
-      const res = await api("/api/google/connect", { method: "GET" });
-      if (res.auth_url) {
+      const res = await api(`/api/google/connect`);
+
+      if (res?.auth_url) {
+        // Normal OAuth flow: redirect user to Google consent page
         window.location.href = res.auth_url;
+      } else if (res?.already_connected) {
+        // Credentials already exist for this calendar, no redirect needed
+        console.log("Google calendar already connected for this local calendar.");
+        // Optionally, update frontend state or refetch status
+        await fetchGoogleStatus();
+      } else {
+        throw new Error("No auth_url returned and calendar not marked connected");
       }
-    } catch (e) {
-      console.error("Kon Google flow niet starten", e);
+    } catch (err) {
+      console.error("Could not start Google flow", err);
+      alert("Failed to start Google connect flow. See console.");
+    }
+  }
+
+  // Example helper to refresh status for this local calendar
+  async function fetchGoogleStatus() {
+    try {
+      const statusRes = await api(`/api/google/status`);
+      if (statusRes.connected) {
+        console.log("Calendar connection status refreshed:", statusRes);
+        // Update your frontend UI accordingly
+      }
+    } catch (err) {
+      console.error("Failed to fetch Google status", err);
+    }
+  }
+
+  async function syncGoogle() {
+    // No google_calendar_select anymore: we always sync to 'primary' on backend
+    const localCalId = localStorage.getItem("active_calendar_id");
+    if (!localCalId) return alert("No local calendar selected");
+
+    const btn = document.getElementById("sync-google-btn");
+    btn.textContent = "Syncing...";
+    btn.disabled = true;
+    try {
+      // only send the local_calendar_id and direction — backend uses primary
+      const res = await api("/api/google/sync", {
+        method: "POST",
+        body: { local_calendar_id: parseInt(localCalId, 10), direction: "both" }
+      });
+      if (res) {
+        calendar.refetchEvents();
+        alert(`Sync complete — pulled ${res.pulled}, pushed ${res.pushed}`);
+      } else {
+        alert("Sync finished with no result object");
+      }
+    } catch (err) {
+      console.error("Sync failed", err);
+      alert("Google sync failed — see console for details");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Sync ↔ Local";
+    }
+  }
+
+  async function disconnectGoogle() {
+    // This will ask server to disable mapping for THIS local calendar only
+    if (!confirm("Disconnect Google calendar for this local calendar? This will stop syncing but will not delete any events.")) return;
+    try {
+      // backend will use injected local_calendar_id parameter
+      await api("/api/google/disconnect", { method: "POST", body: {} });
+      // Refresh UI
+      await loadSidebarCalendars();
+      await updateGoogleSyncUI();
+    } catch (err) {
+      console.error("Failed to disconnect Google", err);
+      alert("Failed to disconnect Google. See console.");
     }
   }
 
@@ -257,61 +349,11 @@
     document.getElementById("rrule-preview").textContent = "No recurrence";
   }
 
-  // ---------------- API helpers / calendar loader ----------------
-  async function loadCalendars() {
-    const select = document.getElementById("appt-calendar");
-    if (!select) return;
-    select.innerHTML = "<option>Loading...</option>";
-    
-    try {
-        const cals = await api("/api/calendars") || [];
-        calendars = Array.isArray(cals) ? cals : [];
-        
-        select.innerHTML = "";
-        if (calendars.length === 0) {
-        const opt = document.createElement("option");
-        opt.textContent = "No calendars found";
-        opt.value = "";
-        select.appendChild(opt);
-        return;
-        }
-
-        for (const c of calendars) {
-        if (!c || !c.id) continue;
-        const opt = document.createElement("option");
-        opt.value = c.id;
-        opt.textContent = c.name || `Calendar ${c.id}`;
-        select.appendChild(opt);
-        }
-
-    } catch (err) {
-        console.error("Failed to load calendars:", err);
-        select.innerHTML = "<option>Error loading calendars</option>";
-    }
-    }
-
   async function createCalendar(name) {
     if (!name) return;
     const res = await api("/api/calendars", { method: "POST", body: { name } });
-    await loadCalendars();
+    await loadSidebarCalendars();
     return res;
-  }
-
-  async function loadGoogleCalendars() {
-    try {
-      const res = await api("/api/google/calendars");
-      const sel = document.getElementById("google-calendar-select");
-      sel.innerHTML = "<option value=''>Select Google calendar</option>";
-      for (const g of res.calendars) {
-        if (!g || !g.id) continue;
-        const opt = document.createElement("option");
-        opt.value = g.id;
-        opt.textContent = g.summary || g.id;
-        sel.appendChild(opt);
-      }
-    } catch (err) {
-      console.warn("No google calendars:", err);
-    }
   }
 
   function fcEventSourceFetch(info, successCallback, failureCallback) {
@@ -522,37 +564,7 @@
     closeApptModal();
   }
 
-  async function connectGoogle() {
-    try {
-      const res = await api("/api/google/connect");
-      window.location.href = res.auth_url;
-    } catch (err) {
-      alert("Failed to request Google connect URL.");
-      console.error(err);
-    }
-  }
-
-  async function syncGoogle() {
-    const googleCalId = document.getElementById("google-calendar-select").value;
-    const localCalId = document.getElementById("appt-calendar").value;
-    if (!googleCalId || !localCalId) return alert("Pick both local and Google calendars");
-    const btn = document.getElementById("sync-google-btn");
-    btn.textContent = "Syncing...";
-    btn.disabled = true;
-    try {
-      const res = await api("/api/google/sync", { method: "POST", body: { google_calendar_id: googleCalId, local_calendar_id: parseInt(localCalId), direction: "both" } });
-      calendar.refetchEvents();
-      alert(`Sync complete — pulled ${res.pulled}, pushed ${res.pushed}`);
-    } catch (err) {
-      console.error("Sync failed", err);
-      alert("Google sync failed — see console for details");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Sync selected → local";
-    }
-  }
-
-    function initFullCalendar() {
+  function initFullCalendar() {
     const calendarEl = document.getElementById("calendar");
     if (!calendarEl) return;
 
@@ -836,7 +848,6 @@
   window.calendarBootstrap = async function() {
     try {
       await loadSidebarCalendars();
-      await loadCalendars();
       await loadNotes();
 
       // Clear color button
@@ -874,7 +885,6 @@
         }
       });
       initFullCalendar();
-      await loadGoogleCalendars();
 
       // Wire up recurrence UI listeners
       document.getElementById("recurrence-freq").addEventListener("change", (e)=>{
@@ -913,6 +923,8 @@
       connectGoogle();
     } else if (e.target && e.target.id === "sync-google-btn") {
       syncGoogle();
+    } else if (e.target && e.target.id === "disconnect-google-btn") {
+      disconnectGoogle();
     }
   });
 

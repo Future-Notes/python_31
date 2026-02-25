@@ -366,7 +366,21 @@
                 background-position: 0% 50% !important;
             }
         }
+        .sidebar-calendar-item {
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
 
+        .sidebar-calendar-item:hover {
+            background-color: var(--btn-color);
+        }
+
+        .sidebar-calendar-item.active-calendar {
+            background-color: var(--btn-color);
+            font-weight: bold;
+        }
 
   </style>
 
@@ -507,10 +521,14 @@
 
       <div style="margin-top:24px;">
         <button id="connect-google-btn">Connect Google</button>
+
+        <!-- simplified sync controls (no dropdown) -->
         <div id="google-sync-controls" style="display:none;">
-          <select id="google-calendar-select" style="margin-top:8px; width:100%; padding:8px; border-radius:8px;
-                           background:var(--ctr-color); color:#e0e0e0;"></select>
-          <button id="sync-google-btn" style="margin-top:8px;">Sync selected → local</button>
+          <div style="margin-top:8px; font-size:13px; color:var(--text-muted);">
+            Using Google calendar: <span id="google-calendar-name" style="font-weight:600">—</span>
+          </div>
+          <button id="sync-google-btn" style="margin-top:8px;">Sync ↔ Local</button>
+          <button id="disconnect-google-btn" style="margin-top:8px;">Disconnect Google</button>
         </div>
       </div>
 
