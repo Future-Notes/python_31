@@ -8232,10 +8232,18 @@ def api_google_sync():
 @require_session_key
 def api_list_notes():
     user = User.query.get(g.user_id)
-    notes = Note.query.filter_by(user_id=user.id).all()
-    # Keep the payload minimal for the picker
-    return jsonify([{"id": n.id, "title": (n.title[:60] if getattr(n, "title", None) else (n.content[:60] if getattr(n,"content",None) else "Untitled")), "snippet": getattr(n, "content", "")[:150]} for n in notes]), 200
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
+    notes = Note.query.filter_by(user_id=user.id).all()
+
+    result = []
+    for n in notes:
+        title = n.title[:60] if n.title else (n.note[:60] if n.note else "Untitled")
+        snippet = n.note[:150] if n.note else ""
+        result.append({"id": n.id, "title": title, "snippet": snippet})
+
+    return jsonify(result), 200
 # 5. Get all user notes for attaching
 
 # Fetch all notes for the current user
