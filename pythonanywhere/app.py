@@ -143,6 +143,7 @@ dbx = dropbox.Dropbox(
     app_key=os.getenv("DROPBOX_APP_KEY"),
     app_secret=os.getenv("DROPBOX_APP_SECRET"),
 )
+MIN_VALID_DT = datetime(1970, 1, 1, tzinfo=timezone.utc)
 mega_client = Mega()
 mega_account = mega_client.login(app.config['MEGA_EMAIL'], app.config["MEGA_PASSWORD"])
 DROPBOX_UPLOAD_FOLDER = "/uploads"  # root folder in Dropbox
@@ -610,9 +611,17 @@ class Appointment(db.Model):
     recurrence_end_date = db.Column(db.DateTime(timezone=True), nullable=True)
     is_all_day = db.Column(db.Boolean, nullable=False, default=False)
     color = db.Column(db.String(7), nullable=True)
+
     google_event_id = db.Column(db.String(255))
+    # NEW: stable series identifier from Google
+    google_ical_uid = db.Column(db.String(255), nullable=True, index=True)
+
     # make defaults timezone-aware
-    updated_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
     deleted_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
@@ -648,6 +657,7 @@ class Appointment(db.Model):
             "color": self.color,
             "notes": [note.to_dict() for note in self.notes],
             "google_event_id": self.google_event_id,
+            "google_ical_uid": self.google_ical_uid,
         }
 
 class Calendar(db.Model):
@@ -7954,11 +7964,11 @@ def parse_google_event_datetime(event_time_dict):
                 dt = dt.replace(tzinfo=ZoneInfo(tz_str))
             else:
                 app.logger.warning("Naive datetime — assuming UTC")
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
 
         app.logger.warning("After tz handling: %s (tzinfo=%s)", dt, dt.tzinfo)
 
-        dt_utc = dt.astimezone(timezone.utc)
+        dt_utc = dt.astimezone(UTC)
 
         app.logger.warning("Converted to UTC: %s", dt_utc)
         app.logger.warning("---- END PARSE ----")
@@ -7968,11 +7978,202 @@ def parse_google_event_datetime(event_time_dict):
     elif "date" in event_time_dict:
         app.logger.warning("All-day date field detected: %s", event_time_dict["date"])
         d = dtparser.isoparse(event_time_dict["date"]).date()
-        dt = datetime.combine(d, time.min, tzinfo=timezone.utc)
+        dt = datetime.combine(d, time.min, tzinfo=UTC)
         app.logger.warning("All-day converted to UTC midnight: %s", dt)
         return dt, True
 
     return None, False
+
+def _strip_until_and_wkst(rrule_str):
+    """Return rrule_str with UNTIL and WKST removed for comparison (keeps ordering)."""
+    if not rrule_str:
+        return rrule_str
+    # normalize key names uppercased and remove RRULE: prefix if present
+    s = rrule_str.strip()
+    if s.upper().startswith("RRULE:"):
+        s = s[len("RRULE:"):]
+    # remove UNTIL and WKST tokens regardless of position
+    s = re.sub(r"(;?UNTIL=[^;]+)", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"(;?WKST=[^;]+)", "", s, flags=re.IGNORECASE)
+    # remove any duplicated semicolons and leading/trailing semicolons
+    s = re.sub(r";{2,}", ";", s).strip(";")
+    # canonicalize ordering of remaining key=val pairs alphabetically for deterministic comparison
+    parts = [p for p in s.split(";") if p]
+    parts_sorted = sorted(parts, key=lambda x: x.split("=", 1)[0].upper())
+    return ";".join(parts_sorted)
+
+def _rrules_equivalent(rrule_a, rrule_b):
+    """Return True if two rrule strings are equivalent ignoring UNTIL/WKST differences."""
+    if not rrule_a and not rrule_b:
+        return True
+    if not rrule_a or not rrule_b:
+        return False
+    a = _strip_until_and_wkst(rrule_a)
+    b = _strip_until_and_wkst(rrule_b)
+    return a == b
+
+def _merge_recurrence(local_rrule, local_end, incoming_rrule, incoming_end):
+    """
+    Decide canonical recurrence_rule and recurrence_end_date when merging two sources.
+    Preference rules:
+      - If one rrule has no UNTIL (incoming or local), prefer the rule without UNTIL.
+      - If both have UNTIL, keep the one that yields the later recurrence_end_date.
+      - If neither has UNTIL, keep local_rrule (or incoming if local empty).
+    Returns (chosen_rrule, chosen_end_datetime_or_None)
+    """
+    # quick normalize
+    def has_until(rr):
+        if not rr:
+            return False
+        return bool(re.search(r"\bUNTIL=", rr, flags=re.IGNORECASE))
+
+    local_has_until = has_until(local_rrule)
+    incoming_has_until = has_until(incoming_rrule)
+
+    # choose rrule text (prefer one without UNTIL so series remains longer)
+    if local_rrule and incoming_rrule:
+        if local_has_until and not incoming_has_until:
+            chosen_rrule = incoming_rrule
+        elif incoming_has_until and not local_has_until:
+            chosen_rrule = local_rrule
+        else:
+            # both have or both lack UNTIL: prefer local (stable) but keep full normalized text if different
+            chosen_rrule = local_rrule or incoming_rrule
+    else:
+        chosen_rrule = local_rrule or incoming_rrule
+
+    # choose recurrence_end_date (datetime): prefer later (i.e., longer)
+    if local_end and incoming_end:
+        chosen_end = max(local_end, incoming_end)
+    else:
+        chosen_end = local_end or incoming_end
+
+    return chosen_rrule, chosen_end
+
+def _parse_until_to_utc_dt(until_val):
+    """
+    Normalize UNTIL values found in RRULEs to a UTC datetime and return (str_with_Z, datetime_obj).
+    Handles:
+      - YYYYMMDD      -> YYYYMMDDT000000Z (treated as midnight UTC)
+      - YYYYMMDDTHHMMSS (with or w/o Z) -> ensure trailing Z and parse as UTC
+      - ISO strings -> parse and convert to UTC (append Z if missing)
+    Returns (normalized_until_str, datetime_in_utc) or (None, None) if parsing fails.
+    """
+    if not until_val:
+        return None, None
+    val = until_val.strip()
+    # date-only YYYYMMDD (8 digits)
+    if re.fullmatch(r"\d{8}", val):
+        norm = f"{val}T000000Z"
+        try:
+            dt = dtparser.isoparse(norm)
+            return norm, dt.astimezone(UTC)
+        except Exception:
+            return None, None
+    # datetime-like, maybe missing Z
+    if val.endswith("Z"):
+        try:
+            dt = dtparser.isoparse(val)
+            return val, dt.astimezone(UTC)
+        except Exception:
+            return None, None
+    # contains 'T' but no Z -> append Z and parse as UTC
+    if "T" in val and not val.endswith("Z"):
+        cand = val + "Z"
+        try:
+            dt = dtparser.isoparse(cand)
+            return cand, dt.astimezone(UTC)
+        except Exception:
+            pass
+    # try generic parse as ISO and then ensure UTC string with Z
+    try:
+        dt = dtparser.isoparse(val)
+        dt_utc = dt.astimezone(UTC)
+        norm = dt_utc.strftime("%Y%m%dT%H%M%SZ")
+        return norm, dt_utc
+    except Exception:
+        return None, None
+
+def normalize_rrule(rrule_str, start_dt, is_all_day):
+    """
+    Input:
+      - rrule_str: e.g. "RRULE:FREQ=WEEKLY;UNTIL=20250528T215959Z;WKST=MO"
+      - start_dt: aware datetime in UTC (first occurrence / DTSTART)
+      - is_all_day: bool
+    Returns:
+      - normalized_rrule (string, with 'RRULE:' prefix)
+      - recurrence_end_date (datetime in UTC) or None
+    """
+    if not rrule_str:
+        return None, None
+
+    s = rrule_str.strip()
+    if s.upper().startswith("RRULE:"):
+        s = s[len("RRULE:"):]
+    parts = s.split(";")
+    kv = {}
+    others = []
+    for p in parts:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            kv[k.upper()] = v
+        else:
+            others.append(p)
+
+    # Ensure FREQ present
+    freq = kv.get("FREQ")
+    if not freq:
+        # invalid RRULE; store as-is to avoid losing data
+        return "RRULE:" + rrule_str.strip(), None
+
+    # If WEEKLY and no BYDAY, derive from DTSTART weekday
+    if freq.upper() == "WEEKLY" and "BYDAY" not in kv:
+        # map python weekday() -> RFC names
+        dow_map = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+        byday = dow_map[start_dt.weekday()]
+        kv["BYDAY"] = byday
+
+    # If YEARLY and missing BYMONTH/BYMONTHDAY, derive from start_dt
+    if freq.upper() == "YEARLY":
+        if "BYMONTH" not in kv:
+            kv["BYMONTH"] = str(start_dt.month)
+        if "BYMONTHDAY" not in kv:
+            kv["BYMONTHDAY"] = str(start_dt.day)
+
+    # Normalize UNTIL (and produce recurrence_end_date)
+    recurrence_end_date = None
+    if "UNTIL" in kv:
+        normalized_until_str, until_dt = _parse_until_to_utc_dt(kv["UNTIL"])
+        if normalized_until_str:
+            kv["UNTIL"] = normalized_until_str
+            recurrence_end_date = until_dt
+        else:
+            # failed to parse UNTIL: remove it to avoid invalid RRULE usage
+            kv.pop("UNTIL", None)
+
+    # If it's an all-day recurring event, ensure UNTIL is in date-only form with Z midnight if present.
+    # (We already normalized UNTIL to a UTC datetime string with Z above.)
+
+    # Build canonical order: FREQ, INTERVAL, BYDAY, BYMONTH, BYMONTHDAY, UNTIL, COUNT, WKST, others
+    order = ["FREQ", "INTERVAL", "BYDAY", "BYMONTH", "BYMONTHDAY", "UNTIL", "COUNT", "WKST"]
+    out_parts = []
+    for k in order:
+        if k in kv:
+            out_parts.append(f"{k}={kv[k]}")
+    # append any other keys alphabetically for determinism
+    remaining_keys = sorted(k for k in kv.keys() if k not in order)
+    for k in remaining_keys:
+        out_parts.append(f"{k}={kv[k]}")
+    # append leftover bare parts (rare)
+    out_parts.extend(others)
+    normalized = "RRULE:" + ";".join(out_parts)
+    return normalized, recurrence_end_date
+
+# ---------------------------------------------------------------------------
+# Vervang jouw eerdere api_google_sync functie door deze versie (de rest
+# van de endpoint blijft grotendeels hetzelfde). De belangrijkste wijziging:
+# we roepen normalize_rrule(...) en passen all-day duration handling toe.
+# ---------------------------------------------------------------------------
 
 @app.route("/api/google/sync", methods=["POST"])
 @require_session_key
@@ -7980,21 +8181,17 @@ def api_google_sync():
     user = User.query.get(g.user_id)
     body = request.json or {}
 
-    # frontend MUST provide local_calendar_id
     local_calendar_id_param = body.get("local_calendar_id")
     if not local_calendar_id_param:
         return jsonify({"error": "local_calendar_id required"}), 400
 
-    # direction option unchanged
     direction = body.get("direction", "both")
 
-    # Resolve local calendar: DO NOT fall back silently — require the provided id.
     cal, err = resolve_local_calendar(user, local_calendar_id_param)
     if err:
         return err
     local_calendar_id = cal.id
 
-    # Ensure we have Google credentials for this user AND this local_calendar_id
     gcred = GoogleCalendarCredentials.query.filter_by(
         user_id=user.id,
         local_calendar_id=local_calendar_id
@@ -8002,13 +8199,10 @@ def api_google_sync():
     if not gcred:
         return jsonify({"error": "no_google_credentials_for_calendar"}), 404
 
-    # We always use the user's primary Google calendar
     google_calendar_id = "primary"
 
-    # find or create mapping row (match only by user_id + local_calendar_id)
     cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=local_calendar_id).first()
     if not cs:
-        # create; if your model still has google_calendar_id, set it to 'primary'
         if hasattr(CalendarSync, "google_calendar_id"):
             cs = CalendarSync(
                 user_id=user.id,
@@ -8025,7 +8219,6 @@ def api_google_sync():
         db.session.add(cs)
         db.session.commit()
     else:
-        # If a row exists but google_calendar_id column exists and is empty, set to primary
         if hasattr(CalendarSync, "google_calendar_id") and not getattr(cs, "google_calendar_id", None):
             cs.google_calendar_id = google_calendar_id
             db.session.commit()
@@ -8040,10 +8233,9 @@ def api_google_sync():
     )
 
     service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-    results = {"pulled":0, "pushed":0, "errors":[]}
+    results = {"pulled": 0, "pushed": 0, "errors": []}
 
     def parse_google_dt(val):
-        # val is a string like '2025-02-20T12:00:00Z' or returned 'date' (all-day)
         if val is None:
             return None
         dt = dtparser.isoparse(val)
@@ -8051,47 +8243,126 @@ def api_google_sync():
             dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
 
-    # ---- PULL phase (remote -> local) ----
+    # ---- PULL phase replacement: fetch ALL pages first, then process items ----
     if direction in ("pull", "both"):
         try:
-            params = {
+            base_params = {
                 "calendarId": google_calendar_id,
                 "showDeleted": True,
                 "singleEvents": False,
                 "maxResults": 2500
             }
 
-            # Use incremental sync if possible
-            try:
-                if cs.sync_token:
-                    events_resp = service.events().list(calendarId=google_calendar_id, syncToken=cs.sync_token).execute()
-                else:
-                    events_resp = service.events().list(**params).execute()
-            except HttpError as e:
-                if getattr(e, "status_code", None) == 410:  # sync token invalid
-                    cs.sync_token = None
-                    db.session.commit()
-                    events_resp = service.events().list(calendarId=google_calendar_id, showDeleted=True, singleEvents=False, maxResults=2500).execute()
-                else:
+            full_sync = not bool(cs.sync_token)
+            all_returned_ids = set()
+            all_returned_icaluids = set()
+            next_sync_token = None
+
+            # 1) Fetch ALL pages into a single list (so masters on other pages are seen)
+            all_items = []
+            page_token = None
+            while True:
+                params = dict(base_params)
+                if cs.sync_token and not page_token:
+                    params = {
+                        "calendarId": google_calendar_id,
+                        "syncToken": cs.sync_token
+                    }
+                if page_token:
+                    params["pageToken"] = page_token
+
+                try:
+                    resp = service.events().list(**params).execute()
+                except HttpError as e:
+                    if getattr(e, "status_code", None) == 410:
+                        app.logger.warning("Sync token expired. Forcing full sync.")
+                        cs.sync_token = None
+                        db.session.commit()
+                        return api_google_sync()  # restart cleanly
                     raise
 
-            items = events_resp.get("items", [])
-            app.logger.warning("Google returned %d items", len(items))
-            for item in items:
-                # ... (existing pull loop unchanged, but use local_calendar_id when creating new Appointment)
+                page_items = resp.get("items", [])
+                app.logger.warning("Google returned %d items (page)", len(page_items))
+
+                all_items.extend(page_items)
+
+                # capture tokens from the responses; keep last nextSyncToken seen
+                next_sync_token = resp.get("nextSyncToken") or next_sync_token
+
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+
+            # Precompute master ids for the whole fetch (masters = items without recurringEventId)
+            all_master_ids = {it.get("id") for it in all_items if it and not it.get("recurringEventId")}
+
+            # 2) Process every item (masters will always be visible now)
+            for item in all_items:
                 geid = item.get("id")
+                if not geid:
+                    continue
+
+                all_returned_ids.add(geid)
+                icaluid = item.get("iCalUID")
+                if icaluid:
+                    all_returned_icaluids.add(icaluid)
+
+                recurring_parent = item.get("recurringEventId")
+
+                # If this is an instance and its parent master is present anywhere in the full fetch,
+                # ignore the instance because master will carry the recurrence.
+                if recurring_parent and recurring_parent in all_master_ids:
+                    # skip instances when the master exists in the overall fetch
+                    continue
+
+                promoted_instance = False
+                # If this is an instance and parent master is NOT present in the full fetch,
+                # try to fetch the master explicitly. If master not found (404), promote instance.
+                if recurring_parent and recurring_parent not in all_master_ids:
+                    try:
+                        master = service.events().get(calendarId=google_calendar_id, eventId=recurring_parent).execute()
+                        # Replace item with fetched master to ensure recurrence is correct
+                        item = master
+                        geid = item.get("id")
+                        icaluid = item.get("iCalUID")
+                        recurring_parent = item.get("recurringEventId")
+                        all_returned_ids.add(geid)
+                        if icaluid:
+                            all_returned_icaluids.add(icaluid)
+                    except HttpError as e:
+                        if getattr(e, "status_code", None) == 404:
+                            # genuine promoted instance (original master gone) — treat as standalone
+                            promoted_instance = True
+                        else:
+                            app.logger.warning("Error fetching master %s: %s", recurring_parent, e)
+                            # skip on unexpected errors to avoid partial corruption
+                            continue
+
                 status = item.get("status")
                 google_updated = parse_google_dt(item.get("updated"))
 
-                local = Appointment.query.filter_by(google_event_id=geid, user_id=user.id).first()
+                # local lookup by google_event_id -> fallback to iCalUID
+                local = None
+                if geid:
+                    local = Appointment.query.filter_by(google_event_id=geid, user_id=user.id).first()
 
-                # Handle cancelled events
+                if not local and icaluid:
+                    local = Appointment.query.filter_by(google_ical_uid=icaluid, user_id=user.id).first()
+                    if local:
+                        local.google_event_id = geid
+                        app.logger.warning(
+                            "Mapped local appointment id=%s by iCalUID -> set google_event_id=%s",
+                            local.id, geid
+                        )
+                        db.session.commit()
+
+                # Cancelled handling
                 if status == "cancelled":
                     if local and not local.deleted_at:
-                        local.deleted_at = datetime.now(timezone.utc)
-                        db.session.commit()
+                        local.deleted_at = datetime.now(UTC)
                     continue
 
+                # Parse start/end
                 s = item.get("start", {})
                 e = item.get("end", {})
 
@@ -8100,73 +8371,175 @@ def api_google_sync():
                     end_dt, _ = parse_google_event_datetime(e)
                     is_all_day = False
                 else:
-                    start_date_str = s.get("date")
-                    end_date_str = e.get("date") if e else None
-                    start_dt = dtparser.isoparse(start_date_str).replace(tzinfo=UTC)
-                    if end_date_str:
-                        end_dt = dtparser.isoparse(end_date_str).replace(tzinfo=UTC)
+                    # all-day: Google sends date as YYYY-MM-DD (date only)
+                    start_dt = dtparser.isoparse(s.get("date")).replace(tzinfo=UTC)
+                    # For all-day recurring events we always enforce end = start + 1 day
+                    if "date" in e and item.get("recurrence"):
+                        end_dt = (start_dt + timedelta(days=1))
                     else:
-                        end_dt = (start_dt + timedelta(days=1)).replace(tzinfo=UTC)
+                        end_dt = dtparser.isoparse(e.get("date")).replace(tzinfo=UTC)
                     is_all_day = True
 
+                start_dt = start_dt.astimezone(UTC)
+                end_dt = end_dt.astimezone(UTC)
+
+                # Recurrence handling: normalize the rule if present
                 rrule = None
-                if item.get("recurrence"):
-                    rrule = item["recurrence"][0] if len(item["recurrence"]) > 0 else None
+                recurrence_end_date = None
+                if not item.get("recurringEventId") and item.get("recurrence"):
+                    # Google sends recurrence as a list; take first
+                    raw_rrule = item["recurrence"][0]
+                    normalized, rec_end = normalize_rrule(raw_rrule, start_dt, is_all_day)
+                    rrule = normalized
+                    recurrence_end_date = rec_end
+
+                if promoted_instance:
+                    rrule = None
+                    recurrence_end_date = None
 
                 if not local:
-                    # Create new local appointment against the resolved local_calendar_id
-                    ap = Appointment(
-                        title=item.get("summary") or "",
-                        description=item.get("description"),
-                        start_datetime=start_dt.astimezone(UTC),
-                        end_datetime=end_dt.astimezone(UTC),
-                        user_id=user.id,
-                        calendar_id=local_calendar_id,  # <- resolved calendar
-                        recurrence_rule=rrule,
-                        is_all_day=is_all_day,
-                        google_event_id=geid,
-                        updated_at=google_updated
-                    )
-                    db.session.add(ap)
-                    db.session.commit()
-                    results["pulled"] += 1
-                else:
-                    # existing local update logic unchanged
-                    local_updated = local.updated_at or getattr(local, "created_at", None)
-                    lu = ensure_aware(local_updated)
-                    gu = ensure_aware(google_updated)
+                    # --- Deduplication attempt: try to find an existing local appointment that
+                    #     likely represents the same recurring series (title + equivalent RRULE).
+                    summary = item.get("summary") or ""
+                    candidate = None
 
-                    update_from_google = False
-                    if not lu:
-                        update_from_google = True
-                    elif gu and gu > lu:
-                        update_from_google = True
+                    # If we have iCalUID try exact mapping first (strongest signal)
+                    if icaluid:
+                        candidate = Appointment.query.filter_by(
+                            google_ical_uid=icaluid,
+                            user_id=user.id,
+                            calendar_id=local_calendar_id
+                        ).first()
 
-                    if update_from_google:
-                        local.title = item.get("summary") or local.title
-                        local.description = item.get("description")
-                        local.start_datetime = start_dt.astimezone(UTC)
-                        local.end_datetime = end_dt.astimezone(UTC)
-                        local.recurrence_rule = rrule
-                        local.is_all_day = is_all_day
-                        local.deleted_at = None
-                        local.updated_at = google_updated  # keep tz-aware
-                        db.session.commit()
+                    # If no iCalUID match, search by title + is_all_day + recurrence equivalence
+                    if not candidate and (rrule or (item.get("recurrence") and len(item.get("recurrence")))):
+                        # normalized incoming rrule (use normalize_rrule for canonical form)
+                        raw_rrule = item["recurrence"][0] if item.get("recurrence") else None
+                        normalized_incoming, incoming_rec_end = normalize_rrule(raw_rrule, start_dt, is_all_day) if raw_rrule else (None, None)
+
+                        # Query likely candidates by title & is_all_day
+                        possible = Appointment.query.filter_by(
+                            title=summary,
+                            is_all_day=is_all_day,
+                            user_id=user.id,
+                            calendar_id=local_calendar_id
+                        ).all()
+
+                        for p in possible:
+                            if not p.recurrence_rule and not normalized_incoming:
+                                # both non-recurring and same start — treat as same if times equal
+                                if p.start_datetime == start_dt and p.end_datetime == end_dt:
+                                    candidate = p
+                                    break
+                            elif p.recurrence_rule and normalized_incoming:
+                                if _rrules_equivalent(p.recurrence_rule, normalized_incoming):
+                                    candidate = p
+                                    break
+
+                    if candidate:
+                        # Merge incoming Google event into existing appointment (avoid duplicate)
+                        app.logger.warning("Merging incoming google event %s into existing local appointment id=%s title=%r", geid, candidate.id, candidate.title)
+
+                        # update google ids & timestamps
+                        candidate.google_event_id = geid or candidate.google_event_id
+                        if icaluid:
+                            candidate.google_ical_uid = icaluid
+
+                        # Merge start/end: pick earliest start and latest end to preserve span for recurring
+                        if start_dt and (not candidate.start_datetime or start_dt < candidate.start_datetime):
+                            candidate.start_datetime = start_dt
+                        if end_dt and (not candidate.end_datetime or end_dt > candidate.end_datetime):
+                            candidate.end_datetime = end_dt
+
+                        # Merge recurrence_rule + recurrence_end_date
+                        chosen_rrule, chosen_rec_end = _merge_recurrence(candidate.recurrence_rule, candidate.recurrence_end_date, rrule, recurrence_end_date)
+                        candidate.recurrence_rule = chosen_rrule
+                        candidate.recurrence_end_date = chosen_rec_end
+
+                        candidate.is_all_day = is_all_day
+                        candidate.deleted_at = None
+                        candidate.updated_at = google_updated
+
+                        db.session.add(candidate)
                         results["pulled"] += 1
 
-            # Save nextSyncToken for incremental sync
-            if events_resp.get("nextSyncToken"):
-                cs.sync_token = events_resp.get("nextSyncToken")
-                cs.last_synced = datetime.now(timezone.utc)
-                db.session.commit()
+                    else:
+                        # No candidate found — create fresh
+                        ap = Appointment(
+                            title=item.get("summary") or "",
+                            description=item.get("description"),
+                            start_datetime=start_dt,
+                            end_datetime=end_dt,
+                            user_id=user.id,
+                            calendar_id=local_calendar_id,
+                            recurrence_rule=rrule,
+                            recurrence_end_date=recurrence_end_date,
+                            is_all_day=is_all_day,
+                            google_event_id=geid,
+                            google_ical_uid=icaluid,
+                            updated_at=google_updated
+                        )
+                        db.session.add(ap)
+                        results["pulled"] += 1
+
+            # ---- STALE CLEANUP (ONLY ON FULL SYNC) ----
+            if full_sync:
+                app.logger.warning("Running stale Google cleanup (full sync)")
+                stale_query = Appointment.query.filter(
+                    Appointment.user_id == user.id,
+                    Appointment.calendar_id == local_calendar_id,
+                    Appointment.google_event_id.isnot(None),
+                    ~Appointment.google_event_id.in_(all_returned_ids)
+                )
+                stale = [s for s in stale_query.all() if not (s.google_ical_uid and s.google_ical_uid in all_returned_icaluids)]
+                for s in stale:
+                    app.logger.warning(
+                        "Soft-deleting stale Google event id=%s title=%r",
+                        s.google_event_id,
+                        s.title
+                    )
+                    s.deleted_at = datetime.now(UTC)
+
+            # Save sync token once
+            if next_sync_token:
+                cs.sync_token = next_sync_token
+                cs.last_synced = datetime.now(UTC)
+
+            # Final hard-check: verify remote existence for any remaining mapped events (clear true ghosts)
+            for appt in Appointment.query.filter_by(
+                user_id=user.id,
+                calendar_id=local_calendar_id
+            ).filter(
+                Appointment.google_event_id.isnot(None),
+                Appointment.deleted_at == None
+            ).all():
+
+                try:
+                    service.events().get(
+                        calendarId=google_calendar_id,
+                        eventId=appt.google_event_id
+                    ).execute()
+                except HttpError as e:
+                    if getattr(e, "status_code", None) == 404:
+                        app.logger.warning(
+                            "Hard-deleting ghost event google_event_id=%s title=%r",
+                            appt.google_event_id,
+                            appt.title
+                        )
+                        appt.deleted_at = datetime.now(UTC)
+
+            db.session.commit()
+
         except HttpError as e:
             results["errors"].append(str(e))
             return jsonify({"error": "google_pull_error", "details": str(e)}), 500
 
     # ---- PUSH phase (local -> remote) ----
+    # (houd je bestaande push-logic; als je wilt kan ik die ook normaliseren zodat
+    #  we push canonical RRULEs — voor nu laat ik push ongewijzigd behalve dat we
+    #  store iCalUID when creating)
     if direction in ("push", "both"):
         try:
-            # fetch all local events for the resolved calendar (excluding soft-deleted)
             local_events = Appointment.query.filter_by(user_id=user.id, calendar_id=local_calendar_id).filter(Appointment.deleted_at == None).all()
 
             for le in local_events:
@@ -8193,16 +8566,26 @@ def api_google_sync():
                         google_updated = parse_google_dt(ge.get("updated"))
                         local_updated = le.updated_at
 
-                        local_updated_aware = ensure_aware(local_updated)
-                        google_updated_aware = ensure_aware(google_updated)
+                        local_updated_aware = ensure_aware(local_updated) if local_updated else None
+                        google_updated_aware = ensure_aware(google_updated) if google_updated else None
 
-                        if local_updated_aware and (not google_updated_aware or local_updated_aware > google_updated_aware):
-                            service.events().update(calendarId=google_calendar_id, eventId=le.google_event_id, body=body).execute()
+                        if ge.get("recurringEventId") and not le.recurrence_rule:
+                            created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
+                            le.google_event_id = created.get("id")
+                            if created.get("iCalUID"):
+                                le.google_ical_uid = created.get("iCalUID")
+                            db.session.commit()
                             results["pushed"] += 1
+                        else:
+                            if local_updated_aware and (not google_updated_aware or local_updated_aware > google_updated_aware):
+                                service.events().update(calendarId=google_calendar_id, eventId=le.google_event_id, body=body).execute()
+                                results["pushed"] += 1
                     except HttpError as e:
                         if getattr(e, "status_code", None) in (404, 410):
                             created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
                             le.google_event_id = created.get("id")
+                            if created.get("iCalUID"):
+                                le.google_ical_uid = created.get("iCalUID")
                             db.session.commit()
                             results["pushed"] += 1
                         else:
@@ -8210,10 +8593,11 @@ def api_google_sync():
                 else:
                     created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
                     le.google_event_id = created.get("id")
+                    if created.get("iCalUID"):
+                        le.google_ical_uid = created.get("iCalUID")
                     db.session.commit()
                     results["pushed"] += 1
 
-            # Handle local deletions: delete soft-deleted events from Google
             deleted_locals = Appointment.query.filter_by(user_id=user.id, calendar_id=local_calendar_id).filter(Appointment.deleted_at != None).all()
             for dl in deleted_locals:
                 if dl.google_event_id:
