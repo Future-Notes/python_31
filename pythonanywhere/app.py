@@ -73,6 +73,10 @@ from pathlib import Path
 from dateutil import parser as dtparser
 import pytz
 from zoneinfo import ZoneInfo
+from sqlalchemy import Enum as SAEnum
+import enum
+from urllib.parse import urlencode
+from sqlalchemy.orm import joinedload
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -143,8 +147,12 @@ dbx = dropbox.Dropbox(
     app_key=os.getenv("DROPBOX_APP_KEY"),
     app_secret=os.getenv("DROPBOX_APP_SECRET"),
 )
+MIN_VALID_DT = datetime(1970, 1, 1, tzinfo=timezone.utc)
 mega_client = Mega()
-mega_account = mega_client.login(app.config['MEGA_EMAIL'], app.config["MEGA_PASSWORD"])
+try:
+    mega_account = mega_client.login(app.config['MEGA_EMAIL'], app.config["MEGA_PASSWORD"])
+except Exception as e:
+    mega_account = None
 DROPBOX_UPLOAD_FOLDER = "/uploads"  # root folder in Dropbox
 REQUIRE_2FA_ALWAYS = False
 REQUIRE_2FA_ON_NEW_IP = True
@@ -436,6 +444,40 @@ class User(db.Model):
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
 
+class PermissionEnum(enum.Enum):
+    read = "read"
+    edit = "edit"
+
+class BoardShare(db.Model):
+    __tablename__ = 'board_shares'
+    id = db.Column(db.Integer, primary_key=True)
+    board_id = db.Column(db.Integer, db.ForeignKey('board.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=True, index=True)
+    
+    # Optional: allow sharing by email for not-yet-registered users
+    email = db.Column(db.String(255), nullable=True, index=True)
+    invited_email = db.Column(db.String(255), nullable=True, index=True)  # corresponds to SQL invited_email
+    token = db.Column(db.Text, unique=True)  # corresponds to SQL token
+    accepted_at = db.Column(db.DateTime, nullable=True)  # corresponds to SQL accepted_at
+    accepted_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)  # corresponds to SQL accepted_by_user_id
+
+    permission = db.Column(
+        SAEnum(PermissionEnum, name="permission_enum"),
+        nullable=False,
+        default=PermissionEnum.read
+    )
+    invited_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('board_id', 'user_id', name='uq_board_user_share'),
+    )
+
+    board = db.relationship('Board', backref=db.backref('shares', lazy='dynamic', cascade='all, delete-orphan'))
+    user = db.relationship('User', foreign_keys=[user_id])
+    inviter = db.relationship('User', foreign_keys=[invited_by])
+    accepted_by_user = db.relationship('User', foreign_keys=[accepted_by_user_id])
+
 class Board(db.Model):
     __tablename__ = "board"  # top-level collection of lists
     id = db.Column(db.Integer, primary_key=True)
@@ -610,9 +652,17 @@ class Appointment(db.Model):
     recurrence_end_date = db.Column(db.DateTime(timezone=True), nullable=True)
     is_all_day = db.Column(db.Boolean, nullable=False, default=False)
     color = db.Column(db.String(7), nullable=True)
+
     google_event_id = db.Column(db.String(255))
+    # NEW: stable series identifier from Google
+    google_ical_uid = db.Column(db.String(255), nullable=True, index=True)
+
     # make defaults timezone-aware
-    updated_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
     deleted_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     user = db.relationship('User', backref=db.backref('appointments', lazy=True))
@@ -648,6 +698,7 @@ class Appointment(db.Model):
             "color": self.color,
             "notes": [note.to_dict() for note in self.notes],
             "google_event_id": self.google_event_id,
+            "google_ical_uid": self.google_ical_uid,
         }
 
 class Calendar(db.Model):
@@ -1062,6 +1113,11 @@ def make_oauth_state(payload: dict) -> str:
     b = json.dumps(payload).encode('utf-8')
     return base64.urlsafe_b64encode(b).decode('utf-8').rstrip('=')
 
+def make_share_url(token):
+    # produces: https://example.com/board/s/<token>
+    return request.host_url.rstrip('/') + '/board/s/' + token
+
+
 def parse_oauth_state(state: str) -> dict:
     if not state:
         return {}
@@ -1365,6 +1421,36 @@ def encrypt_secret(plain: str) -> str:
         return plain
     return fernet.encrypt(plain.encode()).decode()
 
+def get_board_permission_for_user(board_id, user_id):
+    """
+    Returns:
+       - None if not accessible
+       - 'owner' if user is owner
+       - 'edit' or 'read' if shared
+    """
+    board = Board.query.get(board_id)
+    if not board:
+        return None
+    if board.user_id == user_id:
+        return 'owner'
+    share = BoardShare.query.filter_by(board_id=board_id, user_id=user_id).first()
+    if not share:
+        return None
+    return share.permission.value  # 'read' or 'edit'
+
+def require_board_permission(board_id, user_id, need_edit=False):
+    """
+    Returns (allowed: bool, reason_or_board)
+    """
+    perm = get_board_permission_for_user(board_id, user_id)
+    if perm is None:
+        return False, "Board not found or not shared"
+    # owner always allowed and counts as edit
+    if perm == 'owner':
+        return True, 'owner'
+    if need_edit:
+        return (perm == 'edit'), 'insufficient_permission'
+    return True, perm
 
 def decrypt_secret(cipher: str) -> str:
     if not fernet:
@@ -4671,12 +4757,397 @@ def public_share_visit(token):
 # Board endpoints
 # -------------------
 
+# Create a share link (owner-only)
+@app.route('/api/boards/<int:board_id>/share_links', methods=['POST'])
+@require_session_key
+def api_create_share_link(board_id):
+    """
+    Owner creates a share link. Body: { "permission": "read" | "edit" }
+    Returns JSON: { token, url, permission }
+    """
+    user_id = g.user_id
+    # ensure board exists and caller is owner
+    board = Board.query.get(board_id)
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+
+    if board.user_id != g.user_id:
+        return jsonify({"error": "Only the board owner can perform this action"}), 403
+
+    data = request.get_json(force=True, silent=True) or {}
+    permission = (data.get('permission') or 'read').lower()
+    if permission not in ('read', 'edit'):
+        return jsonify({"error": "Invalid permission, must be 'read' or 'edit'"}), 400
+
+    token = uuid.uuid4().hex
+    share = BoardShare(
+        board_id=board_id,
+        user_id=None,     # link-based share (not tied to a specific user/email)
+        email=None,
+        token=token,
+        permission=PermissionEnum(permission),
+        invited_by=user_id,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(share)
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Could not create share link"}), 500
+
+    url = make_share_url(token)
+    return jsonify({"token": token, "url": url, "permission": permission}), 201
+
+
+# Send the share link by email (owner only)
+@app.route('/api/boards/<int:board_id>/share_links/send_email', methods=['POST'])
+@require_session_key
+def api_send_share_link_email(board_id):
+    """
+    Body: {
+      "emails": ["a@x.com","b@y.com"] OR "email": "a@x.com",
+      "permission": "read" | "edit",
+      "subject": "optional subject",
+      "message": "optional custom message (plain text or small html snippet)"
+    }
+    """
+    user_id = g.user_id
+    board = Board.query.get(board_id)
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+    if board.user_id != user_id:
+        return jsonify({"error": "Only the board owner can send share links"}), 403
+
+    payload = request.get_json(force=True, silent=True) or {}
+    emails = payload.get('emails') or ([] if not payload.get('email') else [payload.get('email')])
+    if isinstance(emails, str):
+        emails = [emails]
+    emails = [e.strip() for e in emails if e and isinstance(e, str)]
+    if not emails:
+        return jsonify({"error": "No email addresses provided"}), 400
+
+    permission = (payload.get('permission') or 'read').lower()
+    if permission not in ('read', 'edit'):
+        return jsonify({"error": "Invalid permission"}), 400
+
+    # Create a persistent link for this permission — could choose to reuse existing token for same permission,
+    # but simplest: always create a new token for each email-send request (the owner can manage links later).
+    token = uuid.uuid4().hex
+    share = BoardShare(
+        board_id=board_id,
+        user_id=None,
+        email=None,
+        token=token,
+        permission=PermissionEnum(permission),
+        invited_by=user_id,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(share)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not create share link"}), 500
+
+    url = make_share_url(token)
+
+    # Build email content HTML
+    subject = payload.get('subject') or f"{board.title} — invitation to view a board"
+    custom_message = payload.get('message') or ''
+    # Use request.host_url to produce absolute link for the CTA
+    cta_html = f"""
+    <div style="font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;">
+      <h2 style="margin:0 0 8px 0;">{board.title}</h2>
+      <p style="margin:0 0 12px 0;">{custom_message or 'You have been invited to open this board.'}</p>
+      <p style="margin:12px 0;">
+        <a href="{url}" style="display:inline-block;padding:10px 16px;border-radius:8px;text-decoration:none;border:1px solid #e6e6e6;">
+          Open board
+        </a>
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin:12px 0;">
+      <p style="font-size:12px;color:#666;margin:0;">If the button does not work, copy-paste this link into your browser:<br>
+      <a href="{url}">{url}</a></p>
+    </div>
+    """
+
+    # Send individual emails
+    successes = []
+    failures = []
+    for to_addr in emails:
+        try:
+            send_email(
+                to_addr,
+                subject,
+                title=f"Invitation: {board.title}",
+                content_html=cta_html,
+                content_text=None,
+                buttons=None,
+                logo_url=None,
+                unsubscribe_url=None
+            )
+            successes.append(to_addr)
+        except Exception as exc:
+            # don't fail the whole request just because one email bounces
+            failures.append({"email": to_addr, "error": str(exc)})
+
+    return jsonify({"ok": True, "token": token, "url": url, "sent": successes, "failed": failures}), 200
+
+
+@app.route('/board/s/<token>')
+def serve_board_share_link(token):
+    """
+    Visiting the token:
+      - if not logged in, redirect to /login_page?redirect=/board/s/<token>
+      - if logged in, add user to board shares (upsert) and redirect to the board
+    """
+
+    share = BoardShare.query.filter_by(token=token).first()
+    if not share:
+        return "Share link not found", 404
+
+    # Check login WITHOUT requiring auth decorator
+    valid, sess_or_msg = validate_session_key()
+    if not valid:
+        redirect_to = request.path  # "/board/s/<token>"
+        qs = urlencode({"redirect": redirect_to})
+        return redirect(f"/login_page?{qs}")
+
+    sess = sess_or_msg
+    user_id = sess["user_id"]
+    now = datetime.utcnow()
+
+    # Upsert user-specific share
+    existing = BoardShare.query.filter_by(
+        board_id=share.board_id,
+        user_id=user_id
+    ).first()
+
+    if existing:
+        # Upgrade permission if link permission is higher
+        def perm_rank(p):
+            val = p.value if isinstance(p, PermissionEnum) else p
+            return 2 if val == "edit" else 1
+
+        link_perm = share.permission
+        if perm_rank(existing.permission) < perm_rank(link_perm):
+            existing.permission = link_perm
+
+        existing.accepted_at = now
+        existing.accepted_by_user_id = user_id
+        db.session.add(existing)
+    else:
+        new_share = BoardShare(
+            board_id=share.board_id,
+            user_id=user_id,
+            permission=share.permission,
+            invited_by=share.invited_by,
+            accepted_at=now,
+            accepted_by_user_id=user_id,
+            created_at=now
+        )
+        db.session.add(new_share)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return "Failed to accept share link", 500
+
+    # Redirect to board page (adjust if needed)
+    return redirect(f"/trello_page#board-{share.board_id}")
+
+@app.route('/api/boards/<int:board_id>/shares', methods=['GET'])
+@require_session_key
+def api_get_board_shares(board_id):
+    """
+    Returns:
+      { members: [...], links: [...] }
+    - members: all BoardShare rows that have user_id (joined with User to include username/email)
+    - links: token-based shares (only visible to owner)
+    """
+    user_id = g.user_id
+
+    # member-level permission required to view members
+    perm = get_board_permission_for_user(board_id, user_id)
+    if perm is None:
+        return jsonify({"error": "Board not found or not shared"}), 404
+
+    # Query shares, eager-load user where present
+    shares = BoardShare.query.options(joinedload(BoardShare.user)).filter_by(board_id=board_id).all()
+
+    members = []
+    for s in shares:
+        if s.user_id:
+            # Build a friendly display name
+            uname = None
+            try:
+                if s.user:
+                    uname = getattr(s.user, 'username', None) or getattr(s.user, 'name', None) or s.user.email
+            except Exception:
+                uname = None
+            members.append({
+                "id": s.id,
+                "user_id": s.user_id,
+                "display_name": uname or f"user:{s.user_id}",
+                "email": getattr(s.user, "email", None),
+                "permission": s.permission.value if isinstance(s.permission, PermissionEnum) else s.permission,
+                "invited_by": s.invited_by,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None
+            })
+
+    links = []
+    # Only the owner can view/manage share links
+    board = Board.query.get(board_id)
+    if board and board.user_id == user_id:
+        for s in shares:
+            # token shares: token not null and user_id is null (link rows)
+            if s.token:
+                links.append({
+                    "id": s.id,
+                    "token": s.token,
+                    "url": make_share_url(s.token),
+                    "permission": s.permission.value if isinstance(s.permission, PermissionEnum) else s.permission,
+                    "invited_by": s.invited_by,
+                    "created_at": s.created_at.isoformat() if s.created_at else None
+                })
+
+    return jsonify({"members": members, "links": links}), 200
+
+def require_board_owner(board_id, user_id):
+    board = Board.query.get(board_id)
+    if not board:
+        return False, None
+
+    if board.user_id != user_id:
+        return False, board
+
+    return True, board
+
+@app.route('/api/boards/<int:board_id>/share_links/<int:share_id>', methods=['DELETE'])
+@require_session_key
+def api_delete_share_link(board_id, share_id):
+    # only owner can delete a token/link
+    allowed, board = require_board_owner(board_id, g.user_id)
+    if not allowed:
+        if not board:
+            return jsonify({"error": "Board not found"}), 404
+        return jsonify({"error": "Only board owner can revoke share links"}), 403
+
+    share = BoardShare.query.filter_by(id=share_id, board_id=board_id).first()
+    if not share or not share.token:
+        return jsonify({"error": "Share link not found"}), 404
+
+    db.session.delete(share)
+    db.session.commit()
+    return jsonify({"ok": True}), 200
+
+@app.route('/api/boards/<int:board_id>/shares/<int:share_id>', methods=['DELETE'])
+@require_session_key
+def api_delete_member_share(board_id, share_id):
+    """
+    Remove a member's access to the board.
+    Owner-only operation.
+    """
+
+    allowed, board = require_board_owner(board_id, g.user_id)
+    if not allowed:
+        if not board:
+            return jsonify({"error": "Board not found"}), 404
+        return jsonify({"error": "Only board owner can remove collaborators"}), 403
+
+    share = BoardShare.query.filter_by(
+        id=share_id,
+        board_id=board_id
+    ).first()
+
+    if not share:
+        return jsonify({"error": "Share not found"}), 404
+
+    # Prevent deleting token links through this endpoint
+    if share.token:
+        return jsonify({"error": "Use share_links endpoint to delete links"}), 400
+
+    # Prevent removing owner (extra safety)
+    if share.user_id == board.user_id:
+        return jsonify({"error": "Cannot remove board owner"}), 400
+
+    db.session.delete(share)
+    db.session.commit()
+
+    return jsonify({"ok": True}), 200
+
+@app.route('/api/boards/<int:board_id>/shares', methods=['POST'])
+@require_session_key
+def api_create_board_share(board_id):
+    user_id = g.user_id
+    board = Board.query.get(board_id)
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+    if board.user_id != user_id:
+        return jsonify({"error": "Only owner can share"}), 403
+
+    payload = request.get_json() or {}
+    target_user_id = payload.get('user_id')
+    email = payload.get('email')
+    permission = payload.get('permission') or 'read'
+    if permission not in ('read', 'edit'):
+        return jsonify({"error": "Invalid permission"}), 400
+    if not (target_user_id or email):
+        return jsonify({"error": "user_id or email required"}), 400
+
+    # if user_id provided, ensure user exists and not owner
+    if target_user_id:
+        if target_user_id == user_id:
+            return jsonify({"error": "Cannot share to yourself"}), 400
+        if User.query.get(target_user_id) is None:
+            return jsonify({"error": "Target user not found"}), 404
+        # upsert share
+        share = BoardShare.query.filter_by(board_id=board_id, user_id=target_user_id).first()
+        if share:
+            share.permission = PermissionEnum(permission)
+        else:
+            share = BoardShare(board_id=board_id, user_id=target_user_id, permission=PermissionEnum(permission), invited_by=user_id)
+            db.session.add(share)
+        db.session.commit()
+        return jsonify({"ok": True, "user_id": target_user_id, "permission": share.permission.value}), 201
+
+    # email-only invite
+    share = BoardShare.query.filter_by(board_id=board_id, email=email).first()
+    if share:
+        share.permission = PermissionEnum(permission)
+    else:
+        share = BoardShare(board_id=board_id, email=email, permission=PermissionEnum(permission), invited_by=user_id)
+        db.session.add(share)
+    db.session.commit()
+    # TODO: trigger invite email if you want
+    return jsonify({"ok": True, "email": email, "permission": share.permission.value}), 201
+
 @app.route('/api/boards', methods=['GET'])
 @require_session_key
 def api_get_boards():
     """Return top-level boards for the user (no lists included)."""
     user_id = g.user_id
-    boards = Board.query.filter_by(user_id=user_id).order_by(Board.id).all()
+    from sqlalchemy.orm import aliased
+    bs = aliased(BoardShare)
+
+    boards = (
+        db.session.query(Board)
+        .outerjoin(bs, db.and_(bs.board_id == Board.id, bs.user_id == user_id))
+        .filter(db.or_(Board.user_id == user_id, bs.user_id == user_id))
+        .order_by(Board.id)
+        .all()
+    )
+    out = []
+    for b in boards:
+        # If you want to include permission in listing:
+        if b.user_id == user_id:
+            perm = 'owner'
+        else:
+            share = BoardShare.query.filter_by(board_id=b.id, user_id=user_id).first()
+            perm = share.permission.value if share else None
+        out.append({"id": b.id, "title": b.title, "created_at": b.created_at.isoformat(), "permission": perm})
     out = [{"id": b.id, "title": b.title, "created_at": b.created_at.isoformat()} for b in boards]
     return jsonify(out)
 
@@ -4701,22 +5172,19 @@ def api_create_board():
 @app.route('/api/boards/<int:board_id>/background_uploads', methods=['POST'])
 @require_session_key
 def attach_board_background(board_id):
-    """
-    Body JSON: { "upload_id": <int> }
-    Attaches an existing upload (already validated & stored by /uploads) as the board background.
-    If a previous background exists it will be unlinked (deleted from BoardBackgroundUpload),
-    but the actual Upload row is NOT deleted here.
-    """
     user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
-    board = Board.query.filter_by(id=board_id, user_id=user.id).first()
-    if not board:
-        return jsonify({"error": "Board not found"}), 404
 
+    allowed, reason = require_board_permission(board_id, user.id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    board = Board.query.get(board_id)
     data = request.get_json() or {}
     upload_id = data.get('upload_id')
     if not upload_id:
         return jsonify({"error": "upload_id required"}), 400
 
+    # uploader must own the upload (you already enforced this previously)
     upload = Upload.query.filter_by(id=upload_id, user_id=user.id, deleted=False).first()
     if not upload:
         return jsonify({"error": "Upload not found"}), 404
@@ -4739,9 +5207,12 @@ def attach_board_background(board_id):
 @require_session_key
 def api_rename_board(board_id):
     user_id = g.user_id
-    b = Board.query.filter_by(id=board_id, user_id=user_id).first()
-    if not b:
-        return jsonify({"error": "Board not found"}), 404
+
+    allowed, reason = require_board_permission(board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    b = Board.query.get(board_id)
     payload = request.get_json() or {}
     title = (payload.get('title') or '').strip()
     if not title:
@@ -4754,12 +5225,15 @@ def api_rename_board(board_id):
 @require_session_key
 def api_change_board_color(board_id):
     user_id = g.user_id
-    b = Board.query.filter_by(id=board_id, user_id=user_id).first()
-    if not b:
-        return jsonify({"error": "Board not found"}), 404
+
+    allowed, reason = require_board_permission(board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    b = Board.query.get(board_id)
     payload = request.get_json() or {}
     color = payload.get('color')
-    if payload['color'] == "none":
+    if color == "none":
         b.background_color = None
     else:
         b.background_color = color
@@ -4769,15 +5243,13 @@ def api_change_board_color(board_id):
 @app.route('/api/boards/<int:board_id>/background_uploads', methods=['DELETE'])
 @require_session_key
 def detach_board_background(board_id):
-    """
-    Removes the association between board and upload.
-    Returns the upload_id so the frontend may call the generic upload-delete endpoint if desired.
-    """
     user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
-    board = Board.query.filter_by(id=board_id, user_id=user.id).first()
-    if not board:
-        return jsonify({"error": "Board not found"}), 404
 
+    allowed, reason = require_board_permission(board_id, user.id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    board = Board.query.get(board_id)
     existing = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
     if not existing:
         return jsonify({"error": "No background image attached"}), 404
@@ -4785,7 +5257,6 @@ def detach_board_background(board_id):
     upload_id = existing.upload_id
     db.session.delete(existing)
     db.session.commit()
-
     return jsonify({"upload_id": upload_id}), 200
 
 
@@ -4793,24 +5264,27 @@ def detach_board_background(board_id):
 @require_session_key
 def api_delete_board(board_id):
     user_id = g.user_id
-    user = User.query.get(g.user_id)
+    user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 401
 
-    b = Board.query.filter_by(id=board_id, user_id=user_id).first()
+    # only owner may delete boards
+    b = Board.query.get(board_id)
     if not b:
         return jsonify({"error": "Board not found"}), 404
-    bg = BoardBackgroundUpload.query.filter_by(board_id=board_id).first()
+    if b.user_id != user_id:
+        return jsonify({"error": "Only board owner can delete board"}), 403
 
+    bg = BoardBackgroundUpload.query.filter_by(board_id=board_id).first()
     if bg:
         if bg.upload:
             delete_upload(bg.upload.id, user)
         db.session.delete(bg)
 
-    # cascading deletes should remove lists & cards but delete them anyway to be sure
-    lists = List.query.filter_by(board_id=b.id, user_id=user_id).all()
+    # delete lists & cards (do not rely on user_id filters: delete all lists for board)
+    lists = List.query.filter_by(board_id=b.id).all()
     for l in lists:
-        cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
+        cards = Card.query.filter_by(list_id=l.id).all()
         for c in cards:
             c_bg = CardBackgroundUpload.query.filter_by(card_id=c.id).first()
             if c_bg:
@@ -4844,10 +5318,10 @@ def api_get_lists():
     if board_id is None:
         return jsonify({"error": "board_id required as query param"}), 400
 
-    # ensure board exists and belongs to user
-    board = Board.query.filter_by(id=board_id, user_id=user_id).first()
-    if not board:
-        return jsonify({"error": "Board not found"}), 404
+    allowed, reason = require_board_permission(board_id, user_id, need_edit=False)
+    if not allowed:
+        return jsonify({"error": "Board not found or access denied"}), 404
+    board = Board.query.get(board_id)
 
     # determine board background image url if present
     board_bg = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
@@ -4857,12 +5331,12 @@ def api_get_lists():
         if upload:
             board_background_image_url = get_upload_url(upload)
 
-    # fetch all lists for board
-    lists = List.query.filter_by(user_id=user_id, board_id=board_id).order_by(List.id).all()
+    # fetch all lists for board (do not filter by user_id)
+    lists = List.query.filter_by(board_id=board_id).order_by(List.id).all()
     list_ids = [l.id for l in lists]
 
-    # fetch all cards for those lists
-    cards = Card.query.filter(Card.user_id==user_id, Card.list_id.in_(list_ids)).order_by(Card.position).all()
+    # fetch all cards for those lists (do not restrict by Card.user_id)
+    cards = Card.query.filter(Card.list_id.in_(list_ids)).order_by(Card.position).all()
     card_ids = [c.id for c in cards]
 
     # fetch all card background uploads in one query
@@ -4917,11 +5391,13 @@ def api_create_list():
     board_id = payload.get('board_id') or payload.get('board')  # accept either name
     if not title or board_id is None:
         return jsonify({"error": "title and board_id required"}), 400
-    # ensure board belongs to user
-    if not Board.query.filter_by(id=board_id, user_id=user_id).first():
-        return jsonify({"error": "Board not found"}), 404
-    # make sure the new list always gets the highest ordernr
-    max_ordernr = db.session.query(db.func.max(List.ordernr)).filter_by(user_id=user_id, board_id=board_id).scalar()
+
+    allowed, reason = require_board_permission(board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    # new list ordernr computed per board
+    max_ordernr = db.session.query(db.func.max(List.ordernr)).filter_by(board_id=board_id).scalar()
     if max_ordernr is None:
         max_ordernr = 0
     else:
@@ -4935,14 +5411,15 @@ def api_create_list():
 @require_session_key
 def api_copy_list(list_id):
     user_id = g.user_id
-    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    l = List.query.get(list_id)
     if not l:
         return jsonify({"error": "List not found"}), 404
-    # ensure board belongs to user
-    if not Board.query.filter_by(id=l.board_id, user_id=user_id).first():
-        return jsonify({"error": "Board not found"}), 404
-    # make sure the new list always gets the highest ordernr
-    max_ordernr = db.session.query(db.func.max(List.ordernr)).filter_by(user_id=user_id, board_id=l.board_id).scalar()
+
+    allowed, reason = require_board_permission(l.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    max_ordernr = db.session.query(db.func.max(List.ordernr)).filter_by(board_id=l.board_id).scalar()
     if max_ordernr is None:
         max_ordernr = 0
     else:
@@ -4950,8 +5427,9 @@ def api_copy_list(list_id):
     new_list = List(user_id=user_id, board_id=l.board_id, title=f"Copy of {l.title}", ordernr=max_ordernr)
     db.session.add(new_list)
     db.session.commit()
-    # copy cards from the original list to the new list
-    cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
+
+    # copy cards from the original list to the new list (all cards in the list)
+    cards = Card.query.filter_by(list_id=l.id).order_by(Card.position).all()
     for c in cards:
         new_card = Card(
             user_id=user_id,
@@ -4962,16 +5440,21 @@ def api_copy_list(list_id):
             completed=c.completed
         )
         db.session.add(new_card)
-        db.session.commit()
+    db.session.commit()
     return jsonify({"id": new_list.id, "title": new_list.title}), 201
 
 @app.route('/api/lists/<int:list_id>', methods=['PATCH'])
 @require_session_key
 def api_rename_list(list_id):
     user_id = g.user_id
-    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    l = List.query.get(list_id)
     if not l:
         return jsonify({"error": "List not found"}), 404
+
+    allowed, reason = require_board_permission(l.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
     payload = request.get_json() or {}
     if 'title' in payload:
         l.title = payload['title']
@@ -4983,9 +5466,14 @@ def api_rename_list(list_id):
 @require_session_key
 def api_order_list(list_id):
     user_id = g.user_id
-    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    l = List.query.get(list_id)
     if not l:
         return jsonify({"error": "List not found"}), 404
+
+    allowed, reason = require_board_permission(l.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
     payload = request.get_json() or {}
     if 'order' in payload:
         l.ordernr = payload['order']
@@ -4996,15 +5484,20 @@ def api_order_list(list_id):
 @require_session_key
 def api_color_list(list_id):
     user_id = g.user_id
-    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    l = List.query.get(list_id)
     if not l:
         return jsonify({"error": "List not found"}), 404
+
+    allowed, reason = require_board_permission(l.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
     payload = request.get_json() or {}
     if 'color' in payload:
-        print(payload['color'])
         if payload['color'] == "none":
             l.background_color = None
-        l.background_color = payload['color']
+        else:
+            l.background_color = payload['color']
         db.session.commit()
     return jsonify({"id": l.id, "color": l.background_color})
 
@@ -5013,11 +5506,16 @@ def api_color_list(list_id):
 def api_delete_list(list_id):
     user_id = g.user_id
     user = User.query.get(user_id)
-    l = List.query.filter_by(id=list_id, user_id=user_id).first()
+    l = List.query.get(list_id)
     if not l:
         return jsonify({"error": "List not found"}), 404
-    # delete cards in the list
-    cards = Card.query.filter_by(list_id=l.id, user_id=user_id).all()
+
+    allowed, reason = require_board_permission(l.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Board not found or permission denied"}), 404
+
+    # delete cards in the list (do not filter by card.user_id)
+    cards = Card.query.filter_by(list_id=l.id).all()
     for c in cards:
         background_image = CardBackgroundUpload.query.filter_by(card_id=c.id).first()
         if background_image:
@@ -5041,9 +5539,19 @@ def api_delete_list(list_id):
 @require_session_key
 def api_get_card_info(card_id):
     user_id = g.user_id
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    # permission check on the board owning this card
+    # ensure the list exists and get its board
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=False)
+    if not allowed:
+        return jsonify({"error": "Card not found or access denied"}), 404
 
     # Determine background image for the card
     card_bg = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
@@ -5067,10 +5575,19 @@ def api_get_card_info(card_id):
 @require_session_key
 def api_get_card_activity(card_id):
     user_id = g.user_id
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
-    card_username = User.query.filter_by(id=card.user_id).first().username
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=False)
+    if not allowed:
+        return jsonify({"error": "Card not found or access denied"}), 404
+
+    card_username = User.query.filter_by(id=card.user_id).first().username if card.user_id else None
     activities = CardActivity.query.filter_by(card_id=card.id).order_by(CardActivity.created_at.desc()).all()
     return jsonify([{
         "id": a.id,
@@ -5086,10 +5603,18 @@ def api_get_card_activity(card_id):
 @require_session_key
 def api_add_comment(card_id):
     user_id = g.user_id
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
-    
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=False)
+    if not allowed:
+        return jsonify({"error": "Card not found or access denied"}), 404
+
     username = User.query.filter_by(id=user_id).first().username
     payload = request.get_json() or {}
     content = payload.get('content', '').strip()
@@ -5104,9 +5629,21 @@ def api_add_comment(card_id):
 @require_session_key
 def api_edit_comment(comment_id):
     user_id = g.user_id
-    comment = CardActivity.query.filter_by(id=comment_id, user_id=user_id).first()
+    comment = CardActivity.query.filter_by(id=comment_id).first()
     if not comment:
         return jsonify({"error": "Comment not found"}), 404
+    # only comment owner can edit
+    if comment.user_id != user_id:
+        return jsonify({"error": "Comment not found"}), 404
+
+    card = Card.query.get(comment.card_id)
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    allowed, reason = require_board_permission(List.query.get(card.list_id).board_id, user_id, need_edit=False)
+    if not allowed:
+        return jsonify({"error": "Comment not found or access denied"}), 404
+
     if not comment.activity_type == "comment":
         return jsonify({"error": "Not a comment"}), 400
     payload = request.get_json() or {}
@@ -5121,12 +5658,21 @@ def api_edit_comment(comment_id):
 @require_session_key
 def api_change_card_color(card_id):
     user_id = g.user_id
-    c = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    c = Card.query.get(card_id)
     if not c:
         return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(c.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or permission denied"}), 404
+
     payload = request.get_json() or {}
     color = payload.get('color')
-    if payload['color'] == "none":
+    if color == "none":
         c.background_color = None
     else:
         c.background_color = color
@@ -5137,11 +5683,25 @@ def api_change_card_color(card_id):
 @require_session_key
 def api_delete_comment(comment_id):
     user_id = g.user_id
-    comment = CardActivity.query.filter_by(id=comment_id, user_id=user_id).first()
+    comment = CardActivity.query.filter_by(id=comment_id).first()
     if not comment:
         return jsonify({"error": "Comment not found"}), 404
     if not comment.activity_type == "comment":
         return jsonify({"error": "Not a comment"}), 400
+
+    card = Card.query.get(comment.card_id)
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    # Allow deletion if user is comment owner or board owner
+    board = Board.query.get(list_obj.board_id)
+    if comment.user_id != user_id and board.user_id != user_id:
+        return jsonify({"error": "Comment not found"}), 404
+
     db.session.delete(comment)
     db.session.commit()
     return jsonify({"ok": True})
@@ -5157,11 +5717,16 @@ def api_create_card():
     description = payload.get('description') or ''
     if not title or list_id is None:
         return jsonify({"error": "title and list_id required"}), 400
-    # ensure list exists and belongs to user
-    list_obj = List.query.filter_by(id=list_id, user_id=user_id).first()
+
+    list_obj = List.query.get(list_id)
     if not list_obj:
         return jsonify({"error": "List not found"}), 404
-    max_pos = db.session.query(db.func.max(Card.position)).filter_by(user_id=user_id, list_id=list_id).scalar()
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "List not found or permission denied"}), 404
+
+    max_pos = db.session.query(db.func.max(Card.position)).filter_by(list_id=list_id).scalar()
     position = ((max_pos or 0) + 1000)
     card = Card(user_id=user_id, list_id=list_id, title=title, description=description, position=position)
     db.session.add(card)
@@ -5171,16 +5736,18 @@ def api_create_card():
 @app.route('/api/cards/<int:card_id>/background_uploads', methods=['POST'])
 @require_session_key
 def attach_card_background(card_id):
-    """
-    Body JSON: { "upload_id": <int> }
-    Attaches an existing upload (already validated & stored by /uploads) as the card background.
-    If a previous background exists it will be unlinked (deleted from CardBackgroundUpload),
-    but the actual Upload row is NOT deleted here.
-    """
     user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
-    card = Card.query.filter_by(id=card_id, user_id=user.id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user.id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or permission denied"}), 404
 
     data = request.get_json() or {}
     upload_id = data.get('upload_id')
@@ -5191,7 +5758,7 @@ def attach_card_background(card_id):
     if not upload:
         return jsonify({"error": "Upload not found"}), 404
 
-    # remove any existing background link for this board
+    # remove any existing background link for this card
     existing = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
     if existing:
         db.session.delete(existing)
@@ -5210,10 +5777,17 @@ def attach_card_background(card_id):
 @require_session_key
 def api_update_card(card_id):
     user_id = g.user_id
-
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or permission denied"}), 404
 
     payload = request.get_json() or {}
 
@@ -5254,10 +5828,17 @@ def api_update_card(card_id):
 @require_session_key
 def api_complete_card(card_id):
     user_id = g.user_id
-
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or permission denied"}), 404
 
     payload = request.get_json() or {}
 
@@ -5281,14 +5862,18 @@ def api_complete_card(card_id):
 @app.route('/api/cards/<int:card_id>/background_uploads', methods=['DELETE'])
 @require_session_key
 def detach_card_background(card_id):
-    """
-    Removes the association between board and upload.
-    Returns the upload_id so the frontend may call the generic upload-delete endpoint if desired.
-    """
     user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
-    card = Card.query.filter_by(id=card_id, user_id=user.id).first()
+    card = Card.query.get(card_id)
     if not card:
-        return jsonify({"error": "Board not found"}), 404
+        return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user.id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or permission denied"}), 404
 
     existing = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
     if not existing:
@@ -5297,17 +5882,25 @@ def detach_card_background(card_id):
     upload_id = existing.upload_id
     db.session.delete(existing)
     db.session.commit()
-
     return jsonify({"upload_id": upload_id}), 200
 
 @app.route('/api/cards/<int:card_id>', methods=['DELETE'])
 @require_session_key
 def api_delete_card(card_id):
     user_id = g.user_id
-    user = User.query.get(g.user_id)
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    user = User.query.get(user_id)
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or permission denied"}), 404
+
     background_image = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
     if background_image:
         delete_upload(background_image.upload_id, user)
@@ -5340,24 +5933,31 @@ def api_move_card():
     if not card_id or to_list_id is None:
         return jsonify({"error": "card_id and to_list_id required"}), 400
 
-    card = Card.query.filter_by(id=card_id, user_id=user_id).first()
+    card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
 
-    dest_list = List.query.filter_by(id=to_list_id, user_id=user_id).first()
+    src_list = List.query.get(card.list_id)
+    if not src_list:
+        return jsonify({"error": "Source list not found"}), 404
+
+    dest_list = List.query.get(to_list_id)
     if not dest_list:
         return jsonify({"error": "Destination list not found"}), 404
-    
-    should_insert_activity = True
 
-    if card.list_id == to_list_id:
-        should_insert_activity = False
+    # require edit on both source and destination board (they should usually be same board)
+    allowed_src, _ = require_board_permission(src_list.board_id, user_id, need_edit=True)
+    allowed_dest, _ = require_board_permission(dest_list.board_id, user_id, need_edit=True)
+    if not (allowed_src and allowed_dest):
+        return jsonify({"error": "Destination list not found or permission denied"}), 404
+
+    should_insert_activity = (card.list_id != to_list_id)
 
     # Move card
     card.list_id = to_list_id
     db.session.add(card)
 
-    if should_insert_activity == True:
+    if should_insert_activity:
         insert_card_activity(
             user_id,
             card_id,
@@ -5366,7 +5966,8 @@ def api_move_card():
 
     try:
         for idx, cid in enumerate(order):
-            c = Card.query.filter_by(id=cid, user_id=user_id).first()
+            c = Card.query.get(cid)
+            # only reorder cards that exist (we don't require card.user_id check)
             if c:
                 c.position = (idx + 1) * 1000
                 db.session.add(c)
@@ -5389,18 +5990,24 @@ def api_reorder_list(list_id):
     user_id = g.user_id
     payload = request.get_json() or {}
     order = payload.get('order', [])
-    if not List.query.filter_by(id=list_id, user_id=user_id).first():
+    l = List.query.get(list_id)
+    if not l:
         return jsonify({"error": "List not found"}), 404
+
+    allowed, _ = require_board_permission(l.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "List not found or permission denied"}), 404
+
     try:
         for i, cid in enumerate(order):
-            c = Card.query.filter_by(id=cid, user_id=user_id, list_id=list_id).first()
+            c = Card.query.filter_by(id=cid, list_id=list_id).first()
             if c:
                 c.position = (i + 1) * 1000
                 db.session.add(c)
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Could not reorder", "detail": str(e)}), 500
+        return jsonify({"error": "Could not reorder", "detail": str(e)}, 500)
     return jsonify({"ok": True})
     
 import os
@@ -7954,11 +8561,11 @@ def parse_google_event_datetime(event_time_dict):
                 dt = dt.replace(tzinfo=ZoneInfo(tz_str))
             else:
                 app.logger.warning("Naive datetime — assuming UTC")
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
 
         app.logger.warning("After tz handling: %s (tzinfo=%s)", dt, dt.tzinfo)
 
-        dt_utc = dt.astimezone(timezone.utc)
+        dt_utc = dt.astimezone(UTC)
 
         app.logger.warning("Converted to UTC: %s", dt_utc)
         app.logger.warning("---- END PARSE ----")
@@ -7968,11 +8575,202 @@ def parse_google_event_datetime(event_time_dict):
     elif "date" in event_time_dict:
         app.logger.warning("All-day date field detected: %s", event_time_dict["date"])
         d = dtparser.isoparse(event_time_dict["date"]).date()
-        dt = datetime.combine(d, time.min, tzinfo=timezone.utc)
+        dt = datetime.combine(d, time.min, tzinfo=UTC)
         app.logger.warning("All-day converted to UTC midnight: %s", dt)
         return dt, True
 
     return None, False
+
+def _strip_until_and_wkst(rrule_str):
+    """Return rrule_str with UNTIL and WKST removed for comparison (keeps ordering)."""
+    if not rrule_str:
+        return rrule_str
+    # normalize key names uppercased and remove RRULE: prefix if present
+    s = rrule_str.strip()
+    if s.upper().startswith("RRULE:"):
+        s = s[len("RRULE:"):]
+    # remove UNTIL and WKST tokens regardless of position
+    s = re.sub(r"(;?UNTIL=[^;]+)", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"(;?WKST=[^;]+)", "", s, flags=re.IGNORECASE)
+    # remove any duplicated semicolons and leading/trailing semicolons
+    s = re.sub(r";{2,}", ";", s).strip(";")
+    # canonicalize ordering of remaining key=val pairs alphabetically for deterministic comparison
+    parts = [p for p in s.split(";") if p]
+    parts_sorted = sorted(parts, key=lambda x: x.split("=", 1)[0].upper())
+    return ";".join(parts_sorted)
+
+def _rrules_equivalent(rrule_a, rrule_b):
+    """Return True if two rrule strings are equivalent ignoring UNTIL/WKST differences."""
+    if not rrule_a and not rrule_b:
+        return True
+    if not rrule_a or not rrule_b:
+        return False
+    a = _strip_until_and_wkst(rrule_a)
+    b = _strip_until_and_wkst(rrule_b)
+    return a == b
+
+def _merge_recurrence(local_rrule, local_end, incoming_rrule, incoming_end):
+    """
+    Decide canonical recurrence_rule and recurrence_end_date when merging two sources.
+    Preference rules:
+      - If one rrule has no UNTIL (incoming or local), prefer the rule without UNTIL.
+      - If both have UNTIL, keep the one that yields the later recurrence_end_date.
+      - If neither has UNTIL, keep local_rrule (or incoming if local empty).
+    Returns (chosen_rrule, chosen_end_datetime_or_None)
+    """
+    # quick normalize
+    def has_until(rr):
+        if not rr:
+            return False
+        return bool(re.search(r"\bUNTIL=", rr, flags=re.IGNORECASE))
+
+    local_has_until = has_until(local_rrule)
+    incoming_has_until = has_until(incoming_rrule)
+
+    # choose rrule text (prefer one without UNTIL so series remains longer)
+    if local_rrule and incoming_rrule:
+        if local_has_until and not incoming_has_until:
+            chosen_rrule = incoming_rrule
+        elif incoming_has_until and not local_has_until:
+            chosen_rrule = local_rrule
+        else:
+            # both have or both lack UNTIL: prefer local (stable) but keep full normalized text if different
+            chosen_rrule = local_rrule or incoming_rrule
+    else:
+        chosen_rrule = local_rrule or incoming_rrule
+
+    # choose recurrence_end_date (datetime): prefer later (i.e., longer)
+    if local_end and incoming_end:
+        chosen_end = max(local_end, incoming_end)
+    else:
+        chosen_end = local_end or incoming_end
+
+    return chosen_rrule, chosen_end
+
+def _parse_until_to_utc_dt(until_val):
+    """
+    Normalize UNTIL values found in RRULEs to a UTC datetime and return (str_with_Z, datetime_obj).
+    Handles:
+      - YYYYMMDD      -> YYYYMMDDT000000Z (treated as midnight UTC)
+      - YYYYMMDDTHHMMSS (with or w/o Z) -> ensure trailing Z and parse as UTC
+      - ISO strings -> parse and convert to UTC (append Z if missing)
+    Returns (normalized_until_str, datetime_in_utc) or (None, None) if parsing fails.
+    """
+    if not until_val:
+        return None, None
+    val = until_val.strip()
+    # date-only YYYYMMDD (8 digits)
+    if re.fullmatch(r"\d{8}", val):
+        norm = f"{val}T000000Z"
+        try:
+            dt = dtparser.isoparse(norm)
+            return norm, dt.astimezone(UTC)
+        except Exception:
+            return None, None
+    # datetime-like, maybe missing Z
+    if val.endswith("Z"):
+        try:
+            dt = dtparser.isoparse(val)
+            return val, dt.astimezone(UTC)
+        except Exception:
+            return None, None
+    # contains 'T' but no Z -> append Z and parse as UTC
+    if "T" in val and not val.endswith("Z"):
+        cand = val + "Z"
+        try:
+            dt = dtparser.isoparse(cand)
+            return cand, dt.astimezone(UTC)
+        except Exception:
+            pass
+    # try generic parse as ISO and then ensure UTC string with Z
+    try:
+        dt = dtparser.isoparse(val)
+        dt_utc = dt.astimezone(UTC)
+        norm = dt_utc.strftime("%Y%m%dT%H%M%SZ")
+        return norm, dt_utc
+    except Exception:
+        return None, None
+
+def normalize_rrule(rrule_str, start_dt, is_all_day):
+    """
+    Input:
+      - rrule_str: e.g. "RRULE:FREQ=WEEKLY;UNTIL=20250528T215959Z;WKST=MO"
+      - start_dt: aware datetime in UTC (first occurrence / DTSTART)
+      - is_all_day: bool
+    Returns:
+      - normalized_rrule (string, with 'RRULE:' prefix)
+      - recurrence_end_date (datetime in UTC) or None
+    """
+    if not rrule_str:
+        return None, None
+
+    s = rrule_str.strip()
+    if s.upper().startswith("RRULE:"):
+        s = s[len("RRULE:"):]
+    parts = s.split(";")
+    kv = {}
+    others = []
+    for p in parts:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            kv[k.upper()] = v
+        else:
+            others.append(p)
+
+    # Ensure FREQ present
+    freq = kv.get("FREQ")
+    if not freq:
+        # invalid RRULE; store as-is to avoid losing data
+        return "RRULE:" + rrule_str.strip(), None
+
+    # If WEEKLY and no BYDAY, derive from DTSTART weekday
+    if freq.upper() == "WEEKLY" and "BYDAY" not in kv:
+        # map python weekday() -> RFC names
+        dow_map = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+        byday = dow_map[start_dt.weekday()]
+        kv["BYDAY"] = byday
+
+    # If YEARLY and missing BYMONTH/BYMONTHDAY, derive from start_dt
+    if freq.upper() == "YEARLY":
+        if "BYMONTH" not in kv:
+            kv["BYMONTH"] = str(start_dt.month)
+        if "BYMONTHDAY" not in kv:
+            kv["BYMONTHDAY"] = str(start_dt.day)
+
+    # Normalize UNTIL (and produce recurrence_end_date)
+    recurrence_end_date = None
+    if "UNTIL" in kv:
+        normalized_until_str, until_dt = _parse_until_to_utc_dt(kv["UNTIL"])
+        if normalized_until_str:
+            kv["UNTIL"] = normalized_until_str
+            recurrence_end_date = until_dt
+        else:
+            # failed to parse UNTIL: remove it to avoid invalid RRULE usage
+            kv.pop("UNTIL", None)
+
+    # If it's an all-day recurring event, ensure UNTIL is in date-only form with Z midnight if present.
+    # (We already normalized UNTIL to a UTC datetime string with Z above.)
+
+    # Build canonical order: FREQ, INTERVAL, BYDAY, BYMONTH, BYMONTHDAY, UNTIL, COUNT, WKST, others
+    order = ["FREQ", "INTERVAL", "BYDAY", "BYMONTH", "BYMONTHDAY", "UNTIL", "COUNT", "WKST"]
+    out_parts = []
+    for k in order:
+        if k in kv:
+            out_parts.append(f"{k}={kv[k]}")
+    # append any other keys alphabetically for determinism
+    remaining_keys = sorted(k for k in kv.keys() if k not in order)
+    for k in remaining_keys:
+        out_parts.append(f"{k}={kv[k]}")
+    # append leftover bare parts (rare)
+    out_parts.extend(others)
+    normalized = "RRULE:" + ";".join(out_parts)
+    return normalized, recurrence_end_date
+
+# ---------------------------------------------------------------------------
+# Vervang jouw eerdere api_google_sync functie door deze versie (de rest
+# van de endpoint blijft grotendeels hetzelfde). De belangrijkste wijziging:
+# we roepen normalize_rrule(...) en passen all-day duration handling toe.
+# ---------------------------------------------------------------------------
 
 @app.route("/api/google/sync", methods=["POST"])
 @require_session_key
@@ -7980,21 +8778,17 @@ def api_google_sync():
     user = User.query.get(g.user_id)
     body = request.json or {}
 
-    # frontend MUST provide local_calendar_id
     local_calendar_id_param = body.get("local_calendar_id")
     if not local_calendar_id_param:
         return jsonify({"error": "local_calendar_id required"}), 400
 
-    # direction option unchanged
     direction = body.get("direction", "both")
 
-    # Resolve local calendar: DO NOT fall back silently — require the provided id.
     cal, err = resolve_local_calendar(user, local_calendar_id_param)
     if err:
         return err
     local_calendar_id = cal.id
 
-    # Ensure we have Google credentials for this user AND this local_calendar_id
     gcred = GoogleCalendarCredentials.query.filter_by(
         user_id=user.id,
         local_calendar_id=local_calendar_id
@@ -8002,13 +8796,10 @@ def api_google_sync():
     if not gcred:
         return jsonify({"error": "no_google_credentials_for_calendar"}), 404
 
-    # We always use the user's primary Google calendar
     google_calendar_id = "primary"
 
-    # find or create mapping row (match only by user_id + local_calendar_id)
     cs = CalendarSync.query.filter_by(user_id=user.id, local_calendar_id=local_calendar_id).first()
     if not cs:
-        # create; if your model still has google_calendar_id, set it to 'primary'
         if hasattr(CalendarSync, "google_calendar_id"):
             cs = CalendarSync(
                 user_id=user.id,
@@ -8025,7 +8816,6 @@ def api_google_sync():
         db.session.add(cs)
         db.session.commit()
     else:
-        # If a row exists but google_calendar_id column exists and is empty, set to primary
         if hasattr(CalendarSync, "google_calendar_id") and not getattr(cs, "google_calendar_id", None):
             cs.google_calendar_id = google_calendar_id
             db.session.commit()
@@ -8040,10 +8830,9 @@ def api_google_sync():
     )
 
     service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-    results = {"pulled":0, "pushed":0, "errors":[]}
+    results = {"pulled": 0, "pushed": 0, "errors": []}
 
     def parse_google_dt(val):
-        # val is a string like '2025-02-20T12:00:00Z' or returned 'date' (all-day)
         if val is None:
             return None
         dt = dtparser.isoparse(val)
@@ -8051,47 +8840,126 @@ def api_google_sync():
             dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
 
-    # ---- PULL phase (remote -> local) ----
+    # ---- PULL phase replacement: fetch ALL pages first, then process items ----
     if direction in ("pull", "both"):
         try:
-            params = {
+            base_params = {
                 "calendarId": google_calendar_id,
                 "showDeleted": True,
                 "singleEvents": False,
                 "maxResults": 2500
             }
 
-            # Use incremental sync if possible
-            try:
-                if cs.sync_token:
-                    events_resp = service.events().list(calendarId=google_calendar_id, syncToken=cs.sync_token).execute()
-                else:
-                    events_resp = service.events().list(**params).execute()
-            except HttpError as e:
-                if getattr(e, "status_code", None) == 410:  # sync token invalid
-                    cs.sync_token = None
-                    db.session.commit()
-                    events_resp = service.events().list(calendarId=google_calendar_id, showDeleted=True, singleEvents=False, maxResults=2500).execute()
-                else:
+            full_sync = not bool(cs.sync_token)
+            all_returned_ids = set()
+            all_returned_icaluids = set()
+            next_sync_token = None
+
+            # 1) Fetch ALL pages into a single list (so masters on other pages are seen)
+            all_items = []
+            page_token = None
+            while True:
+                params = dict(base_params)
+                if cs.sync_token and not page_token:
+                    params = {
+                        "calendarId": google_calendar_id,
+                        "syncToken": cs.sync_token
+                    }
+                if page_token:
+                    params["pageToken"] = page_token
+
+                try:
+                    resp = service.events().list(**params).execute()
+                except HttpError as e:
+                    if getattr(e, "status_code", None) == 410:
+                        app.logger.warning("Sync token expired. Forcing full sync.")
+                        cs.sync_token = None
+                        db.session.commit()
+                        return api_google_sync()  # restart cleanly
                     raise
 
-            items = events_resp.get("items", [])
-            app.logger.warning("Google returned %d items", len(items))
-            for item in items:
-                # ... (existing pull loop unchanged, but use local_calendar_id when creating new Appointment)
+                page_items = resp.get("items", [])
+                app.logger.warning("Google returned %d items (page)", len(page_items))
+
+                all_items.extend(page_items)
+
+                # capture tokens from the responses; keep last nextSyncToken seen
+                next_sync_token = resp.get("nextSyncToken") or next_sync_token
+
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+
+            # Precompute master ids for the whole fetch (masters = items without recurringEventId)
+            all_master_ids = {it.get("id") for it in all_items if it and not it.get("recurringEventId")}
+
+            # 2) Process every item (masters will always be visible now)
+            for item in all_items:
                 geid = item.get("id")
+                if not geid:
+                    continue
+
+                all_returned_ids.add(geid)
+                icaluid = item.get("iCalUID")
+                if icaluid:
+                    all_returned_icaluids.add(icaluid)
+
+                recurring_parent = item.get("recurringEventId")
+
+                # If this is an instance and its parent master is present anywhere in the full fetch,
+                # ignore the instance because master will carry the recurrence.
+                if recurring_parent and recurring_parent in all_master_ids:
+                    # skip instances when the master exists in the overall fetch
+                    continue
+
+                promoted_instance = False
+                # If this is an instance and parent master is NOT present in the full fetch,
+                # try to fetch the master explicitly. If master not found (404), promote instance.
+                if recurring_parent and recurring_parent not in all_master_ids:
+                    try:
+                        master = service.events().get(calendarId=google_calendar_id, eventId=recurring_parent).execute()
+                        # Replace item with fetched master to ensure recurrence is correct
+                        item = master
+                        geid = item.get("id")
+                        icaluid = item.get("iCalUID")
+                        recurring_parent = item.get("recurringEventId")
+                        all_returned_ids.add(geid)
+                        if icaluid:
+                            all_returned_icaluids.add(icaluid)
+                    except HttpError as e:
+                        if getattr(e, "status_code", None) == 404:
+                            # genuine promoted instance (original master gone) — treat as standalone
+                            promoted_instance = True
+                        else:
+                            app.logger.warning("Error fetching master %s: %s", recurring_parent, e)
+                            # skip on unexpected errors to avoid partial corruption
+                            continue
+
                 status = item.get("status")
                 google_updated = parse_google_dt(item.get("updated"))
 
-                local = Appointment.query.filter_by(google_event_id=geid, user_id=user.id).first()
+                # local lookup by google_event_id -> fallback to iCalUID
+                local = None
+                if geid:
+                    local = Appointment.query.filter_by(google_event_id=geid, user_id=user.id).first()
 
-                # Handle cancelled events
+                if not local and icaluid:
+                    local = Appointment.query.filter_by(google_ical_uid=icaluid, user_id=user.id).first()
+                    if local:
+                        local.google_event_id = geid
+                        app.logger.warning(
+                            "Mapped local appointment id=%s by iCalUID -> set google_event_id=%s",
+                            local.id, geid
+                        )
+                        db.session.commit()
+
+                # Cancelled handling
                 if status == "cancelled":
                     if local and not local.deleted_at:
-                        local.deleted_at = datetime.now(timezone.utc)
-                        db.session.commit()
+                        local.deleted_at = datetime.now(UTC)
                     continue
 
+                # Parse start/end
                 s = item.get("start", {})
                 e = item.get("end", {})
 
@@ -8100,73 +8968,175 @@ def api_google_sync():
                     end_dt, _ = parse_google_event_datetime(e)
                     is_all_day = False
                 else:
-                    start_date_str = s.get("date")
-                    end_date_str = e.get("date") if e else None
-                    start_dt = dtparser.isoparse(start_date_str).replace(tzinfo=UTC)
-                    if end_date_str:
-                        end_dt = dtparser.isoparse(end_date_str).replace(tzinfo=UTC)
+                    # all-day: Google sends date as YYYY-MM-DD (date only)
+                    start_dt = dtparser.isoparse(s.get("date")).replace(tzinfo=UTC)
+                    # For all-day recurring events we always enforce end = start + 1 day
+                    if "date" in e and item.get("recurrence"):
+                        end_dt = (start_dt + timedelta(days=1))
                     else:
-                        end_dt = (start_dt + timedelta(days=1)).replace(tzinfo=UTC)
+                        end_dt = dtparser.isoparse(e.get("date")).replace(tzinfo=UTC)
                     is_all_day = True
 
+                start_dt = start_dt.astimezone(UTC)
+                end_dt = end_dt.astimezone(UTC)
+
+                # Recurrence handling: normalize the rule if present
                 rrule = None
-                if item.get("recurrence"):
-                    rrule = item["recurrence"][0] if len(item["recurrence"]) > 0 else None
+                recurrence_end_date = None
+                if not item.get("recurringEventId") and item.get("recurrence"):
+                    # Google sends recurrence as a list; take first
+                    raw_rrule = item["recurrence"][0]
+                    normalized, rec_end = normalize_rrule(raw_rrule, start_dt, is_all_day)
+                    rrule = normalized
+                    recurrence_end_date = rec_end
+
+                if promoted_instance:
+                    rrule = None
+                    recurrence_end_date = None
 
                 if not local:
-                    # Create new local appointment against the resolved local_calendar_id
-                    ap = Appointment(
-                        title=item.get("summary") or "",
-                        description=item.get("description"),
-                        start_datetime=start_dt.astimezone(UTC),
-                        end_datetime=end_dt.astimezone(UTC),
-                        user_id=user.id,
-                        calendar_id=local_calendar_id,  # <- resolved calendar
-                        recurrence_rule=rrule,
-                        is_all_day=is_all_day,
-                        google_event_id=geid,
-                        updated_at=google_updated
-                    )
-                    db.session.add(ap)
-                    db.session.commit()
-                    results["pulled"] += 1
-                else:
-                    # existing local update logic unchanged
-                    local_updated = local.updated_at or getattr(local, "created_at", None)
-                    lu = ensure_aware(local_updated)
-                    gu = ensure_aware(google_updated)
+                    # --- Deduplication attempt: try to find an existing local appointment that
+                    #     likely represents the same recurring series (title + equivalent RRULE).
+                    summary = item.get("summary") or ""
+                    candidate = None
 
-                    update_from_google = False
-                    if not lu:
-                        update_from_google = True
-                    elif gu and gu > lu:
-                        update_from_google = True
+                    # If we have iCalUID try exact mapping first (strongest signal)
+                    if icaluid:
+                        candidate = Appointment.query.filter_by(
+                            google_ical_uid=icaluid,
+                            user_id=user.id,
+                            calendar_id=local_calendar_id
+                        ).first()
 
-                    if update_from_google:
-                        local.title = item.get("summary") or local.title
-                        local.description = item.get("description")
-                        local.start_datetime = start_dt.astimezone(UTC)
-                        local.end_datetime = end_dt.astimezone(UTC)
-                        local.recurrence_rule = rrule
-                        local.is_all_day = is_all_day
-                        local.deleted_at = None
-                        local.updated_at = google_updated  # keep tz-aware
-                        db.session.commit()
+                    # If no iCalUID match, search by title + is_all_day + recurrence equivalence
+                    if not candidate and (rrule or (item.get("recurrence") and len(item.get("recurrence")))):
+                        # normalized incoming rrule (use normalize_rrule for canonical form)
+                        raw_rrule = item["recurrence"][0] if item.get("recurrence") else None
+                        normalized_incoming, incoming_rec_end = normalize_rrule(raw_rrule, start_dt, is_all_day) if raw_rrule else (None, None)
+
+                        # Query likely candidates by title & is_all_day
+                        possible = Appointment.query.filter_by(
+                            title=summary,
+                            is_all_day=is_all_day,
+                            user_id=user.id,
+                            calendar_id=local_calendar_id
+                        ).all()
+
+                        for p in possible:
+                            if not p.recurrence_rule and not normalized_incoming:
+                                # both non-recurring and same start — treat as same if times equal
+                                if p.start_datetime == start_dt and p.end_datetime == end_dt:
+                                    candidate = p
+                                    break
+                            elif p.recurrence_rule and normalized_incoming:
+                                if _rrules_equivalent(p.recurrence_rule, normalized_incoming):
+                                    candidate = p
+                                    break
+
+                    if candidate:
+                        # Merge incoming Google event into existing appointment (avoid duplicate)
+                        app.logger.warning("Merging incoming google event %s into existing local appointment id=%s title=%r", geid, candidate.id, candidate.title)
+
+                        # update google ids & timestamps
+                        candidate.google_event_id = geid or candidate.google_event_id
+                        if icaluid:
+                            candidate.google_ical_uid = icaluid
+
+                        # Merge start/end: pick earliest start and latest end to preserve span for recurring
+                        if start_dt and (not candidate.start_datetime or start_dt < candidate.start_datetime):
+                            candidate.start_datetime = start_dt
+                        if end_dt and (not candidate.end_datetime or end_dt > candidate.end_datetime):
+                            candidate.end_datetime = end_dt
+
+                        # Merge recurrence_rule + recurrence_end_date
+                        chosen_rrule, chosen_rec_end = _merge_recurrence(candidate.recurrence_rule, candidate.recurrence_end_date, rrule, recurrence_end_date)
+                        candidate.recurrence_rule = chosen_rrule
+                        candidate.recurrence_end_date = chosen_rec_end
+
+                        candidate.is_all_day = is_all_day
+                        candidate.deleted_at = None
+                        candidate.updated_at = google_updated
+
+                        db.session.add(candidate)
                         results["pulled"] += 1
 
-            # Save nextSyncToken for incremental sync
-            if events_resp.get("nextSyncToken"):
-                cs.sync_token = events_resp.get("nextSyncToken")
-                cs.last_synced = datetime.now(timezone.utc)
-                db.session.commit()
+                    else:
+                        # No candidate found — create fresh
+                        ap = Appointment(
+                            title=item.get("summary") or "",
+                            description=item.get("description"),
+                            start_datetime=start_dt,
+                            end_datetime=end_dt,
+                            user_id=user.id,
+                            calendar_id=local_calendar_id,
+                            recurrence_rule=rrule,
+                            recurrence_end_date=recurrence_end_date,
+                            is_all_day=is_all_day,
+                            google_event_id=geid,
+                            google_ical_uid=icaluid,
+                            updated_at=google_updated
+                        )
+                        db.session.add(ap)
+                        results["pulled"] += 1
+
+            # ---- STALE CLEANUP (ONLY ON FULL SYNC) ----
+            if full_sync:
+                app.logger.warning("Running stale Google cleanup (full sync)")
+                stale_query = Appointment.query.filter(
+                    Appointment.user_id == user.id,
+                    Appointment.calendar_id == local_calendar_id,
+                    Appointment.google_event_id.isnot(None),
+                    ~Appointment.google_event_id.in_(all_returned_ids)
+                )
+                stale = [s for s in stale_query.all() if not (s.google_ical_uid and s.google_ical_uid in all_returned_icaluids)]
+                for s in stale:
+                    app.logger.warning(
+                        "Soft-deleting stale Google event id=%s title=%r",
+                        s.google_event_id,
+                        s.title
+                    )
+                    s.deleted_at = datetime.now(UTC)
+
+            # Save sync token once
+            if next_sync_token:
+                cs.sync_token = next_sync_token
+                cs.last_synced = datetime.now(UTC)
+
+            # Final hard-check: verify remote existence for any remaining mapped events (clear true ghosts)
+            for appt in Appointment.query.filter_by(
+                user_id=user.id,
+                calendar_id=local_calendar_id
+            ).filter(
+                Appointment.google_event_id.isnot(None),
+                Appointment.deleted_at == None
+            ).all():
+
+                try:
+                    service.events().get(
+                        calendarId=google_calendar_id,
+                        eventId=appt.google_event_id
+                    ).execute()
+                except HttpError as e:
+                    if getattr(e, "status_code", None) == 404:
+                        app.logger.warning(
+                            "Hard-deleting ghost event google_event_id=%s title=%r",
+                            appt.google_event_id,
+                            appt.title
+                        )
+                        appt.deleted_at = datetime.now(UTC)
+
+            db.session.commit()
+
         except HttpError as e:
             results["errors"].append(str(e))
             return jsonify({"error": "google_pull_error", "details": str(e)}), 500
 
     # ---- PUSH phase (local -> remote) ----
+    # (houd je bestaande push-logic; als je wilt kan ik die ook normaliseren zodat
+    #  we push canonical RRULEs — voor nu laat ik push ongewijzigd behalve dat we
+    #  store iCalUID when creating)
     if direction in ("push", "both"):
         try:
-            # fetch all local events for the resolved calendar (excluding soft-deleted)
             local_events = Appointment.query.filter_by(user_id=user.id, calendar_id=local_calendar_id).filter(Appointment.deleted_at == None).all()
 
             for le in local_events:
@@ -8193,16 +9163,26 @@ def api_google_sync():
                         google_updated = parse_google_dt(ge.get("updated"))
                         local_updated = le.updated_at
 
-                        local_updated_aware = ensure_aware(local_updated)
-                        google_updated_aware = ensure_aware(google_updated)
+                        local_updated_aware = ensure_aware(local_updated) if local_updated else None
+                        google_updated_aware = ensure_aware(google_updated) if google_updated else None
 
-                        if local_updated_aware and (not google_updated_aware or local_updated_aware > google_updated_aware):
-                            service.events().update(calendarId=google_calendar_id, eventId=le.google_event_id, body=body).execute()
+                        if ge.get("recurringEventId") and not le.recurrence_rule:
+                            created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
+                            le.google_event_id = created.get("id")
+                            if created.get("iCalUID"):
+                                le.google_ical_uid = created.get("iCalUID")
+                            db.session.commit()
                             results["pushed"] += 1
+                        else:
+                            if local_updated_aware and (not google_updated_aware or local_updated_aware > google_updated_aware):
+                                service.events().update(calendarId=google_calendar_id, eventId=le.google_event_id, body=body).execute()
+                                results["pushed"] += 1
                     except HttpError as e:
                         if getattr(e, "status_code", None) in (404, 410):
                             created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
                             le.google_event_id = created.get("id")
+                            if created.get("iCalUID"):
+                                le.google_ical_uid = created.get("iCalUID")
                             db.session.commit()
                             results["pushed"] += 1
                         else:
@@ -8210,10 +9190,11 @@ def api_google_sync():
                 else:
                     created = service.events().insert(calendarId=google_calendar_id, body=body).execute()
                     le.google_event_id = created.get("id")
+                    if created.get("iCalUID"):
+                        le.google_ical_uid = created.get("iCalUID")
                     db.session.commit()
                     results["pushed"] += 1
 
-            # Handle local deletions: delete soft-deleted events from Google
             deleted_locals = Appointment.query.filter_by(user_id=user.id, calendar_id=local_calendar_id).filter(Appointment.deleted_at != None).all()
             for dl in deleted_locals:
                 if dl.google_event_id:

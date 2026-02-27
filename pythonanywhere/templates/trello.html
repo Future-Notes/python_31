@@ -3501,11 +3501,6 @@ async function cancelInvite(id) {
     }
 }
 
-// Board actions menu generator (replaces #actions-menu-board if present).
-// - Uses original buttons: #rename-board-btn and #delete-board-btn (class "menu-item").
-// - Removes duplicate/toggle/labels controls.
-// - Color swatch uses apiPATCH('/api/boards/color/<id>', { color }) similar to list menu sample.
-// - Rename/Delete logic moved inside the IIFE (uses existing inlineRenameBoard + apiDELETE + loaders).
 function initBoardActionsMenu() {
     let openMenu = null;
     let openMenuCleanup = null;
@@ -3518,7 +3513,7 @@ function initBoardActionsMenu() {
     #actions-menu-board.generated {
         position: absolute;
         min-width: 240px;
-        max-width: 360px;
+        max-width: 420px;
         background: var(--ctr-color, #1f1f1f);
         color: var(--text-color, #e8e8e8);
         border-radius: 8px;
@@ -3558,6 +3553,18 @@ function initBoardActionsMenu() {
     #actions-menu-board .swatch { width:34px; height:34px; border-radius:8px; cursor:pointer; border:2px solid transparent; box-sizing:border-box; }
     #actions-menu-board .swatch:focus, #actions-menu-board .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
     #actions-menu-board .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; }
+
+    /* Sharing specific */
+    #actions-menu-board .sharing-list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+    #actions-menu-board .sharing-row { display:flex; align-items:center; gap:8px; }
+    #actions-menu-board .sharing-identity { flex:1; font-size:13px; }
+    #actions-menu-board .sharing-perm { width:88px; }
+    #actions-menu-board .sharing-actions { display:flex; gap:6px; }
+    #actions-menu-board .invite-area { display:flex; gap:8px; margin-top:8px; }
+    #actions-menu-board .invite-input { flex:1; padding:8px; border-radius:6px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03); color:inherit; }
+    #actions-menu-board .invite-select { padding:8px; border-radius:6px; background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03); color:inherit; }
+    #actions-menu-board .invite-btn { padding:8px 10px; border-radius:6px; cursor:pointer; }
+    #actions-menu-board .small-muted { font-size:12px; opacity:0.75; }
     `;
     document.head.appendChild(style);
 
@@ -3593,7 +3600,7 @@ function initBoardActionsMenu() {
     // divider
     menu.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
 
-    // Color section (swatches) - will call apiPATCH('/api/boards/color/<id>', { color })
+    // Color section (swatches)
     const colorSection = document.createElement('div');
     colorSection.className = 'bm-section';
     const colorLabel = document.createElement('div');
@@ -3609,7 +3616,6 @@ function initBoardActionsMenu() {
         '#FF6B6B', '#FFAD69', '#FFD93D', '#6BCB77', '#4D96FF', '#845EC2', '#FF70A6', '#00C9A7', '#F9F871', null
     ];
 
-    // helper: resolve board id from anchor or UI
     function resolveBoardId() {
         try {
             if (typeof currentBoardId !== 'undefined' && currentBoardId) return currentBoardId;
@@ -3617,28 +3623,25 @@ function initBoardActionsMenu() {
         return null;
     }
 
-    // swatch click handler - uses apiPATCH exactly as you required
-    async function onSwatchClick(colorValue, anchor) {
+    async function onSwatchClick(colorValue) {
         const boardId = resolveBoardId();
         if (!boardId) {
             console.warn('No boardId found for color change');
             return;
         }
-        const payloadColor = colorValue === null ? null : colorValue;
+        const payloadColor = colorValue === null ? "none" : colorValue;
         try {
-            // apiPATCH must exist in your environment (same as your list menu example)
             const res = await apiPATCH(`/api/boards/color/${boardId}`, { color: payloadColor });
             if (!res.ok) {
                 const j = await res.json().catch(() => ({}));
                 alert(j.error || 'Failed to update board color');
                 return;
             }
-            // Apply instantly if possible (try a few common hooks)
             const boardEl = document.getElementById('lists-wrap');
-            if (payloadColor === null) {
-                await loadLists(boardId); // reload to reset
+            if (payloadColor === "none") {
+                await loadLists(boardId);
             } else {
-                boardEl.style.background = payloadColor;
+                if (boardEl) boardEl.style.background = payloadColor;
             }
             closeMenu();
         } catch (err) {
@@ -3647,7 +3650,6 @@ function initBoardActionsMenu() {
         }
     }
 
-    // create swatches
     colors.forEach(col => {
         const sw = document.createElement('button');
         sw.className = 'swatch';
@@ -3663,7 +3665,7 @@ function initBoardActionsMenu() {
         }
         sw.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            onSwatchClick(col, currentAnchor);
+            onSwatchClick(col);
         });
         sw.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -3685,7 +3687,6 @@ function initBoardActionsMenu() {
     uploadContainer.classList.add('bm-section');
     uploadContainer.style.marginTop = '12px';
 
-    // Visual label
     const uploadLabel = document.createElement('div');
     uploadLabel.className = 'options-menu-color-label';
     uploadLabel.textContent = 'Board background image';
@@ -3693,7 +3694,6 @@ function initBoardActionsMenu() {
     uploadLabel.style.opacity = '0.95';
     uploadContainer.appendChild(uploadLabel);
 
-    // file input (hidden) + visible button to trigger it
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/*';
@@ -3702,16 +3702,13 @@ function initBoardActionsMenu() {
     const uploadBtn = document.createElement('button');
     uploadBtn.type = 'button';
     uploadBtn.className = 'options-menu-item options-menu-more';
-    uploadBtn.textContent = (globalBoardBackgroundUrl ? 'Change background image' : 'Upload background image');
+    uploadBtn.textContent = (typeof globalBoardBackgroundUrl !== 'undefined' && globalBoardBackgroundUrl ? 'Change background image' : 'Upload background image');
     uploadBtn.addEventListener('click', () => fileInput.click());
 
-    boardId = resolveBoardId();
+    let boardId = resolveBoardId();
     if (!boardId) {
-        alert('Cannot determine board ID for upload');
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = (globalBoardBackgroundUrl ? 'Change background image' : 'Upload background image');
-        fileInput.value = '';
-        return;
+        // keep upload UI but don't break execution; actual upload will guard
+        console.warn('Cannot determine board ID for upload');
     }
 
     fileInput.addEventListener('change', async (ev) => {
@@ -3721,10 +3718,9 @@ function initBoardActionsMenu() {
         deleteBgBtn.disabled = true;
         uploadBtn.textContent = 'Uploading…';
 
-        boardArea = document.getElementById('lists-wrap');
+        const boardArea = document.getElementById('lists-wrap');
 
         try {
-            // Step 1: POST to generic /uploads (multipart)
             const form = new FormData();
             form.append('file', f);
             const res1 = await fetch('/uploads', {
@@ -3744,7 +3740,6 @@ function initBoardActionsMenu() {
                 return;
             }
 
-            // Step 2: attach that upload to the board
             const res2 = await fetch(`/api/boards/${boardId}/background_uploads`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3760,14 +3755,11 @@ function initBoardActionsMenu() {
             const attachBody = await res2.json();
             globalBoardBackgroundUrl = attachBody.url || null;
 
-            // apply image immediately (image overrides color)
             if (boardArea && globalBoardBackgroundUrl) {
                 boardArea.style.background = `url('${globalBoardBackgroundUrl}') center/cover no-repeat`;
             }
 
-            // update menu button label
             uploadBtn.textContent = 'Change background image';
-            // optionally show thumbnail / change delete button state below (we will create those next)
             renderBgControlsState();
 
         } catch (err) {
@@ -3780,7 +3772,6 @@ function initBoardActionsMenu() {
         }
     });
 
-    // create a small thumbnail + delete button area (will be populated if an image exists)
     const bgControls = document.createElement('div');
     bgControls.style.display = 'flex';
     bgControls.style.alignItems = 'center';
@@ -3792,7 +3783,7 @@ function initBoardActionsMenu() {
     thumb.style.height = '40px';
     thumb.style.objectFit = 'cover';
     thumb.style.borderRadius = '6px';
-    thumb.style.display = 'none'; // shown when image exists
+    thumb.style.display = 'none';
 
     const deleteBgBtn = document.createElement('button');
     deleteBgBtn.type = 'button';
@@ -3800,12 +3791,10 @@ function initBoardActionsMenu() {
     deleteBgBtn.textContent = 'Remove background';
     deleteBgBtn.style.display = 'none';
 
-    // handler for delete: two requests (unlink, then frontend deletes upload)
     deleteBgBtn.addEventListener('click', async () => {
         if (!confirm('Remove board background image?')) return;
         deleteBgBtn.disabled = true;
         try {
-            // Step 1: unlink in board table
             const res = await fetch(`/api/boards/${boardId}/background_uploads`, { method: 'DELETE' });
             if (!res.ok) {
                 const j = await res.json().catch(() => ({}));
@@ -3816,16 +3805,13 @@ function initBoardActionsMenu() {
             const j = await res.json();
             const uploadId = j.upload_id;
 
-            // Step 2: delete actual upload via generic endpoint (frontend performs second request)
             if (uploadId) {
                 const res2 = await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
                 if (!res2.ok) {
-                    // not fatal — log and continue, but notify
                     console.warn('Failed to delete upload at /uploads/:', res2.status);
                 }
             }
 
-            // remove image from UI; restore color if present
             globalBoardBackgroundUrl = null;
             await loadLists(boardId);
             renderBgControlsState();
@@ -3838,9 +3824,8 @@ function initBoardActionsMenu() {
         }
     });
 
-    // helper: update thumbnail + visibility based on current state
     function renderBgControlsState() {
-        if (globalBoardBackgroundUrl) {
+        if (typeof globalBoardBackgroundUrl !== 'undefined' && globalBoardBackgroundUrl) {
             thumb.src = globalBoardBackgroundUrl;
             thumb.style.display = 'block';
             deleteBgBtn.style.display = 'inline-block';
@@ -3857,13 +3842,386 @@ function initBoardActionsMenu() {
     uploadContainer.appendChild(bgControls);
     bgControls.appendChild(thumb);
     bgControls.appendChild(deleteBgBtn);
-
-    // initialize view
     renderBgControlsState();
-
-    // append uploadContainer to menu just after color container
     menu.appendChild(uploadContainer);
 
+    // divider
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
+
+    // -------------------------
+    // Sharing section (owner only)
+    // -------------------------
+    const sharingSection = document.createElement('div');
+    sharingSection.className = 'bm-section';
+    const sharingTitle = document.createElement('div');
+    sharingTitle.textContent = 'Sharing';
+    sharingTitle.style.fontSize = '13px';
+    sharingTitle.style.fontWeight = 600;
+    sharingSection.appendChild(sharingTitle);
+    const sharingSub = document.createElement('div');
+    sharingSub.className = 'small-muted';
+    sharingSub.textContent = 'Invite people and control permissions (owner only)';
+    sharingSub.style.marginTop = '4px';
+    sharingSection.appendChild(sharingSub);
+
+    // area where we will display shares
+    const sharingList = document.createElement('div');
+    sharingList.className = 'sharing-list';
+    sharingSection.appendChild(sharingList);
+
+    // invite form
+    const inviteArea = document.createElement('div');
+    inviteArea.className = 'invite-area';
+    const inviteInput = document.createElement('input');
+    inviteInput.className = 'invite-input';
+    inviteInput.placeholder = 'Email address (comma-separated) — leave empty to create a share link';
+    inviteInput.type = 'text';
+    inviteInput.setAttribute('aria-label', 'Invite by email or user id');
+
+    const inviteSelect = document.createElement('select');
+    inviteSelect.className = 'invite-select sharing-perm';
+    const optRead = document.createElement('option'); optRead.value = 'read'; optRead.textContent = 'Reader';
+    const optEdit = document.createElement('option'); optEdit.value = 'edit'; optEdit.textContent = 'Editor';
+    inviteSelect.appendChild(optRead); inviteSelect.appendChild(optEdit);
+
+    const inviteBtn = document.createElement('button');
+    inviteBtn.className = 'invite-btn';
+    inviteBtn.type = 'button';
+    inviteBtn.textContent = 'Invite';
+    inviteBtn.addEventListener('click', inviteHandler);
+
+    inviteArea.appendChild(inviteInput);
+    inviteArea.appendChild(inviteSelect);
+    inviteArea.appendChild(inviteBtn);
+    sharingSection.appendChild(inviteArea);
+
+    // small helper text
+    const inviteHint = document.createElement('div');
+    inviteHint.className = 'small-muted';
+    inviteHint.style.marginTop = '6px';
+    inviteHint.textContent = 'Enter one or more emails to send invites; leave empty to create a share link that you can copy.';
+    sharingSection.appendChild(inviteHint);
+
+    // By default hide sharingSection until we confirm owner status.
+    sharingSection.style.display = 'none';
+    menu.appendChild(sharingSection);
+
+    // ------------------ Replace fetchSharesAndRender & renderShares & renderLinks ------------------
+    async function fetchSharesAndRender() {
+        boardId = resolveBoardId();
+        if (!boardId) return;
+
+        sharingList.innerHTML = '';
+        inviteBtn.disabled = true;
+
+        try {
+            const res = await fetch(`/api/boards/${boardId}/shares`);
+            if (res.status === 403 || res.status === 404) {
+                // Not allowed or board not shared -> hide section entirely
+                sharingSection.style.display = 'none';
+                return;
+            }
+            if (!res.ok) {
+                sharingSection.style.display = 'none';
+                return;
+            }
+            const body = await res.json();
+            // body: { members: [...], links: [...] }
+            sharingSection.style.display = 'block';
+            inviteBtn.disabled = false;
+            renderMembers(body.members || []);
+            renderLinks(body.links || []);
+        } catch (err) {
+            console.error('Could not load shares', err);
+            sharingSection.style.display = 'none';
+        }
+    }
+
+    function renderMembers(members) {
+        // Ensure there's a container for members
+        let membersWrap = sharingList.querySelector('.members-wrap');
+        if (!membersWrap) {
+            membersWrap = document.createElement('div');
+            membersWrap.className = 'members-wrap';
+            sharingList.appendChild(membersWrap);
+        }
+        membersWrap.innerHTML = '';
+
+        if (!Array.isArray(members) || members.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'small-muted';
+            empty.textContent = 'No collaborators yet';
+            membersWrap.appendChild(empty);
+            return;
+        }
+
+        members.forEach(s => {
+            const row = document.createElement('div');
+            row.className = 'sharing-row';
+            const identity = document.createElement('div');
+            identity.className = 'sharing-identity';
+            identity.textContent = s.display_name || (`user:${s.user_id}`);
+            const perm = document.createElement('select');
+            perm.className = 'sharing-perm';
+            const r = document.createElement('option'); r.value = 'read'; r.textContent = 'Reader';
+            const e = document.createElement('option'); e.value = 'edit'; e.textContent = 'Editor';
+            perm.appendChild(r); perm.appendChild(e);
+            perm.value = s.permission || 'read';
+
+            // only allow changing permission if the owner UI returns it (server should enforce)
+            perm.addEventListener('change', async (ev) => {
+                perm.disabled = true;
+                try {
+                    const payload = { user_id: s.user_id, permission: perm.value };
+                    const res = await fetch(`/api/boards/${boardId}/shares`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) {
+                        const j = await res.json().catch(()=>({}));
+                        alert(j.error || 'Could not change permission');
+                        perm.value = s.permission || 'read';
+                    } else {
+                        // refresh to get canonical state
+                        const fresh = await fetch(`/api/boards/${boardId}/shares`);
+                        if (fresh.ok) {
+                            const newBody = await fresh.json();
+                            renderMembers(newBody.members || []);
+                            renderLinks(newBody.links || []);
+                        }
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while updating permission');
+                    perm.value = s.permission || 'read';
+                } finally {
+                    try { perm.disabled = false; } catch (e) {}
+                }
+            });
+
+            const actions = document.createElement('div');
+            actions.className = 'sharing-actions';
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.title = 'Remove access';
+            removeBtn.innerHTML = '&#x2716;';
+            removeBtn.addEventListener('click', async () => {
+                if (!confirm(`Remove access for ${identity.textContent}?`)) return;
+                removeBtn.disabled = true;
+                try {
+                    const res = await fetch(`/api/boards/${boardId}/shares/${s.id}`, { method: 'DELETE' });
+                    if (!res.ok) {
+                        const j = await res.json().catch(()=>({}));
+                        alert(j.error || 'Could not remove collaborator');
+                        removeBtn.disabled = false;
+                        return;
+                    }
+                    // optimistic: remove row node or refresh
+                    row.remove();
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while removing collaborator');
+                    removeBtn.disabled = false;
+                }
+            });
+
+            actions.appendChild(removeBtn);
+            row.appendChild(identity);
+            row.appendChild(perm);
+            row.appendChild(actions);
+            membersWrap.appendChild(row);
+        });
+    }
+
+    function renderLinks(links) {
+        // links is only non-empty for owners
+        // Ensure there's a container for links
+        let linksWrap = sharingList.querySelector('.links-wrap');
+        if (!linksWrap) {
+            linksWrap = document.createElement('div');
+            linksWrap.className = 'links-wrap';
+            // small header
+            const h = document.createElement('div');
+            h.style.fontSize = '13px';
+            h.style.fontWeight = '600';
+            h.style.marginTop = '8px';
+            h.textContent = 'Active share links';
+            linksWrap.appendChild(h);
+            sharingList.appendChild(linksWrap);
+        }
+        // remove previous link rows (keep the header at index 0)
+        linksWrap.querySelectorAll('.link-row').forEach(n=>n.remove());
+
+        if (!Array.isArray(links) || links.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'small-muted';
+            empty.textContent = 'No active links';
+            linksWrap.appendChild(empty);
+            return;
+        }
+
+        links.forEach(l => {
+            const row = document.createElement('div');
+            row.className = 'sharing-row link-row';
+            const identity = document.createElement('div');
+            identity.className = 'sharing-identity';
+            // show clickable short link and full url as title
+            const a = document.createElement('a');
+            a.href = l.url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = l.url.replace(/^https?:\/\//, '').replace(/\/.*/, '/…'); // short display
+            a.title = l.url;
+            identity.appendChild(a);
+
+            const perm = document.createElement('div');
+            perm.className = 'sharing-perm';
+            perm.style.display = 'flex';
+            perm.style.alignItems = 'center';
+            perm.textContent = (l.permission === 'edit') ? 'Editor' : 'Reader';
+
+            const actions = document.createElement('div');
+            actions.className = 'sharing-actions';
+
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.title = 'Copy link';
+            copyBtn.textContent = 'Copy';
+            copyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(l.url);
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(()=>copyBtn.textContent = 'Copy', 1200);
+                } catch (e) {
+                    prompt('Copy this link:', l.url);
+                }
+            });
+
+            const revokeBtn = document.createElement('button');
+            revokeBtn.type = 'button';
+            revokeBtn.title = 'Revoke link';
+            revokeBtn.innerHTML = '&#x2716;';
+            revokeBtn.addEventListener('click', async () => {
+                if (!confirm('Revoke and delete this share link?')) return;
+                revokeBtn.disabled = true;
+                try {
+                    const res = await fetch(`/api/boards/${boardId}/share_links/${l.id}`, { method: 'DELETE' });
+                    if (!res.ok) {
+                        const j = await res.json().catch(()=>({}));
+                        alert(j.error || 'Could not revoke link');
+                        revokeBtn.disabled = false;
+                        return;
+                    }
+                    row.remove();
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while revoking link');
+                    revokeBtn.disabled = false;
+                }
+            });
+
+            actions.appendChild(copyBtn);
+            actions.appendChild(revokeBtn);
+            row.appendChild(identity);
+            row.appendChild(perm);
+            row.appendChild(actions);
+            linksWrap.appendChild(row);
+        });
+    }
+
+    async function createShareLink(permission) {
+        // returns { token, url, permission }
+        const res = await fetch(`/api/boards/${boardId}/share_links`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ permission })
+        });
+        if (!res.ok) {
+            const j = await res.json().catch(()=>({}));
+            throw new Error(j.error || 'Could not create share link');
+        }
+        return await res.json();
+    }
+
+    async function sendShareLinkByEmail(emails, permission, subject, message) {
+        const payload = { emails, permission };
+        if (subject) payload.subject = subject;
+        if (message) payload.message = message;
+        const res = await fetch(`/api/boards/${boardId}/share_links/send_email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const j = await res.json().catch(()=>({}));
+            throw new Error(j.error || 'Failed to send email');
+        }
+        return await res.json();
+    }
+
+    async function inviteHandler() {
+        const raw = inviteInput.value && inviteInput.value.trim();
+        inviteBtn.disabled = true;
+        const permission = inviteSelect.value || 'read';
+
+        try {
+            if (raw) {
+                // Accept comma separated list
+                const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+                const emails = parts.filter(p => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p));
+                if (emails.length === 0) {
+                    alert('Please enter at least one valid email address (comma separated ok).');
+                    return;
+                }
+
+                inviteBtn.textContent = 'Sending…';
+                const resp = await sendShareLinkByEmail(emails, permission);
+                inviteBtn.textContent = 'Invite';
+                if (resp.failed && resp.failed.length) {
+                    alert('Some emails failed to send: ' + JSON.stringify(resp.failed));
+                } else {
+                    alert('Invitation sent.');
+                }
+                // refresh share list to show any created token rows
+                const fresh = await fetch(`/api/boards/${boardId}/shares`);
+                if (fresh.ok) {
+                    const body = await fresh.json();
+                    renderMembers(body.members || []);
+                    renderLinks(body.links || []);
+                }
+                inviteInput.value = '';
+                return;
+            }
+
+            // No input -> owner wants a share link to copy and display
+            inviteBtn.textContent = 'Creating…';
+            const created = await createShareLink(permission);
+            inviteBtn.textContent = 'Create link';
+
+            // Show link visually by refreshing link list (new link will be visible there)
+            const fresh = await fetch(`/api/boards/${boardId}/shares`);
+            if (fresh.ok) {
+                const body = await fresh.json();
+                renderMembers(body.members || []);
+                renderLinks(body.links || []);
+            }
+
+            // Also copy to clipboard to be helpful
+            const copied = await navigator.clipboard.writeText(created.url).then(()=>true, ()=>false);
+            if (copied) {
+                alert('Share link created and copied to clipboard:\n' + created.url);
+            } else {
+                prompt('Share link (copy manually):', created.url);
+            }
+        } catch (err) {
+            console.error(err);
+            alert(err.message || 'Network error while handling invite');
+        } finally {
+            inviteBtn.disabled = false;
+            inviteBtn.textContent = 'Invite';
+        }
+    }
 
     // divider
     menu.appendChild(Object.assign(document.createElement('div'), { className: 'bm-divider' }));
@@ -3878,17 +4236,14 @@ function initBoardActionsMenu() {
     renameBtn.type = 'button';
     renameBtn.textContent = 'Rename';
 
-    // Move original rename logic here: use boardsCache, currentBoardId, inlineRenameBoard
     renameBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        // original logic: find board in boardsCache and call inlineRenameBoard(b.id, b.title);
         try {
             const b = (typeof boardsCache !== 'undefined' && Array.isArray(boardsCache)) ? boardsCache.find(x => x.id === currentBoardId) : null;
             if (!b) return;
             if (typeof inlineRenameBoard === 'function') {
                 inlineRenameBoard(b.id, b.title);
             } else {
-                // fallback: dispatch event
                 document.dispatchEvent(new CustomEvent('board:rename', { detail: { boardId: b.id, title: b.title } }));
             }
         } catch (err) {
@@ -3904,7 +4259,6 @@ function initBoardActionsMenu() {
     deleteBtn.type = 'button';
     deleteBtn.textContent = 'Delete';
 
-    // Move original delete logic here (async)
     deleteBtn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         try {
@@ -3912,13 +4266,11 @@ function initBoardActionsMenu() {
             if (!confirm('Delete board and everything inside?')) return;
             const res = await apiDELETE(`/api/boards/${currentBoardId}`);
             if (res.ok) {
-                // follow original behavior
                 currentBoardId = null;
                 const bt = document.getElementById('board-title');
                 if (bt) bt.textContent = 'Select a board';
                 const listsWrap = document.getElementById('lists-wrap');
                 if (listsWrap) listsWrap.innerHTML = '';
-                // update URL and show start page
                 location.hash = '';
                 if (typeof loadStartPageBoards === 'function') await loadStartPageBoards();
                 if (typeof showStartPage === 'function') showStartPage();
@@ -3934,7 +4286,6 @@ function initBoardActionsMenu() {
         }
     });
 
-    // Close button (action) to match original menu behaviour
     const closeAction = document.createElement('button');
     closeAction.className = 'menu-item';
     closeAction.type = 'button';
@@ -3979,6 +4330,9 @@ function initBoardActionsMenu() {
         document.body.appendChild(menu);
         positionMenuNear(menu, anchorBtn);
         menu.focus();
+
+        // When opened, attempt to load shares (owner-only UI)
+        fetchSharesAndRender();
 
         function onDocClick(e) {
             if (!menu.contains(e.target) && e.target !== anchorBtn) closeMenu();
@@ -4048,7 +4402,7 @@ function initBoardActionsMenu() {
         openAt(el);
     };
     window.closeBoardActionsMenu = closeMenu;
-    window.updateBoardMenuUi = renderBgControlsState
+    window.updateBoardMenuUi = renderBgControlsState;
 }
 
 
