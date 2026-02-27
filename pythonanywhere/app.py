@@ -4962,11 +4962,16 @@ def serve_board_share_link(token):
 def api_get_board_shares(board_id):
     """
     Returns:
-      { members: [...], links: [...] }
+      { members: [...], links: [...], owner_id: <user id> }
     - members: all BoardShare rows that have user_id (joined with User to include username/email)
     - links: token-based shares (only visible to owner)
     """
     user_id = g.user_id
+
+    # Ensure board exists (also useful for owner checks below)
+    board = Board.query.get(board_id)
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
 
     # member-level permission required to view members
     perm = get_board_permission_for_user(board_id, user_id)
@@ -4986,6 +4991,7 @@ def api_get_board_shares(board_id):
                     uname = getattr(s.user, 'username', None) or getattr(s.user, 'name', None) or s.user.email
             except Exception:
                 uname = None
+
             members.append({
                 "id": s.id,
                 "user_id": s.user_id,
@@ -4994,12 +5000,13 @@ def api_get_board_shares(board_id):
                 "permission": s.permission.value if isinstance(s.permission, PermissionEnum) else s.permission,
                 "invited_by": s.invited_by,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
-                "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None
+                "accepted_at": s.accepted_at.isoformat() if s.accepted_at else None,
+                # mark owner explicitly
+                "is_owner": (s.user_id == board.user_id)
             })
 
     links = []
     # Only the owner can view/manage share links
-    board = Board.query.get(board_id)
     if board and board.user_id == user_id:
         for s in shares:
             # token shares: token not null and user_id is null (link rows)
@@ -5013,7 +5020,12 @@ def api_get_board_shares(board_id):
                     "created_at": s.created_at.isoformat() if s.created_at else None
                 })
 
-    return jsonify({"members": members, "links": links}), 200
+    # include owner_id in the response to let clients reliably detect owner
+    return jsonify({
+        "members": members,
+        "links": links,
+        "owner_id": board.user_id
+    }), 200
 
 def require_board_owner(board_id, user_id):
     board = Board.query.get(board_id)

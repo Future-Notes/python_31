@@ -3916,34 +3916,187 @@ function initBoardActionsMenu() {
 
         try {
             const res = await fetch(`/api/boards/${boardId}/shares`);
-            if (res.status === 403 || res.status === 404) {
-                // Not allowed or board not shared -> hide section entirely
-                sharingSection.style.display = 'none';
-                return;
-            }
             if (!res.ok) {
+                // not allowed / not found -> hide section
                 sharingSection.style.display = 'none';
                 return;
             }
+
+            let members = [];
+            let links = [];
             const body = await res.json();
-            // body: { members: [...], links: [...] }
+
+            try {
+
+                if (Array.isArray(body)) {
+                    members = body.filter(s => s.user_id);
+                    links = body.filter(s => s.token);
+                } else if (body && (body.members || body.links)) {
+                    members = Array.isArray(body.members) ? body.members : [];
+                    links   = Array.isArray(body.links) ? body.links : [];
+                } else {
+                    members = [];
+                    links = [];
+                }
+
+            } catch(e) {
+                members = [];
+                links = [];
+                console.error('Failed parsing shares:', e);
+            }
+
+            // Who am I?
+            const currentUserId = Number(sessionStorage.getItem('current_user_id'));
+            const meMember = members.find(x => Number(x.user_id) === currentUserId);
+            let isOwner = false;
+            let isMember = false;
+
+            if (meMember) {
+                isOwner = !!meMember.is_owner;
+                isMember = true;
+            } else {
+                // fallback 1: API supplied explicit owner id
+                if (typeof body.owner_id !== 'undefined' && Number(body.owner_id) === currentUserId) {
+                    isOwner = true;
+                    isMember = true; // owner is also a member for UI purposes
+                } else if (typeof currentBoardOwnerId !== 'undefined' && Number(currentBoardOwnerId) === currentUserId) {
+                    // fallback 2: existing global (if present)
+                    isOwner = true;
+                }
+            }
+
+            // If not owner nor a member -> hide section
+            if (!isOwner && !isMember) {
+                sharingSection.style.display = 'none';
+                return;
+            }
+
+            // Show the section for owner and members. Owner sees invite area + links; member sees member list only
             sharingSection.style.display = 'block';
+            inviteArea.style.display = isOwner ? 'flex' : 'none';
+            inviteHint.style.display = isOwner ? 'block' : 'none';
+
+            renderMembers(members, isOwner);
+            // only render links for owner to avoid confusing members
+            if (isOwner) {
+                renderLinks(links);
+            } else {
+                const linksWrap = sharingList.querySelector('.links-wrap');
+                if (linksWrap) linksWrap.remove();
+            }
+
             inviteBtn.disabled = false;
-            renderMembers(body.members || []);
-            renderLinks(body.links || []);
+
         } catch (err) {
+            // defensive: if anything goes wrong, hide sharing to avoid leaking info
             console.error('Could not load shares', err);
             sharingSection.style.display = 'none';
         }
     }
 
-    function renderMembers(members) {
-        // Ensure there's a container for members
+    function renderShares(list, isOwner) {
+        sharingList.innerHTML = '';
+
+        if (!Array.isArray(list) || list.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'small-muted';
+            empty.textContent = 'No collaborators yet';
+            sharingList.appendChild(empty);
+            return;
+        }
+
+        list.forEach(s => {
+            // Expected share object: { id, user_id, email, permission, invited_by, created_at, is_owner }
+
+            const row = document.createElement('div');
+            row.className = 'sharing-row';
+
+            // Display identity
+            const identity = document.createElement('div');
+            identity.className = 'sharing-identity';
+            if (s.user_id != null) {
+                identity.textContent = s.user_name || `user:${s.user_id}` + (s.invited_by ? ` • invited` : '');
+            } else if (s.token) {
+                identity.textContent = s.token_url || 'Share link';
+                identity.style.fontStyle = 'italic';
+            }
+            row.appendChild(identity);
+
+            // Permission selector
+            if (isOwner && s.user_id != null) {
+                const perm = document.createElement('select');
+                perm.className = 'sharing-perm';
+                const r = document.createElement('option'); r.value = 'read'; r.textContent = 'Reader';
+                const e = document.createElement('option'); e.value = 'edit'; e.textContent = 'Editor';
+                perm.appendChild(r); perm.appendChild(e);
+                perm.value = s.permission || 'read';
+
+                // Only owner can change permission
+                perm.addEventListener('change', async (ev) => {
+                    perm.disabled = true;
+                    try {
+                        const payload = s.user_id ? { user_id: s.user_id, permission: perm.value } : { email: s.email, permission: perm.value };
+                        const res = await fetch(`/api/boards/${boardId}/shares`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!res.ok) {
+                            const j = await res.json().catch(()=>({}));
+                            alert(j.error || 'Could not change permission');
+                            perm.value = s.permission || 'read';
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('Network error while updating permission');
+                        perm.value = s.permission || 'read';
+                    } finally { perm.disabled = false; }
+                });
+                row.appendChild(perm);
+            }
+
+            // Actions column (remove button)
+            if (isOwner && s.user_id != null && !s.is_owner) {
+                const actions = document.createElement('div');
+                actions.className = 'sharing-actions';
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.title = 'Remove access';
+                removeBtn.innerHTML = '&#x2716;';
+                removeBtn.addEventListener('click', async () => {
+                    if (!confirm(`Remove access for ${identity.textContent}?`)) return;
+                    removeBtn.disabled = true;
+                    try {
+                        const res = await fetch(`/api/boards/${boardId}/shares/${s.id}`, { method: 'DELETE' });
+                        if (!res.ok) {
+                            const j = await res.json().catch(()=>({}));
+                            alert(j.error || 'Could not remove collaborator');
+                            removeBtn.disabled = false;
+                            return;
+                        }
+                        row.remove();
+                    } catch (err) {
+                        console.error(err);
+                        alert('Network error while removing collaborator');
+                        removeBtn.disabled = false;
+                    }
+                });
+                actions.appendChild(removeBtn);
+                row.appendChild(actions);
+            }
+
+            sharingList.appendChild(row);
+        });
+    }
+
+    function renderMembers(members, isOwner) {
+        // remove any existing members-wrap so we re-create cleanly
         let membersWrap = sharingList.querySelector('.members-wrap');
         if (!membersWrap) {
             membersWrap = document.createElement('div');
             membersWrap.className = 'members-wrap';
-            sharingList.appendChild(membersWrap);
+            // put members at top of sharingList (links go below)
+            sharingList.insertBefore(membersWrap, sharingList.querySelector('.links-wrap') || null);
         }
         membersWrap.innerHTML = '';
 
@@ -3958,90 +4111,100 @@ function initBoardActionsMenu() {
         members.forEach(s => {
             const row = document.createElement('div');
             row.className = 'sharing-row';
+
             const identity = document.createElement('div');
             identity.className = 'sharing-identity';
-            identity.textContent = s.display_name || (`user:${s.user_id}`);
-            const perm = document.createElement('select');
-            perm.className = 'sharing-perm';
-            const r = document.createElement('option'); r.value = 'read'; r.textContent = 'Reader';
-            const e = document.createElement('option'); e.value = 'edit'; e.textContent = 'Editor';
-            perm.appendChild(r); perm.appendChild(e);
-            perm.value = s.permission || 'read';
-
-            // only allow changing permission if the owner UI returns it (server should enforce)
-            perm.addEventListener('change', async (ev) => {
-                perm.disabled = true;
-                try {
-                    const payload = { user_id: s.user_id, permission: perm.value };
-                    const res = await fetch(`/api/boards/${boardId}/shares`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!res.ok) {
-                        const j = await res.json().catch(()=>({}));
-                        alert(j.error || 'Could not change permission');
-                        perm.value = s.permission || 'read';
-                    } else {
-                        // refresh to get canonical state
-                        const fresh = await fetch(`/api/boards/${boardId}/shares`);
-                        if (fresh.ok) {
-                            const newBody = await fresh.json();
-                            renderMembers(newBody.members || []);
-                            renderLinks(newBody.links || []);
-                        }
-                    }
-                } catch (err) {
-                    console.error(err);
-                    alert('Network error while updating permission');
-                    perm.value = s.permission || 'read';
-                } finally {
-                    try { perm.disabled = false; } catch (e) {}
-                }
-            });
-
-            const actions = document.createElement('div');
-            actions.className = 'sharing-actions';
-            const removeBtn = document.createElement('button');
-            removeBtn.type = 'button';
-            removeBtn.title = 'Remove access';
-            removeBtn.innerHTML = '&#x2716;';
-            removeBtn.addEventListener('click', async () => {
-                if (!confirm(`Remove access for ${identity.textContent}?`)) return;
-                removeBtn.disabled = true;
-                try {
-                    const res = await fetch(`/api/boards/${boardId}/shares/${s.id}`, { method: 'DELETE' });
-                    if (!res.ok) {
-                        const j = await res.json().catch(()=>({}));
-                        alert(j.error || 'Could not remove collaborator');
-                        removeBtn.disabled = false;
-                        return;
-                    }
-                    // optimistic: remove row node or refresh
-                    row.remove();
-                } catch (err) {
-                    console.error(err);
-                    alert('Network error while removing collaborator');
-                    removeBtn.disabled = false;
-                }
-            });
-
-            actions.appendChild(removeBtn);
+            identity.textContent = s.display_name || `user:${s.user_id}`;
+            if (s.is_owner) {
+                identity.textContent += ' • owner';
+                identity.style.fontWeight = '600';
+            } else if (s.invited_by && !s.accepted_at) {
+                identity.textContent += ' • invited';
+                identity.style.opacity = '0.9';
+            }
             row.appendChild(identity);
-            row.appendChild(perm);
-            row.appendChild(actions);
+
+            // permission control only for owner
+            if (isOwner) {
+                const perm = document.createElement('select');
+                perm.className = 'sharing-perm';
+                const r = document.createElement('option'); r.value = 'read'; r.textContent = 'Reader';
+                const e = document.createElement('option'); e.value = 'edit'; e.textContent = 'Editor';
+                perm.appendChild(r); perm.appendChild(e);
+                perm.value = s.permission || 'read';
+                perm.addEventListener('change', async () => {
+                    perm.disabled = true;
+                    try {
+                        const payload = { user_id: s.user_id, permission: perm.value };
+                        const res = await fetch(`/api/boards/${boardId}/shares`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!res.ok) {
+                            const j = await res.json().catch(()=>({}));
+                            alert(j.error || 'Could not change permission');
+                            perm.value = s.permission || 'read';
+                        } else {
+                            // refresh to keep canonical state
+                            await fetchSharesAndRender();
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        alert('Network error while updating permission');
+                        perm.value = s.permission || 'read';
+                    } finally { perm.disabled = false; }
+                });
+                row.appendChild(perm);
+            } else {
+                // member — show permission label read-only
+                const permLabel = document.createElement('div');
+                permLabel.className = 'sharing-perm';
+                permLabel.textContent = (s.permission === 'edit') ? 'Editor' : 'Reader';
+                row.appendChild(permLabel);
+            }
+
+            // remove button only for owner and not for owner-row
+            if (isOwner && !s.is_owner) {
+                const actions = document.createElement('div');
+                actions.className = 'sharing-actions';
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.title = 'Remove access';
+                removeBtn.innerHTML = '&#x2716;';
+                removeBtn.addEventListener('click', async () => {
+                    if (!confirm(`Remove access for ${identity.textContent}?`)) return;
+                    removeBtn.disabled = true;
+                    try {
+                        const res = await fetch(`/api/boards/${boardId}/shares/${s.id}`, { method: 'DELETE' });
+                        if (!res.ok) {
+                            const j = await res.json().catch(()=>({}));
+                            alert(j.error || 'Could not remove collaborator');
+                            removeBtn.disabled = false;
+                            return;
+                        }
+                        // optimistic UI
+                        row.remove();
+                    } catch (err) {
+                        console.error(err);
+                        alert('Network error while removing collaborator');
+                        removeBtn.disabled = false;
+                    }
+                });
+                actions.appendChild(removeBtn);
+                row.appendChild(actions);
+            }
+
             membersWrap.appendChild(row);
         });
     }
 
     function renderLinks(links) {
-        // links is only non-empty for owners
-        // Ensure there's a container for links
+        // links only shown if owner (caller ensures that)
         let linksWrap = sharingList.querySelector('.links-wrap');
         if (!linksWrap) {
             linksWrap = document.createElement('div');
             linksWrap.className = 'links-wrap';
-            // small header
             const h = document.createElement('div');
             h.style.fontSize = '13px';
             h.style.fontWeight = '600';
@@ -4050,8 +4213,9 @@ function initBoardActionsMenu() {
             linksWrap.appendChild(h);
             sharingList.appendChild(linksWrap);
         }
-        // remove previous link rows (keep the header at index 0)
-        linksWrap.querySelectorAll('.link-row').forEach(n=>n.remove());
+
+        // remove old link rows
+        linksWrap.querySelectorAll('.link-row').forEach(n => n.remove());
 
         if (!Array.isArray(links) || links.length === 0) {
             const empty = document.createElement('div');
@@ -4064,26 +4228,27 @@ function initBoardActionsMenu() {
         links.forEach(l => {
             const row = document.createElement('div');
             row.className = 'sharing-row link-row';
+
             const identity = document.createElement('div');
             identity.className = 'sharing-identity';
-            // show clickable short link and full url as title
             const a = document.createElement('a');
             a.href = l.url;
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
-            a.textContent = l.url.replace(/^https?:\/\//, '').replace(/\/.*/, '/…'); // short display
+            a.textContent = l.url.replace(/^https?:\/\//, '').replace(/\/.*/, '/…');
             a.title = l.url;
             identity.appendChild(a);
+            row.appendChild(identity);
 
             const perm = document.createElement('div');
             perm.className = 'sharing-perm';
             perm.style.display = 'flex';
             perm.style.alignItems = 'center';
             perm.textContent = (l.permission === 'edit') ? 'Editor' : 'Reader';
+            row.appendChild(perm);
 
             const actions = document.createElement('div');
             actions.className = 'sharing-actions';
-
             const copyBtn = document.createElement('button');
             copyBtn.type = 'button';
             copyBtn.title = 'Copy link';
@@ -4097,7 +4262,6 @@ function initBoardActionsMenu() {
                     prompt('Copy this link:', l.url);
                 }
             });
-
             const revokeBtn = document.createElement('button');
             revokeBtn.type = 'button';
             revokeBtn.title = 'Revoke link';
@@ -4123,8 +4287,6 @@ function initBoardActionsMenu() {
 
             actions.appendChild(copyBtn);
             actions.appendChild(revokeBtn);
-            row.appendChild(identity);
-            row.appendChild(perm);
             row.appendChild(actions);
             linksWrap.appendChild(row);
         });
