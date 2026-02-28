@@ -659,6 +659,65 @@
             transform: scale(1.1);
         }
 
+        .permission-banner {
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .permission-banner.hidden {
+            display: none;
+        }
+
+        /* Read-only (strong warning) */
+        .permission-banner.readonly {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        /* Write access but not owner (informational) */
+        .permission-banner.member-write {
+            background-color: #e7f3ff;
+            color: #084298;
+        }
+
+        #board-permission-banner {
+            display: flex;
+            align-items: center;
+            gap: 6px; /* space between text and button */
+        }
+
+        .banner-info-btn {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid currentColor;
+            background: #000000;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            font-size: 12px;
+        }
+
+        .banner-tooltip {
+            position: absolute;
+            background: #333;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 100;
+        }
+
+        .banner-tooltip.hidden {
+            display: none;
+        }
+
     </style>
 
     <!-- SortableJS CDN (drag & drop) -->
@@ -764,6 +823,7 @@
     </aside>
 
     <main class="main">
+        <div id="board-permission-banner" class="permission-banner hidden"></div>
         <!-- Start page container (shows when no board is open) -->
         <div id="start-page" class="start-page" style="display:block;padding:24px;">
             <h2 style="margin-top:0">All boards</h2>
@@ -1509,6 +1569,7 @@ async function inlineRenameBoard(boardId, currentTitle) {
 
 /* Select board */
 async function selectBoard(boardId) {
+    console.log("Selecting board", boardId);
     currentBoardId = boardId;
     const board = boardsCache.find(b => b.id === boardId);
     document.getElementById('board-title').textContent = board ? board.title : 'Select a board';
@@ -1518,9 +1579,105 @@ async function selectBoard(boardId) {
     // show board area and hide start page
     hideStartPage();
     window._currentBoardId = boardId; // make globally accessible for inline new list
+    // fetch permission for that board
+    const permission = await fetchBoardPermission(boardId);
+    console.log("Board permission:", permission);
+    window.currentBoardPermission = permission.role;
+    renderPermissionBanner(permission.role);
     // load lists for that board
     initBoardActionsMenu();
     await loadLists(boardId);
+}
+
+async function fetchBoardPermission(boardId) {
+    try {
+        const res = await fetch(`/api/boards/${boardId}/shares`);
+        if (!res.ok) {
+            console.error("Failed to fetch shares");
+            return { role: 'unknown' };
+        }
+
+        const data = await res.json();
+        const currentUserId = Number(sessionStorage.getItem('current_user_id'));
+
+        // 1️⃣ Check if current user is the owner
+        if (data.owner_id && Number(data.owner_id) === currentUserId) {
+            return { role: 'owner' };
+        }
+
+        // 2️⃣ Check if current user is a member
+        const member = (data.members || []).find(m => Number(m.user_id) === currentUserId);
+        if (member) {
+            if (member.permission === 'edit') return { role: 'member-write' };
+            return { role: 'readonly' };
+        }
+
+        // 3️⃣ Not a member
+        return { role: 'none' };
+
+    } catch (err) {
+        console.error("Error fetching board permissions:", err);
+        return { role: 'unknown' };
+    }
+}
+
+function renderPermissionBanner(role) {
+    const banner = document.getElementById('board-permission-banner');
+
+    // reset banner
+    banner.classList.remove('hidden', 'readonly', 'member-write');
+    banner.textContent = '';
+
+    if (role === 'owner') {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    let bannerText = '';
+    switch (role) {
+        case 'member-write':
+            bannerText = "You are a collaborator on this board.";
+            banner.classList.add('member-write');
+            break;
+        case 'readonly':
+            bannerText = "You are viewing this board in read-only mode.";
+            banner.classList.add('readonly');
+            break;
+    }
+
+    // Add banner text
+    const textNode = document.createElement('span');
+    textNode.textContent = bannerText;
+    banner.appendChild(textNode);
+
+    console.log(role);
+
+    // Only add info button for non-owners
+    if (role !== 'owner') {
+        const infoBtn = document.createElement('button');
+        infoBtn.textContent = '?';
+        infoBtn.className = 'banner-info-btn'; // style in CSS
+        infoBtn.type = 'button';
+
+        // Tooltip
+        const tooltip = document.createElement('div');
+        tooltip.className = 'banner-tooltip hidden'; // hidden by default
+        tooltip.textContent = role === 'readonly'
+            ? 'You can view the board but cannot make changes.'
+            : 'You can edit the board, but some settings may still be restricted.';
+
+        // toggle tooltip on click
+        infoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tooltip.classList.toggle('hidden');
+        });
+
+        // hide tooltip if clicking outside
+        document.addEventListener('click', () => tooltip.classList.add('hidden'));
+
+        banner.appendChild(infoBtn);
+        banner.appendChild(tooltip);
+    }
 }
 
 function renderAddListButton() {
@@ -4468,22 +4625,43 @@ function initBoardActionsMenu() {
         const rect = anchorBtn.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
+
         if (!document.body.contains(menuEl)) document.body.appendChild(menuEl);
+
         const menuRect = menuEl.getBoundingClientRect();
-        const menuWidth = Math.max(menuRect.width || 260, 240);
-        const menuHeight = menuRect.height || 220;
+        const menuWidth = Math.min(Math.max(menuRect.width || 260, 240), viewportWidth - 16); // cap to viewport
+        const menuHeight = Math.min(menuRect.height || 220, viewportHeight - 16); // cap to viewport
 
-        let left = rect.right - menuWidth + window.scrollX;
-        let top = rect.bottom + 8 + window.scrollY;
-
-        if (left < 8 + window.scrollX) left = Math.max(8 + window.scrollX, rect.left + window.scrollX);
-        if (top + menuHeight > window.scrollY + viewportHeight - 8) {
-            top = rect.top + window.scrollY - menuHeight - 8;
+        // horizontal placement
+        let left;
+        if (rect.left + menuWidth <= viewportWidth - 8) {
+            // fits to the right
+            left = rect.left + window.scrollX;
+        } else if (rect.right - menuWidth >= 8) {
+            // fits to the left
+            left = rect.right - menuWidth + window.scrollX;
+        } else {
+            // fallback: center horizontally
+            left = (viewportWidth - menuWidth) / 2 + window.scrollX;
         }
-        if (top < 8 + window.scrollY) top = 8 + window.scrollY;
+
+        // vertical placement
+        let top;
+        if (rect.bottom + menuHeight <= viewportHeight - 8) {
+            // fits below
+            top = rect.bottom + window.scrollY;
+        } else if (rect.top - menuHeight >= 8) {
+            // fits above
+            top = rect.top - menuHeight + window.scrollY;
+        } else {
+            // fallback: center vertically
+            top = (viewportHeight - menuHeight) / 2 + window.scrollY;
+        }
 
         menuEl.style.left = Math.round(left) + 'px';
         menuEl.style.top = Math.round(top) + 'px';
+        menuEl.style.maxWidth = (viewportWidth - 16) + 'px'; // ensure menu never overflows
+        menuEl.style.maxHeight = (viewportHeight - 16) + 'px';
     }
 
     function openAt(anchorBtn) {

@@ -4038,60 +4038,68 @@ def _note_attachment_ids(note_id):
     return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
 
 
-def delete_upload(upload_id, user):
+def delete_upload(upload, user):
     """
-    Centralized delete handler.
-    Marks upload deleted, removes file from storage (local, Dropbox, or MEGA),
-    and subtracts bytes from user's storage_used_bytes.
-    Only owner or admins should call this function.
+    Assumes permission has already been validated.
+    Marks upload deleted, removes file from storage,
+    updates storage usage.
     """
-    upload = Upload.query.get(upload_id)
-    if not upload:
-        return False, "Upload not found."
-    if upload.user_id != user.id:
-        return False, "Permission denied."
+
     if upload.deleted:
         return False, "Already deleted."
 
     try:
+        # --- Dropbox ---
         if upload.storage_backend == "dropbox":
             try:
                 dbx.files_delete_v2(upload.stored_filename)
             except Exception:
-                pass
-        # inside your delete_upload function, in the Mega block:
+                app.logger.warning("Dropbox delete failed for %s", upload.stored_filename)
+
+        # --- MEGA ---
         elif upload.storage_backend == "mega" and getattr(upload, "mega_file_obj", None):
             try:
-                # Convert string to dict if necessary
-                if isinstance(upload.mega_file_obj, str):
-                    mega_file_obj = ast.literal_eval(upload.mega_file_obj)
-                else:
-                    mega_file_obj = upload.mega_file_obj
+                mega_file_obj = (
+                    ast.literal_eval(upload.mega_file_obj)
+                    if isinstance(upload.mega_file_obj, str)
+                    else upload.mega_file_obj
+                )
 
-                # get public handle of first file
                 handle = mega_file_obj['f'][0]['h']
-                # request deletion directly
                 mega_account._api_request({'a': 'd', 'n': handle})
             except Exception:
-                app.logger.exception("Failed to delete MEGA file %s", upload.stored_filename)
+                app.logger.exception("Failed to delete MEGA file %s", upload.id)
+
+        # --- Local ---
         else:
-            # Delete from local disk
-            stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, upload.stored_filename)
+            stored_path = os.path.join(
+                app.config['UPLOAD_FOLDER_LOCAL_FILES'],
+                upload.stored_filename
+            )
             if os.path.exists(stored_path):
                 try:
                     os.remove(stored_path)
-                except Exception as e:
-                    app.logger.exception("Error removing upload file %s: %s", stored_path, e)
+                except Exception:
+                    app.logger.exception("Failed to delete local file %s", stored_path)
 
-        # Update DB
+        # --- Database update ---
         upload.deleted = True
         upload.deleted_at = datetime.utcnow()
-        user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - (upload.size_bytes or 0))
+
+        # Subtract from uploader storage (not deleter)
+        owner = User.query.get(upload.user_id)
+        if owner:
+            owner.storage_used_bytes = max(
+                0,
+                (owner.storage_used_bytes or 0) - (upload.size_bytes or 0)
+            )
+
         db.session.commit()
         return True, "Deleted."
+
     except Exception as e:
         db.session.rollback()
-        app.logger.exception("Database error on delete_upload %s: %s", upload_id, e)
+        app.logger.exception("Delete failed for upload %s: %s", upload.id, e)
         return False, "Database error on delete."
 
 def initialize_user_storage(user_id):
@@ -5955,7 +5963,7 @@ def api_move_card():
 
     dest_list = List.query.get(to_list_id)
     if not dest_list:
-        return jsonify({"error": "Destination list not found"}), 404
+        return jsonify({"error": "Destination list not found or permission denied"}), 404
 
     # require edit on both source and destination board (they should usually be same board)
     allowed_src, _ = require_board_permission(src_list.board_id, user_id, need_edit=True)
@@ -10399,6 +10407,9 @@ from io import BytesIO
 from flask import send_file, send_from_directory, redirect, request, jsonify, g
 import tempfile
 
+# -------------------------
+# Updated route (uses controller)
+# -------------------------
 @app.route('/uploads/<int:upload_id>/download', methods=['GET'])
 @require_session_key
 def download_upload_hybrid(upload_id):
@@ -10410,16 +10421,15 @@ def download_upload_hybrid(upload_id):
     if not upload or upload.deleted:
         return jsonify({"error": "Not found"}), 404
 
-    if upload.user_id != user.id:
+    # Use the universal access controller
+    if not has_access_to_upload(user, upload, permission_required='read'):
         return jsonify({"error": "Forbidden"}), 403
 
-    # Decide inline vs download
     inline = request.args.get('inline', '0') in ['1', 'true', 'yes']
 
     # --- Dropbox files ---
     if upload.storage_backend == "dropbox":
         if inline:
-            # Proxy through Flask for inline display
             try:
                 metadata, res = dbx.files_download(upload.stored_filename)
                 return send_file(
@@ -10432,7 +10442,6 @@ def download_upload_hybrid(upload_id):
                 app.logger.exception("Failed to proxy Dropbox file %s", upload.stored_filename)
                 return jsonify({"error": "Failed to proxy Dropbox file"}), 500
         else:
-            # Direct download link for non-inline
             try:
                 temp_link = dbx.files_get_temporary_link(upload.stored_filename).link
                 return redirect(temp_link)
@@ -10443,30 +10452,25 @@ def download_upload_hybrid(upload_id):
     # --- MEGA files ---
     if upload.storage_backend == "mega":
         mega_obj = getattr(upload, "mega_file_obj", None)
-        # Try to use any stored public link first for direct redirects
         stored_link = upload.stored_filename if upload.stored_filename and str(upload.stored_filename).startswith("http") else None
 
         if not mega_obj and not stored_link:
             app.logger.error("MEGA file has no file object or stored link: upload_id=%s", upload_id)
             return jsonify({"error": "MEGA file metadata missing"}), 500
 
-        # Non-inline: prefer redirect to public link to avoid proxying large files
         if not inline:
-            # If we already stored a link, redirect to it
             if stored_link:
                 return redirect(stored_link)
-            # Otherwise try to generate a link and redirect
             try:
                 link = mega_account.get_upload_link(mega_obj)
                 return redirect(link)
             except Exception:
                 app.logger.exception("Failed to generate MEGA public link for upload %s", upload_id)
-                # Fall through to proxying below
+                # fall through to proxy
 
         if inline:
             try:
                 mega_obj_full = json.loads(upload.mega_file_obj)
-
                 if 'f' not in mega_obj_full or not mega_obj_full['f']:
                     return jsonify({"error": "Invalid MEGA file object"}), 500
 
@@ -10474,55 +10478,36 @@ def download_upload_hybrid(upload_id):
                 if not mega_handle:
                     return jsonify({"error": "MEGA handle missing"}), 500
 
-                # Get all resolved files
                 all_files = mega_account.get_files()
                 resolved_file = all_files.get(mega_handle)
                 if not resolved_file:
-                    app.logger.error(
-                        "Resolved MEGA file not found for handle %s (upload_id=%s)",
-                        mega_handle,
-                        upload_id,
-                    )
+                    app.logger.error("Resolved MEGA file not found for handle %s (upload_id=%s)", mega_handle, upload_id)
                     return jsonify({"error": "MEGA file not accessible"}), 404
 
-                # Let Mega write to its own temp file
-                downloaded_path = mega_account._download_file(
-                    None,  # file_handle
-                    None,  # file_key
-                    file=resolved_file,
-                    is_public=False
-                )
+                downloaded_path = mega_account._download_file(None, None, file=resolved_file, is_public=False)
 
-                # Serve the downloaded file via Flask
                 return send_file(
                     downloaded_path,
                     mimetype=upload.mimetype,
                     as_attachment=False,
                     download_name=upload.original_filename
                 )
-
             except Exception as e:
                 app.logger.exception("Failed to proxy MEGA file %s: %s", upload_id, e)
                 return jsonify({"error": "Failed to proxy MEGA file"}), 500
-
             finally:
-                # safe deletion
                 try:
                     if 'downloaded_path' in locals() and os.path.exists(downloaded_path):
                         os.remove(downloaded_path)
                 except Exception:
                     pass
 
-
     # --- Local files ---
-    # For local storage fallback and general local handling
     filename = upload.stored_filename
     if not filename:
         return jsonify({"error": "File not found"}), 404
 
-    # Build full path based on new folder structure
     file_path = os.path.join(app.config['UPLOAD_FOLDER_LOCAL_FILES'], os.path.basename(filename))
-
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
@@ -10534,13 +10519,125 @@ def download_upload_hybrid(upload_id):
             download_name=upload.original_filename
         )
     except TypeError:
-        # fallback for older Flask versions
         return send_from_directory(
             UPLOAD_FOLDER_LOCAL_FILES,
             os.path.basename(file_path),
             as_attachment=not inline,
             attachment_filename=upload.original_filename
         )
+
+# -------------------------
+# Universal access controller
+# -------------------------
+def has_access_to_upload(user, upload_or_id, permission_required='read'):
+    """
+    Determine whether `user` has the given permission for the upload.
+    - upload_or_id: either Upload instance or integer upload_id
+    - permission_required: 'read' or 'write' (write == edit)
+    Returns: True if allowed, False otherwise.
+    """
+    try:
+        # accept either object or id
+        if isinstance(upload_or_id, int):
+            upload = Upload.query.get(upload_or_id)
+        else:
+            upload = upload_or_id
+
+        if not upload or upload.deleted:
+            return False
+
+        # 1) uploader always allowed
+        if upload.user_id == user.id:
+            return True
+
+        # helper to check board-level access by board_id
+        def _board_allows(board_id):
+            if not board_id:
+                return False
+
+            board = Board.query.get(board_id)
+            if not board:
+                return False
+
+            # 1. Board owner (board.user_id)
+            if board.user_id == user.id:
+                return True
+
+            # 2. Shared access
+            share = BoardShare.query.filter_by(
+                board_id=board_id,
+                user_id=user.id
+            ).first()
+
+            if not share:
+                return False
+
+            if permission_required == 'read':
+                return True
+
+            if permission_required == 'write' and share.permission == PermissionEnum.edit:
+                return True
+
+            return False
+
+        # 2) Board background link?
+        bbu = BoardBackgroundUpload.query.filter_by(upload_id=upload.id).first()
+        if bbu:
+            if _board_allows(bbu.board_id):
+                return True
+            # explicit deny for this link if not allowed
+            return False
+
+        # 3) Card background link?
+        cbu = CardBackgroundUpload.query.filter_by(upload_id=upload.id).first()
+        if cbu:
+            card = Card.query.get(cbu.card_id)
+            if not card:
+                return False
+
+            # card owner (uploader of the card) should be allowed
+            if getattr(card, 'user_id', None) == user.id:
+                return True
+
+            # attempt to find board id from the card: card.list.board_id OR card.list.board.id
+            board_id = None
+            try:
+                if getattr(card, 'list_id', None):
+                    # if relationships exist, card.list may be populated
+                    if getattr(card, 'list', None):
+                        board_id = getattr(card.list, 'board_id', None) or (getattr(card.list, 'board', None) and card.list.board.id)
+                    else:
+                        # if no relationship, try to query List model (if declared)
+                        # Adjust 'List' name if your model uses a different class name
+                        try:
+                            List = db.Model._decl_class_registry.get('List')
+                        except Exception:
+                            List = None
+                        if List:
+                            list_obj = List.query.get(card.list_id)
+                            if list_obj:
+                                board_id = getattr(list_obj, 'board_id', None) or (getattr(list_obj, 'board', None) and list_obj.board.id)
+                else:
+                    # no list_id present — nothing more to check
+                    board_id = None
+            except Exception as ex:
+                app.logger.debug("Error resolving board_id from card: %s", ex)
+                board_id = None
+
+            if board_id and _board_allows(board_id):
+                return True
+
+            # card is linked but user not permitted
+            return False
+
+        # 4) Future: other association tables can be checked here (project files, attachments, etc.)
+
+        # If upload is not linked to a known entity, deny (uploader was already allowed above)
+        return False
+
+    except Exception as e:
+        app.logger.exception("has_access_to_upload failed: %s", e)
+        return False
 
 # Sharing notes
 
@@ -13968,10 +14065,22 @@ def uploads_post():
 @app.route('/uploads/<int:upload_id>', methods=['DELETE'])
 @require_session_key
 def uploads_delete(upload_id):
-    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
-    ok, msg = delete_upload(upload_id, user)
+    user = getattr(g, 'user', None) or User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    upload = Upload.query.get(upload_id)
+    if not upload or upload.deleted:
+        return jsonify({"error": "Upload not found."}), 404
+
+    # Use universal access controller (WRITE required)
+    if not has_access_to_upload(user, upload, permission_required='write'):
+        return jsonify({"error": "Permission denied."}), 403
+
+    ok, msg = delete_upload(upload, user)
     if not ok:
         return jsonify({"error": msg}), 400
+
     return jsonify({"message": msg}), 200
 
 @app.route('/user/storage', methods=['GET'])
