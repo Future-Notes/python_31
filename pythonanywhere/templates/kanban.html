@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2c2c2c">
-    <title>Future Notes - Trello</title>
+    <title>Future Notes - Kanban</title>
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
@@ -659,6 +659,96 @@
             transform: scale(1.1);
         }
 
+        .permission-banner {
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .permission-banner.hidden {
+            display: none;
+        }
+
+        /* Read-only (strong warning) */
+        .permission-banner.readonly {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        /* Write access but not owner (informational) */
+        .permission-banner.member-write {
+            background-color: #e7f3ff;
+            color: #084298;
+        }
+
+        #board-permission-banner {
+            display: flex;
+            align-items: center;
+            gap: 6px; /* space between text and button */
+        }
+
+        .banner-info-btn {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1px solid currentColor;
+            background: #000000;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            font-size: 12px;
+        }
+
+        .banner-tooltip {
+            position: absolute;
+            background: #333;
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 100;
+        }
+
+        .banner-tooltip.hidden {
+            display: none;
+        }
+
+        /* bottom-left due badge for cards (prevents overlap) */
+        .card { position: relative; }
+        .card .card-due-badge {
+        position: absolute;
+        left: 2px;
+        bottom: 0px;
+        display: inline-block;
+        padding: 6px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: calc(100% - 24px); /* keep inside card */
+        box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+        border: 1px solid rgba(255,255,255,0.04);
+        cursor: default;
+        z-index: 2;
+        pointer-events: auto;
+        margin: 6px;
+        }
+        .card .card-due-badge.overdue { background:#e74c3c; color:#fff; }
+        .card .card-due-badge.due-soon { background:#ff9f43; color:#111; }
+        .card .card-due-badge.upcoming { background: rgba(0,0,0,0.35); color:#fff; opacity:0.45; }
+
+        /* ensure the inline date input doesn't overflow the date menu */
+        #card-modal-datetime-input {
+        width: 93% !important;
+        box-sizing: border-box;
+        }
     </style>
 
     <!-- SortableJS CDN (drag & drop) -->
@@ -676,7 +766,7 @@
         <a href="/index" class="nav-link">Notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
-        <a href="/trello_page" class="nav-link active">Trello</a>
+        <a href="/kanban_page" class="nav-link active">Kanban</a>
     </nav>
     <div id="storage-container" style="margin: 0px 100px;">
         <span id="storage-counter">0 / 0 MB</span>
@@ -691,7 +781,7 @@
     <a href="/index" class="nav-link">Notes</a>
     <a href="/scheduler-page" class="nav-link">Calendar</a>
     <a href="/todo_page" class="nav-link">Todo</a>
-    <a href="/trello_page" class="nav-link active">Trello</a>
+    <a href="/kanban_page" class="nav-link active">Kanban</a>
 </nav>
 
 <div id="storage-modal" role="dialog" aria-hidden="true" class="modal-overlay">
@@ -764,6 +854,7 @@
     </aside>
 
     <main class="main">
+        <div id="board-permission-banner" class="permission-banner hidden"></div>
         <!-- Start page container (shows when no board is open) -->
         <div id="start-page" class="start-page" style="display:block;padding:24px;">
             <h2 style="margin-top:0">All boards</h2>
@@ -1171,6 +1262,99 @@ async function apiDELETE(path) {
     return res;
 }
 
+// Parse server ISO -> JS Date (treat naive ISO as UTC by appending "Z")
+function parseServerIsoToDate(s) {
+    if (!s) return null;
+    if (s instanceof Date) return s;
+    const str = String(s);
+    // If the string already contains timezone info (Z or +hh:mm or -hh:mm) parse directly
+    if (/[zZ]$/.test(str) || /[+\-]\d{2}:\d{2}$/.test(str)) {
+        const d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    // Otherwise treat as UTC: append 'Z'
+    const d = new Date(str + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+}
+
+// Returns formatted short label (local time) and status class
+function dueDateLabelForDisplay(dateObj) {
+    if (!dateObj) return { label: null, cls: 'upcoming' };
+    const now = Date.now();
+    const t = dateObj.getTime();
+    const msInHour = 3600 * 1000;
+    const msInDay = 24 * msInHour;
+    const diff = t - now;
+
+    // overdue
+    if (diff < 0) {
+        // show "Overdue · 1 Mar 19:00" style
+        return {
+            label: 'Overdue • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+            cls: 'overdue'
+        };
+    }
+
+    // due soon: within 48 hours
+    if (diff <= (2 * msInDay)) {
+        return {
+            label: 'Due • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+            cls: 'due-soon'
+        };
+    }
+
+    // upcoming / normal
+    return {
+        label: dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+        cls: 'upcoming'
+    };
+}
+
+// Update or create the small due-date badge inside a board card DOM element.
+// cardEl: DOM element (.card); dueIso: timezone-aware ISO string (e.g. "2026-03-01T11:00:00.000Z") OR null/empty to remove.
+function updateCardDueBadge(cardEl, dueIso) {
+    if (!cardEl) return;
+    // remove or update
+    const existing = cardEl.querySelector('.card-due-badge');
+
+    if (!dueIso) {
+        if (existing) existing.remove();
+        delete cardEl.dataset.dueIso;
+        return;
+    }
+
+    const parsed = parseServerIsoToDate(dueIso);
+    if (!parsed) {
+        if (existing) existing.remove();
+        delete cardEl.dataset.dueIso;
+        return;
+    }
+
+    const { label, cls } = dueDateLabelForDisplay(parsed);
+    if (existing) {
+        existing.textContent = label;
+        existing.className = 'card-due-badge ' + cls;
+        existing.title = parsed.toLocaleString();
+    } else {
+        const badge = document.createElement('div');
+        badge.className = 'card-due-badge ' + cls;
+        badge.textContent = label;
+        badge.title = parsed.toLocaleString();
+        // clicking the badge could open modal to edit — keep behavior similar to your modal label:
+        badge.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            // open modal to edit this card's due date
+            if (typeof openCardModal === 'function') {
+                openCardModal(parseInt(cardEl.dataset.cardId, 10));
+            }
+        });
+        cardEl.appendChild(badge);
+    }
+
+    // store canonical ISO on element for sorting/inspection
+    cardEl.dataset.dueIso = parsed.toISOString();
+}
+
 /* START PAGE: fetch boards and render as cards */
 async function loadStartPageBoards() {
     try {
@@ -1509,6 +1693,7 @@ async function inlineRenameBoard(boardId, currentTitle) {
 
 /* Select board */
 async function selectBoard(boardId) {
+    console.log("Selecting board", boardId);
     currentBoardId = boardId;
     const board = boardsCache.find(b => b.id === boardId);
     document.getElementById('board-title').textContent = board ? board.title : 'Select a board';
@@ -1518,9 +1703,105 @@ async function selectBoard(boardId) {
     // show board area and hide start page
     hideStartPage();
     window._currentBoardId = boardId; // make globally accessible for inline new list
+    // fetch permission for that board
+    const permission = await fetchBoardPermission(boardId);
+    console.log("Board permission:", permission);
+    window.currentBoardPermission = permission.role;
+    renderPermissionBanner(permission.role);
     // load lists for that board
     initBoardActionsMenu();
     await loadLists(boardId);
+}
+
+async function fetchBoardPermission(boardId) {
+    try {
+        const res = await fetch(`/api/boards/${boardId}/shares`);
+        if (!res.ok) {
+            console.error("Failed to fetch shares");
+            return { role: 'unknown' };
+        }
+
+        const data = await res.json();
+        const currentUserId = Number(sessionStorage.getItem('current_user_id'));
+
+        // 1️⃣ Check if current user is the owner
+        if (data.owner_id && Number(data.owner_id) === currentUserId) {
+            return { role: 'owner' };
+        }
+
+        // 2️⃣ Check if current user is a member
+        const member = (data.members || []).find(m => Number(m.user_id) === currentUserId);
+        if (member) {
+            if (member.permission === 'edit') return { role: 'member-write' };
+            return { role: 'readonly' };
+        }
+
+        // 3️⃣ Not a member
+        return { role: 'none' };
+
+    } catch (err) {
+        console.error("Error fetching board permissions:", err);
+        return { role: 'unknown' };
+    }
+}
+
+function renderPermissionBanner(role) {
+    const banner = document.getElementById('board-permission-banner');
+
+    // reset banner
+    banner.classList.remove('hidden', 'readonly', 'member-write');
+    banner.textContent = '';
+
+    if (role === 'owner') {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    let bannerText = '';
+    switch (role) {
+        case 'member-write':
+            bannerText = "You are a collaborator on this board.";
+            banner.classList.add('member-write');
+            break;
+        case 'readonly':
+            bannerText = "You are viewing this board in read-only mode.";
+            banner.classList.add('readonly');
+            break;
+    }
+
+    // Add banner text
+    const textNode = document.createElement('span');
+    textNode.textContent = bannerText;
+    banner.appendChild(textNode);
+
+    console.log(role);
+
+    // Only add info button for non-owners
+    if (role !== 'owner') {
+        const infoBtn = document.createElement('button');
+        infoBtn.textContent = '?';
+        infoBtn.className = 'banner-info-btn'; // style in CSS
+        infoBtn.type = 'button';
+
+        // Tooltip
+        const tooltip = document.createElement('div');
+        tooltip.className = 'banner-tooltip hidden'; // hidden by default
+        tooltip.textContent = role === 'readonly'
+            ? 'You can view the board but cannot make changes.'
+            : 'You can edit the board, but some settings may still be restricted.';
+
+        // toggle tooltip on click
+        infoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tooltip.classList.toggle('hidden');
+        });
+
+        // hide tooltip if clicking outside
+        document.addEventListener('click', () => tooltip.classList.add('hidden'));
+
+        banner.appendChild(infoBtn);
+        banner.appendChild(tooltip);
+    }
 }
 
 function renderAddListButton() {
@@ -1785,9 +2066,10 @@ function attachCardCompleteHandler(cardEl) {
 
 // Create a DOM node for a card. If isTemp is true, the card will be styled as temporary.
 // If background_image_url is provided, it takes precedence over background_color.
-function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null }) {
+function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null, due_date = null }) {
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
+    cardEl.dataset.cardId = id;
 
     // Apply background: image takes precedence
     if (background_image_url) {
@@ -1799,9 +2081,7 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
     if (isTemp) cardEl.classList.add('card--temp');
     if (completed) cardEl.classList.add('card--completed');
 
-    cardEl.dataset.cardId = id;
-
-    // control markup: a button (accessible) with an inline SVG checkmark
+    // Build inner HTML
     const checkHtml = `
       <button class="card-complete" aria-pressed="${completed ? 'true' : 'false'}" aria-label="${completed ? 'Mark as not done' : 'Mark as done'}" title="${completed ? 'Mark as not done' : 'Mark as done'}" tabindex="0">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1822,6 +2102,26 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
       </div>
     `;
 
+    // If due_date provided, parse and display
+    // --- Due date badge (bottom-left system) ---
+    if (due_date) {
+        const parsed = parseServerIsoToDate(due_date);
+        if (parsed) {
+            const { label, cls } = dueDateLabelForDisplay(parsed);
+
+            const badge = document.createElement('div');
+            badge.className = 'card-due-badge ' + cls;
+            badge.textContent = label;
+            badge.title = parsed.toLocaleString();
+
+            cardEl.appendChild(badge);
+
+            // store canonical ISO for later sorting / updating
+            cardEl.dataset.dueIso = parsed.toISOString();
+        }
+    }
+
+    // Make attach handlers same as before
     if (isTemp) {
         const editBtn = cardEl.querySelector('.edit-card');
         const delBtn = cardEl.querySelector('.delete-card');
@@ -2318,7 +2618,8 @@ async function loadLists(boardId) {
                     isTemp: false,
                     completed: !!c.completed,
                     background_color: c.color,
-                    background_image_url: c.background_image_url // new property
+                    background_image_url: c.background_image_url, // new property
+                    due_date: c.due_date // server-provided ISO string or null
                 });
 
                 // Ensure UI reflects server state
@@ -2621,6 +2922,49 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
     let _cardModal = null;
     let _cardModalState = { cardId: null, currentUserId: null };
 
+    // helpers: reuse global if present, otherwise provide small local implementations
+    const parseServerIsoToDate = window.parseServerIsoToDate || function (s) {
+        if (!s) return null;
+        try {
+            // if string contains timezone info, pass through
+            if (/[zZ]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s)) {
+                const d = new Date(s);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            // treat naive ISO as UTC
+            const d = new Date(s + 'Z');
+            return isNaN(d.getTime()) ? null : d;
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const dueDateLabelForDisplay = window.dueDateLabelForDisplay || function (dateObj) {
+        if (!dateObj) return { label: null, cls: 'upcoming' };
+        const now = Date.now();
+        const t = dateObj.getTime();
+        const msInHour = 3600 * 1000;
+        const msInDay = 24 * msInHour;
+        const diff = t - now;
+
+        if (diff < 0) {
+            return {
+                label: 'Overdue • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                cls: 'overdue'
+            };
+        }
+        if (diff <= (2 * msInDay)) {
+            return {
+                label: 'Due • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                cls: 'due-soon'
+            };
+        }
+        return {
+            label: dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            cls: 'upcoming'
+        };
+    };
+
     // Create modal DOM and return reference
     function ensureCardModal() {
         if (_cardModal) return _cardModal;
@@ -2642,13 +2986,25 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                             </div>
                         </header>
 
-                        <!-- Card color swatches inserted between title and description -->
-                        <div id="card-modal-color" class="card-modal-color" aria-label="Card color">
-                            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
-                            <label class="label" style="margin:0;font-size:13px;">Card color</label>
-                            <div style="font-size:12px;opacity:0.8;">Pick a color</div>
+                        <div id="card-modal-bg-container">
+                            <!-- Card color swatches inserted between title and description -->
+                            <div id="card-modal-color" class="card-modal-color" aria-label="Card color">
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+                                <label class="label" style="margin:0;font-size:13px;">Card color</label>
+                                <div style="font-size:12px;opacity:0.8;">Pick a color</div>
+                                </div>
+                                <div id="card-modal-color-swatches" class="swatch-grid"></div>
                             </div>
-                            <div id="card-modal-color-swatches" class="swatch-grid"></div>
+                        </div>
+
+                        <!-- ACTION ROW (due-date + future action buttons) -->
+                        <div id="card-modal-action-row" class="card-modal-action-row" style="margin-top:8px; margin-bottom:6px;">
+                            <div id="card-modal-action-buttons" style="display:flex;gap:8px;align-items:center;">
+                                <!-- Add due button injected here -->
+                            </div>
+                            <div id="card-modal-due-container" style="margin-left:8px; display:flex; align-items:center;"></div>
+                            <!-- Hidden keeper for the ISO due_date value (timezone-aware ISO string produced by toISOString()) -->
+                            <input type="hidden" id="card-modal-due-hidden" value="">
                         </div>
 
                         <div class="card-modal-body">
@@ -2674,6 +3030,19 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     </aside>
                 </div>
             </section>
+
+            <!-- Inline datepicker menu (hidden until needed) -->
+            <div id="card-modal-due-menu" class="card-modal-due-menu" style="display:none; position:fixed; z-index:1300;">
+                <div class="card-modal-due-menu-inner">
+                    <label style="font-size:13px;margin-bottom:6px;display:block;">Select date & time</label>
+                    <input id="card-modal-datetime-input" type="datetime-local" style="width:93%;padding:8px;border-radius:6px;border:1px solid #333;background:var(--btn-color);color:#e0e0e0;">
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+                        <button id="card-modal-due-cancel" class="btn ghost">Cancel</button>
+                        <button id="card-modal-due-remove" class="btn ghost">Remove</button>
+                        <button id="card-modal-due-save" class="btn">Save</button>
+                    </div>
+                </div>
+            </div>
         `;
 
         // Minimal styles (scoped)
@@ -2733,7 +3102,16 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             border-top-right-radius: 16px;   /* Rounded top-right corner */
             border-bottom-right-radius: 16px;/* Rounded bottom-right corner */
         }
-        .card-modal-header { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+        /* Collapsible upload section */
+        .bm-section { border-top: 1px solid rgba(255,255,255,0.03); padding-top:8px; margin-top:8px; }
+        .bm-section-header { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:default; }
+        .bm-section-title { font-size:13px; opacity:0.95; margin:0; }
+        .bm-section-toggle { background:transparent; border:1px solid rgba(255,255,255,0.04); padding:6px 8px; border-radius:6px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; }
+        .bm-section-toggle:focus { outline:2px solid rgba(255,255,255,0.08); }
+        .bm-section-toggle .arrow { display:inline-block; transition: transform 180ms ease; transform-origin:50% 50%; }
+        .bm-section-content { transition: max-height 220ms ease, opacity 180ms ease; overflow:hidden; max-height:1000px; opacity:1; padding:8px;}
+        .bm-section-content.collapsed { max-height:0; opacity:0; padding-top:0; margin-top:0; }
+        .card-modal-header { display:flex; gap:12px; align-items:center; justify-content:space-between; background:transparent; box-shadow:none; padding:0; }
         .card-modal-title { font-size:20px; width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; }
         .card-modal-body { display:flex; flex-direction:column; gap:8px; }
         .card-modal-desc { width:96%; min-height:200px; padding:12px; border-radius:8px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; resize:vertical; }
@@ -2753,6 +3131,37 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         .card-modal-color .swatch:focus, .card-modal-color .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
         .card-modal-color .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; padding:0 6px; }
         .card-modal-color .swatch.selected { border-color: rgba(255,255,255,0.35); box-shadow: 0 3px 8px rgba(0,0,0,0.45); }
+
+        /* Due date UI */
+        #card-modal-due-container { min-width:120px; }
+        .card-modal-due-label {
+            font-size:13px;
+            padding:6px 8px;
+            border-radius:8px;
+            background: rgba(255,255,255,0.03);
+            color: #e0e0e0;
+            cursor:pointer;
+            display:inline-flex;
+            gap:8px;
+            align-items:center;
+            border:1px solid rgba(255,255,255,0.03);
+        }
+        .card-modal-due-label.overdue { background: #e74c3c; color:#fff; }
+        .card-modal-due-label.due-soon { background: #ff9f43; color:#111; }
+        .card-modal-due-label.upcoming { opacity:0.95; }
+
+        /* Inline date menu */
+        .card-modal-due-menu { }
+        .card-modal-due-menu-inner {
+            min-width: 260px;
+            max-width: 320px;
+            background: var(--ctr-color, #0f0f0f);
+            color: #e0e0e0;
+            border: 1px solid #333;
+            padding: 12px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
         `;
 
         document.head.appendChild(style);
@@ -2772,20 +3181,189 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         // --- Upload background controls (card-level) ---
         initCardBackgroundUpload(modal);
 
+        // --- Due date UI wiring ---
+        initDueDateUI(modal);
+
+        // Initialize Due Date UI handlers and helpers
+        function initDueDateUI(modalEl) {
+            const addBtnContainer = modalEl.querySelector('#card-modal-action-buttons');
+            const dueContainer = modalEl.querySelector('#card-modal-due-container');
+            const hiddenInput = modalEl.querySelector('#card-modal-due-hidden');
+            const menu = modalEl.querySelector('#card-modal-due-menu');
+            const datetimeInput = modalEl.querySelector('#card-modal-datetime-input');
+            const btnSave = modalEl.querySelector('#card-modal-due-save');
+            const btnRemove = modalEl.querySelector('#card-modal-due-remove');
+            const btnCancel = modalEl.querySelector('#card-modal-due-cancel');
+
+            // create Add due button
+            function renderAddButton() {
+                addBtnContainer.innerHTML = '';
+                const btn = document.createElement('button');
+                btn.id = 'card-modal-add-due';
+                btn.type = 'button';
+                btn.className = 'btn ghost';
+                btn.textContent = 'Add due date';
+                btn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openDueMenu(null); // no prefill => now
+                });
+                addBtnContainer.appendChild(btn);
+            }
+
+            // render due label if hiddenInput has value
+            function renderDueLabelFromHidden() {
+                dueContainer.innerHTML = '';
+                const val = hiddenInput.value;
+                if (!val) {
+                    // show add button
+                    renderAddButton();
+                    return;
+                }
+                // parse ISO -> Date (treat naive as UTC)
+                const parsed = parseServerIsoToDate(val);
+                if (!parsed) {
+                    // fallback: clear hidden
+                    hiddenInput.value = '';
+                    renderAddButton();
+                    return;
+                }
+                const { label, cls } = dueDateLabelForDisplay(parsed);
+                const lbl = document.createElement('div');
+                lbl.className = 'card-modal-due-label ' + cls;
+                lbl.textContent = label;
+                lbl.title = (new Date(parsed)).toLocaleString() + ' (local)';
+                lbl.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openDueMenu(parsed.toISOString()); // open with existing value
+                });
+
+                dueContainer.appendChild(lbl);
+
+                // remove add button from action buttons if present
+                addBtnContainer.innerHTML = '';
+            }
+
+            // open the inline menu positioned near the add button or label
+            function openDueMenu(prefillIso) {
+                // prefill datetime-local input with local representation of prefillIso or now
+                let dt = null;
+                if (prefillIso) {
+                    dt = parseServerIsoToDate(prefillIso);
+                }
+                if (!dt) dt = new Date();
+
+                // convert Date -> "YYYY-MM-DDTHH:MM" string for datetime-local
+                function toDatetimeLocalValue(d) {
+                    const pad = (n) => String(n).padStart(2, '0');
+                    const year = d.getFullYear();
+                    const month = pad(d.getMonth() + 1);
+                    const day = pad(d.getDate());
+                    const hour = pad(d.getHours());
+                    const minute = pad(d.getMinutes());
+                    return `${year}-${month}-${day}T${hour}:${minute}`;
+                }
+                datetimeInput.value = toDatetimeLocalValue(dt);
+
+                // position menu near the action row/buttons or the label if present
+                const anchor = modalEl.querySelector('#card-modal-action-buttons') || modalEl.querySelector('#card-modal-due-container');
+                const rect = anchor.getBoundingClientRect();
+                const menuEl = menu;
+                menuEl.style.display = 'block';
+                // prefer positioning under anchor
+                const left = Math.min(window.innerWidth - 340, Math.max(8, rect.left));
+                const top = rect.bottom + 8;
+                menuEl.style.left = `${left}px`;
+                menuEl.style.top = `${top}px`;
+                // store reference to where to re-render on save
+                menuEl._anchor = anchor;
+                // focus input
+                setTimeout(() => datetimeInput.focus(), 20);
+            }
+
+            function closeDueMenu() {
+                menu.style.display = 'none';
+            }
+
+            // Save pressed in date menu: store ISO (timezone-aware) into hidden input
+            btnSave.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const v = datetimeInput.value;
+                if (!v) { alert('Please pick a date & time'); return; }
+                // new Date('YYYY-MM-DDTHH:MM') is treated as local time by browsers
+                const d = new Date(v);
+                if (isNaN(d.getTime())) { alert('Invalid date'); return; }
+                // Convert to ISO (UTC) -> example: 2026-03-01T11:00:00.000Z
+                const iso = d.toISOString();
+                hiddenInput.value = iso;
+                _cardModalState.dueDateIso = iso;
+                closeDueMenu();
+                renderDueLabelFromHidden();
+            });
+
+            // Remove clicked inside menu
+            btnRemove.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                hiddenInput.value = '';
+                _cardModalState.dueDateIso = null;
+                closeDueMenu();
+                renderDueLabelFromHidden();
+            });
+
+            btnCancel.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeDueMenu();
+            });
+
+            // click outside closes the menu
+            document.addEventListener('click', (ev) => {
+                if (!menu || menu.style.display === 'none') return;
+                if (!menu.contains(ev.target) && !modalEl.contains(ev.target)) {
+                    closeDueMenu();
+                }
+            });
+
+            // initial render: if hidden has value we'll show label, else Add button
+            renderDueLabelFromHidden();
+
+            // expose utilities to other modal functions
+            modalEl._renderDueUI = renderDueLabelFromHidden;
+            modalEl._getDueHidden = () => hiddenInput;
+            modalEl._openDueMenu = openDueMenu;
+        }
+
         function initCardBackgroundUpload(modalEl) {
             const uploadContainer = document.createElement('div');
             uploadContainer.classList.add('bm-section');
-            uploadContainer.style.marginTop = '8px';
 
-            // Visual label
-            const uploadLabel = document.createElement('div');
-            uploadLabel.className = 'options-menu-color-label';
-            uploadLabel.textContent = 'Card background image';
-            uploadLabel.style.fontSize = '13px';
-            uploadLabel.style.opacity = '0.95';
-            uploadContainer.appendChild(uploadLabel);
+            // Header: label + toggle arrow
+            const header = document.createElement('div');
+            header.className = 'bm-section-header';
 
-            // file input (hidden) + visible button to trigger it
+            const title = document.createElement('div');
+            title.className = 'bm-section-title';
+            title.textContent = 'Card Background';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.type = 'button';
+            toggleBtn.className = 'bm-section-toggle';
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            toggleBtn.innerHTML = `<span class="arrow" aria-hidden="true">▶</span><span style="font-size:13px;">Background</span>`;
+
+            header.appendChild(title);
+            header.appendChild(toggleBtn);
+            uploadContainer.appendChild(header);
+
+            // Content: image upload + color swatches
+            const content = document.createElement('div');
+            content.className = 'bm-section-content';
+
+            // --- Color swatches section ---
+            const colorContainer = modalEl.querySelector('#card-modal-color');
+            if (colorContainer) {
+                content.appendChild(colorContainer);
+            }
+
+            // --- Image upload section ---
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
             fileInput.accept = 'image/*';
@@ -2801,14 +3379,13 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             bgControls.style.display = 'flex';
             bgControls.style.alignItems = 'center';
             bgControls.style.gap = '8px';
-            bgControls.style.marginTop = '6px';
 
             const thumb = document.createElement('img');
             thumb.style.width = '64px';
             thumb.style.height = '40px';
             thumb.style.objectFit = 'cover';
             thumb.style.borderRadius = '6px';
-            thumb.style.display = 'none'; // shown when image exists
+            thumb.style.display = 'none';
 
             const deleteBgBtn = document.createElement('button');
             deleteBgBtn.type = 'button';
@@ -2816,15 +3393,39 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             deleteBgBtn.textContent = 'Remove background';
             deleteBgBtn.style.display = 'none';
 
-            uploadContainer.appendChild(fileInput);
-            uploadContainer.appendChild(uploadBtn);
-            uploadContainer.appendChild(bgControls);
+            content.appendChild(fileInput);
+            content.appendChild(uploadBtn);
+            content.appendChild(bgControls);
             bgControls.appendChild(thumb);
             bgControls.appendChild(deleteBgBtn);
 
-            // helper: update thumbnail + visibility based on current state
+            uploadContainer.appendChild(content);
+
+            // --- collapse / expand helpers ---
+            function setCollapsed(collapsed) {
+                if (collapsed) {
+                    content.classList.add('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    toggleBtn.querySelector('.arrow').style.transform = 'rotate(0deg)';
+                } else {
+                    content.classList.remove('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                    toggleBtn.querySelector('.arrow').style.transform = 'rotate(90deg)';
+                }
+            }
+
+            toggleBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                setCollapsed(isExpanded);
+            });
+
+            // --- Render function: handles thumbnail + collapsed/open state ---
             function renderCardBgState() {
-                if (_cardModalState.cardBackgroundUrl) {
+                const hasBg = Boolean(_cardModalState.cardBackgroundUrl);
+                const hasColor = Boolean(_cardModalState.cardColor);
+
+                if (hasBg) {
                     thumb.src = _cardModalState.cardBackgroundUrl;
                     thumb.style.display = 'block';
                     deleteBgBtn.style.display = 'inline-block';
@@ -2834,15 +3435,17 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     deleteBgBtn.style.display = 'none';
                     uploadBtn.textContent = 'Upload background image';
                 }
+
+                // open if color or background image exists
+                const shouldExpand = hasBg || hasColor;
+                setCollapsed(!shouldExpand);
             }
 
-            // helper: apply background (or clear it) to modal and board card immediately
+            // --- Apply background immediately ---
             function applyBackgroundToUI(cardId, backgroundUrl, color) {
-                // update modal state
                 _cardModalState.cardBackgroundUrl = backgroundUrl || null;
                 if (typeof color !== 'undefined') _cardModalState.cardColor = color || null;
 
-                // update left panel
                 const left = modalEl.querySelector('.card-modal-left');
                 if (left) {
                     if (_cardModalState.cardBackgroundUrl) {
@@ -2854,7 +3457,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     }
                 }
 
-                // update board card element if present
                 const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
                 if (cardEl) {
                     if (_cardModalState.cardBackgroundUrl) {
@@ -2866,67 +3468,36 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     }
                 }
 
-                // refresh upload UI (thumbnail + buttons)
-                if (modalEl && typeof modalEl._renderCardBgState === 'function') {
-                    modalEl._renderCardBgState();
-                }
+                renderCardBgState();
             }
 
-
-            fileInput.addEventListener('change', async (ev) => {
+            // --- File input logic (unchanged) ---
+            fileInput.addEventListener('change', async () => {
                 if (!fileInput.files || fileInput.files.length === 0) return;
                 const f = fileInput.files[0];
                 uploadBtn.disabled = true;
                 deleteBgBtn.disabled = true;
                 uploadBtn.textContent = 'Uploading…';
-
                 const cardId = _cardModalState.cardId;
                 try {
-                    // Step 1: POST to generic /uploads (multipart)
                     const form = new FormData();
                     form.append('file', f);
-                    const res1 = await fetch('/uploads', {
-                        method: 'POST',
-                        body: form
-                    });
-
-                    if (!res1.ok) {
-                        const err = await res1.json().catch(() => ({}));
-                        alert(err.error || 'Upload failed');
-                        return;
-                    }
+                    const res1 = await fetch('/uploads', { method: 'POST', body: form });
+                    if (!res1.ok) throw new Error('Upload failed');
                     const body = await res1.json();
                     const uploadId = body.upload_id || body.id || body.id_upload;
-
                     if (!uploadId) {
-                        // try to find a direct url if server returns it
                         const possibleUrl = body.url || body.file_url || body.upload_url;
-                        if (possibleUrl) {
-                            // attach step may not be required by API shape; continue with url
-                            applyBackgroundToUI(cardId, possibleUrl, _cardModalState.cardColor);
-                            return;
-                        }
-                        alert('Upload returned unexpected response');
+                        if (possibleUrl) applyBackgroundToUI(cardId, possibleUrl, _cardModalState.cardColor);
                         return;
                     }
-
-                    // Step 2: attach that upload to the card
                     const res2 = await fetch(`/api/cards/${cardId}/background_uploads`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ upload_id: uploadId })
                     });
-
-                    if (!res2.ok) {
-                        const err = await res2.json().catch(() => ({}));
-                        alert(err.error || 'Failed to attach background to card');
-                        return;
-                    }
-
+                    if (!res2.ok) throw new Error('Failed to attach background to card');
                     const attachBody = await res2.json();
-
-                    // Extract a usable background URL from the attach response.
-                    // Be permissive: server might return a field named background_image_url, url, file_url, card_background_image_url, or nested card/background_image_url.
                     const newUrl =
                         attachBody.background_image_url ||
                         attachBody.url ||
@@ -2935,13 +3506,10 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                         (attachBody.card && (attachBody.card.background_image_url || attachBody.card.image_url)) ||
                         (attachBody.data && (attachBody.data.background_image_url || attachBody.data.url)) ||
                         null;
-
-                    // Update UI immediately using helper
                     applyBackgroundToUI(cardId, newUrl, _cardModalState.cardColor);
-
                 } catch (err) {
                     console.error(err);
-                    alert('Network error while uploading background');
+                    alert(err.message || 'Network error');
                 } finally {
                     fileInput.value = '';
                     uploadBtn.disabled = false;
@@ -2950,34 +3518,17 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 }
             });
 
-
             deleteBgBtn.addEventListener('click', async () => {
                 if (!confirm('Remove card background image?')) return;
                 deleteBgBtn.disabled = true;
                 try {
                     const cardId = _cardModalState.cardId;
-                    // Step 1: unlink in card table
                     const res = await fetch(`/api/cards/${cardId}/background_uploads`, { method: 'DELETE' });
-                    if (!res.ok) {
-                        const j = await res.json().catch(() => ({}));
-                        alert(j.error || 'Failed to remove background');
-                        deleteBgBtn.disabled = false;
-                        return;
-                    }
-                    const j = await res.json();
+                    if (!res.ok) throw new Error('Failed to remove background');
+                    const j = await res.json().catch(() => ({}));
                     const uploadId = j.upload_id || j.id || null;
-
-                    // Step 2: delete actual upload via generic endpoint (frontend performs second request) if uploadId is present
-                    if (uploadId) {
-                        const res2 = await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
-                        if (!res2.ok) {
-                            console.warn('Failed to delete upload at /uploads/:', res2.status);
-                        }
-                    }
-
-                    // Remove image from UI; restore color if present
+                    if (uploadId) await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
                     applyBackgroundToUI(cardId, null, _cardModalState.cardColor);
-
                 } catch (err) {
                     console.error(err);
                     alert('Network error while removing background');
@@ -2986,16 +3537,11 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 }
             });
 
+            // append container to modal
+            const bgContainer = modalEl.querySelector('#card-modal-bg-container');
+            if (bgContainer) bgContainer.appendChild(uploadContainer);
 
-            // append uploadContainer to modal just after color container
-            const colorContainer = modalEl.querySelector('#card-modal-color');
-            if (colorContainer && colorContainer.parentNode) {
-                colorContainer.parentNode.insertBefore(uploadContainer, colorContainer.nextSibling);
-            } else {
-                modalEl.querySelector('.card-modal-left').insertBefore(uploadContainer, modalEl.querySelector('.card-modal-body'));
-            }
-
-            // expose a render function so refreshCardModal can call it after loading card data
+            // expose render function
             modalEl._renderCardBgState = renderCardBgState;
             renderCardBgState();
         }
@@ -3177,6 +3723,26 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
 
             // refresh swatch selection
             if (_cardModal && typeof _cardModal._refreshCardColorSwatches === 'function') _cardModal._refreshCardColorSwatches();
+
+            // --- due date: initialize UI from server value ---
+            const hidden = _cardModal.querySelector('#card-modal-due-hidden');
+            // server returns c.due_date as ISO string or null. We will store a timezone-aware ISO in hidden.
+            if (card.due_date) {
+                const parsed = parseServerIsoToDate(card.due_date);
+                if (parsed) {
+                    // save timezone-aware ISO (UTC) string to hidden (so sending to server is safe)
+                    hidden.value = parsed.toISOString();
+                    _cardModalState.dueDateIso = hidden.value;
+                } else {
+                    hidden.value = '';
+                    _cardModalState.dueDateIso = null;
+                }
+            } else {
+                hidden.value = '';
+                _cardModalState.dueDateIso = null;
+            }
+            // render due UI
+            if (_cardModal && typeof _cardModal._renderDueUI === 'function') _cardModal._renderDueUI();
 
             titleEl.focus();
 
@@ -3382,6 +3948,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         if (!cardId) return;
         const titleEl = _cardModal.querySelector('#card-modal-title');
         const descEl = _cardModal.querySelector('#card-modal-desc');
+        const dueHidden = _cardModal.querySelector('#card-modal-due-hidden');
         const title = titleEl.value.trim();
         const description = descEl.value.trim();
 
@@ -3394,7 +3961,12 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         btn.disabled = true;
         btn.textContent = 'Saving...';
         try {
-            const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { title, description });
+            const payload = { title, description };
+            // include due_date in payload; server accepts ISO string or null
+            if (dueHidden && dueHidden.value) payload.due_date = dueHidden.value;
+            else payload.due_date = null;
+
+            const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, payload);
             if (!res.ok) {
                 const j = await res.json();
                 alert(j.error || 'Failed to save card');
@@ -3407,6 +3979,21 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 if (titleNode) titleNode.textContent = title;
                 const descNode = cardEl.querySelector('.card-desc-text');
                 if (descNode) descNode.textContent = description;
+                // existing snippet in saveCardModal after successful patch...
+                const dueIso = dueHidden && dueHidden.value ? dueHidden.value : null;
+                if (cardEl) {
+                    // set dataset for possible further UI
+                    if (dueIso) {
+                        cardEl.dataset.dueIso = new Date(dueIso).toISOString();
+                    } else {
+                        delete cardEl.dataset.dueIso;
+                    }
+
+                    // --- NEW: update/insert the badge immediately so UI reflects change without full refresh ---
+                    if (typeof updateCardDueBadge === 'function') {
+                        updateCardDueBadge(cardEl, dueIso);
+                    }
+                }
             }
             closeCardModal();
         } catch (err) {
@@ -3552,7 +4139,7 @@ function initBoardActionsMenu() {
     #actions-menu-board .swatch-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
     #actions-menu-board .swatch { width:34px; height:34px; border-radius:8px; cursor:pointer; border:2px solid transparent; box-sizing:border-box; }
     #actions-menu-board .swatch:focus, #actions-menu-board .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
-    #actions-menu-board .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; }
+    #actions-menu-board .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; padding:0px 0px; }
 
     /* Sharing specific */
     #actions-menu-board .sharing-list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
@@ -4468,22 +5055,43 @@ function initBoardActionsMenu() {
         const rect = anchorBtn.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
+
         if (!document.body.contains(menuEl)) document.body.appendChild(menuEl);
+
         const menuRect = menuEl.getBoundingClientRect();
-        const menuWidth = Math.max(menuRect.width || 260, 240);
-        const menuHeight = menuRect.height || 220;
+        const menuWidth = Math.min(Math.max(menuRect.width || 260, 240), viewportWidth - 16); // cap to viewport
+        const menuHeight = Math.min(menuRect.height || 220, viewportHeight - 16); // cap to viewport
 
-        let left = rect.right - menuWidth + window.scrollX;
-        let top = rect.bottom + 8 + window.scrollY;
-
-        if (left < 8 + window.scrollX) left = Math.max(8 + window.scrollX, rect.left + window.scrollX);
-        if (top + menuHeight > window.scrollY + viewportHeight - 8) {
-            top = rect.top + window.scrollY - menuHeight - 8;
+        // horizontal placement
+        let left;
+        if (rect.left + menuWidth <= viewportWidth - 8) {
+            // fits to the right
+            left = rect.left + window.scrollX;
+        } else if (rect.right - menuWidth >= 8) {
+            // fits to the left
+            left = rect.right - menuWidth + window.scrollX;
+        } else {
+            // fallback: center horizontally
+            left = (viewportWidth - menuWidth) / 2 + window.scrollX;
         }
-        if (top < 8 + window.scrollY) top = 8 + window.scrollY;
+
+        // vertical placement
+        let top;
+        if (rect.bottom + menuHeight <= viewportHeight - 8) {
+            // fits below
+            top = rect.bottom + window.scrollY;
+        } else if (rect.top - menuHeight >= 8) {
+            // fits above
+            top = rect.top - menuHeight + window.scrollY;
+        } else {
+            // fallback: center vertically
+            top = (viewportHeight - menuHeight) / 2 + window.scrollY;
+        }
 
         menuEl.style.left = Math.round(left) + 'px';
         menuEl.style.top = Math.round(top) + 'px';
+        menuEl.style.maxWidth = (viewportWidth - 16) + 'px'; // ensure menu never overflows
+        menuEl.style.maxHeight = (viewportHeight - 16) + 'px';
     }
 
     function openAt(anchorBtn) {

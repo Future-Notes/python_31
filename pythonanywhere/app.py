@@ -513,7 +513,8 @@ class Card(db.Model):
     position = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed = db.Column(db.Boolean, default=False)
-    background_color = db.Column(db.String(7), nullable=True, default=None)  # New field for list background color
+    background_color = db.Column(db.String(7), nullable=True, default=None)
+    due_date = db.Column(db.DateTime, nullable=True)
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -2868,6 +2869,47 @@ def delete_user_and_data(user):
         db.session.rollback()
         print(f"Error deleting user data: {str(e)}")
         return False
+
+def _parse_iso_to_utc_naive(value):
+    """
+    Parse an incoming ISO datetime string (or datetime object) and return a naive UTC datetime.
+    - If value is None or empty -> returns None.
+    - If value is a naive datetime => treated AS UTC (per spec) and returned unchanged.
+    - If value has tzinfo => convert to UTC and strip tzinfo.
+    Accepts strings like:
+      - "2026-03-01T12:00:00+01:00"
+      - "2026-03-01T11:00:00Z"
+      - "2026-03-01T11:00:00"  (treated as UTC)
+    Raises ValueError on parse error.
+    """
+    if value is None or value == "":
+        return None
+
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value)
+        # Try fromisoformat first (fast). Make 'Z' -> '+00:00' replacement for compatibility.
+        try:
+            if s.endswith("Z"):
+                s2 = s[:-1] + "+00:00"
+            else:
+                s2 = s
+            dt = datetime.fromisoformat(s2)
+        except Exception:
+            # fallback to dateutil if available (handles more ISO variants)
+            try:
+                from dateutil import parser
+                dt = parser.isoparse(s)
+            except Exception:
+                raise ValueError("Invalid datetime format. Use ISO 8601, e.g. 2026-03-01T12:00:00Z")
+
+    if dt.tzinfo is None:
+        # Treat naive datetimes as already UTC (per your rule).
+        return dt.replace(tzinfo=None)
+    # convert to UTC and strip tzinfo so DB stores naive UTC
+    dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt_utc
     
 def _redeem_referral_for_user(user, signup_session):
     """
@@ -4038,60 +4080,68 @@ def _note_attachment_ids(note_id):
     return {nu.upload_id for nu in NoteUpload.query.filter_by(note_id=note_id).all()}
 
 
-def delete_upload(upload_id, user):
+def delete_upload(upload, user):
     """
-    Centralized delete handler.
-    Marks upload deleted, removes file from storage (local, Dropbox, or MEGA),
-    and subtracts bytes from user's storage_used_bytes.
-    Only owner or admins should call this function.
+    Assumes permission has already been validated.
+    Marks upload deleted, removes file from storage,
+    updates storage usage.
     """
-    upload = Upload.query.get(upload_id)
-    if not upload:
-        return False, "Upload not found."
-    if upload.user_id != user.id:
-        return False, "Permission denied."
+
     if upload.deleted:
         return False, "Already deleted."
 
     try:
+        # --- Dropbox ---
         if upload.storage_backend == "dropbox":
             try:
                 dbx.files_delete_v2(upload.stored_filename)
             except Exception:
-                pass
-        # inside your delete_upload function, in the Mega block:
+                app.logger.warning("Dropbox delete failed for %s", upload.stored_filename)
+
+        # --- MEGA ---
         elif upload.storage_backend == "mega" and getattr(upload, "mega_file_obj", None):
             try:
-                # Convert string to dict if necessary
-                if isinstance(upload.mega_file_obj, str):
-                    mega_file_obj = ast.literal_eval(upload.mega_file_obj)
-                else:
-                    mega_file_obj = upload.mega_file_obj
+                mega_file_obj = (
+                    ast.literal_eval(upload.mega_file_obj)
+                    if isinstance(upload.mega_file_obj, str)
+                    else upload.mega_file_obj
+                )
 
-                # get public handle of first file
                 handle = mega_file_obj['f'][0]['h']
-                # request deletion directly
                 mega_account._api_request({'a': 'd', 'n': handle})
             except Exception:
-                app.logger.exception("Failed to delete MEGA file %s", upload.stored_filename)
+                app.logger.exception("Failed to delete MEGA file %s", upload.id)
+
+        # --- Local ---
         else:
-            # Delete from local disk
-            stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, upload.stored_filename)
+            stored_path = os.path.join(
+                app.config['UPLOAD_FOLDER_LOCAL_FILES'],
+                upload.stored_filename
+            )
             if os.path.exists(stored_path):
                 try:
                     os.remove(stored_path)
-                except Exception as e:
-                    app.logger.exception("Error removing upload file %s: %s", stored_path, e)
+                except Exception:
+                    app.logger.exception("Failed to delete local file %s", stored_path)
 
-        # Update DB
+        # --- Database update ---
         upload.deleted = True
         upload.deleted_at = datetime.utcnow()
-        user.storage_used_bytes = max(0, (user.storage_used_bytes or 0) - (upload.size_bytes or 0))
+
+        # Subtract from uploader storage (not deleter)
+        owner = User.query.get(upload.user_id)
+        if owner:
+            owner.storage_used_bytes = max(
+                0,
+                (owner.storage_used_bytes or 0) - (upload.size_bytes or 0)
+            )
+
         db.session.commit()
         return True, "Deleted."
+
     except Exception as e:
         db.session.rollback()
-        app.logger.exception("Database error on delete_upload %s: %s", upload_id, e)
+        app.logger.exception("Delete failed for upload %s: %s", upload.id, e)
         return False, "Database error on delete."
 
 def initialize_user_storage(user_id):
@@ -4223,10 +4273,10 @@ def flow_page():
     else:
         abort(404)
 
-@app.route('/trello_page')
-def trello_page():
-    if check("trello", "Ja") == "Ja":
-        return render_template("trello.html")
+@app.route('/kanban_page')
+def kanban_page():
+    if check("kanban", "Ja") == "Ja":
+        return render_template("kanban.html")
     else:
         abort(404)
 
@@ -4883,7 +4933,7 @@ def api_send_share_link_email(board_id):
                 content_html=cta_html,
                 content_text=None,
                 buttons=None,
-                logo_url=None,
+                logo_url=request.host_url + "/android-chrome-512x512.png",
                 unsubscribe_url=None
             )
             successes.append(to_addr)
@@ -4955,7 +5005,7 @@ def serve_board_share_link(token):
         return "Failed to accept share link", 500
 
     # Redirect to board page (adjust if needed)
-    return redirect(f"/trello_page#board-{share.board_id}")
+    return redirect(f"/kanban_page#board-{share.board_id}")
 
 @app.route('/api/boards/<int:board_id>/shares', methods=['GET'])
 @require_session_key
@@ -5381,7 +5431,8 @@ def api_get_lists():
                     "position": c.position,
                     "completed": c.completed,
                     "color": c.background_color,
-                    "background_image_url": card_bg_map.get(c.id)  # None if no background
+                    "background_image_url": card_bg_map.get(c.id),  # None if no background
+                    "due_date": c.due_date.isoformat() if c.due_date else None
                 }
                 for c in l_cards
             ]
@@ -5573,6 +5624,10 @@ def api_get_card_info(card_id):
         if upload:
             card_background_image_url = get_upload_url(upload)
 
+    if card.due_date:
+        # card.due_date is stored naive UTC; return with Z for clarity
+        due_date_iso = card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+
     return jsonify({
         "id": card.id,
         "title": card.title,
@@ -5580,7 +5635,8 @@ def api_get_card_info(card_id):
         "position": card.position,
         "completed": card.completed,
         "color": card.background_color,
-        "background_image_url": card_background_image_url
+        "background_image_url": card_background_image_url,
+        "due_date": due_date_iso if card.due_date else None
     })
 
 @app.route('/api/cards/<int:card_id>/activity', methods=['GET'])
@@ -5686,8 +5742,10 @@ def api_change_card_color(card_id):
     color = payload.get('color')
     if color == "none":
         c.background_color = None
+        insert_card_activity(c.id, user_id, content="Removed card color")
     else:
         c.background_color = color
+        insert_card_activity(c.id, user_id, content=f"Changed card color to {color}")
     db.session.commit()
     return jsonify({"id": c.id, "color": c.background_color})
 
@@ -5724,8 +5782,7 @@ def api_create_card():
     user_id = g.user_id
     payload = request.get_json() or {}
     title = (payload.get('title') or '').strip()
-    # accept either list_id (new) or board_id (compat)
-    list_id = payload.get('list_id') or payload.get('board_id') or payload.get('board')  # keep compat
+    list_id = payload.get('list_id') or payload.get('board_id') or payload.get('board')
     description = payload.get('description') or ''
     if not title or list_id is None:
         return jsonify({"error": "title and list_id required"}), 400
@@ -5741,9 +5798,23 @@ def api_create_card():
     max_pos = db.session.query(db.func.max(Card.position)).filter_by(list_id=list_id).scalar()
     position = ((max_pos or 0) + 1000)
     card = Card(user_id=user_id, list_id=list_id, title=title, description=description, position=position)
+
+    # optional due_date
+    if 'due_date' in payload:
+        try:
+            card.due_date = _parse_iso_to_utc_naive(payload.get('due_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
     db.session.add(card)
     db.session.commit()
-    return jsonify({"id": card.id, "title": card.title, "description": card.description or "", "position": card.position}), 201
+    return jsonify({
+        "id": card.id,
+        "title": card.title,
+        "description": card.description or "",
+        "position": card.position,
+        "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
+    }), 201
 
 @app.route('/api/cards/<int:card_id>/background_uploads', methods=['POST'])
 @require_session_key
@@ -5805,6 +5876,7 @@ def api_update_card(card_id):
 
     title_changed = False
     description_changed = False
+    due_date_changed = False
 
     if 'title' in payload and payload['title'] != card.title:
         card.title = payload['title']
@@ -5814,26 +5886,38 @@ def api_update_card(card_id):
         card.description = payload['description']
         description_changed = True
 
-    if title_changed:
-        insert_card_activity(
-            user_id,
-            card.id,
-            f"Card title updated to '{card.title}'"
-        )
+    if 'due_date' in payload:
+        # payload may contain null to clear
+        try:
+            new_due = _parse_iso_to_utc_naive(payload.get('due_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
+        # Compare naive datetimes (or None)
+        if (card.due_date is None and new_due is not None) or \
+           (card.due_date is not None and new_due is None) or \
+           (card.due_date is not None and new_due is not None and card.due_date != new_due):
+            due_date_changed = True
+            old = card.due_date
+            card.due_date = new_due
+
+    if title_changed:
+        insert_card_activity(user_id, card.id, f"Card title updated to '{card.title}'")
     if description_changed:
-        insert_card_activity(
-            user_id,
-            card.id,
-            "Card description updated"
-        )
+        insert_card_activity(user_id, card.id, "Card description updated")
+    if due_date_changed:
+        if card.due_date:
+            insert_card_activity(user_id, card.id, f"Card due date set to {card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        else:
+            insert_card_activity(user_id, card.id, "Card due date cleared")
 
     db.session.commit()
 
     return jsonify({
         "id": card.id,
         "title": card.title,
-        "description": card.description or ""
+        "description": card.description or "",
+        "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
     })
 
 @app.route('/api/cards/complete/<int:card_id>', methods=['PATCH'])
@@ -5955,7 +6039,7 @@ def api_move_card():
 
     dest_list = List.query.get(to_list_id)
     if not dest_list:
-        return jsonify({"error": "Destination list not found"}), 404
+        return jsonify({"error": "Destination list not found or permission denied"}), 404
 
     # require edit on both source and destination board (they should usually be same board)
     allowed_src, _ = require_board_permission(src_list.board_id, user_id, need_edit=True)
@@ -10399,6 +10483,9 @@ from io import BytesIO
 from flask import send_file, send_from_directory, redirect, request, jsonify, g
 import tempfile
 
+# -------------------------
+# Updated route (uses controller)
+# -------------------------
 @app.route('/uploads/<int:upload_id>/download', methods=['GET'])
 @require_session_key
 def download_upload_hybrid(upload_id):
@@ -10410,16 +10497,15 @@ def download_upload_hybrid(upload_id):
     if not upload or upload.deleted:
         return jsonify({"error": "Not found"}), 404
 
-    if upload.user_id != user.id:
+    # Use the universal access controller
+    if not has_access_to_upload(user, upload, permission_required='read'):
         return jsonify({"error": "Forbidden"}), 403
 
-    # Decide inline vs download
     inline = request.args.get('inline', '0') in ['1', 'true', 'yes']
 
     # --- Dropbox files ---
     if upload.storage_backend == "dropbox":
         if inline:
-            # Proxy through Flask for inline display
             try:
                 metadata, res = dbx.files_download(upload.stored_filename)
                 return send_file(
@@ -10432,7 +10518,6 @@ def download_upload_hybrid(upload_id):
                 app.logger.exception("Failed to proxy Dropbox file %s", upload.stored_filename)
                 return jsonify({"error": "Failed to proxy Dropbox file"}), 500
         else:
-            # Direct download link for non-inline
             try:
                 temp_link = dbx.files_get_temporary_link(upload.stored_filename).link
                 return redirect(temp_link)
@@ -10443,30 +10528,25 @@ def download_upload_hybrid(upload_id):
     # --- MEGA files ---
     if upload.storage_backend == "mega":
         mega_obj = getattr(upload, "mega_file_obj", None)
-        # Try to use any stored public link first for direct redirects
         stored_link = upload.stored_filename if upload.stored_filename and str(upload.stored_filename).startswith("http") else None
 
         if not mega_obj and not stored_link:
             app.logger.error("MEGA file has no file object or stored link: upload_id=%s", upload_id)
             return jsonify({"error": "MEGA file metadata missing"}), 500
 
-        # Non-inline: prefer redirect to public link to avoid proxying large files
         if not inline:
-            # If we already stored a link, redirect to it
             if stored_link:
                 return redirect(stored_link)
-            # Otherwise try to generate a link and redirect
             try:
                 link = mega_account.get_upload_link(mega_obj)
                 return redirect(link)
             except Exception:
                 app.logger.exception("Failed to generate MEGA public link for upload %s", upload_id)
-                # Fall through to proxying below
+                # fall through to proxy
 
         if inline:
             try:
                 mega_obj_full = json.loads(upload.mega_file_obj)
-
                 if 'f' not in mega_obj_full or not mega_obj_full['f']:
                     return jsonify({"error": "Invalid MEGA file object"}), 500
 
@@ -10474,55 +10554,36 @@ def download_upload_hybrid(upload_id):
                 if not mega_handle:
                     return jsonify({"error": "MEGA handle missing"}), 500
 
-                # Get all resolved files
                 all_files = mega_account.get_files()
                 resolved_file = all_files.get(mega_handle)
                 if not resolved_file:
-                    app.logger.error(
-                        "Resolved MEGA file not found for handle %s (upload_id=%s)",
-                        mega_handle,
-                        upload_id,
-                    )
+                    app.logger.error("Resolved MEGA file not found for handle %s (upload_id=%s)", mega_handle, upload_id)
                     return jsonify({"error": "MEGA file not accessible"}), 404
 
-                # Let Mega write to its own temp file
-                downloaded_path = mega_account._download_file(
-                    None,  # file_handle
-                    None,  # file_key
-                    file=resolved_file,
-                    is_public=False
-                )
+                downloaded_path = mega_account._download_file(None, None, file=resolved_file, is_public=False)
 
-                # Serve the downloaded file via Flask
                 return send_file(
                     downloaded_path,
                     mimetype=upload.mimetype,
                     as_attachment=False,
                     download_name=upload.original_filename
                 )
-
             except Exception as e:
                 app.logger.exception("Failed to proxy MEGA file %s: %s", upload_id, e)
                 return jsonify({"error": "Failed to proxy MEGA file"}), 500
-
             finally:
-                # safe deletion
                 try:
                     if 'downloaded_path' in locals() and os.path.exists(downloaded_path):
                         os.remove(downloaded_path)
                 except Exception:
                     pass
 
-
     # --- Local files ---
-    # For local storage fallback and general local handling
     filename = upload.stored_filename
     if not filename:
         return jsonify({"error": "File not found"}), 404
 
-    # Build full path based on new folder structure
     file_path = os.path.join(app.config['UPLOAD_FOLDER_LOCAL_FILES'], os.path.basename(filename))
-
     if not os.path.exists(file_path):
         return jsonify({"error": "File not found"}), 404
 
@@ -10534,13 +10595,125 @@ def download_upload_hybrid(upload_id):
             download_name=upload.original_filename
         )
     except TypeError:
-        # fallback for older Flask versions
         return send_from_directory(
             UPLOAD_FOLDER_LOCAL_FILES,
             os.path.basename(file_path),
             as_attachment=not inline,
             attachment_filename=upload.original_filename
         )
+
+# -------------------------
+# Universal access controller
+# -------------------------
+def has_access_to_upload(user, upload_or_id, permission_required='read'):
+    """
+    Determine whether `user` has the given permission for the upload.
+    - upload_or_id: either Upload instance or integer upload_id
+    - permission_required: 'read' or 'write' (write == edit)
+    Returns: True if allowed, False otherwise.
+    """
+    try:
+        # accept either object or id
+        if isinstance(upload_or_id, int):
+            upload = Upload.query.get(upload_or_id)
+        else:
+            upload = upload_or_id
+
+        if not upload or upload.deleted:
+            return False
+
+        # 1) uploader always allowed
+        if upload.user_id == user.id:
+            return True
+
+        # helper to check board-level access by board_id
+        def _board_allows(board_id):
+            if not board_id:
+                return False
+
+            board = Board.query.get(board_id)
+            if not board:
+                return False
+
+            # 1. Board owner (board.user_id)
+            if board.user_id == user.id:
+                return True
+
+            # 2. Shared access
+            share = BoardShare.query.filter_by(
+                board_id=board_id,
+                user_id=user.id
+            ).first()
+
+            if not share:
+                return False
+
+            if permission_required == 'read':
+                return True
+
+            if permission_required == 'write' and share.permission == PermissionEnum.edit:
+                return True
+
+            return False
+
+        # 2) Board background link?
+        bbu = BoardBackgroundUpload.query.filter_by(upload_id=upload.id).first()
+        if bbu:
+            if _board_allows(bbu.board_id):
+                return True
+            # explicit deny for this link if not allowed
+            return False
+
+        # 3) Card background link?
+        cbu = CardBackgroundUpload.query.filter_by(upload_id=upload.id).first()
+        if cbu:
+            card = Card.query.get(cbu.card_id)
+            if not card:
+                return False
+
+            # card owner (uploader of the card) should be allowed
+            if getattr(card, 'user_id', None) == user.id:
+                return True
+
+            # attempt to find board id from the card: card.list.board_id OR card.list.board.id
+            board_id = None
+            try:
+                if getattr(card, 'list_id', None):
+                    # if relationships exist, card.list may be populated
+                    if getattr(card, 'list', None):
+                        board_id = getattr(card.list, 'board_id', None) or (getattr(card.list, 'board', None) and card.list.board.id)
+                    else:
+                        # if no relationship, try to query List model (if declared)
+                        # Adjust 'List' name if your model uses a different class name
+                        try:
+                            List = db.Model._decl_class_registry.get('List')
+                        except Exception:
+                            List = None
+                        if List:
+                            list_obj = List.query.get(card.list_id)
+                            if list_obj:
+                                board_id = getattr(list_obj, 'board_id', None) or (getattr(list_obj, 'board', None) and list_obj.board.id)
+                else:
+                    # no list_id present — nothing more to check
+                    board_id = None
+            except Exception as ex:
+                app.logger.debug("Error resolving board_id from card: %s", ex)
+                board_id = None
+
+            if board_id and _board_allows(board_id):
+                return True
+
+            # card is linked but user not permitted
+            return False
+
+        # 4) Future: other association tables can be checked here (project files, attachments, etc.)
+
+        # If upload is not linked to a known entity, deny (uploader was already allowed above)
+        return False
+
+    except Exception as e:
+        app.logger.exception("has_access_to_upload failed: %s", e)
+        return False
 
 # Sharing notes
 
@@ -13968,10 +14141,22 @@ def uploads_post():
 @app.route('/uploads/<int:upload_id>', methods=['DELETE'])
 @require_session_key
 def uploads_delete(upload_id):
-    user = g.user if hasattr(g, 'user') else User.query.get(g.user_id)
-    ok, msg = delete_upload(upload_id, user)
+    user = getattr(g, 'user', None) or User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    upload = Upload.query.get(upload_id)
+    if not upload or upload.deleted:
+        return jsonify({"error": "Upload not found."}), 404
+
+    # Use universal access controller (WRITE required)
+    if not has_access_to_upload(user, upload, permission_required='write'):
+        return jsonify({"error": "Permission denied."}), 403
+
+    ok, msg = delete_upload(upload, user)
     if not ok:
         return jsonify({"error": msg}), 400
+
     return jsonify({"message": msg}), 200
 
 @app.route('/user/storage', methods=['GET'])
