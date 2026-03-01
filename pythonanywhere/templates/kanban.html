@@ -738,6 +738,7 @@
         cursor: default;
         z-index: 2;
         pointer-events: auto;
+        margin: 6px;
         }
         .card .card-due-badge.overdue { background:#e74c3c; color:#fff; }
         .card .card-due-badge.due-soon { background:#ff9f43; color:#111; }
@@ -2965,7 +2966,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
     };
 
     // Create modal DOM and return reference
-    // Create modal DOM and return reference
     function ensureCardModal() {
         if (_cardModal) return _cardModal;
 
@@ -2986,13 +2986,15 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                             </div>
                         </header>
 
-                        <!-- Card color swatches inserted between title and description -->
-                        <div id="card-modal-color" class="card-modal-color" aria-label="Card color">
-                            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
-                            <label class="label" style="margin:0;font-size:13px;">Card color</label>
-                            <div style="font-size:12px;opacity:0.8;">Pick a color</div>
+                        <div id="card-modal-bg-container">
+                            <!-- Card color swatches inserted between title and description -->
+                            <div id="card-modal-color" class="card-modal-color" aria-label="Card color">
+                                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+                                <label class="label" style="margin:0;font-size:13px;">Card color</label>
+                                <div style="font-size:12px;opacity:0.8;">Pick a color</div>
+                                </div>
+                                <div id="card-modal-color-swatches" class="swatch-grid"></div>
                             </div>
-                            <div id="card-modal-color-swatches" class="swatch-grid"></div>
                         </div>
 
                         <!-- ACTION ROW (due-date + future action buttons) -->
@@ -3100,7 +3102,16 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             border-top-right-radius: 16px;   /* Rounded top-right corner */
             border-bottom-right-radius: 16px;/* Rounded bottom-right corner */
         }
-        .card-modal-header { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+        /* Collapsible upload section */
+        .bm-section { border-top: 1px solid rgba(255,255,255,0.03); padding-top:8px; margin-top:8px; }
+        .bm-section-header { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:default; }
+        .bm-section-title { font-size:13px; opacity:0.95; margin:0; }
+        .bm-section-toggle { background:transparent; border:1px solid rgba(255,255,255,0.04); padding:6px 8px; border-radius:6px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; }
+        .bm-section-toggle:focus { outline:2px solid rgba(255,255,255,0.08); }
+        .bm-section-toggle .arrow { display:inline-block; transition: transform 180ms ease; transform-origin:50% 50%; }
+        .bm-section-content { transition: max-height 220ms ease, opacity 180ms ease; overflow:hidden; max-height:1000px; opacity:1; padding:8px;}
+        .bm-section-content.collapsed { max-height:0; opacity:0; padding-top:0; margin-top:0; }
+        .card-modal-header { display:flex; gap:12px; align-items:center; justify-content:space-between; background:transparent; box-shadow:none; padding:0; }
         .card-modal-title { font-size:20px; width:100%; padding:8px; border-radius:6px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; }
         .card-modal-body { display:flex; flex-direction:column; gap:8px; }
         .card-modal-desc { width:96%; min-height:200px; padding:12px; border-radius:8px; border:1px solid #333; background:var(--btn-color); color:#e0e0e0; resize:vertical; }
@@ -3323,17 +3334,36 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         function initCardBackgroundUpload(modalEl) {
             const uploadContainer = document.createElement('div');
             uploadContainer.classList.add('bm-section');
-            uploadContainer.style.marginTop = '8px';
 
-            // Visual label
-            const uploadLabel = document.createElement('div');
-            uploadLabel.className = 'options-menu-color-label';
-            uploadLabel.textContent = 'Card background image';
-            uploadLabel.style.fontSize = '13px';
-            uploadLabel.style.opacity = '0.95';
-            uploadContainer.appendChild(uploadLabel);
+            // Header: label + toggle arrow
+            const header = document.createElement('div');
+            header.className = 'bm-section-header';
 
-            // file input (hidden) + visible button to trigger it
+            const title = document.createElement('div');
+            title.className = 'bm-section-title';
+            title.textContent = 'Card Background';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.type = 'button';
+            toggleBtn.className = 'bm-section-toggle';
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            toggleBtn.innerHTML = `<span class="arrow" aria-hidden="true">▶</span><span style="font-size:13px;">Background</span>`;
+
+            header.appendChild(title);
+            header.appendChild(toggleBtn);
+            uploadContainer.appendChild(header);
+
+            // Content: image upload + color swatches
+            const content = document.createElement('div');
+            content.className = 'bm-section-content';
+
+            // --- Color swatches section ---
+            const colorContainer = modalEl.querySelector('#card-modal-color');
+            if (colorContainer) {
+                content.appendChild(colorContainer);
+            }
+
+            // --- Image upload section ---
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
             fileInput.accept = 'image/*';
@@ -3349,14 +3379,13 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             bgControls.style.display = 'flex';
             bgControls.style.alignItems = 'center';
             bgControls.style.gap = '8px';
-            bgControls.style.marginTop = '6px';
 
             const thumb = document.createElement('img');
             thumb.style.width = '64px';
             thumb.style.height = '40px';
             thumb.style.objectFit = 'cover';
             thumb.style.borderRadius = '6px';
-            thumb.style.display = 'none'; // shown when image exists
+            thumb.style.display = 'none';
 
             const deleteBgBtn = document.createElement('button');
             deleteBgBtn.type = 'button';
@@ -3364,15 +3393,39 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             deleteBgBtn.textContent = 'Remove background';
             deleteBgBtn.style.display = 'none';
 
-            uploadContainer.appendChild(fileInput);
-            uploadContainer.appendChild(uploadBtn);
-            uploadContainer.appendChild(bgControls);
+            content.appendChild(fileInput);
+            content.appendChild(uploadBtn);
+            content.appendChild(bgControls);
             bgControls.appendChild(thumb);
             bgControls.appendChild(deleteBgBtn);
 
-            // helper: update thumbnail + visibility based on current state
+            uploadContainer.appendChild(content);
+
+            // --- collapse / expand helpers ---
+            function setCollapsed(collapsed) {
+                if (collapsed) {
+                    content.classList.add('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    toggleBtn.querySelector('.arrow').style.transform = 'rotate(0deg)';
+                } else {
+                    content.classList.remove('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                    toggleBtn.querySelector('.arrow').style.transform = 'rotate(90deg)';
+                }
+            }
+
+            toggleBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                setCollapsed(isExpanded);
+            });
+
+            // --- Render function: handles thumbnail + collapsed/open state ---
             function renderCardBgState() {
-                if (_cardModalState.cardBackgroundUrl) {
+                const hasBg = Boolean(_cardModalState.cardBackgroundUrl);
+                const hasColor = Boolean(_cardModalState.cardColor);
+
+                if (hasBg) {
                     thumb.src = _cardModalState.cardBackgroundUrl;
                     thumb.style.display = 'block';
                     deleteBgBtn.style.display = 'inline-block';
@@ -3382,15 +3435,17 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     deleteBgBtn.style.display = 'none';
                     uploadBtn.textContent = 'Upload background image';
                 }
+
+                // open if color or background image exists
+                const shouldExpand = hasBg || hasColor;
+                setCollapsed(!shouldExpand);
             }
 
-            // helper: apply background (or clear it) to modal and board card immediately
+            // --- Apply background immediately ---
             function applyBackgroundToUI(cardId, backgroundUrl, color) {
-                // update modal state
                 _cardModalState.cardBackgroundUrl = backgroundUrl || null;
                 if (typeof color !== 'undefined') _cardModalState.cardColor = color || null;
 
-                // update left panel
                 const left = modalEl.querySelector('.card-modal-left');
                 if (left) {
                     if (_cardModalState.cardBackgroundUrl) {
@@ -3402,7 +3457,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     }
                 }
 
-                // update board card element if present
                 const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
                 if (cardEl) {
                     if (_cardModalState.cardBackgroundUrl) {
@@ -3414,67 +3468,36 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     }
                 }
 
-                // refresh upload UI (thumbnail + buttons)
-                if (modalEl && typeof modalEl._renderCardBgState === 'function') {
-                    modalEl._renderCardBgState();
-                }
+                renderCardBgState();
             }
 
-
-            fileInput.addEventListener('change', async (ev) => {
+            // --- File input logic (unchanged) ---
+            fileInput.addEventListener('change', async () => {
                 if (!fileInput.files || fileInput.files.length === 0) return;
                 const f = fileInput.files[0];
                 uploadBtn.disabled = true;
                 deleteBgBtn.disabled = true;
                 uploadBtn.textContent = 'Uploading…';
-
                 const cardId = _cardModalState.cardId;
                 try {
-                    // Step 1: POST to generic /uploads (multipart)
                     const form = new FormData();
                     form.append('file', f);
-                    const res1 = await fetch('/uploads', {
-                        method: 'POST',
-                        body: form
-                    });
-
-                    if (!res1.ok) {
-                        const err = await res1.json().catch(() => ({}));
-                        alert(err.error || 'Upload failed');
-                        return;
-                    }
+                    const res1 = await fetch('/uploads', { method: 'POST', body: form });
+                    if (!res1.ok) throw new Error('Upload failed');
                     const body = await res1.json();
                     const uploadId = body.upload_id || body.id || body.id_upload;
-
                     if (!uploadId) {
-                        // try to find a direct url if server returns it
                         const possibleUrl = body.url || body.file_url || body.upload_url;
-                        if (possibleUrl) {
-                            // attach step may not be required by API shape; continue with url
-                            applyBackgroundToUI(cardId, possibleUrl, _cardModalState.cardColor);
-                            return;
-                        }
-                        alert('Upload returned unexpected response');
+                        if (possibleUrl) applyBackgroundToUI(cardId, possibleUrl, _cardModalState.cardColor);
                         return;
                     }
-
-                    // Step 2: attach that upload to the card
                     const res2 = await fetch(`/api/cards/${cardId}/background_uploads`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ upload_id: uploadId })
                     });
-
-                    if (!res2.ok) {
-                        const err = await res2.json().catch(() => ({}));
-                        alert(err.error || 'Failed to attach background to card');
-                        return;
-                    }
-
+                    if (!res2.ok) throw new Error('Failed to attach background to card');
                     const attachBody = await res2.json();
-
-                    // Extract a usable background URL from the attach response.
-                    // Be permissive: server might return a field named background_image_url, url, file_url, card_background_image_url, or nested card/background_image_url.
                     const newUrl =
                         attachBody.background_image_url ||
                         attachBody.url ||
@@ -3483,13 +3506,10 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                         (attachBody.card && (attachBody.card.background_image_url || attachBody.card.image_url)) ||
                         (attachBody.data && (attachBody.data.background_image_url || attachBody.data.url)) ||
                         null;
-
-                    // Update UI immediately using helper
                     applyBackgroundToUI(cardId, newUrl, _cardModalState.cardColor);
-
                 } catch (err) {
                     console.error(err);
-                    alert('Network error while uploading background');
+                    alert(err.message || 'Network error');
                 } finally {
                     fileInput.value = '';
                     uploadBtn.disabled = false;
@@ -3498,34 +3518,17 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 }
             });
 
-
             deleteBgBtn.addEventListener('click', async () => {
                 if (!confirm('Remove card background image?')) return;
                 deleteBgBtn.disabled = true;
                 try {
                     const cardId = _cardModalState.cardId;
-                    // Step 1: unlink in card table
                     const res = await fetch(`/api/cards/${cardId}/background_uploads`, { method: 'DELETE' });
-                    if (!res.ok) {
-                        const j = await res.json().catch(() => ({}));
-                        alert(j.error || 'Failed to remove background');
-                        deleteBgBtn.disabled = false;
-                        return;
-                    }
-                    const j = await res.json();
+                    if (!res.ok) throw new Error('Failed to remove background');
+                    const j = await res.json().catch(() => ({}));
                     const uploadId = j.upload_id || j.id || null;
-
-                    // Step 2: delete actual upload via generic endpoint (frontend performs second request) if uploadId is present
-                    if (uploadId) {
-                        const res2 = await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
-                        if (!res2.ok) {
-                            console.warn('Failed to delete upload at /uploads/:', res2.status);
-                        }
-                    }
-
-                    // Remove image from UI; restore color if present
+                    if (uploadId) await fetch(`/uploads/${uploadId}`, { method: 'DELETE' });
                     applyBackgroundToUI(cardId, null, _cardModalState.cardColor);
-
                 } catch (err) {
                     console.error(err);
                     alert('Network error while removing background');
@@ -3534,16 +3537,11 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 }
             });
 
+            // append container to modal
+            const bgContainer = modalEl.querySelector('#card-modal-bg-container');
+            if (bgContainer) bgContainer.appendChild(uploadContainer);
 
-            // append uploadContainer to modal just after color container
-            const colorContainer = modalEl.querySelector('#card-modal-color');
-            if (colorContainer && colorContainer.parentNode) {
-                colorContainer.parentNode.insertBefore(uploadContainer, colorContainer.nextSibling);
-            } else {
-                modalEl.querySelector('.card-modal-left').insertBefore(uploadContainer, modalEl.querySelector('.card-modal-body'));
-            }
-
-            // expose a render function so refreshCardModal can call it after loading card data
+            // expose render function
             modalEl._renderCardBgState = renderCardBgState;
             renderCardBgState();
         }
@@ -4141,7 +4139,7 @@ function initBoardActionsMenu() {
     #actions-menu-board .swatch-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
     #actions-menu-board .swatch { width:34px; height:34px; border-radius:8px; cursor:pointer; border:2px solid transparent; box-sizing:border-box; }
     #actions-menu-board .swatch:focus, #actions-menu-board .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
-    #actions-menu-board .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; }
+    #actions-menu-board .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; padding:0px 0px; }
 
     /* Sharing specific */
     #actions-menu-board .sharing-list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }

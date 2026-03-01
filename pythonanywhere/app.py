@@ -5742,8 +5742,10 @@ def api_change_card_color(card_id):
     color = payload.get('color')
     if color == "none":
         c.background_color = None
+        insert_card_activity(c.id, user_id, content="Removed card color")
     else:
         c.background_color = color
+        insert_card_activity(c.id, user_id, content=f"Changed card color to {color}")
     db.session.commit()
     return jsonify({"id": c.id, "color": c.background_color})
 
