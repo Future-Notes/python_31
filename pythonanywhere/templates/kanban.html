@@ -722,8 +722,8 @@
         .card { position: relative; }
         .card .card-due-badge {
         position: absolute;
-        left: 8px;
-        bottom: 8px;
+        left: 2px;
+        bottom: 0px;
         display: inline-block;
         padding: 6px 8px;
         border-radius: 10px;
@@ -741,7 +741,7 @@
         }
         .card .card-due-badge.overdue { background:#e74c3c; color:#fff; }
         .card .card-due-badge.due-soon { background:#ff9f43; color:#111; }
-        .card .card-due-badge.upcoming { background: rgba(0,0,0,0.35); color:#fff; opacity:0.95; }
+        .card .card-due-badge.upcoming { background: rgba(0,0,0,0.35); color:#fff; opacity:0.45; }
 
         /* ensure the inline date input doesn't overflow the date menu */
         #card-modal-datetime-input {
@@ -2101,31 +2101,23 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
       </div>
     `;
 
-    // Add due-date badge wrapper (top-right)
-    const dueWrapper = document.createElement('div');
-    dueWrapper.className = 'card-due-wrapper';
-    const dueBadge = document.createElement('div');
-    dueBadge.className = 'card-due upcoming';
-    dueBadge.textContent = ''; // set below if due_date present
-    dueWrapper.appendChild(dueBadge);
-    cardEl.appendChild(dueWrapper);
-
     // If due_date provided, parse and display
+    // --- Due date badge (bottom-left system) ---
     if (due_date) {
         const parsed = parseServerIsoToDate(due_date);
         if (parsed) {
             const { label, cls } = dueDateLabelForDisplay(parsed);
-            dueBadge.textContent = label;
-            dueBadge.className = 'card-due ' + cls;
-            // store parsed time on element for possible later use (hover, tooltip, sorting)
+
+            const badge = document.createElement('div');
+            badge.className = 'card-due-badge ' + cls;
+            badge.textContent = label;
+            badge.title = parsed.toLocaleString();
+
+            cardEl.appendChild(badge);
+
+            // store canonical ISO for later sorting / updating
             cardEl.dataset.dueIso = parsed.toISOString();
-        } else {
-            // parsing failed; hide badge
-            dueWrapper.style.display = 'none';
         }
-    } else {
-        // No due date: hide wrapper so layout unaffected
-        dueWrapper.style.display = 'none';
     }
 
     // Make attach handlers same as before
