@@ -3292,7 +3292,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             // Remove clicked inside menu
             btnRemove.addEventListener('click', (ev) => {
                 ev.stopPropagation();
-                if (!confirm('Remove due date?')) return;
                 hiddenInput.value = '';
                 _cardModalState.dueDateIso = null;
                 closeDueMenu();
