@@ -4973,6 +4973,14 @@ def serve_board_share_link(token):
         user_id=user_id
     ).first()
 
+    if existing and existing.accepted_at:
+        # User already accepted this share before, just redirect to board
+        return redirect(f"/kanban_page#board-{share.board_id}")
+    
+    if existing.invited_by == user_id:
+        # Inviter accepting their own link, just redirect to board
+        return redirect(f"/kanban_page#board-{share.board_id}")
+
     if existing:
         # Upgrade permission if link permission is higher
         def perm_rank(p):
@@ -5340,8 +5348,12 @@ def api_delete_board(board_id):
     bg = BoardBackgroundUpload.query.filter_by(board_id=board_id).first()
     if bg:
         if bg.upload:
-            delete_upload(bg.upload.id, user)
+            delete_upload(bg.upload, user)
         db.session.delete(bg)
+
+    b_shares = BoardShare.query.filter_by(board_id=board_id).all()
+    for s in b_shares:
+        db.session.delete(s)
 
     # delete lists & cards (do not rely on user_id filters: delete all lists for board)
     lists = List.query.filter_by(board_id=b.id).all()
@@ -5350,7 +5362,7 @@ def api_delete_board(board_id):
         for c in cards:
             c_bg = CardBackgroundUpload.query.filter_by(card_id=c.id).first()
             if c_bg:
-                delete_upload(c_bg.upload_id, user)
+                delete_upload(c_bg.upload, user)
                 db.session.delete(c_bg)
             # delete card activities
             activities = CardActivity.query.filter_by(card_id=c.id).all()

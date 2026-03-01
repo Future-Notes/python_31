@@ -667,7 +667,7 @@
         }
 
         .permission-banner.hidden {
-            display: none;
+            display: none !important;
         }
 
         /* Read-only (strong warning) */
@@ -866,6 +866,7 @@
         <!-- Board area (hidden until a board is opened) -->
         <div id="board-area" style="display:none; flex:1; flex-direction:column;">
             <div class="board-header">
+                <button class="back-btn" id="board-back-btn" title="Back to boards">←</button>
                 <div class="board-title" id="board-title">Select a board</div>
                 <div>
                     <button id="actions-menu-btn" class="small-btn">•••</button>
@@ -980,6 +981,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         await loadStartPageBoards();
         showStartPage();
     }
+
+    document.getElementById('board-back-btn').addEventListener('click', () => {
+        location.hash = '';
+        loadStartPageBoards();
+        showStartPage();
+    });
 
     // respond to hash changes (allow navigation between boards without reload)
     window.addEventListener('hashchange', async () => {
@@ -1358,40 +1365,66 @@ function updateCardDueBadge(cardEl, dueIso) {
 /* START PAGE: fetch boards and render as cards */
 async function loadStartPageBoards() {
     try {
-        // reuse same API used by sidebar; keep in memory
         boardsCache = await apiGET('/api/boards');
         const grid = document.getElementById('start-grid');
         grid.innerHTML = '';
 
-        if (!boardsCache || boardsCache.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'board-card create-large';
-            empty.id = 'start-page-new-board';
-            empty.style.display='flex'; empty.style.alignItems='center'; empty.style.justifyContent='center'; empty.style.height='120px';
-            empty.innerHTML = `<div style="text-align:center; width:100%"><div style="font-size:36px;">＋</div><div style="opacity:0.8; margin-top:8px">Create your first board</div></div>`;
-            empty.addEventListener('click', () => {
-                // open inline new board input (will create board)
-                showInlineNewBoard(empty.id);
-            });
-            grid.appendChild(empty);
-            return;
+        const hasBoards = boardsCache && boardsCache.length > 0;
+
+        if (hasBoards) {
+            for (const b of boardsCache) {
+                const card = document.createElement('div');
+                card.className = 'board-card';
+                card.dataset.boardId = b.id;
+                card.style.borderRadius = '10px';
+                card.style.padding = '12px';
+                card.style.background = 'linear-gradient(180deg,#161616,#0f0f0f)';
+                card.innerHTML = `
+                    <h3 style="margin:0 0 8px 0;font-size:16px">
+                        ${escapeHtml(b.title)}
+                    </h3>
+                    <p style="margin:0;color:var(--muted-2);font-size:13px">
+                        ${
+                            b.cards_count
+                                ? `${b.cards_count} ${b.cards_count === 1 ? 'card' : 'cards'}`
+                                : 'No cards yet'
+                        }
+                    </p>
+                `;
+                card.addEventListener('click', async () => {
+                    await loadBoards();
+                    await selectBoard(b.id);
+                });
+                grid.appendChild(card);
+            }
         }
 
-        for (const b of boardsCache) {
-            const card = document.createElement('div');
-            card.className = 'board-card';
-            card.dataset.boardId = b.id;
-            card.style.borderRadius = '10px';
-            card.style.padding = '12px';
-            card.style.background = 'linear-gradient(180deg,#161616,#0f0f0f)';
-            card.innerHTML = `<h3 style="margin:0 0 8px 0;font-size:16px">${escapeHtml(b.title)}</h3><p style="margin:0;color:var(--muted-2);font-size:13px">${b.cards_count ? `${b.cards_count} ${b.cards_count === 1 ? 'card' : 'cards'}` : 'No cards yet'}</p>`;
-            card.addEventListener('click', async () => {
-                // when a board card is clicked, populate the sidebar and open the board
-                await loadBoards();
-                await selectBoard(b.id);
-            });
-            grid.appendChild(card);
-        }
+        // Always show create board card
+        const createCard = document.createElement('div');
+        createCard.className = hasBoards
+            ? 'board-card create-large'
+            : 'board-card create-large';
+
+        createCard.id = 'start-page-new-board';
+        createCard.style.display = 'flex';
+        createCard.style.alignItems = 'center';
+        createCard.style.justifyContent = 'center';
+        createCard.style.height = '120px';
+
+        createCard.innerHTML = `
+            <div style="text-align:center; width:100%">
+                <div style="font-size:36px;">＋</div>
+                <div style="opacity:0.8; margin-top:8px">
+                    ${hasBoards ? 'Create another board' : 'Create your first board'}
+                </div>
+            </div>
+        `;
+
+        createCard.addEventListener('click', () => {
+            showInlineNewBoard(createCard.id);
+        });
+
+        grid.appendChild(createCard);
 
     } catch (err) {
         console.error('Failed to load start page boards', err);
