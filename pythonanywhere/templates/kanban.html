@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2c2c2c">
-    <title>Future Notes - Trello</title>
+    <title>Future Notes - Kanban</title>
     <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
@@ -718,6 +718,36 @@
             display: none;
         }
 
+        /* bottom-left due badge for cards (prevents overlap) */
+        .card { position: relative; }
+        .card .card-due-badge {
+        position: absolute;
+        left: 8px;
+        bottom: 8px;
+        display: inline-block;
+        padding: 6px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: calc(100% - 24px); /* keep inside card */
+        box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+        border: 1px solid rgba(255,255,255,0.04);
+        cursor: default;
+        z-index: 2;
+        pointer-events: auto;
+        }
+        .card .card-due-badge.overdue { background:#e74c3c; color:#fff; }
+        .card .card-due-badge.due-soon { background:#ff9f43; color:#111; }
+        .card .card-due-badge.upcoming { background: rgba(0,0,0,0.35); color:#fff; opacity:0.95; }
+
+        /* ensure the inline date input doesn't overflow the date menu */
+        #card-modal-datetime-input {
+        width: 93% !important;
+        box-sizing: border-box;
+        }
     </style>
 
     <!-- SortableJS CDN (drag & drop) -->
@@ -735,7 +765,7 @@
         <a href="/index" class="nav-link">Notes</a>
         <a href="/scheduler-page" class="nav-link">Calendar</a>
         <a href="/todo_page" class="nav-link">Todo</a>
-        <a href="/trello_page" class="nav-link active">Trello</a>
+        <a href="/kanban_page" class="nav-link active">Kanban</a>
     </nav>
     <div id="storage-container" style="margin: 0px 100px;">
         <span id="storage-counter">0 / 0 MB</span>
@@ -750,7 +780,7 @@
     <a href="/index" class="nav-link">Notes</a>
     <a href="/scheduler-page" class="nav-link">Calendar</a>
     <a href="/todo_page" class="nav-link">Todo</a>
-    <a href="/trello_page" class="nav-link active">Trello</a>
+    <a href="/kanban_page" class="nav-link active">Kanban</a>
 </nav>
 
 <div id="storage-modal" role="dialog" aria-hidden="true" class="modal-overlay">
@@ -1229,6 +1259,99 @@ async function apiPATCH(path, body) {
 async function apiDELETE(path) {
     const res = await fetch(path, { method:'DELETE', credentials:'include' });
     return res;
+}
+
+// Parse server ISO -> JS Date (treat naive ISO as UTC by appending "Z")
+function parseServerIsoToDate(s) {
+    if (!s) return null;
+    if (s instanceof Date) return s;
+    const str = String(s);
+    // If the string already contains timezone info (Z or +hh:mm or -hh:mm) parse directly
+    if (/[zZ]$/.test(str) || /[+\-]\d{2}:\d{2}$/.test(str)) {
+        const d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    // Otherwise treat as UTC: append 'Z'
+    const d = new Date(str + 'Z');
+    return isNaN(d.getTime()) ? null : d;
+}
+
+// Returns formatted short label (local time) and status class
+function dueDateLabelForDisplay(dateObj) {
+    if (!dateObj) return { label: null, cls: 'upcoming' };
+    const now = Date.now();
+    const t = dateObj.getTime();
+    const msInHour = 3600 * 1000;
+    const msInDay = 24 * msInHour;
+    const diff = t - now;
+
+    // overdue
+    if (diff < 0) {
+        // show "Overdue · 1 Mar 19:00" style
+        return {
+            label: 'Overdue • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+            cls: 'overdue'
+        };
+    }
+
+    // due soon: within 48 hours
+    if (diff <= (2 * msInDay)) {
+        return {
+            label: 'Due • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+            cls: 'due-soon'
+        };
+    }
+
+    // upcoming / normal
+    return {
+        label: dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' }),
+        cls: 'upcoming'
+    };
+}
+
+// Update or create the small due-date badge inside a board card DOM element.
+// cardEl: DOM element (.card); dueIso: timezone-aware ISO string (e.g. "2026-03-01T11:00:00.000Z") OR null/empty to remove.
+function updateCardDueBadge(cardEl, dueIso) {
+    if (!cardEl) return;
+    // remove or update
+    const existing = cardEl.querySelector('.card-due-badge');
+
+    if (!dueIso) {
+        if (existing) existing.remove();
+        delete cardEl.dataset.dueIso;
+        return;
+    }
+
+    const parsed = parseServerIsoToDate(dueIso);
+    if (!parsed) {
+        if (existing) existing.remove();
+        delete cardEl.dataset.dueIso;
+        return;
+    }
+
+    const { label, cls } = dueDateLabelForDisplay(parsed);
+    if (existing) {
+        existing.textContent = label;
+        existing.className = 'card-due-badge ' + cls;
+        existing.title = parsed.toLocaleString();
+    } else {
+        const badge = document.createElement('div');
+        badge.className = 'card-due-badge ' + cls;
+        badge.textContent = label;
+        badge.title = parsed.toLocaleString();
+        // clicking the badge could open modal to edit — keep behavior similar to your modal label:
+        badge.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            // open modal to edit this card's due date
+            if (typeof openCardModal === 'function') {
+                openCardModal(parseInt(cardEl.dataset.cardId, 10));
+            }
+        });
+        cardEl.appendChild(badge);
+    }
+
+    // store canonical ISO on element for sorting/inspection
+    cardEl.dataset.dueIso = parsed.toISOString();
 }
 
 /* START PAGE: fetch boards and render as cards */
@@ -1942,9 +2065,10 @@ function attachCardCompleteHandler(cardEl) {
 
 // Create a DOM node for a card. If isTemp is true, the card will be styled as temporary.
 // If background_image_url is provided, it takes precedence over background_color.
-function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null }) {
+function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null, due_date = null }) {
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
+    cardEl.dataset.cardId = id;
 
     // Apply background: image takes precedence
     if (background_image_url) {
@@ -1956,9 +2080,7 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
     if (isTemp) cardEl.classList.add('card--temp');
     if (completed) cardEl.classList.add('card--completed');
 
-    cardEl.dataset.cardId = id;
-
-    // control markup: a button (accessible) with an inline SVG checkmark
+    // Build inner HTML
     const checkHtml = `
       <button class="card-complete" aria-pressed="${completed ? 'true' : 'false'}" aria-label="${completed ? 'Mark as not done' : 'Mark as done'}" title="${completed ? 'Mark as not done' : 'Mark as done'}" tabindex="0">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -1979,6 +2101,34 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
       </div>
     `;
 
+    // Add due-date badge wrapper (top-right)
+    const dueWrapper = document.createElement('div');
+    dueWrapper.className = 'card-due-wrapper';
+    const dueBadge = document.createElement('div');
+    dueBadge.className = 'card-due upcoming';
+    dueBadge.textContent = ''; // set below if due_date present
+    dueWrapper.appendChild(dueBadge);
+    cardEl.appendChild(dueWrapper);
+
+    // If due_date provided, parse and display
+    if (due_date) {
+        const parsed = parseServerIsoToDate(due_date);
+        if (parsed) {
+            const { label, cls } = dueDateLabelForDisplay(parsed);
+            dueBadge.textContent = label;
+            dueBadge.className = 'card-due ' + cls;
+            // store parsed time on element for possible later use (hover, tooltip, sorting)
+            cardEl.dataset.dueIso = parsed.toISOString();
+        } else {
+            // parsing failed; hide badge
+            dueWrapper.style.display = 'none';
+        }
+    } else {
+        // No due date: hide wrapper so layout unaffected
+        dueWrapper.style.display = 'none';
+    }
+
+    // Make attach handlers same as before
     if (isTemp) {
         const editBtn = cardEl.querySelector('.edit-card');
         const delBtn = cardEl.querySelector('.delete-card');
@@ -2475,7 +2625,8 @@ async function loadLists(boardId) {
                     isTemp: false,
                     completed: !!c.completed,
                     background_color: c.color,
-                    background_image_url: c.background_image_url // new property
+                    background_image_url: c.background_image_url, // new property
+                    due_date: c.due_date // server-provided ISO string or null
                 });
 
                 // Ensure UI reflects server state
@@ -2778,6 +2929,50 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
     let _cardModal = null;
     let _cardModalState = { cardId: null, currentUserId: null };
 
+    // helpers: reuse global if present, otherwise provide small local implementations
+    const parseServerIsoToDate = window.parseServerIsoToDate || function (s) {
+        if (!s) return null;
+        try {
+            // if string contains timezone info, pass through
+            if (/[zZ]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s)) {
+                const d = new Date(s);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            // treat naive ISO as UTC
+            const d = new Date(s + 'Z');
+            return isNaN(d.getTime()) ? null : d;
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const dueDateLabelForDisplay = window.dueDateLabelForDisplay || function (dateObj) {
+        if (!dateObj) return { label: null, cls: 'upcoming' };
+        const now = Date.now();
+        const t = dateObj.getTime();
+        const msInHour = 3600 * 1000;
+        const msInDay = 24 * msInHour;
+        const diff = t - now;
+
+        if (diff < 0) {
+            return {
+                label: 'Overdue • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                cls: 'overdue'
+            };
+        }
+        if (diff <= (2 * msInDay)) {
+            return {
+                label: 'Due • ' + dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                cls: 'due-soon'
+            };
+        }
+        return {
+            label: dateObj.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            cls: 'upcoming'
+        };
+    };
+
+    // Create modal DOM and return reference
     // Create modal DOM and return reference
     function ensureCardModal() {
         if (_cardModal) return _cardModal;
@@ -2808,6 +3003,16 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                             <div id="card-modal-color-swatches" class="swatch-grid"></div>
                         </div>
 
+                        <!-- ACTION ROW (due-date + future action buttons) -->
+                        <div id="card-modal-action-row" class="card-modal-action-row" style="margin-top:8px; margin-bottom:6px;">
+                            <div id="card-modal-action-buttons" style="display:flex;gap:8px;align-items:center;">
+                                <!-- Add due button injected here -->
+                            </div>
+                            <div id="card-modal-due-container" style="margin-left:8px; display:flex; align-items:center;"></div>
+                            <!-- Hidden keeper for the ISO due_date value (timezone-aware ISO string produced by toISOString()) -->
+                            <input type="hidden" id="card-modal-due-hidden" value="">
+                        </div>
+
                         <div class="card-modal-body">
                             <label class="label">Description</label>
                             <textarea id="card-modal-desc" class="card-modal-desc" placeholder="Add a description..."></textarea>
@@ -2831,6 +3036,19 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                     </aside>
                 </div>
             </section>
+
+            <!-- Inline datepicker menu (hidden until needed) -->
+            <div id="card-modal-due-menu" class="card-modal-due-menu" style="display:none; position:fixed; z-index:1300;">
+                <div class="card-modal-due-menu-inner">
+                    <label style="font-size:13px;margin-bottom:6px;display:block;">Select date & time</label>
+                    <input id="card-modal-datetime-input" type="datetime-local" style="width:93%;padding:8px;border-radius:6px;border:1px solid #333;background:var(--btn-color);color:#e0e0e0;">
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
+                        <button id="card-modal-due-cancel" class="btn ghost">Cancel</button>
+                        <button id="card-modal-due-remove" class="btn ghost">Remove</button>
+                        <button id="card-modal-due-save" class="btn">Save</button>
+                    </div>
+                </div>
+            </div>
         `;
 
         // Minimal styles (scoped)
@@ -2910,6 +3128,37 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         .card-modal-color .swatch:focus, .card-modal-color .swatch:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.12); outline:none; }
         .card-modal-color .swatch--default { display:flex; align-items:center; justify-content:center; background: repeating-linear-gradient(45deg, #2b2b2b 0 6px, #262626 6px 12px); color: rgba(255,255,255,0.5); font-size:11px; padding:0 6px; }
         .card-modal-color .swatch.selected { border-color: rgba(255,255,255,0.35); box-shadow: 0 3px 8px rgba(0,0,0,0.45); }
+
+        /* Due date UI */
+        #card-modal-due-container { min-width:120px; }
+        .card-modal-due-label {
+            font-size:13px;
+            padding:6px 8px;
+            border-radius:8px;
+            background: rgba(255,255,255,0.03);
+            color: #e0e0e0;
+            cursor:pointer;
+            display:inline-flex;
+            gap:8px;
+            align-items:center;
+            border:1px solid rgba(255,255,255,0.03);
+        }
+        .card-modal-due-label.overdue { background: #e74c3c; color:#fff; }
+        .card-modal-due-label.due-soon { background: #ff9f43; color:#111; }
+        .card-modal-due-label.upcoming { opacity:0.95; }
+
+        /* Inline date menu */
+        .card-modal-due-menu { }
+        .card-modal-due-menu-inner {
+            min-width: 260px;
+            max-width: 320px;
+            background: var(--ctr-color, #0f0f0f);
+            color: #e0e0e0;
+            border: 1px solid #333;
+            padding: 12px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
         `;
 
         document.head.appendChild(style);
@@ -2928,6 +3177,157 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
 
         // --- Upload background controls (card-level) ---
         initCardBackgroundUpload(modal);
+
+        // --- Due date UI wiring ---
+        initDueDateUI(modal);
+
+        // Initialize Due Date UI handlers and helpers
+        function initDueDateUI(modalEl) {
+            const addBtnContainer = modalEl.querySelector('#card-modal-action-buttons');
+            const dueContainer = modalEl.querySelector('#card-modal-due-container');
+            const hiddenInput = modalEl.querySelector('#card-modal-due-hidden');
+            const menu = modalEl.querySelector('#card-modal-due-menu');
+            const datetimeInput = modalEl.querySelector('#card-modal-datetime-input');
+            const btnSave = modalEl.querySelector('#card-modal-due-save');
+            const btnRemove = modalEl.querySelector('#card-modal-due-remove');
+            const btnCancel = modalEl.querySelector('#card-modal-due-cancel');
+
+            // create Add due button
+            function renderAddButton() {
+                addBtnContainer.innerHTML = '';
+                const btn = document.createElement('button');
+                btn.id = 'card-modal-add-due';
+                btn.type = 'button';
+                btn.className = 'btn ghost';
+                btn.textContent = 'Add due date';
+                btn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openDueMenu(null); // no prefill => now
+                });
+                addBtnContainer.appendChild(btn);
+            }
+
+            // render due label if hiddenInput has value
+            function renderDueLabelFromHidden() {
+                dueContainer.innerHTML = '';
+                const val = hiddenInput.value;
+                if (!val) {
+                    // show add button
+                    renderAddButton();
+                    return;
+                }
+                // parse ISO -> Date (treat naive as UTC)
+                const parsed = parseServerIsoToDate(val);
+                if (!parsed) {
+                    // fallback: clear hidden
+                    hiddenInput.value = '';
+                    renderAddButton();
+                    return;
+                }
+                const { label, cls } = dueDateLabelForDisplay(parsed);
+                const lbl = document.createElement('div');
+                lbl.className = 'card-modal-due-label ' + cls;
+                lbl.textContent = label;
+                lbl.title = (new Date(parsed)).toLocaleString() + ' (local)';
+                lbl.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openDueMenu(parsed.toISOString()); // open with existing value
+                });
+
+                dueContainer.appendChild(lbl);
+
+                // remove add button from action buttons if present
+                addBtnContainer.innerHTML = '';
+            }
+
+            // open the inline menu positioned near the add button or label
+            function openDueMenu(prefillIso) {
+                // prefill datetime-local input with local representation of prefillIso or now
+                let dt = null;
+                if (prefillIso) {
+                    dt = parseServerIsoToDate(prefillIso);
+                }
+                if (!dt) dt = new Date();
+
+                // convert Date -> "YYYY-MM-DDTHH:MM" string for datetime-local
+                function toDatetimeLocalValue(d) {
+                    const pad = (n) => String(n).padStart(2, '0');
+                    const year = d.getFullYear();
+                    const month = pad(d.getMonth() + 1);
+                    const day = pad(d.getDate());
+                    const hour = pad(d.getHours());
+                    const minute = pad(d.getMinutes());
+                    return `${year}-${month}-${day}T${hour}:${minute}`;
+                }
+                datetimeInput.value = toDatetimeLocalValue(dt);
+
+                // position menu near the action row/buttons or the label if present
+                const anchor = modalEl.querySelector('#card-modal-action-buttons') || modalEl.querySelector('#card-modal-due-container');
+                const rect = anchor.getBoundingClientRect();
+                const menuEl = menu;
+                menuEl.style.display = 'block';
+                // prefer positioning under anchor
+                const left = Math.min(window.innerWidth - 340, Math.max(8, rect.left));
+                const top = rect.bottom + 8;
+                menuEl.style.left = `${left}px`;
+                menuEl.style.top = `${top}px`;
+                // store reference to where to re-render on save
+                menuEl._anchor = anchor;
+                // focus input
+                setTimeout(() => datetimeInput.focus(), 20);
+            }
+
+            function closeDueMenu() {
+                menu.style.display = 'none';
+            }
+
+            // Save pressed in date menu: store ISO (timezone-aware) into hidden input
+            btnSave.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const v = datetimeInput.value;
+                if (!v) { alert('Please pick a date & time'); return; }
+                // new Date('YYYY-MM-DDTHH:MM') is treated as local time by browsers
+                const d = new Date(v);
+                if (isNaN(d.getTime())) { alert('Invalid date'); return; }
+                // Convert to ISO (UTC) -> example: 2026-03-01T11:00:00.000Z
+                const iso = d.toISOString();
+                hiddenInput.value = iso;
+                _cardModalState.dueDateIso = iso;
+                closeDueMenu();
+                renderDueLabelFromHidden();
+            });
+
+            // Remove clicked inside menu
+            btnRemove.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (!confirm('Remove due date?')) return;
+                hiddenInput.value = '';
+                _cardModalState.dueDateIso = null;
+                closeDueMenu();
+                renderDueLabelFromHidden();
+            });
+
+            btnCancel.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                closeDueMenu();
+            });
+
+            // click outside closes the menu
+            document.addEventListener('click', (ev) => {
+                if (!menu || menu.style.display === 'none') return;
+                if (!menu.contains(ev.target) && !modalEl.contains(ev.target)) {
+                    closeDueMenu();
+                }
+            });
+
+            // initial render: if hidden has value we'll show label, else Add button
+            renderDueLabelFromHidden();
+
+            // expose utilities to other modal functions
+            modalEl._renderDueUI = renderDueLabelFromHidden;
+            modalEl._getDueHidden = () => hiddenInput;
+            modalEl._openDueMenu = openDueMenu;
+        }
 
         function initCardBackgroundUpload(modalEl) {
             const uploadContainer = document.createElement('div');
@@ -3335,6 +3735,26 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             // refresh swatch selection
             if (_cardModal && typeof _cardModal._refreshCardColorSwatches === 'function') _cardModal._refreshCardColorSwatches();
 
+            // --- due date: initialize UI from server value ---
+            const hidden = _cardModal.querySelector('#card-modal-due-hidden');
+            // server returns c.due_date as ISO string or null. We will store a timezone-aware ISO in hidden.
+            if (card.due_date) {
+                const parsed = parseServerIsoToDate(card.due_date);
+                if (parsed) {
+                    // save timezone-aware ISO (UTC) string to hidden (so sending to server is safe)
+                    hidden.value = parsed.toISOString();
+                    _cardModalState.dueDateIso = hidden.value;
+                } else {
+                    hidden.value = '';
+                    _cardModalState.dueDateIso = null;
+                }
+            } else {
+                hidden.value = '';
+                _cardModalState.dueDateIso = null;
+            }
+            // render due UI
+            if (_cardModal && typeof _cardModal._renderDueUI === 'function') _cardModal._renderDueUI();
+
             titleEl.focus();
 
             // GET activity
@@ -3539,6 +3959,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         if (!cardId) return;
         const titleEl = _cardModal.querySelector('#card-modal-title');
         const descEl = _cardModal.querySelector('#card-modal-desc');
+        const dueHidden = _cardModal.querySelector('#card-modal-due-hidden');
         const title = titleEl.value.trim();
         const description = descEl.value.trim();
 
@@ -3551,7 +3972,12 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         btn.disabled = true;
         btn.textContent = 'Saving...';
         try {
-            const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { title, description });
+            const payload = { title, description };
+            // include due_date in payload; server accepts ISO string or null
+            if (dueHidden && dueHidden.value) payload.due_date = dueHidden.value;
+            else payload.due_date = null;
+
+            const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, payload);
             if (!res.ok) {
                 const j = await res.json();
                 alert(j.error || 'Failed to save card');
@@ -3564,6 +3990,21 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 if (titleNode) titleNode.textContent = title;
                 const descNode = cardEl.querySelector('.card-desc-text');
                 if (descNode) descNode.textContent = description;
+                // existing snippet in saveCardModal after successful patch...
+                const dueIso = dueHidden && dueHidden.value ? dueHidden.value : null;
+                if (cardEl) {
+                    // set dataset for possible further UI
+                    if (dueIso) {
+                        cardEl.dataset.dueIso = new Date(dueIso).toISOString();
+                    } else {
+                        delete cardEl.dataset.dueIso;
+                    }
+
+                    // --- NEW: update/insert the badge immediately so UI reflects change without full refresh ---
+                    if (typeof updateCardDueBadge === 'function') {
+                        updateCardDueBadge(cardEl, dueIso);
+                    }
+                }
             }
             closeCardModal();
         } catch (err) {

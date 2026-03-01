@@ -6,7 +6,7 @@
     '/todo_page',
     '/flow_page',
     '/index',
-    '/trello_page'
+    '/kanban_page'
   ];
 
   // ——— STATE ———

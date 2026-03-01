@@ -513,7 +513,8 @@ class Card(db.Model):
     position = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed = db.Column(db.Boolean, default=False)
-    background_color = db.Column(db.String(7), nullable=True, default=None)  # New field for list background color
+    background_color = db.Column(db.String(7), nullable=True, default=None)
+    due_date = db.Column(db.DateTime, nullable=True)
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -2868,6 +2869,47 @@ def delete_user_and_data(user):
         db.session.rollback()
         print(f"Error deleting user data: {str(e)}")
         return False
+
+def _parse_iso_to_utc_naive(value):
+    """
+    Parse an incoming ISO datetime string (or datetime object) and return a naive UTC datetime.
+    - If value is None or empty -> returns None.
+    - If value is a naive datetime => treated AS UTC (per spec) and returned unchanged.
+    - If value has tzinfo => convert to UTC and strip tzinfo.
+    Accepts strings like:
+      - "2026-03-01T12:00:00+01:00"
+      - "2026-03-01T11:00:00Z"
+      - "2026-03-01T11:00:00"  (treated as UTC)
+    Raises ValueError on parse error.
+    """
+    if value is None or value == "":
+        return None
+
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value)
+        # Try fromisoformat first (fast). Make 'Z' -> '+00:00' replacement for compatibility.
+        try:
+            if s.endswith("Z"):
+                s2 = s[:-1] + "+00:00"
+            else:
+                s2 = s
+            dt = datetime.fromisoformat(s2)
+        except Exception:
+            # fallback to dateutil if available (handles more ISO variants)
+            try:
+                from dateutil import parser
+                dt = parser.isoparse(s)
+            except Exception:
+                raise ValueError("Invalid datetime format. Use ISO 8601, e.g. 2026-03-01T12:00:00Z")
+
+    if dt.tzinfo is None:
+        # Treat naive datetimes as already UTC (per your rule).
+        return dt.replace(tzinfo=None)
+    # convert to UTC and strip tzinfo so DB stores naive UTC
+    dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt_utc
     
 def _redeem_referral_for_user(user, signup_session):
     """
@@ -4231,10 +4273,10 @@ def flow_page():
     else:
         abort(404)
 
-@app.route('/trello_page')
-def trello_page():
-    if check("trello", "Ja") == "Ja":
-        return render_template("trello.html")
+@app.route('/kanban_page')
+def kanban_page():
+    if check("kanban", "Ja") == "Ja":
+        return render_template("kanban.html")
     else:
         abort(404)
 
@@ -4891,7 +4933,7 @@ def api_send_share_link_email(board_id):
                 content_html=cta_html,
                 content_text=None,
                 buttons=None,
-                logo_url=None,
+                logo_url=request.host_url + "/android-chrome-512x512.png",
                 unsubscribe_url=None
             )
             successes.append(to_addr)
@@ -4963,7 +5005,7 @@ def serve_board_share_link(token):
         return "Failed to accept share link", 500
 
     # Redirect to board page (adjust if needed)
-    return redirect(f"/trello_page#board-{share.board_id}")
+    return redirect(f"/kanban_page#board-{share.board_id}")
 
 @app.route('/api/boards/<int:board_id>/shares', methods=['GET'])
 @require_session_key
@@ -5389,7 +5431,8 @@ def api_get_lists():
                     "position": c.position,
                     "completed": c.completed,
                     "color": c.background_color,
-                    "background_image_url": card_bg_map.get(c.id)  # None if no background
+                    "background_image_url": card_bg_map.get(c.id),  # None if no background
+                    "due_date": c.due_date.isoformat() if c.due_date else None
                 }
                 for c in l_cards
             ]
@@ -5581,6 +5624,10 @@ def api_get_card_info(card_id):
         if upload:
             card_background_image_url = get_upload_url(upload)
 
+    if card.due_date:
+        # card.due_date is stored naive UTC; return with Z for clarity
+        due_date_iso = card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+
     return jsonify({
         "id": card.id,
         "title": card.title,
@@ -5588,7 +5635,8 @@ def api_get_card_info(card_id):
         "position": card.position,
         "completed": card.completed,
         "color": card.background_color,
-        "background_image_url": card_background_image_url
+        "background_image_url": card_background_image_url,
+        "due_date": due_date_iso if card.due_date else None
     })
 
 @app.route('/api/cards/<int:card_id>/activity', methods=['GET'])
@@ -5732,8 +5780,7 @@ def api_create_card():
     user_id = g.user_id
     payload = request.get_json() or {}
     title = (payload.get('title') or '').strip()
-    # accept either list_id (new) or board_id (compat)
-    list_id = payload.get('list_id') or payload.get('board_id') or payload.get('board')  # keep compat
+    list_id = payload.get('list_id') or payload.get('board_id') or payload.get('board')
     description = payload.get('description') or ''
     if not title or list_id is None:
         return jsonify({"error": "title and list_id required"}), 400
@@ -5749,9 +5796,23 @@ def api_create_card():
     max_pos = db.session.query(db.func.max(Card.position)).filter_by(list_id=list_id).scalar()
     position = ((max_pos or 0) + 1000)
     card = Card(user_id=user_id, list_id=list_id, title=title, description=description, position=position)
+
+    # optional due_date
+    if 'due_date' in payload:
+        try:
+            card.due_date = _parse_iso_to_utc_naive(payload.get('due_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
     db.session.add(card)
     db.session.commit()
-    return jsonify({"id": card.id, "title": card.title, "description": card.description or "", "position": card.position}), 201
+    return jsonify({
+        "id": card.id,
+        "title": card.title,
+        "description": card.description or "",
+        "position": card.position,
+        "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
+    }), 201
 
 @app.route('/api/cards/<int:card_id>/background_uploads', methods=['POST'])
 @require_session_key
@@ -5813,6 +5874,7 @@ def api_update_card(card_id):
 
     title_changed = False
     description_changed = False
+    due_date_changed = False
 
     if 'title' in payload and payload['title'] != card.title:
         card.title = payload['title']
@@ -5822,26 +5884,38 @@ def api_update_card(card_id):
         card.description = payload['description']
         description_changed = True
 
-    if title_changed:
-        insert_card_activity(
-            user_id,
-            card.id,
-            f"Card title updated to '{card.title}'"
-        )
+    if 'due_date' in payload:
+        # payload may contain null to clear
+        try:
+            new_due = _parse_iso_to_utc_naive(payload.get('due_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
 
+        # Compare naive datetimes (or None)
+        if (card.due_date is None and new_due is not None) or \
+           (card.due_date is not None and new_due is None) or \
+           (card.due_date is not None and new_due is not None and card.due_date != new_due):
+            due_date_changed = True
+            old = card.due_date
+            card.due_date = new_due
+
+    if title_changed:
+        insert_card_activity(user_id, card.id, f"Card title updated to '{card.title}'")
     if description_changed:
-        insert_card_activity(
-            user_id,
-            card.id,
-            "Card description updated"
-        )
+        insert_card_activity(user_id, card.id, "Card description updated")
+    if due_date_changed:
+        if card.due_date:
+            insert_card_activity(user_id, card.id, f"Card due date set to {card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        else:
+            insert_card_activity(user_id, card.id, "Card due date cleared")
 
     db.session.commit()
 
     return jsonify({
         "id": card.id,
         "title": card.title,
-        "description": card.description or ""
+        "description": card.description or "",
+        "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
     })
 
 @app.route('/api/cards/complete/<int:card_id>', methods=['PATCH'])
