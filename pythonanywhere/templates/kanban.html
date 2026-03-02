@@ -3553,6 +3553,12 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         document.head.appendChild(style);
         document.body.appendChild(modal);
 
+        // make modal available globally for other code that expects _cardModal
+        window._cardModal = modal;
+
+        // ensure modal state object exists before initialising UI
+        window._cardModalState = window._cardModalState || { assignees: [], cardId: null, boardId: null };
+
         // Close / cancel handlers
         modal.querySelector('.card-modal-backdrop').addEventListener('click', () => closeCardModal());
         modal.querySelector('#card-modal-cancel').addEventListener('click', () => closeCardModal());
