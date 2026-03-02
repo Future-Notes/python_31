@@ -529,6 +529,14 @@ class CardActivity(db.Model):
 
     card = db.relationship("Card", backref=db.backref("activities", lazy="dynamic"))
 
+class CardMember(db.Model):
+    __tablename__ = "card_member"
+    id = db.Column(db.Integer, primary_key=True)
+    card_id = db.Column(db.Integer, db.ForeignKey("card.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), index=True, nullable=False)
+    asigned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class InviteReferral(db.Model):
     __tablename__ = "invite_referral"
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -5413,6 +5421,19 @@ def api_get_lists():
     cards = Card.query.filter(Card.list_id.in_(list_ids)).order_by(Card.position).all()
     card_ids = [c.id for c in cards]
 
+    # fetch all card asignees for that card, including their user info (user_id, username, profile_pic_url, etc.)
+    assignees_map = {}
+    if card_ids:
+        rows = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id.in_(card_ids)).all()
+        for cm, u in rows:
+            info = {
+                "user_id": u.id,
+                "username": u.username,
+                "profile_picture": u.profile_picture,
+                "assigned_at": _iso_z(getattr(cm, 'asigned_at', None))
+            }
+            assignees_map.setdefault(cm.card_id, []).append(info)
+
     # fetch all card background uploads in one query
     card_bg_map = {}
     if card_ids:
@@ -5443,8 +5464,9 @@ def api_get_lists():
                     "position": c.position,
                     "completed": c.completed,
                     "color": c.background_color,
-                    "background_image_url": card_bg_map.get(c.id),  # None if no background
-                    "due_date": c.due_date.isoformat() if c.due_date else None
+                    "background_image_url": card_bg_map.get(c.id),
+                    "due_date": c.due_date.isoformat() if c.due_date else None,
+                    "assignees": assignees_map.get(c.id, [])
                 }
                 for c in l_cards
             ]
@@ -5455,7 +5477,6 @@ def api_get_lists():
         "board_background_image_url": board_background_image_url,
         "lists": out
     })
-
 
 @app.route('/api/lists', methods=['POST'])
 @require_session_key
@@ -5619,7 +5640,6 @@ def api_get_card_info(card_id):
         return jsonify({"error": "Card not found"}), 404
 
     # permission check on the board owning this card
-    # ensure the list exists and get its board
     list_obj = List.query.get(card.list_id)
     if not list_obj:
         return jsonify({"error": "Card/list not found"}), 404
@@ -5637,8 +5657,18 @@ def api_get_card_info(card_id):
             card_background_image_url = get_upload_url(upload)
 
     if card.due_date:
-        # card.due_date is stored naive UTC; return with Z for clarity
         due_date_iso = card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    # fetch assignees (with user info)
+    assignees = []
+    card_members = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id == card.id).all()
+    for cm, u in card_members:
+        assignees.append({
+            "user_id": u.id,
+            "username": u.username,
+            "profile_picture": u.profile_picture,
+            "assigned_at": _iso_z(getattr(cm, 'asigned_at', None))
+        })
 
     return jsonify({
         "id": card.id,
@@ -5648,7 +5678,8 @@ def api_get_card_info(card_id):
         "completed": card.completed,
         "color": card.background_color,
         "background_image_url": card_background_image_url,
-        "due_date": due_date_iso if card.due_date else None
+        "due_date": due_date_iso if card.due_date else None,
+        "assignees": assignees
     })
 
 @app.route('/api/cards/<int:card_id>/activity', methods=['GET'])
@@ -5704,6 +5735,201 @@ def api_add_comment(card_id):
     db.session.add(comment)
     db.session.commit()
     return jsonify({"id": comment.id, "user_id": comment.user_id, "username": username, "content": comment.content})
+
+def _iso_z(dt):
+    if not dt:
+        return None
+    # store dt as naive UTC in DB — render with Z suffix
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+@app.route('/api/card/<int:card_id>/assign', methods=['POST'])
+@require_session_key
+def api_assign_card(card_id):
+    user_id = g.user_id
+    card = Card.query.get(card_id)
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or access denied"}), 404
+
+    payload = request.get_json() or {}
+    assignee_user_id = payload.get('user_id')
+    if not assignee_user_id:
+        return jsonify({"error": "Assignee user ID required"}), 400
+
+    # allow assignment if the user is in BoardShare OR is the board owner
+    board = Board.query.get(list_obj.board_id)
+    is_board_owner = (board and getattr(board, 'user_id', None) == assignee_user_id)
+
+    board_member = BoardShare.query.filter_by(board_id=list_obj.board_id, user_id=assignee_user_id).first()
+    if not board_member and not is_board_owner:
+        return jsonify({"error": "Assignee is not a member of the board"}), 400
+
+    # Check if the card is already assigned to this user
+    existing_assignment = CardMember.query.filter_by(card_id=card.id, user_id=assignee_user_id).first()
+    if existing_assignment:
+        return jsonify({"error": "Card already assigned to this user"}), 400
+
+    # Create new assignment (model field is `asigned_at`)
+    new_assignment = CardMember(card_id=card.id, user_id=assignee_user_id)
+    db.session.add(new_assignment)
+
+    assignee_user = User.query.get(assignee_user_id)
+    insert_card_activity(card.id, user_id, content=f"Assigned card to {assignee_user.username if assignee_user else assignee_user_id}")
+
+    db.session.commit()
+
+    assigned_at_val = getattr(new_assignment, 'asigned_at', None)
+
+    return jsonify({
+        "id": new_assignment.id,
+        "card_id": new_assignment.card_id,
+        "user_id": new_assignment.user_id,
+        "assigned_at": _iso_z(assigned_at_val)
+    }), 201
+
+@app.route('/api/card/<int:card_id>/assign/<int:assignee_user_id>', methods=['DELETE'])
+@require_session_key
+def api_remove_card_assignee(card_id, assignee_user_id):
+    user_id = g.user_id
+    card = Card.query.get(card_id)
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or access denied"}), 404
+
+    cm = CardMember.query.filter_by(card_id=card.id, user_id=assignee_user_id).first()
+    if not cm:
+        return jsonify({"error": "Assignee not found on this card"}), 404
+
+    assignee_user = User.query.get(assignee_user_id)
+    db.session.delete(cm)
+    insert_card_activity(card.id, user_id, content=f"Removed assignee {assignee_user.username if assignee_user else assignee_user_id}")
+    db.session.commit()
+
+    return jsonify({"success": True}), 200
+
+@app.route('/api/cards/<int:card_id>/assign/bulk', methods=['POST'])
+@require_session_key
+def api_card_assign_bulk(card_id):
+    user_id = g.user_id
+    card = Card.query.get(card_id)
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+
+    list_obj = List.query.get(card.list_id)
+    if not list_obj:
+        return jsonify({"error": "Card/list not found"}), 404
+
+    allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
+    if not allowed:
+        return jsonify({"error": "Card not found or access denied"}), 404
+
+    payload = request.get_json() or {}
+    to_add = payload.get('add') or []
+    to_remove = payload.get('remove') or []
+
+    if not isinstance(to_add, list) or not isinstance(to_remove, list):
+        return jsonify({"error": "Invalid payload, expected 'add' and 'remove' arrays"}), 400
+
+    # Validate user ids: only allow users who are board members or board owner
+    board = Board.query.get(list_obj.board_id)
+    owner_id = getattr(board, 'user_id', None)
+
+    # Collect allowed member user ids for fast check
+    shares = BoardShare.query.filter_by(board_id=list_obj.board_id).filter(BoardShare.user_id != None).all()
+    board_member_ids = {s.user_id for s in shares}
+    if owner_id:
+        board_member_ids.add(owner_id)
+
+    # filter only valid ids
+    add_filtered = [int(x) for x in to_add if isinstance(x, (int, float, str)) and int(x) in board_member_ids]
+    remove_filtered = [int(x) for x in to_remove if isinstance(x, (int, float, str)) and int(x) in board_member_ids]
+
+    # perform DB changes
+    try:
+        # ADD: skip existing
+        for uid in add_filtered:
+            if not CardMember.query.filter_by(card_id=card.id, user_id=uid).first():
+                cm = CardMember(card_id=card.id, user_id=uid)
+                db.session.add(cm)
+                # optional activity log per add
+                insert_card_activity(card.id, user_id, content=f"Assigned card to {User.query.get(uid).username if User.query.get(uid) else uid}")
+
+        # REMOVE: delete existing
+        if remove_filtered:
+            CardMember.query.filter(CardMember.card_id == card.id, CardMember.user_id.in_(remove_filtered)).delete(synchronize_session=False)
+            # optional activity log per remove (you could iterate to record who removed)
+            for uid in remove_filtered:
+                insert_card_activity(card.id, user_id, content=f"Removed assignee {User.query.get(uid).username if User.query.get(uid) else uid}")
+
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.exception("Failed to update card assignees")
+        return jsonify({"error": "Failed to update assignees"}), 500
+
+    # Return current assignees with user info
+    rows = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id == card.id).all()
+    assignees = []
+    for cm, u in rows:
+        assignees.append({
+            "user_id": u.id,
+            "username": u.username,
+            "profile_picture": u.profile_picture,
+            "assigned_at": getattr(cm, 'asigned_at', None).strftime('%Y-%m-%dT%H:%M:%SZ') if getattr(cm, 'asigned_at', None) else None
+        })
+
+    return jsonify({"assignees": assignees})
+
+@app.route('/api/boards/<int:board_id>/members', methods=['GET'])
+@require_session_key
+def api_get_board_members(board_id):
+    user_id = g.user_id
+
+    allowed, reason = require_board_permission(board_id, user_id, need_edit=False)
+    if not allowed:
+        return jsonify({"error": "Board not found or access denied"}), 404
+
+    board = Board.query.get(board_id)
+    if not board:
+        return jsonify({"error": "Board not found"}), 404
+
+    # members from shares (only those with a user_id)
+    shares = BoardShare.query.filter_by(board_id=board_id).filter(BoardShare.user_id != None).all()
+    user_ids = [s.user_id for s in shares if s.user_id]
+
+    # include the owner (board.user_id) even if not present in shares
+    owner_id = getattr(board, "user_id", None)
+    if owner_id and owner_id not in user_ids:
+        user_ids.append(owner_id)
+
+    # fetch users
+    users = User.query.filter(User.id.in_(user_ids)).all()
+    members = []
+    for u in users:
+        members.append({
+            "user_id": u.id,
+            "username": u.username,
+            "profile_picture": u.profile_picture
+        })
+
+    # optional: sort alphabetically by username
+    members.sort(key=lambda x: (x['username'] or '').lower())
+
+    return jsonify({"members": members})
 
 @app.route('/api/card/comment/<int:comment_id>', methods=['PATCH'])
 @require_session_key

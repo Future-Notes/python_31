@@ -749,6 +749,128 @@
         width: 93% !important;
         box-sizing: border-box;
         }
+
+        /* Assignee avatar group on card (place where you want it in card DOM) */
+        .card-avatars {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 8px;
+        }
+
+        /* small avatars */
+        .avatar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        cursor: pointer;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.06) inset;
+        }
+        .avatar-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        }
+        .avatar-initials {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 13px;
+        user-select: none;
+        }
+
+        /* +N bubble */
+        .avatar-more {
+        background: rgba(0,0,0,0.08);
+        color: #111;
+        font-weight: 600;
+        font-size: 12px;
+        }
+
+        /* larger popup */
+        .assignee-popup {
+        position: absolute;
+        z-index: 2000;
+        min-width: 160px;
+        max-width: 320px;
+        background: var(--surface, #fff);
+        border-radius: 8px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+        padding: 8px;
+        transition: opacity 140ms ease, transform 140ms ease;
+        opacity: 0;
+        transform: translateY(-6px) scale(0.98);
+        pointer-events: none;
+        }
+        .assignee-popup.visible {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
+        }
+        .assignee-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        }
+        .assignee-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px;
+        border-radius: 6px;
+        }
+        .assignee-row:hover {
+        background: rgba(0,0,0,0.03);
+        }
+        .assignee-row .assignee-row-avatar {
+        flex: 0 0 auto;
+        }
+        .assignee-row-name {
+        font-size: 14px;
+        color: var(--text, #111);
+        }
+
+        /* small tweak: if avatar inside card, slightly overlap for compactness */
+        .card-avatars .avatar {
+        border: 2px solid rgba(255,255,255,0.85);
+        transform: translateY(0);
+        }
+        .card-avatars.has-more .avatar {
+        margin-right: 0;
+        }
+        /* member chips inside modal action row */
+        .card-modal-action-row .member-group { display:flex; gap:6px; align-items:center; }
+        .card-member-chip { display:flex; gap:6px; align-items:center; padding:4px 6px; border-radius:999px; background:rgba(255,255,255,0.02); cursor:pointer; position:relative; }
+        .card-member-chip .chip-name { font-size:13px; color:var(--text,#e0e0e0); margin-left:4px; max-width:140px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .card-member-chip .chip-close { display:none; position:absolute; top:-6px; right:-6px; background:#e74c3c; color:white; width:18px; height:18px; border-radius:50%; font-size:12px; align-items:center; justify-content:center; display:flex; }
+        .card-member-chip:hover .chip-close { display:flex; }
+
+        /* members dropdown (attach to body) */
+        .members-dropdown {
+        position: absolute;
+        z-index: 1400;
+        min-width: 260px;
+        max-width: 360px;
+        background: var(--ctr-color,#0f0f0f);
+        color: #e0e0e0;
+        border: 1px solid #333;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        padding: 8px;
+        }
+        .members-dropdown .members-list { max-height: 260px; overflow:auto; display:flex; flex-direction:column; gap:8px; padding:4px; }
+        .member-row { display:flex; gap:8px; align-items:center; padding:6px; border-radius:6px; cursor:pointer; }
+        .member-row:hover { background: rgba(255,255,255,0.03); }
+        .member-row .member-checkbox { margin-left:auto; margin-right:4px; }
+        .members-dropdown .dd-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
     </style>
 
     <!-- SortableJS CDN (drag & drop) -->
@@ -2096,10 +2218,228 @@ function attachCardCompleteHandler(cardEl) {
     });
 }
 
+const ASSIGNEES_MAX_VISIBLE = 3;
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"'`=\/]/g, function (c) {
+    return ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+      "'": '&#39;', '/': '&#x2F;', '`': '&#x60;', '=': '&#x3D;'
+    })[c];
+  });
+}
+
+function getInitial(username) {
+  if (!username) return '?';
+  return username.trim().charAt(0).toUpperCase();
+}
+
+function stringToColor(str, s = 60, l = 50) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash |= 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue} ${s}% ${l}%)`;
+}
+
+// Create avatar element (img or initials)
+function createAvatarEl({ username, profile_picture, size = 28, title = '' }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'avatar';
+  wrap.style.width = `${size}px`;
+  wrap.style.height = `${size}px`;
+  wrap.title = title || username || '';
+
+  if (profile_picture) {
+    const img = document.createElement('img');
+    img.src = profile_picture;
+    img.alt = username || 'User';
+    img.decoding = 'async';
+    img.loading = 'lazy';
+    img.className = 'avatar-img';
+    wrap.appendChild(img);
+  } else {
+    const initial = document.createElement('div');
+    initial.className = 'avatar-initials';
+    initial.textContent = getInitial(username);
+    initial.style.background = stringToColor(username || String(Math.random()));
+    wrap.appendChild(initial);
+  }
+
+  return wrap;
+}
+
+// Build the assignee UI inside a card
+// container: element to append avatars to (should exist inside the card)
+// assignees: array of assignee objects
+function renderAssignees(container, assignees = []) {
+  // clear existing
+  container.innerHTML = '';
+  container.classList.remove('has-more');
+
+  if (!Array.isArray(assignees) || assignees.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = '';
+
+  const visible = assignees.slice(0, ASSIGNEES_MAX_VISIBLE);
+  visible.forEach(a => {
+    const av = createAvatarEl({
+      username: a.username,
+      profile_picture: a.profile_picture,
+      size: 28,
+      title: `${a.username}${a.assigned_at ? ' — assigned ' + a.assigned_at : ''}`
+    });
+    av.dataset.userId = a.user_id;
+    container.appendChild(av);
+  });
+
+  const extraCount = assignees.length - visible.length;
+  if (extraCount > 0) {
+    const moreEl = document.createElement('div');
+    moreEl.className = 'avatar avatar-more';
+    moreEl.textContent = `+${extraCount}`;
+    moreEl.tabIndex = 0;
+    moreEl.setAttribute('aria-haspopup', 'dialog');
+    moreEl.setAttribute('role', 'button');
+    container.appendChild(moreEl);
+    container.classList.add('has-more');
+  }
+
+  // attach hover / click handlers for the popup (one handler per container)
+  ensureAssigneePopupBehavior(container, assignees);
+}
+
+// Popup management: shows a small menu with all assignees (avatar + username)
+function ensureAssigneePopupBehavior(container, assignees) {
+  // Avoid double-binding
+  if (container._assigneePopupInitialized) return;
+  container._assigneePopupInitialized = true;
+
+  // Create popup element
+  const popup = document.createElement('div');
+  popup.className = 'assignee-popup';
+  popup.setAttribute('role', 'dialog');
+  popup.setAttribute('aria-hidden', 'true');
+  popup.style.display = 'none';
+
+  // Build list
+  function buildList() {
+    popup.innerHTML = ''; // rebuild each time for fresh data
+    const list = document.createElement('div');
+    list.className = 'assignee-list';
+    assignees.forEach(a => {
+      const row = document.createElement('div');
+      row.className = 'assignee-row';
+      const avat = createAvatarEl({ username: a.username, profile_picture: a.profile_picture, size: 36 });
+      avat.classList.add('assignee-row-avatar');
+      const name = document.createElement('div');
+      name.className = 'assignee-row-name';
+      name.textContent = a.username || `user ${a.user_id}`;
+      row.appendChild(avat);
+      row.appendChild(name);
+      list.appendChild(row);
+    });
+    popup.appendChild(list);
+  }
+  buildList();
+  document.body.appendChild(popup);
+
+  // Positioning helper
+  function positionPopup() {
+    const rect = container.getBoundingClientRect();
+    // prefer below; if not enough viewport, place above
+    const belowTop = rect.bottom + 8;
+    const belowFits = (belowTop + popup.offsetHeight) < (window.innerHeight - 8);
+    if (belowFits) {
+      popup.style.top = `${rect.bottom + window.scrollY + 8}px`;
+    } else {
+      popup.style.top = `${rect.top + window.scrollY - popup.offsetHeight - 8}px`;
+    }
+    // align popup's right edge to container's right edge but clamp to viewport
+    const left = Math.min(Math.max(rect.right + window.scrollX - popup.offsetWidth, 8), window.innerWidth - popup.offsetWidth - 8);
+    popup.style.left = `${left}px`;
+  }
+
+  let hideTimeout = null;
+
+  function showPopup() {
+    if (!popup) return;
+    popup.style.display = '';
+    popup.setAttribute('aria-hidden', 'false');
+    buildList(); // rebuild incase assignees changed
+    positionPopup();
+    // small timeout: allow CSS transitions if desired
+    window.setTimeout(() => popup.classList.add('visible'), 10);
+  }
+  function hidePopup() {
+    if (!popup) return;
+    popup.classList.remove('visible');
+    popup.setAttribute('aria-hidden', 'true');
+    hideTimeout = window.setTimeout(() => {
+      popup.style.display = 'none';
+      hideTimeout = null;
+    }, 160); // allow transition
+  }
+
+  // Mouse behaviors (hover)
+  container.addEventListener('mouseenter', () => {
+    if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
+    showPopup();
+  });
+  container.addEventListener('mouseleave', () => {
+    if (hideTimeout) clearTimeout(hideTimeout);
+    hideTimeout = window.setTimeout(hidePopup, 150);
+  });
+
+  // Also support focus / blur for keyboard
+  container.addEventListener('focusin', () => {
+    if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
+    showPopup();
+  });
+  container.addEventListener('focusout', (ev) => {
+    // if moving focus into popup, do not hide
+    if (popup.contains(ev.relatedTarget)) return;
+    hidePopup();
+  });
+
+  // Toggle on click for mobile/tap
+  container.addEventListener('click', (ev) => {
+    // prevent card click-through when toggling avatars
+    ev.stopPropagation();
+    const isVisible = popup.style.display !== 'none';
+    if (isVisible) hidePopup(); else showPopup();
+  });
+
+  // keyboard: open on Enter/Space, close on Escape
+  container.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      const isVisible = popup.style.display !== 'none';
+      if (isVisible) hidePopup(); else showPopup();
+    } else if (ev.key === 'Escape') {
+      hidePopup();
+    }
+  });
+
+  // clicking outside should close popup
+  document.addEventListener('click', (ev) => {
+    if (!popup.contains(ev.target) && !container.contains(ev.target)) {
+      hidePopup();
+    }
+  });
+
+  // reposition on resize/scroll
+  window.addEventListener('resize', positionPopup);
+  window.addEventListener('scroll', positionPopup, true);
+}
 
 // Create a DOM node for a card. If isTemp is true, the card will be styled as temporary.
 // If background_image_url is provided, it takes precedence over background_color.
-function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null, due_date = null }) {
+function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null, due_date = null, assignees = [] }) {
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
     cardEl.dataset.cardId = id;
@@ -2153,6 +2493,18 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
             cardEl.dataset.dueIso = parsed.toISOString();
         }
     }
+
+    // Insert avatar container somewhere appropriate, e.g. inside card-main or footer
+    const avatarsContainer = document.createElement('div');
+    avatarsContainer.className = 'card-avatars';
+    // set tabindex so keyboard users can open the popup
+    avatarsContainer.tabIndex = 0;
+    // append to card main area (choose location you like)
+    const main = cardEl.querySelector('.card-main') || cardEl;
+    main.appendChild(avatarsContainer);
+
+    // render assignees
+    renderAssignees(avatarsContainer, assignees);
 
     // Make attach handlers same as before
     if (isTemp) {
@@ -2651,8 +3003,9 @@ async function loadLists(boardId) {
                     isTemp: false,
                     completed: !!c.completed,
                     background_color: c.color,
-                    background_image_url: c.background_image_url, // new property
-                    due_date: c.due_date // server-provided ISO string or null
+                    background_image_url: c.background_image_url,
+                    due_date: c.due_date,
+                    assignees: c.assignees || []
                 });
 
                 // Ensure UI reflects server state
@@ -3214,6 +3567,9 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         // --- Upload background controls (card-level) ---
         initCardBackgroundUpload(modal);
 
+        // initialise the asignees section
+        initAssigneesUI(modal);
+
         // --- Due date UI wiring ---
         initDueDateUI(modal);
 
@@ -3362,6 +3718,259 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             modalEl._renderDueUI = renderDueLabelFromHidden;
             modalEl._getDueHidden = () => hiddenInput;
             modalEl._openDueMenu = openDueMenu;
+        }
+
+        function initAssigneesUI(modalEl) {
+            // container references
+            const actionButtons = modalEl.querySelector('#card-modal-action-buttons');
+            const dueContainer = modalEl.querySelector('#card-modal-due-container');
+            // we'll render members inside actionButtons (left side)
+            const membersWrapper = document.createElement('div');
+            membersWrapper.className = 'member-group';
+            actionButtons.insertBefore(membersWrapper, actionButtons.firstChild);
+
+            // small state helpers (modalEl state is global _cardModalState)
+            function renderMemberActionRow() {
+                membersWrapper.innerHTML = '';
+                const assignees = _cardModalState.assignees || [];
+                if (!assignees.length) {
+                // no members: show Add Member button as a normal action button
+                const addBtn = document.createElement('button');
+                addBtn.type = 'button';
+                addBtn.className = 'btn ghost';
+                addBtn.id = 'card-modal-add-member';
+                addBtn.textContent = 'Add member';
+                addBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openMembersDropdown(modalEl, []); // no preselection
+                });
+                membersWrapper.appendChild(addBtn);
+                return;
+                }
+
+                // there are assignees: render up to 3 chips + +N
+                const visible = assignees.slice(0, 3);
+                visible.forEach(a => {
+                const chip = document.createElement('div');
+                chip.className = 'card-member-chip';
+                chip.tabIndex = 0;
+                chip.title = a.username || ('User ' + a.user_id);
+                // avatar
+                const av = createAvatarEl({ username: a.username, profile_picture: a.profile_picture, size: 28, title: a.username });
+                av.classList.add('chip-avatar');
+                chip.appendChild(av);
+                // name
+                const name = document.createElement('div');
+                name.className = 'chip-name';
+                name.textContent = a.username;
+                chip.appendChild(name);
+                // close icon (for remove)
+                const close = document.createElement('div');
+                close.className = 'chip-close';
+                close.textContent = '✕';
+                chip.appendChild(close);
+
+                // clicking chip removes (single remove) with confirmation
+                chip.addEventListener('click', async (ev) => {
+                    ev.stopPropagation();
+                    // if user clicked close explicitly, treat same (makes UX clear)
+                    const confirmRemove = confirm(`Remove ${a.username || 'this member'} from card?`);
+                    if (!confirmRemove) return;
+                    try {
+                    // call bulk endpoint to remove single user (we will provide the API below)
+                    const payload = { add: [], remove: [a.user_id] };
+                    const res = await apiPOST(`/api/cards/${encodeURIComponent(_cardModalState.cardId)}/assign/bulk`, payload);
+                    if (!res.ok) {
+                        const j = await res.json().catch(()=>({}));
+                        alert(j.error || 'Failed to remove member');
+                        return;
+                    }
+                    const json = await res.json();
+                    // update modal state & UI
+                    _cardModalState.assignees = json.assignees || [];
+                    renderMemberActionRow();
+                    // update board/card DOM avatars if present (reuse renderAssignees on card)
+                    updateCardElementAssignees(_cardModalState.cardId, _cardModalState.assignees);
+                    } catch (err) {
+                    console.error(err);
+                    alert('Network error while removing member');
+                    }
+                });
+
+                // accessible keyboard remove using Enter on focused chip
+                chip.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                    ev.preventDefault();
+                    chip.click();
+                    }
+                });
+
+                // use same popup when hovering (reuse ensureAssigneePopupBehavior)
+                chip.appendChild(document.createElement('span')); // no-op to keep layout consistent
+                membersWrapper.appendChild(chip);
+
+                // attach popup behavior for entire chip to show full members list on hover
+                ensureAssigneePopupBehavior(membersWrapper, _cardModalState.assignees); // note: minor reuse; function accepts container+assignees
+                });
+
+                const extra = _cardModalState.assignees.length - visible.length;
+                if (extra > 0) {
+                const more = document.createElement('div');
+                more.className = 'card-member-chip';
+                more.textContent = `+${extra}`;
+                more.tabIndex = 0;
+                more.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    openMembersDropdown(modalEl, []); // still open dropdown to add more (or show full list)
+                });
+                membersWrapper.appendChild(more);
+                }
+
+                // Add an explicit "Add member" tiny button at the end
+                const addSmall = document.createElement('button');
+                addSmall.className = 'btn ghost';
+                addSmall.type = 'button';
+                addSmall.textContent = 'Add';
+                addSmall.style.marginLeft = '6px';
+                addSmall.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                openMembersDropdown(modalEl, _cardModalState.assignees.map(a => a.user_id));
+                });
+                membersWrapper.appendChild(addSmall);
+            }
+
+            // show dropdown listing all board members (with multi-select)
+            async function openMembersDropdown(modalEl, preselectedIds = []) {
+                // ensure we have board_id available (modal may not store it)
+                const boardId = _cardModalState.boardId || _cardModalState.board_id;
+                if (!boardId) {
+                alert('Board id missing for member list');
+                return;
+                }
+
+                // fetch members
+                let members = [];
+                try {
+                members = await apiGET(`/api/boards/${boardId}/members`);
+                members = members && members.members ? members.members : [];
+                } catch (err) {
+                console.error(err);
+                alert('Failed to fetch board members');
+                return;
+                }
+
+                // build dropdown
+                const dd = document.createElement('div');
+                dd.className = 'members-dropdown';
+                const list = document.createElement('div');
+                list.className = 'members-list';
+                dd.appendChild(list);
+
+                const selected = new Set(preselectedIds || []);
+                members.forEach(m => {
+                const row = document.createElement('div');
+                row.className = 'member-row';
+                // avatar
+                const av = createAvatarEl({ username: m.username, profile_picture: m.profile_picture, size: 36, title: m.username });
+                row.appendChild(av);
+                // name
+                const name = document.createElement('div');
+                name.className = 'member-name';
+                name.textContent = m.username;
+                row.appendChild(name);
+                // checkbox
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'member-checkbox';
+                cb.checked = selected.has(m.user_id);
+                row.appendChild(cb);
+
+                row.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    cb.checked = !cb.checked;
+                    if (cb.checked) selected.add(m.user_id); else selected.delete(m.user_id);
+                });
+
+                list.appendChild(row);
+                });
+
+                const actions = document.createElement('div');
+                actions.className = 'dd-actions';
+                const btnCancel = document.createElement('button'); btnCancel.className = 'btn ghost'; btnCancel.textContent='Cancel';
+                const btnApply = document.createElement('button'); btnApply.className = 'btn'; btnApply.textContent='Apply';
+                actions.appendChild(btnCancel); actions.appendChild(btnApply);
+                dd.appendChild(actions);
+
+                // position near membersWrapper or actionButtons
+                document.body.appendChild(dd);
+                const anchorRect = membersWrapper.getBoundingClientRect();
+                dd.style.left = `${Math.min(window.innerWidth - dd.offsetWidth - 8, Math.max(8, anchorRect.left))}px`;
+                dd.style.top = `${anchorRect.bottom + 8 + window.scrollY}px`;
+
+                function closeDropdown() { dd.remove(); document.removeEventListener('click', onDocClick); }
+
+                btnCancel.addEventListener('click', (ev) => { ev.stopPropagation(); closeDropdown(); });
+                btnApply.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                // compute differences: current assigned ids vs selected
+                const currentIds = new Set((_cardModalState.assignees || []).map(a => a.user_id));
+                const selectedIds = Array.from(selected).map(n => Number(n));
+                const toAdd = selectedIds.filter(id => !currentIds.has(id));
+                const toRemove = Array.from(currentIds).filter(id => !selected.has(id));
+
+                // if nothing changed, just close
+                if (toAdd.length === 0 && toRemove.length === 0) { closeDropdown(); return; }
+
+                try {
+                    const payload = { add: toAdd, remove: toRemove };
+                    const res = await apiPOST(`/api/cards/${encodeURIComponent(_cardModalState.cardId)}/assign/bulk`, payload);
+                    if (!res.ok) {
+                    const j = await res.json().catch(()=>({}));
+                    alert(j.error || 'Failed to update assignees');
+                    return;
+                    }
+                    const j = await res.json();
+                    _cardModalState.assignees = j.assignees || [];
+                    renderMemberActionRow();
+                    updateCardElementAssignees(_cardModalState.cardId, _cardModalState.assignees);
+                    closeDropdown();
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while updating assignees');
+                }
+                });
+
+                function onDocClick(ev) {
+                if (!dd.contains(ev.target) && !membersWrapper.contains(ev.target)) closeDropdown();
+                }
+                setTimeout(()=>document.addEventListener('click', onDocClick), 10);
+            }
+
+            // helper that updates card elements in board view (if present)
+            function updateCardElementAssignees(cardId, assignees) {
+                const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+                if (!cardEl) return;
+                const avatarsContainer = cardEl.querySelector('.card-avatars');
+                if (!avatarsContainer) {
+                // create one in same place as createCardElement would
+                const main = cardEl.querySelector('.card-main') || cardEl;
+                const c = document.createElement('div');
+                c.className = 'card-avatars';
+                c.tabIndex = 0;
+                main.appendChild(c);
+                renderAssignees(c, assignees);
+                return;
+                }
+                renderAssignees(avatarsContainer, assignees);
+            }
+
+            // expose render function for refreshCardModal
+            modalEl._renderAssigneesUI = renderMemberActionRow;
+            // expose so other modal code (refreshCardModal) can call it
+            modalEl._updateCardElementAssignees = updateCardElementAssignees;
+
+            // initial render
+            renderMemberActionRow();
         }
 
         function initCardBackgroundUpload(modalEl) {
@@ -3752,6 +4361,19 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 } else {
                     cardEl.style.background = '';
                 }
+            }
+
+            // server returns card.assignees (array) — store on modal state
+            _cardModalState.assignees = Array.isArray(card.assignees) ? card.assignees : [];
+            // store board id for member fetching
+            _cardModalState.boardId = card.board_id || card.boardId || card.board; // adapt to field name server provides
+
+            // now refresh the assignees action row
+            if (_cardModal && typeof _cardModal._renderAssigneesUI === 'function') _cardModal._renderAssigneesUI();
+
+            // NEW: call the modal-exposed helper if available
+            if (_cardModal && typeof _cardModal._updateCardElementAssignees === 'function') {
+            _cardModal._updateCardElementAssignees(cardId, _cardModalState.assignees);
             }
 
             // refresh swatch selection
