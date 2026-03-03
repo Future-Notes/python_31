@@ -455,7 +455,7 @@
                     max-height 260ms ease,
                     margin 200ms ease,
                     padding 200ms ease;
-        overflow: hidden;
+        overflow: visible;
         will-change: transform, opacity, max-height;
         }
 
@@ -722,8 +722,8 @@
         .card { position: relative; }
         .card .card-due-badge {
         position: absolute;
-        left: 2px;
-        bottom: 0px;
+        left: 8px;
+        bottom: 8px;
         display: inline-block;
         padding: 6px 8px;
         border-radius: 10px;
@@ -739,10 +739,42 @@
         z-index: 2;
         pointer-events: auto;
         margin: 6px;
+        z-index: 2;
+        }
+        .card-avatars {
+        position: absolute;      /* absolute so it doesn't take inline space in card-main */
+        left: 15px;
+        bottom: 10px;             /* same baseline as badge; z-index makes it appear above */
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        z-index: 3;              /* above the due badge */
+        pointer-events: auto;
+        }
+        .card--move-up {
+            bottom: var(--card-reserve-bottom);
+        }
+        /* when avatars overflow the card width, provide a fallback: */
+        .card-avatars .avatar {
+        flex: 0 0 auto;
+        }
+
+        /* Reserve vertical space at the bottom of the card (only when both due + assignees exist) */
+        .card--reserve-bottom {
+        /* depends on avatar size + comfortable gap; keep in sync with renderAssignees avatar size */
+        padding-bottom: 48px; /* adjust up/down as needed (28px avatar + gaps + badge) */
+        }
+
+        /* If you prefer to use a CSS variable for tuning */
+        :root {
+        --card-reserve-bottom: 48px;
+        }
+        .card--reserve-bottom {
+        padding-bottom: var(--card-reserve-bottom);
         }
         .card .card-due-badge.overdue { background:#e74c3c; color:#fff; }
         .card .card-due-badge.due-soon { background:#ff9f43; color:#111; }
-        .card .card-due-badge.upcoming { background: rgba(0,0,0,0.35); color:#fff; opacity:0.45; }
+        .card .card-due-badge.upcoming { background: rgba(255, 255, 255, 0.288); color:#fff }
 
         /* ensure the inline date input doesn't overflow the date menu */
         #card-modal-datetime-input {
@@ -755,7 +787,6 @@
         display: flex;
         gap: 6px;
         align-items: center;
-        margin-top: 8px;
         }
 
         /* small avatars */
@@ -801,7 +832,7 @@
         z-index: 2000;
         min-width: 160px;
         max-width: 320px;
-        background: var(--surface, #fff);
+        background: var(--ctr-color);
         border-radius: 8px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.12);
         padding: 8px;
@@ -835,7 +866,7 @@
         }
         .assignee-row-name {
         font-size: 14px;
-        color: var(--text, #111);
+        color: #fff;
         }
 
         /* small tweak: if avatar inside card, slightly overlap for compactness */
@@ -2275,7 +2306,6 @@ function createAvatarEl({ username, profile_picture, size = 28, title = '' }) {
 // container: element to append avatars to (should exist inside the card)
 // assignees: array of assignee objects
 function renderAssignees(container, assignees = []) {
-  // clear existing
   container.innerHTML = '';
   container.classList.remove('has-more');
 
@@ -2290,7 +2320,7 @@ function renderAssignees(container, assignees = []) {
     const av = createAvatarEl({
       username: a.username,
       profile_picture: a.profile_picture,
-      size: 28,
+      size: 28, // keep this value in sync with CSS reserve height if you change it
       title: `${a.username}${a.assigned_at ? ' — assigned ' + a.assigned_at : ''}`
     });
     av.dataset.userId = a.user_id;
@@ -2309,7 +2339,6 @@ function renderAssignees(container, assignees = []) {
     container.classList.add('has-more');
   }
 
-  // attach hover / click handlers for the popup (one handler per container)
   ensureAssigneePopupBehavior(container, assignees);
 }
 
@@ -2443,6 +2472,7 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
     cardEl.dataset.cardId = id;
+    cardEl.style.position = cardEl.style.position || 'relative'; // ensure positioning for absolute children
 
     // Apply background: image takes precedence
     if (background_image_url) {
@@ -2477,6 +2507,7 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
 
     // If due_date provided, parse and display
     // --- Due date badge (bottom-left system) ---
+    let hasDue = false;
     if (due_date) {
         const parsed = parseServerIsoToDate(due_date);
         if (parsed) {
@@ -2491,20 +2522,31 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
 
             // store canonical ISO for later sorting / updating
             cardEl.dataset.dueIso = parsed.toISOString();
+            hasDue = true;
         }
     }
 
     // Insert avatar container somewhere appropriate, e.g. inside card-main or footer
+    // Insert avatar container somewhere appropriate
     const avatarsContainer = document.createElement('div');
     avatarsContainer.className = 'card-avatars';
-    // set tabindex so keyboard users can open the popup
     avatarsContainer.tabIndex = 0;
-    // append to card main area (choose location you like)
-    const main = cardEl.querySelector('.card-main') || cardEl;
-    main.appendChild(avatarsContainer);
 
-    // render assignees
+    // IMPORTANT: append avatars to the card root (not inside .card-main)
+    // so we can position them absolutely above the due badge if needed.
+    cardEl.appendChild(avatarsContainer);
+
+    // render assignees (unchanged API)
     renderAssignees(avatarsContainer, assignees);
+
+    // If both a due date and assignees are present, reserve bottom space so nothing overlaps
+    if (hasDue && Array.isArray(assignees) && assignees.length > 0) {
+        // add a class which the CSS will turn into padding-bottom
+        cardEl.classList.add('card--reserve-bottom');
+        avatarsContainer.classList.add('card--move-up');
+        // optionally expose exact reserve size for cases where avatar size varies:
+        // cardEl.style.setProperty('--card-reserve-bottom', '48px');
+    }
 
     // Make attach handlers same as before
     if (isTemp) {
@@ -3385,10 +3427,10 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
 
                         <!-- ACTION ROW (due-date + future action buttons) -->
                         <div id="card-modal-action-row" class="card-modal-action-row" style="margin-top:8px; margin-bottom:6px;">
-                            <div id="card-modal-action-buttons" style="display:flex;gap:8px;align-items:center;">
+                            <div id="card-modal-action-buttons" class="bm-section" style="display:flex;gap:8px;align-items:center;margin-left:8px;">
                                 <!-- Add due button injected here -->
                             </div>
-                            <div id="card-modal-due-container" style="margin-left:8px; display:flex; align-items:center;"></div>
+                            <div id="card-modal-due-container" class="bm-section" style="margin-left:8px; display:flex; align-items:center;"></div>
                             <!-- Hidden keeper for the ISO due_date value (timezone-aware ISO string produced by toISOString()) -->
                             <input type="hidden" id="card-modal-due-hidden" value="">
                         </div>
@@ -3679,29 +3721,69 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 menu.style.display = 'none';
             }
 
-            // Save pressed in date menu: store ISO (timezone-aware) into hidden input
-            btnSave.addEventListener('click', (ev) => {
+            // Save pressed in date menu: store ISO into hidden input AND persist to server
+            btnSave.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
                 const v = datetimeInput.value;
                 if (!v) { alert('Please pick a date & time'); return; }
-                // new Date('YYYY-MM-DDTHH:MM') is treated as local time by browsers
                 const d = new Date(v);
                 if (isNaN(d.getTime())) { alert('Invalid date'); return; }
-                // Convert to ISO (UTC) -> example: 2026-03-01T11:00:00.000Z
                 const iso = d.toISOString();
+
+                // Update local state immediately so UI feels instant
                 hiddenInput.value = iso;
                 _cardModalState.dueDateIso = iso;
                 closeDueMenu();
                 renderDueLabelFromHidden();
+
+                // Persist to server
+                const cardId = _cardModalState.cardId;
+                if (!cardId) return;
+                try {
+                    const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { due_date: iso });
+                    if (!res.ok) {
+                        const j = await res.json().catch(() => ({}));
+                        alert(j.error || 'Failed to save due date');
+                        return;
+                    }
+                    // Update the card element on the board
+                    const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+                    if (cardEl) {
+                        cardEl.dataset.dueIso = iso;
+                        if (typeof updateCardDueBadge === 'function') updateCardDueBadge(cardEl, iso);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while saving due date');
+                }
             });
 
-            // Remove clicked inside menu
-            btnRemove.addEventListener('click', (ev) => {
+            // Remove clicked inside menu: clear and persist null to server
+            btnRemove.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
                 hiddenInput.value = '';
                 _cardModalState.dueDateIso = null;
                 closeDueMenu();
                 renderDueLabelFromHidden();
+
+                const cardId = _cardModalState.cardId;
+                if (!cardId) return;
+                try {
+                    const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { due_date: null });
+                    if (!res.ok) {
+                        const j = await res.json().catch(() => ({}));
+                        alert(j.error || 'Failed to remove due date');
+                        return;
+                    }
+                    const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+                    if (cardEl) {
+                        delete cardEl.dataset.dueIso;
+                        if (typeof updateCardDueBadge === 'function') updateCardDueBadge(cardEl, null);
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Network error while removing due date');
+                }
             });
 
             btnCancel.addEventListener('click', (ev) => {
@@ -3727,7 +3809,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         }
 
         function initAssigneesUI(modalEl) {
-            console.log("initasigneesui")
             // container references
             const actionButtons = modalEl.querySelector('#card-modal-action-buttons');
             const dueContainer = modalEl.querySelector('#card-modal-due-container');
@@ -3781,8 +3862,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 chip.addEventListener('click', async (ev) => {
                     ev.stopPropagation();
                     // if user clicked close explicitly, treat same (makes UX clear)
-                    const confirmRemove = confirm(`Remove ${a.username || 'this member'} from card?`);
-                    if (!confirmRemove) return;
                     try {
                     // call bulk endpoint to remove single user (we will provide the API below)
                     const payload = { add: [], remove: [a.user_id] };
@@ -3884,6 +3963,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 const name = document.createElement('div');
                 name.className = 'member-name';
                 name.textContent = m.username;
+                name.style.color = "#fff";
                 row.appendChild(name);
                 // checkbox
                 const cb = document.createElement('input');
@@ -3957,18 +4037,32 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             function updateCardElementAssignees(cardId, assignees) {
                 const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
                 if (!cardEl) return;
-                const avatarsContainer = cardEl.querySelector('.card-avatars');
+
+                let avatarsContainer = cardEl.querySelector('.card-avatars');
+
+                // Create container if missing (same behavior as createCardElement)
                 if (!avatarsContainer) {
-                // create one in same place as createCardElement would
-                const main = cardEl.querySelector('.card-main') || cardEl;
-                const c = document.createElement('div');
-                c.className = 'card-avatars';
-                c.tabIndex = 0;
-                main.appendChild(c);
-                renderAssignees(c, assignees);
-                return;
+                    avatarsContainer = document.createElement('div');
+                    avatarsContainer.className = 'card-avatars';
+                    avatarsContainer.tabIndex = 0;
+                    cardEl.appendChild(avatarsContainer);
                 }
+
+                // Re-render avatars
                 renderAssignees(avatarsContainer, assignees);
+
+                // --- Re-apply spacing logic (mirror createCardElement) ---
+                const hasDue = !!cardEl.dataset.dueIso;
+                const hasAssignees = Array.isArray(assignees) && assignees.length > 0;
+
+                if (hasDue && hasAssignees) {
+                    cardEl.classList.add('card--reserve-bottom');
+                    avatarsContainer.classList.add('card--move-up');
+                } else {
+                    // remove spacing classes if condition no longer true
+                    cardEl.classList.remove('card--reserve-bottom');
+                    avatarsContainer.classList.remove('card--move-up');
+                }
             }
 
             // expose render function for refreshCardModal
@@ -5837,6 +5931,7 @@ function initBoardActionsMenu() {
     window.updateBoardMenuUi = renderBgControlsState;
 }
 
+sessionStorage.setItem("last_page", "/kanban_page");
 
 </script>
 </body>

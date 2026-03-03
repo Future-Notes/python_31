@@ -4981,27 +4981,28 @@ def serve_board_share_link(token):
         user_id=user_id
     ).first()
 
+    # Already accepted
     if existing and existing.accepted_at:
-        # User already accepted this share before, just redirect to board
         return redirect(f"/kanban_page#board-{share.board_id}")
-    
-    if existing.invited_by == user_id:
-        # Inviter accepting their own link, just redirect to board
+
+    # Inviter clicking their own link
+    if existing and existing.invited_by == user_id:
         return redirect(f"/kanban_page#board-{share.board_id}")
 
     if existing:
-        # Upgrade permission if link permission is higher
         def perm_rank(p):
             val = p.value if isinstance(p, PermissionEnum) else p
             return 2 if val == "edit" else 1
 
         link_perm = share.permission
+
         if perm_rank(existing.permission) < perm_rank(link_perm):
             existing.permission = link_perm
 
         existing.accepted_at = now
         existing.accepted_by_user_id = user_id
         db.session.add(existing)
+
     else:
         new_share = BoardShare(
             board_id=share.board_id,
