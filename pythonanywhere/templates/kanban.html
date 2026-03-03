@@ -3582,17 +3582,21 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         // Initialize Due Date UI handlers and helpers
         function initDueDateUI(modalEl) {
             const addBtnContainer = modalEl.querySelector('#card-modal-action-buttons');
-            const dueContainer = modalEl.querySelector('#card-modal-due-container');
-            const hiddenInput = modalEl.querySelector('#card-modal-due-hidden');
-            const menu = modalEl.querySelector('#card-modal-due-menu');
-            const datetimeInput = modalEl.querySelector('#card-modal-datetime-input');
-            const btnSave = modalEl.querySelector('#card-modal-due-save');
-            const btnRemove = modalEl.querySelector('#card-modal-due-remove');
-            const btnCancel = modalEl.querySelector('#card-modal-due-cancel');
+            const dueContainer    = modalEl.querySelector('#card-modal-due-container');
+            const hiddenInput     = modalEl.querySelector('#card-modal-due-hidden');
+            const menu            = modalEl.querySelector('#card-modal-due-menu');
+            const datetimeInput   = modalEl.querySelector('#card-modal-datetime-input');
+            const btnSave         = modalEl.querySelector('#card-modal-due-save');
+            const btnRemove       = modalEl.querySelector('#card-modal-due-remove');
+            const btnCancel       = modalEl.querySelector('#card-modal-due-cancel');
 
-            // create Add due button
+            const dueBtnWrapper = document.createElement('div');
+            dueBtnWrapper.id = 'card-modal-due-btn-wrapper';
+            addBtnContainer.appendChild(dueBtnWrapper);   // appended AFTER membersWrapper
+
+            // create Add due button  (now targets dueBtnWrapper, not addBtnContainer)
             function renderAddButton() {
-                addBtnContainer.innerHTML = '';
+                dueBtnWrapper.innerHTML = '';
                 const btn = document.createElement('button');
                 btn.id = 'card-modal-add-due';
                 btn.type = 'button';
@@ -3600,42 +3604,38 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 btn.textContent = 'Add due date';
                 btn.addEventListener('click', (ev) => {
                     ev.stopPropagation();
-                    openDueMenu(null); // no prefill => now
+                    openDueMenu(null);
                 });
-                addBtnContainer.appendChild(btn);
+                dueBtnWrapper.appendChild(btn);
             }
 
-            // render due label if hiddenInput has value
+            // render due label from hidden value  (targets dueBtnWrapper, not addBtnContainer)
             function renderDueLabelFromHidden() {
                 dueContainer.innerHTML = '';
                 const val = hiddenInput.value;
                 if (!val) {
-                    // show add button
                     renderAddButton();
                     return;
                 }
-                // parse ISO -> Date (treat naive as UTC)
                 const parsed = parseServerIsoToDate(val);
                 if (!parsed) {
-                    // fallback: clear hidden
                     hiddenInput.value = '';
                     renderAddButton();
                     return;
                 }
+                // hide the "Add due date" button when a date is set
+                dueBtnWrapper.innerHTML = '';
+
                 const { label, cls } = dueDateLabelForDisplay(parsed);
                 const lbl = document.createElement('div');
                 lbl.className = 'card-modal-due-label ' + cls;
                 lbl.textContent = label;
-                lbl.title = (new Date(parsed)).toLocaleString() + ' (local)';
+                lbl.title = parsed.toLocaleString() + ' (local)';
                 lbl.addEventListener('click', (ev) => {
                     ev.stopPropagation();
-                    openDueMenu(parsed.toISOString()); // open with existing value
+                    openDueMenu(parsed.toISOString());
                 });
-
                 dueContainer.appendChild(lbl);
-
-                // remove add button from action buttons if present
-                addBtnContainer.innerHTML = '';
             }
 
             // open the inline menu positioned near the add button or label
@@ -3727,6 +3727,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         }
 
         function initAssigneesUI(modalEl) {
+            console.log("initasigneesui")
             // container references
             const actionButtons = modalEl.querySelector('#card-modal-action-buttons');
             const dueContainer = modalEl.querySelector('#card-modal-due-container');
@@ -3848,7 +3849,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             // show dropdown listing all board members (with multi-select)
             async function openMembersDropdown(modalEl, preselectedIds = []) {
                 // ensure we have board_id available (modal may not store it)
-                const boardId = _cardModalState.boardId || _cardModalState.board_id;
+                const boardId = currentBoardId;
                 if (!boardId) {
                 alert('Board id missing for member list');
                 return;
