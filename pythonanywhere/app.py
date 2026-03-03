@@ -9,7 +9,7 @@ from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, fun
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
-from sqlalchemy import JSON, create_engine, inspect
+from sqlalchemy import JSON, create_engine, inspect, and_
 from pywebpush import webpush, WebPushException
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
@@ -77,6 +77,7 @@ from sqlalchemy import Enum as SAEnum
 import enum
 from urllib.parse import urlencode
 from sqlalchemy.orm import joinedload
+import vt
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -127,6 +128,7 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+VT_API_KEY = os.environ.get("VT_API_KEY", "")
 MAX_NOTE_LENGTH = 3000
 COHERE_API_KEY = app.config["COHERE_API_KEY"]
 _TIME_EPS = timedelta(seconds=1)
@@ -328,6 +330,9 @@ class Upload(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     deleted_at = db.Column(db.DateTime, nullable=True)
     mega_file_obj = db.Column(JSON, nullable=True)
+    sha256 = db.Column(db.String(64), nullable=True)
+    verification_status = db.Column(db.String(32), nullable=False, default='verified')
+    pending_verification = db.Column(db.Boolean, default=False)
 
     user = db.relationship('User', backref=db.backref('uploads', lazy='dynamic'))
 
@@ -3893,13 +3898,24 @@ def verify_file_content(file_path: str, mimetype: str) -> bool:
     except Exception:
         # In case the hardened version raises unexpectedly, fail closed.
         return False
+    
+def _sha256(file_path: str) -> str:
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
+
+def _vt_stats_clean(stats: dict) -> bool:
+    """Returns True only if VT reports zero malicious/suspicious detections."""
+    return stats.get("malicious", 0) == 0 and stats.get("suspicious", 0) == 0
+
+# --- Modified / replaced verify_and_record_upload ---
 def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_SIZE_BYTES):
     """
-    Verifies file and uploads to Dropbox if space is available,
-    then Mega if space is available, else falls back to local storage.
-    Returns (True, Upload) or (False, error_str).
-    All exceptions are converted to strings for JSON safety.
+    Verifies file if VirusTotal hash is known; if VT hash unknown, store the upload immediately
+    marked as pending verification. Returns (True, Upload) or (False, error_str).
     """
     try:
         if file is None:
@@ -3927,72 +3943,126 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
         if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith('image/'):
             return False, "MIME type not allowed."
 
-        # Save to temp file for verification
-        import tempfile
+        # Save to temp file for verification and later uploads
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp_name = tmp.name
             file.save(tmp_name)
 
-        if not verify_file_content(tmp_name, mimetype):
-            os.remove(tmp_name)
+        # compute sha256 once
+        file_sha256 = _sha256(tmp_name)
+
+        # Attempt VirusTotal fast hash lookup
+        vt_known_and_clean = False
+        vt_unknown = False
+        try:
+            if not VT_API_KEY:
+                raise EnvironmentError("VT_API_KEY is not set.")
+            with vt.Client(VT_API_KEY) as client:
+                try:
+                    file_obj = client.get_object(f"/files/{file_sha256}")
+                    vt_known_and_clean = _vt_stats_clean(file_obj.last_analysis_stats)
+                except vt.APIError as e:
+                    if e.code == "NotFoundError":
+                        vt_unknown = True
+                    else:
+                        # unexpected VT error — fail closed (cleanup tmp file)
+                        os.remove(tmp_name)
+                        raise
+        except Exception as e:
+            # Any error communicating with VT -> fail closed (do not accept the upload)
+            try:
+                os.remove(tmp_name)
+            except Exception:
+                pass
+            return False, f"VirusTotal error: {str(e)}"
+
+        # If VT known and malicious -> reject immediately
+        if vt_known_and_clean is False and not vt_unknown:
+            # That means known and NOT clean (malicious/suspicious)
+            try:
+                os.remove(tmp_name)
+            except Exception:
+                pass
             if user:
                 try:
                     user.malicious_violations = (user.malicious_violations or 0) + 1
+                    if user.malicious_violations > 3:
+                        user.banned = True
                     db.session.add(user)
                     db.session.commit()
                 except Exception:
                     db.session.rollback()
-            return False, "Uploaded file failed content verification."
+            return False, "Uploaded file is malicious according to VirusTotal."
+
+        # At this point either VT known & clean OR VT unknown (we will accept in both cases).
+        # Proceed to store the file in a best-effort order: Dropbox, Mega, else local.
 
         storage_backend = "local"
         stored_path = None
         mega_file_obj = None
 
-        # --- Read file bytes once for Mega / Dropbox ---
         with open(tmp_name, "rb") as f:
             file_bytes = f.read()
 
         # --- Try Dropbox first ---
-        if dropbox_has_space(size):
-            dropbox_path = f"{DROPBOX_UPLOAD_FOLDER}/{uuid.uuid4().hex}_{filename}"
+        try:
+            if dropbox_has_space(size):
+                dropbox_path = f"{DROPBOX_UPLOAD_FOLDER}/{uuid.uuid4().hex}_{filename}"
+                try:
+                    dbx.files_upload(file_bytes, dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+                    storage_backend = "dropbox"
+                    stored_path = dropbox_path
+                except Exception:
+                    storage_backend = "local"
+        except Exception:
+            # If dropbox check fails, fallback to other backends
+            pass
+
+        # --- Try Mega if Dropbox wasn't used ---
+        if storage_backend != "dropbox":
             try:
-                dbx.files_upload(file_bytes, dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-                storage_backend = "dropbox"
-                stored_path = dropbox_path
+                if mega_has_space(size):
+                    try:
+                        mega_file_info = mega_account.upload(tmp_name, dest_filename=filename)
+                        mega_file_obj = json.dumps(mega_file_info)
+                        stored_path = mega_account.get_upload_link(mega_file_info)
+                        storage_backend = "mega"
+                    except Exception as e:
+                        app.logger.warning("Mega upload failed: %s", e)
+                        storage_backend = "local"
             except Exception:
-                storage_backend = "local"
+                pass
 
-        elif mega_has_space(size):
-            try:
-                mega_file_info = mega_account.upload(tmp_name, dest_filename=filename)
-
-                # IMPORTANT: store this immediately
-                mega_file_obj = json.dumps(mega_file_info)
-
-                # Generate public link AFTER storing
-                stored_path = mega_account.get_upload_link(mega_file_info)
-
-                storage_backend = "mega"
-            except Exception as e:
-                print(f"exception when uploading to mega!!!: {e}")
-                storage_backend = "local"
-
-
-        # --- Fallback to local ---
+        # --- Local fallback ---
         if storage_backend == "local":
             unique = f"{uuid.uuid4().hex}_{filename}"
             stored_path = os.path.join(UPLOAD_FOLDER_LOCAL_FILES, unique)
             try:
+                # Move the tmp file into place
                 os.replace(tmp_name, stored_path)
             except Exception as e:
-                os.remove(tmp_name)
+                try:
+                    os.remove(tmp_name)
+                except Exception:
+                    pass
                 return False, f"Failed to save locally: {str(e)}"
         else:
             # remove temp file after Mega / Dropbox upload
-            os.remove(tmp_name)
+            try:
+                os.remove(tmp_name)
+            except Exception:
+                pass
 
-        # --- Record in DB ---
+        # --- Create DB record ---
         try:
+            # If VT was unknown then mark as pending; if known and clean, mark verified
+            if vt_unknown:
+                verification_status = "pending"
+                pending_verification = True
+            else:
+                verification_status = "verified"
+                pending_verification = False
+
             upload = Upload(
                 user_id=user.id,
                 original_filename=filename,
@@ -4002,11 +4072,17 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
                 size_bytes=size,
                 created_at=datetime.utcnow(),
                 deleted=False,
-                mega_file_obj=str(mega_file_obj) if mega_file_obj else None  # store string for JSON/DB safety
+                mega_file_obj=str(mega_file_obj) if mega_file_obj else None,
+                sha256=file_sha256,
+                verification_status=verification_status,
+                pending_verification=pending_verification
             )
             db.session.add(upload)
             user.storage_used_bytes = (user.storage_used_bytes or 0) + size
             db.session.commit()
+
+            # If VT was known & clean: nothing else to do.
+            # If VT unknown: leave pending, our cron will sweep it.
             return True, upload
         except Exception as e:
             # Cleanup in case of DB failure
@@ -4027,6 +4103,229 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
 
     except Exception as outer_e:
         return False, str(outer_e)
+
+def _download_upload_to_temp(upload: Upload) -> str:
+    """
+    Returns path to a temporary local file containing the uploaded bytes for scanning.
+    Caller is responsible for deleting the returned file.
+    """
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    tmp_path = tmp.name
+    tmp.close()
+
+    try:
+        if upload.storage_backend == "local":
+            # stored_filename for local is a filesystem path OR relative path depending on how you saved.
+            # If you stored the full path, use it as-is. If stored only basename, join with config var.
+            maybe_path = upload.stored_filename
+            if not os.path.isabs(maybe_path):
+                maybe_path = os.path.join(app.config.get('UPLOAD_FOLDER_LOCAL_FILES', UPLOAD_FOLDER_LOCAL_FILES), maybe_path)
+            if os.path.exists(maybe_path):
+                # copy file to tmp
+                with open(maybe_path, "rb") as src, open(tmp_path, "wb") as dst:
+                    dst.write(src.read())
+                return tmp_path
+            else:
+                raise FileNotFoundError(f"Local file missing: {maybe_path}")
+
+        elif upload.storage_backend == "dropbox":
+            # stored_filename is the dropbox path; download via SDK to tmp_path
+            try:
+                dbx.files_download_to_file(tmp_path, upload.stored_filename)
+                return tmp_path
+            except Exception as e:
+                # Last-resort: if stored_path is a public link, try HTTP GET
+                try:
+                    r = requests.get(upload.stored_filename, stream=True, timeout=30)
+                    if r.status_code == 200:
+                        with open(tmp_path, "wb") as fh:
+                            for chunk in r.iter_content(1024*64):
+                                fh.write(chunk)
+                        return tmp_path
+                except Exception:
+                    pass
+                raise
+
+        elif upload.storage_backend == "mega":
+            # If you have an SDK method to download by mega_file_obj, use it here.
+            # We saved stored_filename as the public link; try HTTP GET
+            try:
+                r = requests.get(upload.stored_filename, stream=True, timeout=30)
+                if r.status_code == 200:
+                    with open(tmp_path, "wb") as fh:
+                        for chunk in r.iter_content(1024*64):
+                            fh.write(chunk)
+                    return tmp_path
+                else:
+                    raise RuntimeError(f"Mega download failed HTTP {r.status_code}")
+            except Exception:
+                raise
+
+        else:
+            raise RuntimeError(f"Unknown storage backend: {upload.storage_backend}")
+
+    except Exception:
+        # ensure tmp file removed on failure
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+        raise
+
+def _process_single_pending_upload(upload: Upload):
+    """Process one pending upload: query VT, mark verified or malicious and take action."""
+    try:
+        # skip deleted or already-not-pending or missing sha256
+        if upload.deleted or not upload.pending_verification:
+            return "skipped"
+
+        # Try fast path by sha256 if available in DB; otherwise compute by downloading
+        file_sha256 = upload.sha256
+        tmp_path = None
+        if not file_sha256:
+            # try to fetch the file locally to compute sha
+            tmp_path = _download_upload_to_temp(upload)
+            try:
+                file_sha256 = _sha256(tmp_path)
+            except Exception:
+                # fallback
+                pass
+
+        # vt check
+        with vt.Client(VT_API_KEY) as client:
+            try:
+                if file_sha256:
+                    try:
+                        file_obj = client.get_object(f"/files/{file_sha256}")
+                        stats = file_obj.last_analysis_stats
+                        is_clean = _vt_stats_clean(stats)
+                        if is_clean:
+                            # mark verified
+                            upload.pending_verification = False
+                            upload.verification_status = "verified"
+                            db.session.add(upload)
+                            db.session.commit()
+                            return "verified"
+                        else:
+                            # malicious found
+                            # remove file & update user violations
+                            owner = User.query.get(upload.user_id)
+                            delete_upload(upload, owner)
+                            if owner:
+                                owner.malicious_violations = (owner.malicious_violations or 0) + 1
+                                if owner.malicious_violations > 3:
+                                    owner.banned = True
+                                db.session.add(owner)
+                            db.session.commit()
+                            return "malicious"
+                    except vt.APIError as e:
+                        if e.code == "NotFoundError":
+                            # unknown: upload file to vt and wait
+                            pass
+                        else:
+                            app.logger.exception("VT API error during get_object: %s", e)
+                            raise
+
+                # If we reach here: no file_sha256 known to VT. Ensure we have a local file to upload.
+                if not tmp_path:
+                    tmp_path = _download_upload_to_temp(upload)
+
+                with open(tmp_path, "rb") as f:
+                    analysis = client.scan_file(f, wait_for_completion=True)
+
+                stats = getattr(analysis, "stats", getattr(analysis, "last_analysis_stats", None)) or {}
+                if _vt_stats_clean(stats):
+                    upload.pending_verification = False
+                    upload.verification_status = "verified"
+                    db.session.add(upload)
+                    db.session.commit()
+                    return "verified"
+                else:
+                    # malicious
+                    owner = User.query.get(upload.user_id)
+                    delete_upload(upload, owner)
+                    if owner:
+                        owner.malicious_violations = (owner.malicious_violations or 0) + 1
+                        if owner.malicious_violations > 3:
+                            owner.banned = True
+                        db.session.add(owner)
+                    db.session.commit()
+                    return "malicious"
+
+            except vt.APIError as e:
+                app.logger.exception("VT API error when verifying upload %s: %s", upload.id, e)
+                # leave it pending for retries
+                db.session.rollback()
+                return "error-vt"
+            except Exception as e:
+                app.logger.exception("Error processing pending upload %s: %s", upload.id, e)
+                db.session.rollback()
+                return "error"
+    finally:
+        # cleanup tmp file
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
+
+def process_pending_verifications(batch_limit=50):
+    """
+    Process a batch of pending uploads (safely). Returns a summary dict.
+    This can be run in a background thread.
+    """
+    summary = {"scanned": 0, "verified": 0, "malicious": 0, "skipped": 0, "errors": 0}
+    try:
+        pending_q = Upload.query.filter(
+            and_(Upload.pending_verification == True, Upload.deleted == False)
+        ).order_by(Upload.created_at.asc()).limit(batch_limit).all()
+
+        for up in pending_q:
+            result = _process_single_pending_upload(up)
+            summary["scanned"] += 1
+            if result == "verified":
+                summary["verified"] += 1
+            elif result == "malicious":
+                summary["malicious"] += 1
+            elif result == "skipped":
+                summary["skipped"] += 1
+            else:
+                summary["errors"] += 1
+
+    except Exception as e:
+        app.logger.exception("process_pending_verifications top-level error: %s", e)
+
+    return summary
+
+# Cron endpoint
+@app.route('/cron/verify_pending', methods=['POST'])
+def cron_verify_pending():
+    """
+    Endpoint intended to be called by an internal cron worker every 30 minutes.
+    Protect by POST + header X-CRON-KEY == CRON_SECRET.
+    This spawns a background thread to avoid long HTTP timeouts. The thread logs progress.
+    """
+
+    try:
+        # Optionally accept a 'limit' param in JSON to control how many to process this run
+        payload = request.get_json(silent=True) or {}
+        batch_limit = int(payload.get("limit", 50))
+
+        def _runner(limit):
+            with app.app_context():
+                app.logger.info("Cron verifier started (limit=%s)", limit)
+                res = process_pending_verifications(batch_limit=limit)
+                app.logger.info("Cron verifier finished: %s", res)
+
+        t = threading.Thread(target=_runner, args=(batch_limit,), daemon=True)
+        t.start()
+
+        # Return immediately; thread will do processing and log results.
+        return jsonify({"status": "accepted", "detail": "verification job started"}), 202
+    except Exception as e:
+        app.logger.exception("Failed to start cron verifier: %s", e)
+        return jsonify({"error": "internal"}), 500
     
 # Force-delete an upload regardless of who the actor is (used for group flows)
 def force_delete_upload(upload_id, actor_user=None):
@@ -12336,6 +12635,9 @@ def merge_pr(pr_number):
     response = requests.put(url, headers=headers)
     return jsonify(response.json()), response.status_code
 
+@app.route('/health')
+def health():
+    return "Ok", 200
 
 # Additional backend endpoints
 @app.route('/admin/versions/<int:version_id>', methods=['DELETE'])
