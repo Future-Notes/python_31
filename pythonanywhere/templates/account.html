@@ -1213,63 +1213,87 @@
       }
 
       function renderSessions(list) {
+        const tbody = document.getElementById('sessions-tbody');
+
         if (!Array.isArray(list) || list.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;opacity:0.7">No active sessions</td></tr>';
-          return;
+            tbody.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;opacity:0.7">No active sessions</td></tr>';
+            return;
+        }
+
+        // Utility functions
+        function safe(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+
+        function formatISO(iso) {
+            if (!iso) return '—';
+            try {
+                const d = new Date(iso);
+                return d.toLocaleString(undefined, { 
+                    year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' 
+                }) + '\n' + d.toLocaleTimeString();
+            } catch (e) { return iso; }
+        }
+
+        function iso2ToFlagEmoji(iso2) {
+            if (!iso2) return '';
+            return iso2.toUpperCase().split('')
+                      .map(c => String.fromCodePoint(127397 + c.charCodeAt()))
+                      .join('');
         }
 
         tbody.innerHTML = '';
+
         for (const s of list) {
-          const tr = document.createElement('tr');
-          if (s.is_current) tr.classList.add('current');
+            const tr = document.createElement('tr');
+            if (s.is_current) tr.classList.add('current');
 
-          // current marker
-          const currentTd = document.createElement('td');
-          currentTd.innerHTML = s.is_current ? '<strong>Yes</strong>' : '<span class="muted">No</span>';
+            // Current session
+            const currentTd = document.createElement('td');
+            currentTd.innerHTML = s.is_current ? '<strong>Yes</strong>' : '<span class="muted">No</span>';
 
-          // created
-          const createdTd = document.createElement('td');
-          createdTd.innerHTML = `<div class="session-meta">${formatISO(s.created_at)}</div>`;
+            // Created at
+            const createdTd = document.createElement('td');
+            createdTd.innerHTML = `<div class="session-meta">${formatISO(s.created_at)}</div>`;
 
-          // last active
-          const lastTd = document.createElement('td');
-          lastTd.innerHTML = `<div class="session-meta">${formatISO(s.last_active)}</div>`;
+            // Last active
+            const lastTd = document.createElement('td');
+            lastTd.innerHTML = `<div class="session-meta">${formatISO(s.last_active)}</div>`;
 
-          // ip / country
-          const ipTd = document.createElement('td');
-          const country = safe(s.country);
-          const ip = safe(s.ip_address);
-          ipTd.innerHTML = `<div class="small">${ip}</div><div class="muted">${country}</div>`;
+            // IP / Country with flag
+            const ipTd = document.createElement('td');
+            const ip = safe(s.ip_address);
+            const countryIso = s.country; // e.g., "NL"
+            const flag = iso2ToFlagEmoji(countryIso);
+            ipTd.innerHTML = `<div class="small">${ip}</div><div class="muted">${flag} ${countryIso || ''}</div>`;
 
-          // browser
-          const uaTd = document.createElement('td');
-          uaTd.innerHTML = `<div class="small">${safe(s.user_agent_simplified)}</div><div class="muted">${safe(s.user_agent)}</div>`;
+            // Browser
+            const uaTd = document.createElement('td');
+            uaTd.innerHTML = `<div class="small">${safe(s.user_agent_simplified)}</div><div class="muted">${safe(s.user_agent)}</div>`;
 
-          // fingerprint
-          const fpTd = document.createElement('td');
-          fpTd.textContent = safe(s.fingerprint);
+            // Fingerprint
+            const fpTd = document.createElement('td');
+            fpTd.textContent = safe(s.fingerprint);
 
-          // actions
-          const actTd = document.createElement('td');
-          const revokeBtn = document.createElement('button');
-          revokeBtn.className = 'revoke-btn';
-          revokeBtn.textContent = s.is_current ? 'Revoke (current)' : 'Revoke';
-          revokeBtn.disabled = false;
-          revokeBtn.addEventListener('click', () => onRevokeClicked(s, tr, revokeBtn));
+            // Actions (revoke button)
+            const actTd = document.createElement('td');
+            const revokeBtn = document.createElement('button');
+            revokeBtn.className = 'revoke-btn';
+            revokeBtn.textContent = s.is_current ? 'Revoke (current)' : 'Revoke';
+            revokeBtn.disabled = false;
+            revokeBtn.addEventListener('click', () => onRevokeClicked(s, tr, revokeBtn));
+            actTd.appendChild(revokeBtn);
 
-          actTd.appendChild(revokeBtn);
+            // Append all columns
+            tr.appendChild(currentTd);
+            tr.appendChild(createdTd);
+            tr.appendChild(lastTd);
+            tr.appendChild(ipTd);
+            tr.appendChild(uaTd);
+            tr.appendChild(fpTd);
+            tr.appendChild(actTd);
 
-          tr.appendChild(currentTd);
-          tr.appendChild(createdTd);
-          tr.appendChild(lastTd);
-          tr.appendChild(ipTd);
-          tr.appendChild(uaTd);
-          tr.appendChild(fpTd);
-          tr.appendChild(actTd);
-
-          tbody.appendChild(tr);
+            tbody.appendChild(tr);
         }
-      }
+    }
 
       async function onRevokeClicked(sessionObj, rowEl, btnEl) {
         const id = sessionObj.id;
