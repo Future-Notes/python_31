@@ -78,6 +78,7 @@ import enum
 from urllib.parse import urlencode
 from sqlalchemy.orm import joinedload
 import vt
+import hmac
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -128,6 +129,8 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
+app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
 VT_API_KEY = os.environ.get("VT_API_KEY", "")
 MAX_NOTE_LENGTH = 3000
 COHERE_API_KEY = app.config["COHERE_API_KEY"]
@@ -407,7 +410,12 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     email = db.Column(db.String(200), nullable=True)
-    lasting_key = db.Column(db.String(200), nullable=True)
+    lasting_keys = db.relationship(
+        "LastingKey",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="dynamic"
+    )
     profile_picture = db.Column(db.String(200), nullable=True)
     allows_sharing = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), nullable=False, default="user")
@@ -448,6 +456,58 @@ class User(db.Model):
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
+
+class LastingKey(db.Model):
+    __tablename__ = "lasting_key"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
+    # keyed HMAC SHA256 hex digest of the token (not reversible)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    device_info = db.Column(db.String(255), nullable=True)  # optional
+    session_id = db.Column(
+        db.Integer,
+        db.ForeignKey("session.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
+    # Optionally add a relationship if you want:
+    session = db.relationship("Session", backref=db.backref("lasting_keys", lazy="dynamic"))
+
+    user = db.relationship("User", back_populates="lasting_keys")
+
+class Session(db.Model):
+    __tablename__ = "session"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    token_hash = db.Column(
+        db.String(64),  # SHA256 hex digest
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    ip_address = db.Column(db.String(45), nullable=False)  # supports IPv6
+    user_agent = db.Column(db.String(255), nullable=True)
+    fingerprint = db.Column(db.String(255), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    last_active = db.Column(db.DateTime, nullable=False)
+
+    revoked = db.Column(db.Boolean, default=False, nullable=False)
+
+    user = db.relationship("User")
 
 class PermissionEnum(enum.Enum):
     read = "read"
@@ -1487,51 +1547,43 @@ def make_qr_data_uri(provisioning_uri: str):
     b64 = base64.b64encode(buf.getvalue()).decode()
     return f"data:image/png;base64,{b64}"
 
-def generate_session_key(user_id):
-    key = secrets.token_hex(32)
-    session_keys[key] = {
-        "user_id": user_id,
-        "expires_at": datetime.now() + timedelta(minutes=120),
-        "last_active": datetime.now()
-    }
-    return key
+# --- 2) update create_session to return raw token and session.id and optionally link to a lasting key raw token ---
+def create_session(user_id: int, link_lasting_key_raw: str = None):
+    raw_token = secrets.token_urlsafe(64)
+    token_hash = _hash_session_token(raw_token)
 
-def generate_wopi_token(file_id, session_key):
-    """
-    Create a signed WOPI token tied to the user session.
-    """
-    session_data = session_keys.get(session_key)
-    if not session_data:
-        raise ValueError("Invalid session key")
+    now = datetime.utcnow()
+    expiry_hours = app.config.get("SESSION_EXPIRY_HOURS", 24)
 
-    payload = {
-        "file_id": file_id,
-        "user_id": session_data["user_id"],
-        "session_key": session_key
-    }
-    return serializer.dumps(payload)
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    user_agent = request.headers.get("User-Agent")
+    fingerprint = request.headers.get("X-Device-Fingerprint")
 
-def verify_wopi_token(token):
-    try:
-        data = serializer.loads(token, max_age=TOKEN_EXPIRATION)
-    except Exception:
-        return None
+    session = Session(
+        user_id=user_id,
+        token_hash=token_hash,
+        ip_address=ip,
+        user_agent=(user_agent[:255] if user_agent else None),
+        fingerprint=(fingerprint[:255] if fingerprint else None),
+        created_at=now,
+        last_active=now,
+        expires_at=now + timedelta(hours=expiry_hours),
+        revoked=False
+    )
 
-    # Verify session exists and is not expired
-    session_key = data.get("session_key")
-    session_data = session_keys.get(session_key)
+    db.session.add(session)
+    db.session.commit()
 
-    if not session_data:
-        return None
+    # optionally link an existing lasting_key raw token to this session (if provided)
+    if link_lasting_key_raw:
+        lk = verify_lasting_token(link_lasting_key_raw)
+        if lk and lk.user_id == user_id:
+            lk.session_id = session.id
+            db.session.add(lk)
+            db.session.commit()
 
-    # Optional: check expiration
-    if session_data["expires_at"] < datetime.now():
-        # session expired
-        session_keys.pop(session_key, None)
-        return None
-
-    return data
-
+    # return raw token and the session id so callers can bind lasting keys
+    return raw_token, session.id
 
 def remove_upload_if_orphan(upload_id):
     """
@@ -1556,6 +1608,66 @@ def remove_upload_if_orphan(upload_id):
     ok, msg = delete_upload(upload_id, user)
     return ok, msg
 
+def _hash_lasting_token(token: str) -> str:
+    key = app.config["LASTING_KEY_SIGNING_KEY"].encode()
+    digest = hmac.new(key, token.encode(), hashlib.sha256).hexdigest()
+    return digest
+
+def _hash_session_token(token: str) -> str:
+    key = app.config["SESSION_KEY_SIGNING_KEY"].encode()
+    return hmac.new(key, token.encode(), hashlib.sha256).hexdigest()
+
+# --- 1) update create_lasting_key_for_user to accept session_id (optional) ---
+def create_lasting_key_for_user(user_id: int, device_info: str = None, expires_days: int = None, session_id: int = None):
+    token = secrets.token_urlsafe(64)  # raw token -> client gets this
+    token_hash = _hash_lasting_token(token)
+    now = datetime.utcnow()
+    if expires_days is None:
+        expires_days = app.config.get("LASTING_KEY_EXPIRY_DAYS", 30)
+    expires_at = now + timedelta(days=expires_days) if expires_days else None
+
+    lk = LastingKey(
+        user_id=user_id,
+        token_hash=token_hash,
+        created_at=now,
+        expires_at=expires_at,
+        device_info=device_info,
+        session_id=session_id
+    )
+    db.session.add(lk)
+    db.session.commit()
+    return token, lk
+
+def verify_lasting_token(raw_token: str):
+    if not raw_token:
+        return None
+    token_hash = _hash_lasting_token(raw_token)
+    lk = LastingKey.query.filter_by(token_hash=token_hash).first()
+    if not lk:
+        return None
+    # check expiry
+    if lk.expires_at and lk.expires_at < datetime.utcnow():
+        # expired: remove and return None
+        try:
+            db.session.delete(lk)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return None
+    return lk
+
+def revoke_lasting_token(raw_token: str):
+    if not raw_token:
+        return
+    token_hash = _hash_lasting_token(raw_token)
+    lk = LastingKey.query.filter_by(token_hash=token_hash).first()
+    if lk:
+        db.session.delete(lk)
+        db.session.commit()
+
+def revoke_all_lasting_keys_for_user(user_id: int):
+    LastingKey.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    db.session.commit()
 
 def _extract_text_from_cohere_response(response) -> str:
     """
@@ -2338,46 +2450,126 @@ def capture_utm_params():
         db.session.add(tracking)
         db.session.commit()
 
-def validate_session_key(key=None):
-    # 1) if no key passed, pull from cookie
-    if key is None:
-        key = request.cookies.get("session_key")
+def validate_session_key(raw_token=None):
+    if raw_token is None:
+        raw_token = request.cookies.get("session_key")
 
-    # 2) missing or not in our store?
-    if not key or key not in session_keys:
+    if not raw_token:
         return False, "Invalid or missing session API key"
 
-    sess = session_keys[key]
+    token_hash = _hash_session_token(raw_token)
+
+    session = Session.query.filter_by(token_hash=token_hash).first()
+    if not session or session.revoked:
+        return False, "Invalid or missing session API key"
+
     now = datetime.utcnow()
 
-    # 3) expired?
-    if sess["expires_at"] < now:
-        # auto‑clean up
-        del session_keys[key]
+    if session.expires_at < now:
+        db.session.delete(session)
+        db.session.commit()
         return False, "Session expired. Please log in again."
 
-    # 4) user still exists?
-    user = User.query.get(sess["user_id"])
+    user = User.query.get(session.user_id)
     if not user:
-        del session_keys[key]
-        return False, "Invalid or missing session API key"
+        db.session.delete(session)
+        db.session.commit()
+        return False, "Invalid session"
 
-    # 5) suspended?
     if user.suspended:
-        del session_keys[key]
-        return False, "You have been suspended for violating the TOS"
-    
-    if (user.malicious_violations or 0) > 10:
-        user.suspended = True
-        db.session.add(user)
+        db.session.delete(session)
         db.session.commit()
         return False, "You have been suspended for violating the TOS"
 
-    # 6) update last‑active timestamp
-    sess["last_active"] = now
+    # 🔒 DEVICE BINDING ENFORCEMENT
 
-    # 7) success → return payload dict just like before
-    return True, sess
+    current_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    current_ua = request.headers.get("User-Agent")
+    current_fp = request.headers.get("X-Device-Fingerprint")
+
+    if session.ip_address != current_ip:
+        return False, "Session IP mismatch"
+
+    if session.user_agent != current_ua:
+        return False, "Session user-agent mismatch"
+
+    if session.fingerprint and session.fingerprint != current_fp:
+        return False, "Session fingerprint mismatch"
+
+    # Update last active
+    session.last_active = now
+    db.session.commit()
+
+    return True, {"user_id": user.id}
+
+# --- helper: get_session_by_raw_token (if not already present) ---
+def get_session_by_raw_token(raw_token):
+    if not raw_token:
+        return None
+    token_hash = _hash_session_token(raw_token)
+    session = Session.query.filter_by(token_hash=token_hash).first()
+    if not session or session.revoked:
+        return None
+
+    now = datetime.utcnow()
+    if session.expires_at and session.expires_at < now:
+        try:
+            db.session.delete(session)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return None
+
+    # ensure linked user exists
+    if not User.query.get(session.user_id):
+        try:
+            db.session.delete(session)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return None
+
+    return session
+
+# --- helper: get_current_db_session() for convenience inside endpoints ---
+def get_current_db_session():
+    raw = request.cookies.get('session_key')
+    if not raw:
+        return None
+    return get_session_by_raw_token(raw)
+
+# --- small helper to produce a friendly "user agent" string ---
+def simplify_user_agent(ua: str) -> str:
+    if not ua:
+        return "Unknown"
+    ua = ua.lower()
+    # quick and conservative checks — you can replace this with 'user_agents' library later
+    browser = "Other browser"
+    if "chrome" in ua and "edg" not in ua and "chromium" not in ua:
+        browser = "Chrome"
+    elif "firefox" in ua:
+        browser = "Firefox"
+    elif "safari" in ua and "chrome" not in ua and "chromium" not in ua:
+        browser = "Safari"
+    elif "edg" in ua or "edge" in ua:
+        browser = "Edge"
+    elif "opera" in ua:
+        browser = "Opera"
+
+    platform = "Unknown OS"
+    if "windows" in ua:
+        platform = "Windows"
+    elif "mac os" in ua or "macintosh" in ua:
+        platform = "macOS"
+    elif "linux" in ua and "android" not in ua:
+        platform = "Linux"
+    elif "android" in ua:
+        platform = "Android"
+    elif "iphone" in ua or "ipad" in ua:
+        platform = "iOS"
+
+    # short string
+    return f"{browser} on {platform}"
 
 def create_default_calendar(user_id):
     default_calendar = Calendar(name="My calendar", user_id=user_id, is_default=True)
@@ -2398,12 +2590,11 @@ def allowed_file(filename):
 def require_session_key(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # if they still sent an Authorization header, ignore it
         valid, resp = validate_session_key()
         if not valid:
-            # exactly the same error behavior as before
             code = 403 if "suspended" in resp else 401
             return jsonify({"error": resp}), code
+
         g.user_id = resp["user_id"]
         return func(*args, **kwargs)
     return wrapper
@@ -9026,13 +9217,111 @@ def api_google_connect():
         "oauth_state": returned_state
     }), 200
 
-def get_user_id(session_key):
-    current_key = request.cookies.get('session_key')
-    for sk in list(session_keys.keys()):
-        meta = session_keys.get(sk)
-        if meta and meta.get("session_key") == current_key:
-            return meta.get("user_id")
-    return None
+def get_user_id(session_key=None):
+    """
+    Return user_id for a raw session token (or cookie if not provided), or None.
+    """
+    raw = session_key or request.cookies.get('session_key')
+    if not raw:
+        return None
+
+    db_session = get_session_by_raw_token(raw)
+    if not db_session:
+        return None
+
+    return db_session.user_id
+
+# --- GET /account/sessions
+@app.route("/account/sessions", methods=["GET"])
+@require_session_key
+def list_sessions():
+    """
+    Returns the current user's active sessions.
+    Response: JSON array of sessions with:
+      id, created_at, last_active, ip_address, country (nullable), user_agent_simplified,
+      user_agent (full/truncated), fingerprint, is_current (bool), created_via_lasting (bool)
+    """
+    user_id = g.user_id
+    db_sessions = Session.query.filter_by(user_id=user_id).order_by(Session.last_active.desc()).all()
+
+    current = get_current_db_session()
+    current_id = current.id if current else None
+
+    out = []
+    for s in db_sessions:
+        # check if this session has a linked lasting key record
+        lk = LastingKey.query.filter_by(session_id=s.id).first()
+        created_via_lasting = bool(lk)
+
+        # country is left null unless you add GeoIP (MaxMind / IP2Location) integration
+        out.append({
+            "id": s.id,
+            "created_at": s.created_at.isoformat() + "Z",
+            "last_active": s.last_active.isoformat() + "Z",
+            "ip_address": s.ip_address,
+            "country": None,
+            "user_agent_simplified": simplify_user_agent(s.user_agent),
+            "user_agent": (s.user_agent[:200] if s.user_agent else None),
+            "fingerprint": s.fingerprint,
+            "is_current": (s.id == current_id),
+            "created_via_lasting": created_via_lasting
+        })
+    return jsonify({"sessions": out}), 200
+
+# --- POST /account/sessions/<id>/revoke  (revoke a single session)
+@app.route("/account/sessions/<int:session_id>/revoke", methods=["POST"])
+@require_session_key
+def revoke_session(session_id):
+    user_id = g.user_id
+    s = Session.query.get(session_id)
+    if not s or s.user_id != user_id:
+        return jsonify({"error": "Session not found"}), 404
+
+    # revoke and remove linked lasting key(s)
+    try:
+        # revoke session
+        s.revoked = True
+        db.session.add(s)
+
+        # remove any lasting key records linked to this session
+        lks = LastingKey.query.filter_by(session_id=s.id).all()
+        for lk in lks:
+            db.session.delete(lk)
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not revoke session"}), 500
+
+    # If they revoked the *current* session, instruct client to clear cookies
+    current = get_current_db_session()
+    resp = make_response(jsonify({"message": "Session revoked"}), 200)
+    if current and current.id == s.id:
+        # clear cookies for current client
+        resp.delete_cookie("session_key")
+        resp.delete_cookie("lasting_key")
+    return resp
+
+# --- POST /account/sessions/revoke_all  (revoke all sessions + delete all lasting keys)
+@app.route("/account/sessions/revoke_all", methods=["POST"])
+@require_session_key
+def revoke_all_sessions():
+    user_id = g.user_id
+    try:
+        # revoke all sessions
+        Session.query.filter_by(user_id=user_id).update({"revoked": True})
+        # delete all lasting keys for user
+        LastingKey.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not revoke all sessions"}), 500
+
+    # clear cookies in response so current browser is forced to login again
+    resp = make_response(jsonify({"message": "All sessions revoked"}), 200)
+    resp.delete_cookie("session_key")
+    resp.delete_cookie("lasting_key")
+    return resp
 
 @app.route("/google/callback")
 def google_callback():
@@ -12872,18 +13161,18 @@ def login_as_user():
         return jsonify({"error": "Cannot log in as a suspended user"}), 403
 
     # Generate a fresh session_key for the impersonated user
-    new_key = generate_session_key(target_user.id)
+    session_key, _session_id = create_session(target_user.id)
 
     payload = {
         "message":   target_user.username,
         "user_id":   target_user.id,
         "startpage": target_user.startpage,
-        # lasting_key remains unchanged in the cookie, so no need to reissue here
     }
     resp = make_response(jsonify(payload), 200)
+
     # set the new session_key cookie
     resp.set_cookie(
-        "session_key", new_key,
+        "session_key", session_key,  # <- now a string, not a tuple
         httponly=True, secure=True, samesite="Strict",
         max_age=60*60*24
     )
@@ -12969,7 +13258,6 @@ def create_user_from_signup_session(signup_session, skip_email=False):
             password=signup_session.hashed_password,
             email=None if skip_email else signup_session.email
         )
-        user.lasting_key = secrets.token_hex(32)
         db.session.add(user)
         db.session.commit()
 
@@ -12979,12 +13267,16 @@ def create_user_from_signup_session(signup_session, skip_email=False):
         db.session.commit()
 
         # Create session key
-        session_key = generate_session_key(user.id)
-        
+        session_key, session_id = create_session(user.id)
+
+        # Create lasting key linked to this session
+        lasting_key, _lk_record = create_lasting_key_for_user(user.id, session_id=session_id)
+
         # Initialize user resources
         create_default_calendar(user.id)
         ensure_user_colors(user.id)
-        
+        initialize_user_storage(user.id)
+
         # Send welcome notification
         send_notification(
             user.id, "Welcome!",
@@ -12992,14 +13284,15 @@ def create_user_from_signup_session(signup_session, skip_email=False):
             "/help"
         )
 
-        # after commit and ip_record saved
+        # Redeem referral
         _redeem_referral_for_user(user, signup_session)
 
         return {
             "session_key": session_key,
-            "lasting_key": user.lasting_key,
+            "lasting_key": lasting_key,
             "user_id": user.id
         }
+
     except IntegrityError:
         db.session.rollback()
         raise Exception("Account creation failed (username might be taken)")
@@ -13205,14 +13498,14 @@ def complete_email_verification():
 def complete_signup_internal(signup_session):
     """Shared signup completion logic"""
     try:
-        # Create user
         skip_email = False if signup_session.email else True
+
+        # Create user
         user = User(
             username=signup_session.username,
             password=signup_session.hashed_password,
             email=None if skip_email else signup_session.email
         )
-        user.lasting_key = secrets.token_hex(32)
         db.session.add(user)
         db.session.commit()
 
@@ -13222,7 +13515,10 @@ def complete_signup_internal(signup_session):
         db.session.commit()
 
         # Create session key
-        session_key = generate_session_key(user.id)
+        session_key, session_id = create_session(user.id)
+
+        # Create lasting key linked to this session
+        lasting_key, _lk_record = create_lasting_key_for_user(user.id, session_id=session_id)
 
         # Initialize user resources
         create_default_calendar(user.id)
@@ -13236,13 +13532,15 @@ def complete_signup_internal(signup_session):
             "/guide_page"
         )
 
+        # Redeem referral
         _redeem_referral_for_user(user.id, signup_session)
 
         return {
             "session_key": session_key,
-            "lasting_key": user.lasting_key,
+            "lasting_key": lasting_key,
             "user_id": user.id
         }
+
     except IntegrityError:
         db.session.rollback()
         raise Exception("Account creation failed (username might be taken)")
@@ -13305,25 +13603,26 @@ def send_verification_email():
 # Updated signup completion endpoint
 @app.route('/signup/complete', methods=['POST'])
 def complete_signup():
-    """Original form-based signup completion"""
+    """Complete signup: create user, session, lasting key, set cookies."""
     session_id = request.cookies.get('signup_session')
-    if not session_id:
-        # Try to find by verification code
-        verification_code = request.json.get('verification_code')
+    signup_session = None
+
+    if session_id:
+        signup_session = SignupSession.query.get(session_id)
+        if not signup_session:
+            return jsonify({"error": "Invalid signup session"}), 400
+    else:
+        # fallback via verification code
+        verification_code = (request.json or {}).get('verification_code')
         if verification_code:
             signup_session = SignupSession.query.filter_by(
                 verification_code=verification_code
             ).first()
-            if signup_session:
-                return complete_signup_internal(signup_session)
-        return jsonify({"error": "Session expired"}), 400
-        
-    signup_session = SignupSession.query.get(session_id)
-    if not signup_session:
-        return jsonify({"error": "Invalid session"}), 400
+        if not signup_session:
+            return jsonify({"error": "Session expired"}), 400
 
-    data = request.get_json()
-    skip_email = data.get('skip_email', False)
+    data = request.get_json() or {}
+    skip_email = bool(data.get('skip_email', False))
     verification_code = data.get('verification_code', '')
 
     # Verify code if email was added
@@ -13334,33 +13633,38 @@ def complete_signup():
             return jsonify({"error": "Invalid verification code"}), 400
 
     try:
-        # Create user and get session data
+        # Create user and get session + lasting key
         user_data = create_user_from_signup_session(signup_session, skip_email)
-        
-        # Clean up session
+
+        # Clean up signup session
         db.session.delete(signup_session)
         db.session.commit()
-        
+
         # Prepare response
         payload = {
             "message": "Account created successfully!",
             "session_key": user_data['session_key'],
-            "user_id": user_data['user_id'],
-            "lasting_key": user_data['lasting_key']
+            "user_id": user_data['user_id']
         }
-        resp = jsonify(payload)
-        
-        # Set cookies
+        resp = make_response(jsonify(payload), 200)
+
+        # Set cookies for session + lasting key
         resp.set_cookie(
             "session_key", user_data['session_key'],
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
             max_age=60*60*24  # 1 day
         )
         resp.set_cookie(
             "lasting_key", user_data['lasting_key'],
-            httponly=True, secure=True, samesite="Strict",
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
             max_age=60*60*24*30  # 30 days
         )
+
+        # remove signup session cookie from client
         resp.delete_cookie("signup_session")
         return resp
 
@@ -13454,13 +13758,12 @@ def reset_password():
     data = request.get_json()
     token = data.get('token')
     new_password = data.get('new_password')
-    
+
     if not token or not new_password:
         return jsonify({'error': 'Token and new password are required'}), 400
-    
     if len(new_password) < 8:
         return jsonify({'error': 'Password must be at least 8 characters'}), 400
-    
+
     reset_token = PasswordResetToken.query.filter_by(token=token).first()
     if not reset_token:
         return jsonify({'error': 'Invalid token'}), 400
@@ -13468,29 +13771,32 @@ def reset_password():
         return jsonify({'error': 'Token already used'}), 400
     if datetime.utcnow() > reset_token.expires_at:
         return jsonify({'error': 'Token expired'}), 400
-    
+
     user = User.query.get(reset_token.user_id)
-    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
     # Save old password before resetting
     old_password_hash = user.password
-    
+
     # Set new password
     user.password = bcrypt.generate_password_hash(new_password).decode('utf-8')
-    
-    # Generate new tokens for session
-    user.lasting_key = secrets.token_hex(32)  # Invalidate old sessions
-    session_key = generate_session_key(user.id)  # Generate new session key
-    
-    # Record IP address if new
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_ip = user_ip.split(',')[0].strip()  # first IP in the list
+
+    # Create new session key
+    session_key, session_id = create_session(user.id)
+
+    # Rotate lasting key: create a new lasting key linked to the new session
+    lasting_key, _lk_record = create_lasting_key_for_user(user.id, session_id=session_id)
+
+    # Record IP if new
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-    
+
     # Mark reset token as used
     reset_token.used = True
-    
-    # Create undo token (valid for 3 days)
+
+    # Create undo token (valid 3 days)
     undo_token = ResetUndoToken(
         user_id=user.id,
         token=secrets.token_urlsafe(32),
@@ -13498,14 +13804,14 @@ def reset_password():
         expires_at=datetime.utcnow() + timedelta(days=3)
     )
     db.session.add(undo_token)
-    
+
     db.session.commit()
-    
+
     # Build undo URL
     site_url = f"{request.scheme}://{request.host}"
     undo_url = f"{site_url}/undo_reset?token={undo_token.token}"
-    
-    # Send confirmation email with undo link
+
+    # Send confirmation email
     try:
         send_email(
             to_address=user.email,
@@ -13514,35 +13820,30 @@ def reset_password():
                 <p>Your password was successfully reset.</p>
                 <p>If you didn't request this change, you can undo it within 3 days:</p>
             """,
-            buttons=[{
-                'text': 'Undo Password Reset',
-                'href': undo_url,
-                'color': '#ff0000'
-            }],
+            buttons=[{'text': 'Undo Password Reset', 'href': undo_url, 'color': '#ff0000'}],
             logo_url=app.config['LOGO_URL'],
             unsubscribe_url="#"
         )
     except Exception as e:
         app.logger.error(f"Password reset confirmation email failed: {str(e)}")
-    
+
     # Prepare login response
     payload = {
         "message": "Password reset successfully and logged in",
         "session_key": session_key,
         "user_id": user.id,
-        "startpage": user.startpage,
-        "lasting_key": user.lasting_key
+        "startpage": user.startpage
     }
-    
+
     resp = make_response(jsonify(payload), 200)
     resp.set_cookie(
         "session_key", session_key,
-        httponly=True, secure=True, samesite="Strict",
+        httponly=True, secure=not _is_local_request(), samesite="Strict",
         max_age=60*60*24
     )
     resp.set_cookie(
-        "lasting_key", user.lasting_key,
-        httponly=True, secure=True, samesite="Strict",
+        "lasting_key", lasting_key,
+        httponly=True, secure=not _is_local_request(), samesite="Strict",
         max_age=60*60*24*30
     )
     return resp
@@ -13622,21 +13923,35 @@ def undo_reset():
 def login():
     data = request.get_json(silent=True) or {}
 
-    # 1) lasting_key auto-login
-    lk = request.cookies.get('lasting_key')
-    if lk:
-        user = User.query.filter_by(lasting_key=lk).first()
+    # 1) lasting_key auto-login (cookie)
+    lk_cookie = request.cookies.get('lasting_key')
+    if lk_cookie:
+        lk_record = verify_lasting_token(lk_cookie)
+        if not lk_record:
+            resp = make_response(jsonify({"error": "Invalid or expired lasting key!"}), 401)
+            # drop cookie client-side
+            resp.delete_cookie("lasting_key")
+            return resp
+
+        user = User.query.get(lk_record.user_id)
         if not user:
+            # orphaned lasting key — revoke and remove cookie
+            db.session.delete(lk_record)
+            db.session.commit()
             resp = make_response(jsonify({"error": "Invalid lasting key!"}), 401)
             resp.delete_cookie("lasting_key")
             return resp
+
         if user.suspended:
+            # revoke the lasting key
+            db.session.delete(lk_record)
+            db.session.commit()
             resp = make_response(jsonify({"error": "You are suspended!"}), 403)
             resp.delete_cookie("lasting_key")
             resp.delete_cookie("session_key")
             return resp
 
-        # Check 2FA requirement
+        # 2FA checks (same as before)
         user_has_2fa = bool(user.twofa_enabled)
         new_ip = False
         if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
@@ -13645,10 +13960,11 @@ def login():
                 new_ip = True
 
         if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
+            # create login token for 2FA; keep the original cookie intact for now
             login_token = secrets.token_urlsafe(32)
             login_tokens[login_token] = {
                 "user_id": user.id,
-                "expires_at": datetime.now() + timedelta(minutes=5),
+                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
                 "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
             }
             login_2fa_attempts[login_token] = 0
@@ -13666,8 +13982,19 @@ def login():
             )
             return resp
 
-        # No 2FA required → issue session_key
-        session_key = generate_session_key(user.id)
+        # No 2FA required -> issue session_key
+        session_key, session_id = create_session(user.id)
+
+        # rotate lasting key: issue a new lasting token bound to this session, remove the old one
+        device_info = request.headers.get('User-Agent', None)
+        new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
+
+        # remove old lasting key record (prevents reuse)
+        try:
+            db.session.delete(lk_record)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
         # log IP if new
         user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
@@ -13679,7 +14006,6 @@ def login():
             "message": "Login successful!",
             "session_key": session_key,
             "user_id": user.id,
-            "lasting_key": user.lasting_key,
             "startpage": user.startpage
         }
         resp = make_response(jsonify(payload), 200)
@@ -13690,8 +14016,9 @@ def login():
             samesite="Strict",
             max_age=60*60*24
         )
+        # set rotated lasting key cookie: httponly True (more secure)
         resp.set_cookie(
-            "lasting_key", user.lasting_key,
+            "lasting_key", new_token,
             httponly=True,
             secure=not _is_local_request(),
             samesite="Strict",
@@ -13699,7 +14026,7 @@ def login():
         )
         return resp
 
-    # 2) username/password login
+    # 2) username/password login (unchanged flow except lasting-key creation)
     username = data.get('username')
     password = data.get('password')
     if not username or not password:
@@ -13723,7 +14050,7 @@ def login():
         login_token = secrets.token_urlsafe(32)
         login_tokens[login_token] = {
             "user_id": user.id,
-            "expires_at": datetime.now() + timedelta(minutes=5),
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
             "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
         }
         login_2fa_attempts[login_token] = 0
@@ -13734,7 +14061,7 @@ def login():
         }), 200
 
     # Issue session
-    session_key = generate_session_key(user.id)
+    session_key, session_id = create_session(user.id)
     user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
@@ -13747,12 +14074,13 @@ def login():
         "startpage": user.startpage
     }
 
-    # Lasting key if requested
+    # Lasting key if requested -> always create a *new* record (don't reuse)
     if data.get('keep_login'):
-        if not user.lasting_key:
-            user.lasting_key = secrets.token_hex(32)
-            db.session.commit()
-        payload["lasting_key"] = user.lasting_key
+        device_info = request.headers.get('User-Agent', None)
+        new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
+        payload["lasting_key"] = None  # don't return in JSON; cookie will contain it
+    else:
+        new_token = None
 
     resp = make_response(jsonify(payload), 200)
     resp.set_cookie(
@@ -13762,9 +14090,9 @@ def login():
         samesite="Strict",
         max_age=60*60*24
     )
-    if data.get('keep_login'):
+    if new_token:
         resp.set_cookie(
-            "lasting_key", user.lasting_key,
+            "lasting_key", new_token,
             httponly=True,
             secure=not _is_local_request(),
             samesite="Strict",
@@ -13785,7 +14113,7 @@ def twofa_setup():
     # generate a secret
     secret = pyotp.random_base32()  # keep server-side until confirm
     # store temporarily
-    pending_twofa[user.id] = {"secret": secret, "created_at": datetime.now()}
+    pending_twofa[user.id] = {"secret": secret, "created_at": datetime.now(timezone.utc)}
 
     issuer = f"Future Notes"
     provisioning_uri = pyotp.totp.TOTP(secret).provisioning_uri(
@@ -13867,11 +14195,15 @@ def twofa_disable():
     db.session.commit()
 
     # Invalidate other sessions for this user (keep current session)
-    current_key = request.cookies.get('session_key')
-    for sk in list(session_keys.keys()):
-        meta = session_keys.get(sk)
-        if meta and meta.get('user_id') == user.id and sk != current_key:
-            session_keys.pop(sk, None)
+    current_key = request.cookies.get("session_key")
+    current_hash = _hash_session_token(current_key)
+
+    Session.query.filter(
+        Session.user_id == user.id,
+        Session.token_hash != current_hash
+    ).update({"revoked": True})
+
+    db.session.commit()
 
     # Optional: inform client to refresh cookies (we do NOT delete current session cookie here)
     resp = make_response(jsonify({"message": "2FA disabled"}), 200)
@@ -13932,12 +14264,16 @@ def login_2fa():
         return jsonify({"error": "Missing token or code"}), 400
 
     tmeta = login_tokens.get(token)
-    if not tmeta or tmeta['expires_at'] < datetime.now():
+    if not tmeta or tmeta['expires_at'] < datetime.now(timezone.utc):
+        # cleanup if expired/invalid
         login_tokens.pop(token, None)
+        login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Invalid or expired login token"}), 400
 
     user = User.query.get(tmeta['user_id'])
     if not user:
+        login_tokens.pop(token, None)
+        login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Invalid token"}), 400
 
     # rate limiting attempts
@@ -13947,7 +14283,7 @@ def login_2fa():
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Too many attempts"}), 429
 
-    # verify TOTP or backup codes
+    # verify TOTP (and backup codes fallback)
     secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
     verified = False
     if secret:
@@ -13959,10 +14295,11 @@ def login_2fa():
     if not verified and user.backup_codes_hash:
         import hashlib
         hashed_codes = user.backup_codes_hash.split(",")
-        if hashlib.sha256(code.encode()).hexdigest() in hashed_codes:
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        if code_hash in hashed_codes:
             verified = True
-            # remove used code from DB
-            hashed_codes.remove(hashlib.sha256(code.encode()).hexdigest())
+            # remove the used code and persist
+            hashed_codes.remove(code_hash)
             user.backup_codes_hash = ",".join(hashed_codes) if hashed_codes else None
             db.session.commit()
 
@@ -13971,7 +14308,7 @@ def login_2fa():
         return jsonify({"error": "Invalid 2FA code"}), 400
 
     # Verified: issue session_key and optionally lasting_key and persist IP
-    session_key = generate_session_key(user.id)
+    session_key, session_id = create_session(user.id)
 
     # persist IP
     user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
@@ -13985,56 +14322,64 @@ def login_2fa():
         "user_id": user.id,
         "startpage": user.startpage
     }
+
     resp = make_response(jsonify(payload), 200)
     resp.set_cookie("session_key", session_key, httponly=True, secure=not _is_local_request(), samesite="Strict", max_age=60*60*24)
-    if keep_login:
-        if not user.lasting_key:
-            user.lasting_key = secrets.token_hex(32)
-            db.session.commit()
-        resp.set_cookie("lasting_key", user.lasting_key, httponly=True, secure=not _is_local_request(), samesite="Strict", max_age=60*60*24*30)
-        payload["lasting_key"] = user.lasting_key
 
-    # cleanup
+    # If client asked to keep login -> rotate lasting key (revoke old cookie, create new one)
+    if keep_login:
+        device_info = request.headers.get('User-Agent', None)
+
+        # Revoke any existing lasting_key cookie presented by client (prevents reuse)
+        old_lk = request.cookies.get('lasting_key')
+        if old_lk:
+            try:
+                revoke_lasting_token(old_lk)
+            except Exception:
+                # don't fail login if revoke has a problem — rollback and continue
+                db.session.rollback()
+
+        # create a brand new lasting key record + raw token for cookie
+        new_token, _new_lk_record = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
+
+        # set lasting_key cookie (HttpOnly)
+        resp.set_cookie(
+            "lasting_key", new_token,
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
+            max_age=60*60*24*30
+        )
+        # note: we intentionally do not include the raw token in JSON payload
+
+    # final cleanup of the ephemeral 2FA login token and attempts
     login_tokens.pop(token, None)
     login_2fa_attempts.pop(token, None)
 
     return resp
 
-# GET /2fa/status
 @app.route('/2fa/status', methods=['GET'])
 @require_session_key
 def twofa_status():
     """
     Returns simple information about the current user's 2FA state.
-
-    Response (200):
-    {
-      "twofa_enabled": bool,
-      "has_backup_codes": bool,
-      "recent_auth": bool
-    }
-
-    401 if not authenticated.
     """
     user = User.query.get(g.user_id)
     if not user:
         return jsonify({"error": "Not authenticated"}), 401
 
-    # Optionally enforce a "recent authentication" check.
-    # This helps the UI decide whether to ask for password/2FA before performing
-    # sensitive actions (e.g. disable/regenerate).
-    # Adjust window as needed (minutes).
     RECENT_AUTH_WINDOW_MINUTES = 15
 
     recent = False
+    # get the raw token from cookie and resolve DB session
     session_key = request.cookies.get("session_key")
     if session_key:
-        meta = session_keys.get(session_key)
-        if meta:
-            last_active = meta.get("last_active")
-            # last_active expected to be a datetime object; be defensive
+        db_session = get_session_by_raw_token(session_key)
+        if db_session:
+            last_active = db_session.last_active
+            # defensive: ensure it's a datetime
             if isinstance(last_active, datetime):
-                if datetime.now() - last_active < timedelta(minutes=RECENT_AUTH_WINDOW_MINUTES):
+                if datetime.utcnow() - last_active < timedelta(minutes=RECENT_AUTH_WINDOW_MINUTES):
                     recent = True
 
     payload = {
@@ -14049,15 +14394,23 @@ def twofa_status():
     resp.headers['Pragma'] = 'no-cache'
     return resp
 
-
 @app.route('/logout', methods=['POST'])
-@require_session_key
 def logout():
-    # delete from server‐side session_keys store
-    auth_key = request.cookies.get("session_key")
-    session_keys.pop(auth_key, None)
+    # Revoke session_key on server side if you persist them
+    session_key = request.cookies.get("session_key")
+    if session_key:
+        token_hash = _hash_session_token(session_key)
+        session = Session.query.filter_by(token_hash=token_hash).first()
+        if session:
+            session.revoked = True
+            db.session.commit()
 
-    resp = make_response(jsonify({"message": "Logged out successfully!"}), 200)
+    # Revoke lasting key cookie (if present)
+    lk_cookie = request.cookies.get("lasting_key")
+    if lk_cookie:
+        revoke_lasting_token(lk_cookie)
+
+    resp = make_response(jsonify({"message": "Logged out"}), 200)
     resp.delete_cookie("session_key")
     resp.delete_cookie("lasting_key")
     return resp
