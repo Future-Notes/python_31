@@ -129,6 +129,8 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+# simple in-memory cache for IP->country
+geo_cache = {}
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
 app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
 VT_API_KEY = os.environ.get("VT_API_KEY", "")
@@ -9231,6 +9233,38 @@ def get_user_id(session_key=None):
 
     return db_session.user_id
 
+def lookup_country(ip: str) -> str | None:
+    """
+    Returns the country name for a given IP using ipapi.co.
+    Caches results in memory. Returns None if lookup fails or IP is local.
+    """
+    if not ip:
+        return None
+
+    try:
+        # skip localhost/private IPs
+        ip_obj = ipaddress.ip_address(ip)
+        if ip_obj.is_private or ip_obj.is_loopback:
+            return None
+    except ValueError:
+        # invalid IP
+        return None
+
+    if ip in geo_cache:
+        return geo_cache[ip]
+
+    try:
+        res = requests.get(f"https://ipapi.co/{ip}/country_name/", timeout=2)
+        if res.status_code == 200:
+            country = res.text.strip()
+            geo_cache[ip] = country
+            return country
+    except Exception:
+        pass
+
+    geo_cache[ip] = None
+    return None
+
 # --- GET /account/sessions
 @app.route("/account/sessions", methods=["GET"])
 @require_session_key
@@ -9242,7 +9276,7 @@ def list_sessions():
       user_agent (full/truncated), fingerprint, is_current (bool), created_via_lasting (bool)
     """
     user_id = g.user_id
-    db_sessions = Session.query.filter_by(user_id=user_id).order_by(Session.last_active.desc()).all()
+    db_sessions = Session.query.filter_by(user_id=user_id, revoked=False).order_by(Session.last_active.desc()).all()
 
     current = get_current_db_session()
     current_id = current.id if current else None
@@ -9253,19 +9287,21 @@ def list_sessions():
         lk = LastingKey.query.filter_by(session_id=s.id).first()
         created_via_lasting = bool(lk)
 
-        # country is left null unless you add GeoIP (MaxMind / IP2Location) integration
+        country = lookup_country(s.ip_address)
+
         out.append({
             "id": s.id,
             "created_at": s.created_at.isoformat() + "Z",
             "last_active": s.last_active.isoformat() + "Z",
             "ip_address": s.ip_address,
-            "country": None,
+            "country": country,
             "user_agent_simplified": simplify_user_agent(s.user_agent),
             "user_agent": (s.user_agent[:200] if s.user_agent else None),
             "fingerprint": s.fingerprint,
             "is_current": (s.id == current_id),
             "created_via_lasting": created_via_lasting
         })
+
     return jsonify({"sessions": out}), 200
 
 # --- POST /account/sessions/<id>/revoke  (revoke a single session)
