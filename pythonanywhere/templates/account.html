@@ -430,6 +430,11 @@
         cursor: pointer;
         }
 
+        #sessions-section {
+        margin-top: 2rem;
+        padding: 1rem;
+      }
+
       </style>
       
     <script>
@@ -498,6 +503,7 @@
     </div>
     
     <div class="container">
+      <div class="top-sections" style="display: flex; gap: 1rem;">
         <div class="section" id="account-management">
             <h2>Account Management</h2>
             <form id="update-username-form">
@@ -721,6 +727,62 @@
               Save Colors
             </button>
           </div>
+        </div>
+        </div>
+
+        <div class="container">
+        <section id="sessions-section" class="section">
+          <h2>Active Sessions</h2>
+
+          <div id="sessions-ui">
+            <div id="sessions-controls" style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;">
+              <button id="refresh-sessions" class="btn">Refresh</button>
+              <button id="revoke-all-sessions" class="btn danger">Revoke all sessions</button>
+              <div id="sessions-status" style="margin-left:auto;color:var(--text-color);opacity:0.8;font-size:0.9rem"></div>
+            </div>
+
+            <div id="sessions-list-wrapper">
+              <table id="sessions-table" style="width:100%;border-collapse:collapse;">
+                <thead>
+                  <tr style="text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <th style="padding:0.5rem">Current</th>
+                    <th style="padding:0.5rem">Created</th>
+                    <th style="padding:0.5rem">Last active</th>
+                    <th style="padding:0.5rem">IP / Country</th>
+                    <th style="padding:0.5rem">Browser</th>
+                    <th style="padding:0.5rem">Fingerprint</th>
+                    <th style="padding:0.5rem">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="sessions-tbody">
+                  <tr><td colspan="7" style="padding:1rem;text-align:center;opacity:0.7">Loading sessions…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          </section>
+          </div>
+
+          <style>
+            /* lightweight, scoped styles */
+            #sessions-section .btn {
+              background: var(--btn-color, #424242);
+              color: var(--text-color, #eee);
+              border: none;
+              padding: 0.5rem 0.75rem;
+              border-radius: 6px;
+              cursor: pointer;
+            }
+            #sessions-section .btn:disabled { opacity: 0.6; cursor: default; }
+            #sessions-section .btn.danger { background: #b33; }
+            #sessions-table tbody tr.current { background: rgba(79,131,204,0.06); }
+            #sessions-table td { padding:0.5rem; vertical-align:middle; border-bottom:1px solid rgba(255,255,255,0.02); }
+            .session-meta { font-size:0.85rem; color:var(--text-color); opacity:0.9 }
+            .muted { color: rgba(255,255,255,0.5); font-size:0.9rem }
+            .small { font-size:0.82rem }
+            .revoke-btn { background: transparent; border:1px solid rgba(255,255,255,0.06); padding:0.35rem 0.5rem; border-radius:6px; cursor:pointer }
+          </style>
+
 
     <!-- Modal for profile picture -->
     <div id="modal-overlay-2">
@@ -940,6 +1002,8 @@
         // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
         });
 
+        
+
         document.addEventListener("DOMContentLoaded", async () => {
       const presets = {
         default: { bg: "#2c2c2c", hdr: "#3a3a3a", ctr: "#1e1e1e", btn: "#424242" },
@@ -1111,6 +1175,182 @@
         }
       });
     });
+
+    (function(){
+      const tbody = document.getElementById('sessions-tbody');
+      const status = document.getElementById('sessions-status');
+      const refreshBtn = document.getElementById('refresh-sessions');
+      const revokeAllBtn = document.getElementById('revoke-all-sessions');
+
+      function safe(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+
+      function formatISO(iso) {
+        if (!iso) return '—';
+        try {
+          const d = new Date(iso);
+          // show local time in Europe/Amsterdam if available to the browser; locale fallback to user's locale
+          return d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) + '\n' + d.toLocaleTimeString();
+        } catch (e) { return iso; }
+      }
+
+      async function fetchSessions() {
+        tbody.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;opacity:0.7">Loading sessions…</td></tr>';
+        status.textContent = '';
+        try {
+          const res = await fetch('/account/sessions', { credentials: 'include' });
+          if (res.status === 401 || res.status === 403) {
+            status.textContent = 'Unauthorized — please log in again';
+            return;
+          }
+          if (!res.ok) throw new Error('Failed to load');
+          const j = await res.json();
+          renderSessions(j.sessions || []);
+        } catch (err) {
+          console.error(err);
+          tbody.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;color:var(--text-color);opacity:0.8">Could not load sessions</td></tr>';
+          status.textContent = 'Network error';
+        }
+      }
+
+      function renderSessions(list) {
+        if (!Array.isArray(list) || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="padding:1rem;text-align:center;opacity:0.7">No active sessions</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const s of list) {
+          const tr = document.createElement('tr');
+          if (s.is_current) tr.classList.add('current');
+
+          // current marker
+          const currentTd = document.createElement('td');
+          currentTd.innerHTML = s.is_current ? '<strong>Yes</strong>' : '<span class="muted">No</span>';
+
+          // created
+          const createdTd = document.createElement('td');
+          createdTd.innerHTML = `<div class="session-meta">${formatISO(s.created_at)}</div>`;
+
+          // last active
+          const lastTd = document.createElement('td');
+          lastTd.innerHTML = `<div class="session-meta">${formatISO(s.last_active)}</div>`;
+
+          // ip / country
+          const ipTd = document.createElement('td');
+          const country = safe(s.country);
+          const ip = safe(s.ip_address);
+          ipTd.innerHTML = `<div class="small">${ip}</div><div class="muted">${country}</div>`;
+
+          // browser
+          const uaTd = document.createElement('td');
+          uaTd.innerHTML = `<div class="small">${safe(s.user_agent_simplified)}</div><div class="muted">${safe(s.user_agent)}</div>`;
+
+          // fingerprint
+          const fpTd = document.createElement('td');
+          fpTd.textContent = safe(s.fingerprint);
+
+          // actions
+          const actTd = document.createElement('td');
+          const revokeBtn = document.createElement('button');
+          revokeBtn.className = 'revoke-btn';
+          revokeBtn.textContent = s.is_current ? 'Revoke (current)' : 'Revoke';
+          revokeBtn.disabled = false;
+          revokeBtn.addEventListener('click', () => onRevokeClicked(s, tr, revokeBtn));
+
+          actTd.appendChild(revokeBtn);
+
+          tr.appendChild(currentTd);
+          tr.appendChild(createdTd);
+          tr.appendChild(lastTd);
+          tr.appendChild(ipTd);
+          tr.appendChild(uaTd);
+          tr.appendChild(fpTd);
+          tr.appendChild(actTd);
+
+          tbody.appendChild(tr);
+        }
+      }
+
+      async function onRevokeClicked(sessionObj, rowEl, btnEl) {
+        const id = sessionObj.id;
+        const isCurrent = !!sessionObj.is_current;
+        const confirmMsg = isCurrent
+          ? 'Revoking the current session will log you out of this browser. Continue?'
+          : `Revoke session from ${safe(sessionObj.ip_address)} (${safe(sessionObj.user_agent_simplified)})?`;
+        if (!confirm(confirmMsg)) return;
+
+        btnEl.disabled = true;
+        btnEl.textContent = 'Revoking…';
+
+        try {
+          const res = await fetch(`/account/sessions/${id}/revoke`, { method: 'POST', credentials: 'include' });
+          if (res.status === 401) {
+            alert('Session expired — please log in again');
+            window.location.href = '/login_page?redirect=/account_page&warning=true';
+            return;
+          }
+          if (!res.ok) {
+            const j = await res.json().catch(()=>({}));
+            alert('Could not revoke session: ' + (j.error || res.statusText));
+            btnEl.disabled = false;
+            btnEl.textContent = isCurrent ? 'Revoke (current)' : 'Revoke';
+            return;
+          }
+
+          // remove row from list (optimistic)
+          if (rowEl && rowEl.parentNode) rowEl.parentNode.removeChild(rowEl);
+
+          // if they revoked *their* current session we should force a login
+          if (isCurrent) {
+            try { sessionStorage.clear(); localStorage.removeItem('lasting_key'); } catch (e){}
+            // server will typically clear cookies; navigate to login
+            window.location.href = '/login_page?revoked_current=true';
+            return;
+          }
+
+          // success message
+          status.textContent = 'Session revoked';
+        } catch (err) {
+          console.error('Revoke failed', err);
+          alert('Network error while revoking session');
+          btnEl.disabled = false;
+          btnEl.textContent = isCurrent ? 'Revoke (current)' : 'Revoke';
+        }
+      }
+
+      revokeAllBtn.addEventListener('click', async () => {
+        if (!confirm('Revoke ALL sessions (this will log you out on every device)?')) return;
+        revokeAllBtn.disabled = true; revokeAllBtn.textContent = 'Revoking…';
+        try {
+          const res = await fetch('/account/sessions/revoke_all', { method: 'POST', credentials: 'include' });
+          if (res.status === 401) {
+            alert('Session expired — please log in again');
+            window.location.href = '/login_page?redirect=/account_page&warning=true';
+            return;
+          }
+          if (!res.ok) {
+            const j = await res.json().catch(()=>({}));
+            alert('Could not revoke all sessions: ' + (j.error || res.statusText));
+            revokeAllBtn.disabled = false; revokeAllBtn.textContent = 'Revoke all sessions';
+            return;
+          }
+
+          // on success we redirect to login (server also clears cookies)
+          try { sessionStorage.clear(); localStorage.removeItem('lasting_key'); } catch (e){}
+          window.location.href = '/login_page?revoked_all=true';
+        } catch (err) {
+          console.error(err);
+          alert('Network error while revoking all sessions');
+          revokeAllBtn.disabled = false; revokeAllBtn.textContent = 'Revoke all sessions';
+        }
+      });
+
+      refreshBtn.addEventListener('click', fetchSessions);
+
+      // initial load
+      fetchSessions();
+
+    })();
 
 
         document.getElementById("default-startpage").addEventListener("change", async (e) => {

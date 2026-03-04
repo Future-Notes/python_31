@@ -519,6 +519,7 @@
         if (r.status === 200) {
             const info = await r.json().catch(()=>({ startpage: redirectUrl }));
             try { sessionStorage.setItem("current_user_id", info.user_id); } catch(e){}
+            console.log("Session still valid!");
             window.location.href = params.get("redirect") || info.startpage || "/index";
             return true;
         }
