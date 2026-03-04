@@ -24,7 +24,7 @@
             background-color: var(--hdr-color);
             padding: 20px;
             display: flex;
-            visibility: hidden;
+            display: none;
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
@@ -577,7 +577,7 @@
 
         .group-list-sidebar {
             position: fixed;
-            top: 150px;
+            top: 50px;
             left: 20px;
             width: 250px;
             height: calc(100vh - 170px); /* Updated to use viewport height */
@@ -593,7 +593,7 @@
 
         .group-members-sidebar {
             position: fixed;
-            top: 150px;
+            top: 50px;
             right: 20px;
             width: 250px;
             height: calc(100vh - 170px); /* Updated to use viewport height */
@@ -1781,8 +1781,6 @@
                 .catch(console.error);
         }
     </script>
-
-    <script src="/static/admin.js"></script>
     <script src="/static/custom-alert.js"></script>
 
     <style>
