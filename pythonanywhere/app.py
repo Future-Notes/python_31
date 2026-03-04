@@ -3924,8 +3924,6 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
         filename = secure_filename(file.filename)
         if not filename:
             return False, "Invalid filename."
-        if not allowed_extension(filename):
-            return False, f"Extension not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}"
 
         # Determine file size
         file.stream.seek(0, os.SEEK_END)
