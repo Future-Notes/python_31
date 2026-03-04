@@ -636,6 +636,7 @@ class IpAddres(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     ip = db.Column(db.String(30), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 class Group(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -1198,6 +1199,11 @@ def upload_to_mega(local_path: str, filename: str):
 def _strip_html_tags(html):
     # crude but effective for diffing purposes
     return re.sub(r'<[^>]+>', '', html or '')
+
+def get_client_ip():
+    if request.headers.get('X-Forwarded-For'):
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    return request.remote_addr
 
 def create_note_version(note, editor_id=None):
     """
@@ -8526,10 +8532,29 @@ def delete_setting(key):
     db.session.commit()
     return jsonify({'status': 'deleted'})
 
+MAX_ATTEMPTS = 5
+WINDOW_MINUTES = 60
+
 @app.route('/account/update_email', methods=['POST'])
 @require_session_key
 def update_email_request():
     user = User.query.get(g.user_id)
+
+    client_ip = get_client_ip()
+
+    # Rate limit check
+    window_start = datetime.utcnow() - timedelta(minutes=WINDOW_MINUTES)
+
+    attempts = IpAddres.query.filter(
+        IpAddres.ip == client_ip,
+        IpAddres.created_at >= window_start
+    ).count()
+
+    if attempts >= MAX_ATTEMPTS:
+        return jsonify({
+            "error": "Too many email update attempts. Please try again later."
+        }), 429
+
     new_email = request.json.get('email', '').strip()
 
     if new_email == "":
@@ -8577,6 +8602,10 @@ def update_email_request():
             logo_url=app.config['LOGO_URL'],
             unsubscribe_url="#"
         )
+        # Log this attempt
+        ip_entry = IpAddres(user_id=user.id, ip=client_ip)
+        db.session.add(ip_entry)
+        db.session.commit()
         return jsonify({"message": "Verification email sent"}), 200
     except Exception as e:
         app.logger.error(f"Email update failed: {str(e)}")
