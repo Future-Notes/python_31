@@ -130,7 +130,7 @@ app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
 # simple in-memory cache for IP->country
-geo_cache = {}
+geo_cache: dict[str, tuple[str, str] | None] = {}
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
 app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
 VT_API_KEY = os.environ.get("VT_API_KEY", "")
@@ -9233,9 +9233,9 @@ def get_user_id(session_key=None):
 
     return db_session.user_id
 
-def lookup_country(ip: str) -> str | None:
+def lookup_country(ip: str) -> tuple[str, str] | None:
     """
-    Returns the country name for a given IP using ipapi.co.
+    Returns a tuple (ISO2 code, country name) for a given IP using ipapi.co.
     Caches results in memory. Returns None if lookup fails or IP is local.
     """
     if not ip:
@@ -9254,11 +9254,14 @@ def lookup_country(ip: str) -> str | None:
         return geo_cache[ip]
 
     try:
-        res = requests.get(f"https://ipapi.co/{ip}/country_name/", timeout=2)
+        res = requests.get(f"https://ipapi.co/{ip}/json/", timeout=2)
         if res.status_code == 200:
-            country = res.text.strip()
-            geo_cache[ip] = country
-            return country
+            data = res.json()
+            iso2 = data.get("country")      # e.g., "NL"
+            name = data.get("country_name") # e.g., "Netherlands"
+            if iso2 and name:
+                geo_cache[ip] = (iso2, name)
+                return iso2, name
     except Exception:
         pass
 
@@ -9269,12 +9272,6 @@ def lookup_country(ip: str) -> str | None:
 @app.route("/account/sessions", methods=["GET"])
 @require_session_key
 def list_sessions():
-    """
-    Returns the current user's active sessions.
-    Response: JSON array of sessions with:
-      id, created_at, last_active, ip_address, country (nullable), user_agent_simplified,
-      user_agent (full/truncated), fingerprint, is_current (bool), created_via_lasting (bool)
-    """
     user_id = g.user_id
     db_sessions = Session.query.filter_by(user_id=user_id, revoked=False).order_by(Session.last_active.desc()).all()
 
@@ -9283,18 +9280,19 @@ def list_sessions():
 
     out = []
     for s in db_sessions:
-        # check if this session has a linked lasting key record
         lk = LastingKey.query.filter_by(session_id=s.id).first()
         created_via_lasting = bool(lk)
 
-        country = lookup_country(s.ip_address)
+        country_info = lookup_country(s.ip_address)
+        country_code, country_name = (country_info if country_info else (None, None))
 
         out.append({
             "id": s.id,
             "created_at": s.created_at.isoformat() + "Z",
             "last_active": s.last_active.isoformat() + "Z",
             "ip_address": s.ip_address,
-            "country": country,
+            "country_code": country_code,   # ISO2 for flag
+            "country_name": country_name,   # full name for display
             "user_agent_simplified": simplify_user_agent(s.user_agent),
             "user_agent": (s.user_agent[:200] if s.user_agent else None),
             "fingerprint": s.fingerprint,

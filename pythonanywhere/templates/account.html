@@ -1261,9 +1261,9 @@
             // IP / Country with flag
             const ipTd = document.createElement('td');
             const ip = safe(s.ip_address);
-            const countryIso = s.country; // e.g., "NL"
-            const flag = iso2ToFlagEmoji(countryIso);
-            ipTd.innerHTML = `<div class="small">${ip}</div><div class="muted">${flag} ${countryIso || ''}</div>`;
+            const countryFlag = iso2ToFlagEmoji(s.country_code);
+            const countryDisplay = s.country_name || '';
+            ipTd.innerHTML = `<div class="small">${ip}</div><div class="muted">${countryFlag} ${countryDisplay}</div>`;
 
             // Browser
             const uaTd = document.createElement('td');
