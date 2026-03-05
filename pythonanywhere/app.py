@@ -222,7 +222,7 @@ db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 UPLOAD_FOLDER_PROFILE_PICS = 'static/uploads/profile_pictures'
 UPLOAD_FOLDER_LOCAL_FILES = 'static/uploads/files'
-app.config['UPLOAD_FOLDER_PROFILE_PICTURES'] = UPLOAD_FOLDER_PROFILE_PICS
+app.config['UPLOAD_FOLDER_PROFILE_PICS'] = UPLOAD_FOLDER_PROFILE_PICS
 app.config['UPLOAD_FOLDER_LOCAL_FILES'] = UPLOAD_FOLDER_LOCAL_FILES
 if not os.path.exists(UPLOAD_FOLDER_PROFILE_PICS):
     os.makedirs(UPLOAD_FOLDER_PROFILE_PICS)
