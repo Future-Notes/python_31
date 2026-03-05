@@ -129,8 +129,6 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
-# simple in-memory cache for IP->country
-geo_cache: dict[str, tuple[str, str] | None] = {}
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
 app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
 VT_API_KEY = os.environ.get("VT_API_KEY", "")
@@ -9233,39 +9231,42 @@ def get_user_id(session_key=None):
 
     return db_session.user_id
 
+geo_cache: dict[str, tuple[str, str]] = {}
+
 def lookup_country(ip: str) -> tuple[str, str] | None:
-    """
-    Returns a tuple (ISO2 code, country name) for a given IP using ipapi.co.
-    Caches results in memory. Returns None if lookup fails or IP is local.
-    """
     if not ip:
         return None
 
     try:
-        # skip localhost/private IPs
         ip_obj = ipaddress.ip_address(ip)
         if ip_obj.is_private or ip_obj.is_loopback:
             return None
     except ValueError:
-        # invalid IP
         return None
 
     if ip in geo_cache:
         return geo_cache[ip]
 
     try:
-        res = requests.get(f"https://ipapi.co/{ip}/json/", timeout=2)
+        res = requests.get(
+            f"https://ipapi.co/{ip}/json/",
+            timeout=3,
+            headers={"User-Agent": "session-service"}
+        )
+
         if res.status_code == 200:
             data = res.json()
-            iso2 = data.get("country")      # e.g., "NL"
-            name = data.get("country_name") # e.g., "Netherlands"
+
+            iso2 = data.get("country")
+            name = data.get("country_name")
+
             if iso2 and name:
                 geo_cache[ip] = (iso2, name)
                 return iso2, name
-    except Exception:
-        pass
 
-    geo_cache[ip] = None
+    except Exception as e:
+        print("Geo lookup failed:", ip, e)
+
     return None
 
 # --- GET /account/sessions
