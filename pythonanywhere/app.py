@@ -79,6 +79,7 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import joinedload
 import vt
 import hmac
+import geoip2.database
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -113,7 +114,9 @@ else:
 
 # ---- Helpers ----
 UTC = pytz.UTC
-
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GEOIP_DB = os.path.join(BASE_DIR, "geoip", "GeoLite2-Country.mmdb")
+reader = geoip2.database.Reader(GEOIP_DB)
 app.config['VAPID_PRIVATE_KEY'] = os.getenv("VAPID_PRIVATE_KEY")
 app.config['ADMIN_EMAIL'] = os.getenv("ADMIN_EMAIL")
 app.config['COHERE_API_KEY'] = os.getenv("COHERE_API_KEY")
@@ -9233,41 +9236,12 @@ def get_user_id(session_key=None):
 
 geo_cache: dict[str, tuple[str, str]] = {}
 
-def lookup_country(ip: str) -> tuple[str, str] | None:
-    if not ip:
-        return None
-
+def lookup_country(ip):
     try:
-        ip_obj = ipaddress.ip_address(ip)
-        if ip_obj.is_private or ip_obj.is_loopback:
-            return None
-    except ValueError:
+        r = reader.country(ip)
+        return r.country.iso_code, r.country.name
+    except:
         return None
-
-    if ip in geo_cache:
-        return geo_cache[ip]
-
-    try:
-        res = requests.get(
-            f"https://ipapi.co/{ip}/json/",
-            timeout=3,
-            headers={"User-Agent": "session-service"}
-        )
-
-        if res.status_code == 200:
-            data = res.json()
-
-            iso2 = data.get("country")
-            name = data.get("country_name")
-
-            if iso2 and name:
-                geo_cache[ip] = (iso2, name)
-                return iso2, name
-
-    except Exception as e:
-        print("Geo lookup failed:", ip, e)
-
-    return None
 
 # --- GET /account/sessions
 @app.route("/account/sessions", methods=["GET"])
