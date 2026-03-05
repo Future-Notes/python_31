@@ -132,6 +132,8 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config["SESSION_EXPIRY_HOURS"] = 48
+app.config["SLIDING_SESSION_EXPIRY_MINUTES"] = 30
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
 app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
 VT_API_KEY = os.environ.get("VT_API_KEY", "")
@@ -2461,17 +2463,24 @@ def validate_session_key(raw_token=None):
         return False, "Invalid or missing session API key"
 
     token_hash = _hash_session_token(raw_token)
-
     session = Session.query.filter_by(token_hash=token_hash).first()
     if not session or session.revoked:
         return False, "Invalid or missing session API key"
 
     now = datetime.utcnow()
 
+    # Absolute expiration
     if session.expires_at < now:
         db.session.delete(session)
         db.session.commit()
         return False, "Session expired. Please log in again."
+
+    # Sliding expiration
+    sliding_minutes = app.config.get("SLIDING_SESSION_EXPIRY_MINUTES", 30)
+    if session.last_active + timedelta(minutes=sliding_minutes) < now:
+        db.session.delete(session)
+        db.session.commit()
+        return False, "Session expired due to inactivity. Please log in again."
 
     user = User.query.get(session.user_id)
     if not user:
@@ -2485,7 +2494,6 @@ def validate_session_key(raw_token=None):
         return False, "You have been suspended for violating the TOS"
 
     # 🔒 DEVICE BINDING ENFORCEMENT
-
     current_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     current_ua = request.headers.get("User-Agent")
     current_fp = request.headers.get("X-Device-Fingerprint")
@@ -2499,7 +2507,7 @@ def validate_session_key(raw_token=None):
     if session.fingerprint and session.fingerprint != current_fp:
         return False, "Session fingerprint mismatch"
 
-    # Update last active
+    # Update last active for sliding session
     session.last_active = now
     db.session.commit()
 
