@@ -16,3 +16,4 @@ manager.py
 **/backups
 **/.vscode
 .env
+**/geoip
