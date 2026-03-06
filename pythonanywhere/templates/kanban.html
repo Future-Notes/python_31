@@ -1132,13 +1132,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     } else {
         // initial start page load: fetch boards and render start page cards
         await loadStartPageBoards();
+        await loadBoards();
         showStartPage();
     }
 
-    document.getElementById('board-back-btn').addEventListener('click', () => {
+    document.getElementById('board-back-btn').addEventListener('click', async () => {
         location.hash = '';
+        currentBoardId = null;
         loadStartPageBoards();
         showStartPage();
+        await loadBoards();
+        highlightActiveBoard();
     });
 
     // respond to hash changes (allow navigation between boards without reload)
@@ -1563,9 +1567,10 @@ async function loadStartPageBoards() {
         createCard.style.alignItems = 'center';
         createCard.style.justifyContent = 'center';
         createCard.style.height = '120px';
+        createCard.style.cursor = 'pointer';
 
         createCard.innerHTML = `
-            <div style="text-align:center; width:100%">
+            <div style="text-align:center; width:100%; cursor:pointer;">
                 <div style="font-size:36px; cursor:pointer;">+</div>
                 <div style="opacity:0.8; margin-top:8px; cursor:pointer;">
                     ${hasBoards ? 'Create another board' : 'Create your first board'}
@@ -1598,6 +1603,7 @@ function hideStartPage() {
 /* Load boards for sidebar */
 async function loadBoards() {
     try {
+        console.log("loadboards");
         boardsCache = await apiGET('/api/boards');
         const list = document.getElementById('boards-list');
         list.innerHTML = '';
@@ -1653,8 +1659,16 @@ async function loadBoards() {
 }
 
 function highlightActiveBoard() {
-    document.querySelectorAll('.board-item').forEach(el => {
-        el.classList.toggle('active', parseInt(el.dataset.boardId,10) === currentBoardId);
+    const items = document.querySelectorAll('.board-item');
+
+    if (currentBoardId === null) {
+        items.forEach(el => el.classList.remove('active'));
+        return;
+    }
+
+    items.forEach(el => {
+        const boardId = parseInt(el.dataset.boardId, 10);
+        el.classList.toggle('active', boardId === currentBoardId);
     });
 }
 
