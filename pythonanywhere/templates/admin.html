@@ -843,6 +843,132 @@
         }
         .action-group.users button.btn-primary:hover { background: rgba(16,185,129,0.18); }
 
+        /* ── SESSIONS MODAL ── */
+        #sessions-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.78);
+            backdrop-filter: blur(10px);
+            z-index: 1500;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #sessions-overlay.visible { display: flex; }
+
+        #sessions-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 860px;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 80px rgba(0,0,0,0.7), var(--glow);
+            position: relative;
+            animation: dialogIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+            overflow: hidden;
+        }
+        #sessions-modal::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            z-index: 1;
+        }
+
+        .sessions-modal-header {
+            padding: 24px 28px 20px;
+            border-bottom: 1px solid var(--border2);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 16px;
+        }
+        .sessions-modal-header-left h2 {
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 3px;
+        }
+        .sessions-modal-header-left .sessions-modal-sub {
+            font-size: 11px;
+            color: var(--text-dim);
+            letter-spacing: 0.05em;
+        }
+        .sessions-modal-header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .sessions-modal-body {
+            overflow-y: auto;
+            flex: 1;
+            padding: 20px 28px 24px;
+        }
+
+        /* sessions table inherits the global table styles but needs a tighter wrapper */
+        .sessions-table-wrapper {
+            border: 1px solid var(--border2);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        /* empty / loading states */
+        .sessions-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-dim);
+            font-size: 13px;
+        }
+        .sessions-state svg {
+            display: block;
+            margin: 0 auto 12px;
+            opacity: 0.3;
+        }
+
+        /* session row extras */
+        .session-flag {
+            font-size: 18px;
+            line-height: 1;
+            margin-right: 6px;
+        }
+        .session-badge {
+            display: inline-block;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            padding: 2px 7px;
+            border-radius: 20px;
+            font-weight: 600;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+        .session-badge.lasting {
+            background: rgba(245,158,11,0.12);
+            border: 1px solid rgba(245,158,11,0.3);
+            color: #fcd34d;
+        }
+        .session-ua {
+            font-size: 12px;
+            color: var(--text);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .session-time {
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+
         /* ── RESPONSIVE ── */
         @media (max-width: 768px) {
             header { padding: 14px 16px; }
@@ -891,6 +1017,53 @@
         <div class="confirm-actions">
             <button class="btn-confirm-cancel" id="confirm-cancel-btn">Cancel</button>
             <button class="btn-confirm-ok" id="confirm-ok-btn">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<div id="sessions-overlay">
+    <div id="sessions-modal">
+        <div class="sessions-modal-header">
+            <div class="sessions-modal-header-left">
+                <h2 id="sessions-modal-title">Sessions</h2>
+                <div class="sessions-modal-sub" id="sessions-modal-sub">USER ID · Active Sessions</div>
+            </div>
+            <div class="sessions-modal-header-right">
+                <button id="sessions-refresh-btn" data-tip="Refresh">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Refresh
+                </button>
+                <button id="sessions-revoke-all-btn" class="deprecated" data-tip="Revoke all sessions for this user">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                    Revoke All
+                </button>
+                <button id="sessions-close-btn" style="padding:8px 10px;" data-tip="Close">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="sessions-modal-body">
+            <div class="sessions-table-wrapper">
+                <table id="sessions-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th>IP Address</th>
+                            <th>Device</th>
+                            <th>Created</th>
+                            <th>Last Active</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-table-body">
+                        <tr>
+                            <td colspan="6">
+                                <div class="sessions-state">Click a user to load sessions.</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -1085,7 +1258,7 @@
                     <th>Avatar</th>
                     <th>Sharing</th>
                     <th>Violations</th>
-                    <th>Reset</th>
+                    <th>Reset Violations</th>
                     <th>Role</th>
                     <th>Actions</th>
                 </tr>
@@ -1432,6 +1605,7 @@
         refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
         restore: '<path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-3.99"/>',
         wrench:  '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+        monitor: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
     };
 
     function icon(name, size = 13) {
@@ -1609,6 +1783,167 @@
         }
         return { update, updateFromUrl, destroy };
     }
+
+    let _sessionsUserId   = null;
+    let _sessionsUsername = null;
+
+    const sessionsOverlay = document.getElementById('sessions-overlay');
+
+    function flagEmoji(code) {
+        if (!code || code.length !== 2) return '🌐';
+        return String.fromCodePoint(
+            ...[...code.toUpperCase()].map(c => 0x1F1E0 + c.charCodeAt(0) - 65)
+        );
+    }
+
+    function fmtDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    async function openSessionsModal(userId, username) {
+        _sessionsUserId   = userId;
+        _sessionsUsername = username;
+        document.getElementById('sessions-modal-title').textContent = `Sessions — ${username}`;
+        document.getElementById('sessions-modal-sub').textContent   = `User ID ${userId}`;
+        sessionsOverlay.classList.add('visible');
+        await loadSessions();
+    }
+
+    async function loadSessions() {
+        if (!_sessionsUserId) return;
+        const tbody = document.getElementById('sessions-table-body');
+        tbody.innerHTML = `<tr><td colspan="6"><div class="sessions-state">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Loading sessions…
+        </div></td></tr>`;
+
+        try {
+            const res  = await fetch(`/admin/user/${_sessionsUserId}/sessions`);
+            const data = await res.json();
+            if (!res.ok) { toast(data.error || 'Failed to fetch sessions.', 'error'); return; }
+            renderSessions(data.sessions);
+        } catch (e) {
+            toast('Network error fetching sessions.', 'error');
+        }
+    }
+
+    function renderSessions(sessions) {
+        const tbody = document.getElementById('sessions-table-body');
+        tbody.innerHTML = '';
+
+        if (!sessions.length) {
+            tbody.innerHTML = `<tr><td colspan="6"><div class="sessions-state">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                No active sessions found.
+            </div></td></tr>`;
+            return;
+        }
+
+        sessions.forEach(s => {
+            const tr = document.createElement('tr');
+            const flag     = flagEmoji(s.country_code);
+            const location = s.country_name || 'Unknown';
+            const lastingBadge = s.created_via_lasting
+                ? `<span class="session-badge lasting">Lasting Key</span>` : '';
+
+            tr.innerHTML = `
+                <td>
+                    <span class="session-flag">${flag}</span>
+                    <span style="font-size:12px;">${sanitizeHTML(location)}</span>
+                </td>
+                <td style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--accent);">
+                    ${sanitizeHTML(s.ip_address || '—')}
+                </td>
+                <td>
+                    <div class="session-ua" title="${sanitizeHTML(s.user_agent || '')}">
+                        ${sanitizeHTML(s.user_agent_simplified || s.user_agent || '—')}
+                    </div>
+                    ${lastingBadge}
+                </td>
+                <td><span class="session-time">${fmtDate(s.created_at)}</span></td>
+                <td><span class="session-time">${fmtDate(s.last_active)}</span></td>
+                <td>
+                    <button class="action-btn btn-delete sessions-revoke-btn"
+                            data-session-id="${s.id}"
+                            data-tip="Revoke this session">
+                        ${icon('ban')} Revoke
+                    </button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+
+        // attach revoke listeners
+        tbody.querySelectorAll('.sessions-revoke-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const sid = btn.dataset.sessionId;
+                const ok  = await showConfirm({
+                    title:   'Revoke Session',
+                    message: `Revoke session #${sid} for ${_sessionsUsername}? They will be signed out on that device.`,
+                    type:    'danger',
+                    okLabel: 'Revoke'
+                });
+                if (!ok) return;
+                setLoading(btn, true);
+                try {
+                    const res = await fetch(`/admin/user/${_sessionsUserId}/sessions/${sid}/revoke`, { method: 'POST' });
+                    const d   = await res.json();
+                    if (!res.ok) { toast(d.error || 'Revoke failed.', 'error'); return; }
+                    toast('Session revoked.', 'success');
+                    await loadSessions();
+                } catch (e) {
+                    toast('Network error.', 'error');
+                } finally {
+                    setLoading(btn, false);
+                }
+            });
+        });
+    }
+
+    // Revoke All
+    document.getElementById('sessions-revoke-all-btn').addEventListener('click', async () => {
+        if (!_sessionsUserId) return;
+        const ok = await showConfirm({
+            title:   'Revoke All Sessions',
+            message: `This will sign ${_sessionsUsername} out of every device and delete all their lasting keys.`,
+            type:    'danger',
+            okLabel: 'Revoke All'
+        });
+        if (!ok) return;
+        const btn = document.getElementById('sessions-revoke-all-btn');
+        setLoading(btn, true);
+        try {
+            const res = await fetch(`/admin/user/${_sessionsUserId}/sessions/revoke_all`, { method: 'POST' });
+            const d   = await res.json();
+            if (!res.ok) { toast(d.error || 'Failed.', 'error'); return; }
+            toast(`All sessions for ${_sessionsUsername} revoked.`, 'success');
+            await loadSessions();
+        } catch (e) {
+            toast('Network error.', 'error');
+        } finally {
+            setLoading(btn, false);
+        }
+    });
+
+    // Refresh
+    document.getElementById('sessions-refresh-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('sessions-refresh-btn');
+        setLoading(btn, true);
+        await loadSessions();
+        setLoading(btn, false);
+    });
+
+    // Close
+    document.getElementById('sessions-close-btn').addEventListener('click', () => {
+        sessionsOverlay.classList.remove('visible');
+    });
+    sessionsOverlay.addEventListener('click', e => {
+        if (e.target === sessionsOverlay) sessionsOverlay.classList.remove('visible');
+    });
 
     /* ══════════════════════════════════════════
        MODAL HELPERS
@@ -1939,6 +2274,7 @@
                     <button class="action-btn btn-delete" data-tip="Delete user">${icon('trash')}</button>
                     <button class="action-btn ${user.suspended ? 'btn-unban' : 'btn-ban'}" data-tip="${user.suspended ? 'Unban user' : 'Ban user'}">${icon(user.suspended ? 'check' : 'ban')}</button>
                     <button class="action-btn btn-notify" data-tip="Notify user">${icon('bell')}</button>
+                    <button class="action-btn btn-sessions" data-tip="View sessions">${icon('monitor')}</button>
                 </td>`;
             tableBody.appendChild(row);
             const uid = user.id;
@@ -2083,10 +2419,12 @@
         const deleteBtn = actionsCell.querySelector(".btn-delete");
         const banBtn    = actionsCell.querySelector(".btn-ban, .btn-unban");
         const notifyBtn = actionsCell.querySelector(".btn-notify");
+        const sessBtn = actionsCell.querySelector(".btn-sessions");
         if (loginBtn)  loginBtn.addEventListener("click",  () => typeof loginUser  === "function" && loginUser(userId));
         if (deleteBtn) deleteBtn.addEventListener("click", () => typeof deleteUser === "function" && deleteUser(userId));
         if (banBtn)    banBtn.addEventListener("click",    () => typeof banUser    === "function" && banUser(userId));
         if (notifyBtn) notifyBtn.addEventListener("click", () => typeof showUserNotificationModal === "function" && showUserNotificationModal(userId));
+        if (sessBtn) {const username = actionsCell.closest('tr')?.querySelector('.username-text')?.textContent?.trim() || `User ${userId}`;sessBtn.addEventListener('click', () => openSessionsModal(userId, username));}
     }
 
     async function deleteMessage(id, btn) {

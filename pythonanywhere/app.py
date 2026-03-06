@@ -5467,7 +5467,108 @@ def serve_board_share_link(token):
 
     share = BoardShare.query.filter_by(token=token).first()
     if not share:
-        return "Share link not found", 404
+        html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Share Link Not Found</title>
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .container {
+                    background: white;
+                    border-radius: 12px;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    padding: 60px 40px;
+                    text-align: center;
+                    max-width: 500px;
+                    animation: slideIn 0.5s ease-out;
+                }
+                @keyframes slideIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                .icon {
+                    font-size: 64px;
+                    margin-bottom: 20px;
+                }
+                h1 {
+                    color: #333;
+                    font-size: 28px;
+                    margin-bottom: 12px;
+                    font-weight: 600;
+                }
+                p {
+                    color: #666;
+                    font-size: 16px;
+                    line-height: 1.6;
+                    margin-bottom: 30px;
+                }
+                .button-group {
+                    display: flex;
+                    gap: 12px;
+                    justify-content: center;
+                }
+                a {
+                    display: inline-block;
+                    padding: 12px 28px;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    font-weight: 500;
+                    transition: all 0.3s ease;
+                    font-size: 14px;
+                }
+                .btn-primary {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                }
+                .btn-primary:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+                }
+                .btn-secondary {
+                    background: #f0f0f0;
+                    color: #333;
+                }
+                .btn-secondary:hover {
+                    background: #e0e0e0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="icon">🔗</div>
+                <h1>Share Link Not Found</h1>
+                <p>The share link you're looking for doesn't exist or has expired. Please check the link and try again.</p>
+                <div class="button-group">
+                    <a href="/" class="btn-primary">Back to Home</a>
+                    <a href="/login_page" class="btn-secondary">Sign In</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html, 404
 
     # Check login WITHOUT requiring auth decorator
     valid, sess_or_msg = validate_session_key()
@@ -9339,6 +9440,96 @@ def revoke_all_sessions():
     resp.delete_cookie("session_key")
     resp.delete_cookie("lasting_key")
     return resp
+
+# ── Admin Session Management Routes ──────────────────────────────────────────
+# Add these alongside your existing admin routes.
+# They reuse lookup_country() and simplify_user_agent() already defined above.
+
+# GET /admin/user/<user_id>/sessions
+@app.route("/admin/user/<int:user_id>/sessions", methods=["GET"])
+@require_session_key
+@require_admin
+def admin_list_user_sessions(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    db_sessions = (
+        Session.query
+        .filter_by(user_id=user_id, revoked=False)
+        .order_by(Session.last_active.desc())
+        .all()
+    )
+
+    out = []
+    for s in db_sessions:
+        lk = LastingKey.query.filter_by(session_id=s.id).first()
+        country_info = lookup_country(s.ip_address)
+        country_code, country_name = country_info if country_info else (None, None)
+
+        out.append({
+            "id":                   s.id,
+            "created_at":           s.created_at.isoformat() + "Z",
+            "last_active":          s.last_active.isoformat() + "Z",
+            "ip_address":           s.ip_address,
+            "country_code":         country_code,
+            "country_name":         country_name,
+            "user_agent_simplified": simplify_user_agent(s.user_agent),
+            "user_agent":           (s.user_agent[:200] if s.user_agent else None),
+            "fingerprint":          s.fingerprint,
+            "created_via_lasting":  bool(lk),
+        })
+
+    return jsonify({"sessions": out, "username": user.username}), 200
+
+
+# POST /admin/user/<user_id>/sessions/<session_id>/revoke
+@app.route("/admin/user/<int:user_id>/sessions/<int:session_id>/revoke", methods=["POST"])
+@require_session_key
+@require_admin
+def admin_revoke_user_session(user_id, session_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    s = Session.query.get(session_id)
+    if not s or s.user_id != user_id:
+        return jsonify({"error": "Session not found or does not belong to this user"}), 404
+
+    try:
+        s.revoked = True
+        db.session.add(s)
+
+        # Remove any lasting keys tied to this session
+        for lk in LastingKey.query.filter_by(session_id=s.id).all():
+            db.session.delete(lk)
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not revoke session"}), 500
+
+    return jsonify({"message": "Session revoked"}), 200
+
+
+# POST /admin/user/<user_id>/sessions/revoke_all
+@app.route("/admin/user/<int:user_id>/sessions/revoke_all", methods=["POST"])
+@require_session_key
+@require_admin
+def admin_revoke_all_user_sessions(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    try:
+        Session.query.filter_by(user_id=user_id).update({"revoked": True})
+        LastingKey.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not revoke all sessions"}), 500
+
+    return jsonify({"message": "All sessions revoked"}), 200
 
 @app.route("/google/callback")
 def google_callback():
