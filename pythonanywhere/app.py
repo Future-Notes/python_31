@@ -9365,7 +9365,7 @@ def list_sessions():
             "country_code": country_code,   # ISO2 for flag
             "country_name": country_name,   # full name for display
             "user_agent_simplified": simplify_user_agent(s.user_agent),
-            "user_agent": (s.user_agent[:200] if s.user_agent else None),
+            "user_agent": (s.user_agent if s.user_agent else None),
             "fingerprint": s.fingerprint,
             "is_current": (s.id == current_id),
             "created_via_lasting": created_via_lasting
