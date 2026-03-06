@@ -80,6 +80,7 @@ from sqlalchemy.orm import joinedload
 import vt
 import hmac
 import geoip2.database
+import user_agents
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -503,7 +504,8 @@ class Session(db.Model):
     )
 
     ip_address = db.Column(db.String(45), nullable=False)  # supports IPv6
-    user_agent = db.Column(db.String(255), nullable=True)
+    user_agent = db.Column(db.String(1000), nullable=True)
+    user_agent_summary = db.Column(db.String(100), nullable=True)
     fingerprint = db.Column(db.String(255), nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -1561,14 +1563,15 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
     expiry_hours = app.config.get("SESSION_EXPIRY_HOURS", 24)
 
     ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    user_agent = request.headers.get("User-Agent")
+    user_agent_raw = request.headers.get("User-Agent") or ""
     fingerprint = request.headers.get("X-Device-Fingerprint")
 
     session = Session(
         user_id=user_id,
         token_hash=token_hash,
         ip_address=ip,
-        user_agent=(user_agent[:255] if user_agent else None),
+        user_agent=user_agent_raw,           # store the full, untruncated string
+        user_agent_summary=simplify_user_agent(user_agent_raw),  # e.g. "Chrome on Windows"
         fingerprint=(fingerprint[:255] if fingerprint else None),
         created_at=now,
         last_active=now,
@@ -1579,7 +1582,6 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
     db.session.add(session)
     db.session.commit()
 
-    # optionally link an existing lasting_key raw token to this session (if provided)
     if link_lasting_key_raw:
         lk = verify_lasting_token(link_lasting_key_raw)
         if lk and lk.user_id == user_id:
@@ -1587,7 +1589,6 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
             db.session.add(lk)
             db.session.commit()
 
-    # return raw token and the session id so callers can bind lasting keys
     return raw_token, session.id
 
 def remove_upload_if_orphan(upload_id):
@@ -2550,37 +2551,23 @@ def get_current_db_session():
     return get_session_by_raw_token(raw)
 
 # --- small helper to produce a friendly "user agent" string ---
-def simplify_user_agent(ua: str) -> str:
-    if not ua:
+def simplify_user_agent(ua_string: str) -> str:
+    """Returns a human-readable summary from a raw User-Agent string."""
+    if not ua_string:
         return "Unknown"
-    ua = ua.lower()
-    # quick and conservative checks — you can replace this with 'user_agents' library later
-    browser = "Other browser"
-    if "chrome" in ua and "edg" not in ua and "chromium" not in ua:
-        browser = "Chrome"
-    elif "firefox" in ua:
-        browser = "Firefox"
-    elif "safari" in ua and "chrome" not in ua and "chromium" not in ua:
-        browser = "Safari"
-    elif "edg" in ua or "edge" in ua:
-        browser = "Edge"
-    elif "opera" in ua:
-        browser = "Opera"
 
-    platform = "Unknown OS"
-    if "windows" in ua:
-        platform = "Windows"
-    elif "mac os" in ua or "macintosh" in ua:
-        platform = "macOS"
-    elif "linux" in ua and "android" not in ua:
-        platform = "Linux"
-    elif "android" in ua:
-        platform = "Android"
-    elif "iphone" in ua or "ipad" in ua:
-        platform = "iOS"
+    ua = user_agents.parse(ua_string)
 
-    # short string
-    return f"{browser} on {platform}"
+    browser = ua.browser.family or "Other browser"
+    os = ua.os.family or "Unknown OS"
+
+    # Collapse generic 'Other' values
+    if browser == "Other":
+        browser = "Other browser"
+    if os == "Other":
+        os = "Unknown OS"
+
+    return f"{browser} on {os}"
 
 def create_default_calendar(user_id):
     default_calendar = Calendar(name="My calendar", user_id=user_id, is_default=True)
