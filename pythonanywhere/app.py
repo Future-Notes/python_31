@@ -132,7 +132,7 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
-app.config["SESSION_EXPIRY_HOURS"] = 48
+app.config["SESSION_EXPIRY_HOURS"] = 24
 app.config["SLIDING_SESSION_EXPIRY_MINUTES"] = 30
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
 app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
