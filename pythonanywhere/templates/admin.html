@@ -918,7 +918,11 @@
         .sessions-table-wrapper {
             border: 1px solid var(--border2);
             border-radius: 12px;
-            overflow: hidden;
+            overflow: scroll;
+            scrollbar-width: none;
+        }
+        .sessions-table-wrapper::-webkit-scrollbar {
+            display: none;
         }
 
         /* empty / loading states */
@@ -1789,11 +1793,12 @@
 
     const sessionsOverlay = document.getElementById('sessions-overlay');
 
-    function flagEmoji(code) {
-        if (!code || code.length !== 2) return '🌐';
-        return String.fromCodePoint(
-            ...[...code.toUpperCase()].map(c => 0x1F1E0 + c.charCodeAt(0) - 65)
-        );
+    function flagImg(code) {
+        if (!code || code.length !== 2) {
+            return `<svg class="session-flag" style="width:20px;height:14px;margin-right:6px;vertical-align:middle;opacity:0.3;" viewBox="0 0 20 14" fill="none"><rect width="20" height="14" rx="2" fill="#334155"/><line x1="4" y1="4" x2="16" y2="10" stroke="#64748b" stroke-width="1.5"/><line x1="4" y1="10" x2="16" y2="4" stroke="#64748b" stroke-width="1.5"/></svg>`;
+        }
+        const lower = code.toLowerCase();
+        return `<img class="session-flag" src="https://flagcdn.com/20x15/${lower}.png" width="20" height="15" alt="${code}" onerror="this.style.opacity='0.2'" />`;
     }
 
     function fmtDate(iso) {
@@ -1846,16 +1851,16 @@
 
         sessions.forEach(s => {
             const tr = document.createElement('tr');
-            const flag     = flagEmoji(s.country_code);
+            const flag     = flagImg(s.country_code);
             const location = s.country_name || 'Unknown';
             const lastingBadge = s.created_via_lasting
                 ? `<span class="session-badge lasting">Lasting Key</span>` : '';
 
             tr.innerHTML = `
-                <td>
-                    <span class="session-flag">${flag}</span>
+                <div style="display:flex;align-items:center;">
+                    ${flag}
                     <span style="font-size:12px;">${sanitizeHTML(location)}</span>
-                </td>
+                </div>
                 <td style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--accent);">
                     ${sanitizeHTML(s.ip_address || '—')}
                 </td>
