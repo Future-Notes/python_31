@@ -1,1386 +1,713 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#2c2c2c">
-    <title>Future Notes - Account</title>
-    <link rel="apple-touch-icon" sizes="180x180" href="static/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="static/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
-    <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
-    <link rel="manifest" href="static/site.webmanifest">
-    <script src="/static/js/loader.js"></script>
-    <script src="/static/js/check.js"></script>
-    <style>
-        /* Globale reset en variabelen */
-        *, *::before, *::after {
-          box-sizing: border-box;
-        }
-      
-        :root {
-          /* Kleurvariabelen */
-          --text-color: #e0e0e0;
-          --light-gray: #a0a0a0;
-          --form-bg: #3a3a3a;
-          --button-hover: #5a5a5a;
-          --input-bg: #6a6a6a;
-          --input-bg-focus: #7a7a7a;
-          --delete-bg: #d83c3e;
-          --delete-hover: #b22d2f;
-          --back-bg: #4a4d52;
-          --back-hover: #383b3f;
-          --banner-bg: #4f83cc;
-          --tooltip-bg: #3a3a3a;
-          --profile-pic-color: #4f83cc;
-          --profile-pic-no-pic: #cc4f4f;
-          /* Afmetingen */
-          --border-radius-sm: 0.375rem;
-          --border-radius-md: 0.5rem;
-          --box-shadow-light: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.2);
-          --box-shadow-strong: 0 0.25rem 0.625rem rgba(0, 0, 0, 0.6);
-        }
-      
-        /* Body & algemene elementen */
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 0;
-          background-color: var(--bg-color);
-          color: var(--text-color);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-start;
-          min-height: 100vh;
-          padding-top: 5rem; /* Voorkom dat content achter de vaste header komt */
-        }
-      
-        h1 {
-          margin-bottom: 1.25rem;
-          text-align: center;
-        }
-      
-        /* Formulieren en inputs */
-        form {
-          margin-bottom: 1.875rem;
-          background-color: var(--ctr-color);
-          padding: 1.25rem;
-          border-radius: var(--border-radius-md);
-          box-shadow: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.2);
-          width: 90%;
-          max-width: 25rem;
-          display: flex;
-          flex-direction: column;
-          gap: 0.9375rem;
-          align-items: center;
-        }
-      
-        input,
-        button {
-          padding: 0.75rem;
-          border: none;
-          border-radius: var(--border-radius-sm);
-          font-size: 1rem;
-        }
-      
-        input {
-          width: 100%;
-          max-width: 21.875rem;
-          background-color: var(--btn-color);
-          color: var(--text-color);
-        }
+  <meta charset="utf-8" />
+  <!-- keep viewport; mobile fixes below -->
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Future Notes — Account</title>
 
-        select {
-          width: 100%;
-          padding: 0.75rem;
-          border-radius: var(--border-radius-sm);
-          background-color: var(--btn-color);
-          color: var(--text-color);
-          border: none;
-          font-size: 1rem;
-          margin-bottom: 0.9375rem;
-          box-sizing: border-box;
-        }
-
-        select:focus {
-          outline: none;
-          background-color: var(--input-bg-focus);
-        }
-      
-        input::placeholder {
-          color: var(--light-gray);
-        }
-      
-        input:focus {
-          outline: none;
-          background-color: var(--input-bg-focus);
-        }
-      
-        button {
-          width: 100%;
-          max-width: 21.875rem;
-          background-color: var(--btn-color);
-          color: var(--text-color);
-          font-weight: bold;
-          cursor: pointer;
-          margin-bottom: 0.9375rem;
-          transition: background-color 0.3s;
-        }
-      
-        button:hover {
-          background-color: var(--button-hover);
-        }
-      
-        /* Specifieke knoppen */
-        #update-username-form {
-          margin-top: 1.875rem;
-        }
-      
-        #delete-account {
-          background-color: var(--delete-bg);
-        }
-      
-        #delete-account:hover {
-          background-color: var(--delete-hover);
-        }
-      
-        #back-home {
-          margin-top: 1.25rem;
-          background-color: var(--btn-color);
-        }
-      
-        #back-home:hover {
-          background-color: var(--back-hover);
-        }
-      
-        .button-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.9375rem;
-          align-items: center;
-          width: 100%;
-          max-width: 25rem;
-        }
-      
-        /* Header en back-button */
-        header {
-          background-color: var(--hdr-color);
-          padding: 1.25rem;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          z-index: 100;
-          padding-left: 1.25rem;
-          padding-right: 1.25rem;
-        }
-      
-        header h1 {
-          flex: 1;
-          text-align: center;
-          margin: 0;
-        }
-      
-        .back-button {
-          position: absolute;
-          top: 1.25rem;
-          left: 1.25rem;
-          width: 3.125rem;
-          height: 3.125rem;
-          background-color: var(--btn-color);
-          border-radius: 50%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          color: var(--text-color);
-          text-decoration: none;
-          font-size: 1.5rem;
-          font-weight: bold;
-          box-shadow: 0 0 0.625rem rgba(0, 0, 0, 0.5);
-          transition: background-color 0.3s, transform 0.2s;
-        }
-      
-        .back-button:hover {
-          background-color: var(--button-hover);
-          transform: scale(1.1);
-        }
-      
-        /* Banner en profielafbeelding */
-        .banner {
-          background-color: var(--banner-bg);
-          color: #fff;
-          display: flex;
-          align-items: center;
-          padding: 0.9375rem 1.25rem;
-          width: 100%;
-          max-width: 69rem;
-          margin-bottom: 1.875rem;
-          border-radius: var(--border-radius-md);
-          box-shadow: 0 0.25rem 0.5rem var(--box-shadow-light);
-        }
-      
-        .profile-pic {
-          width: 3.125rem;
-          height: 3.125rem;
-          border-radius: 50%;
-          background-color: transparent;
-          color: var(--profile-pic-color);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          font-size: 1.5rem;
-          font-weight: bold;
-          cursor: pointer;
-          margin-right: 1.25rem;
-          background-size: cover;
-          background-position: center;
-        }
-      
-        .profile-pic.no-picture {
-          background-color: var(--profile-pic-no-pic);
-          color: #fff;
-        }
-      
-        /* Container en section layout */
-        .container {
-          display: flex;
-          gap: 1.25rem;
-          width: 100%;
-          max-width: 69rem;
-        }
-      
-        .section {
-          flex: 1;
-          background-color: var(--form-bg);
-          padding: 1.25rem;
-          border-radius: var(--border-radius-md);
-          box-shadow: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.2);
-        }
-      
-        /* Modal */
-        #modal-overlay-2 {
-          display: none;
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background-color: rgba(0, 0, 0, 0.6);
-          justify-content: center;
-          align-items: center;
-        }
-      
-        #modal {
-          background-color: var(--ctr-color);
-          padding: 1.25rem;
-          border-radius: var(--border-radius-md);
-          text-align: center;
-          box-shadow: var(--box-shadow-strong);
-        }
-      
-        /* Custom file-upload */
-        input[type="file"] {
-          display: none;
-        }
-      
-        .custom-file-upload {
-          border: 0.0625rem solid #ccc;
-          display: inline-block;
-          padding: 0.375rem 7.6875rem;
-          cursor: pointer;
-        }
-      
-        #modal button {
-          background-color: #007bff;
-          color: #fff;
-          padding: 0.5rem 0.9375rem;
-          border: none;
-          border-radius: var(--border-radius-sm);
-          cursor: pointer;
-          font-size: 0.875rem;
-          margin: 0.3125rem;
-          transition: background 0.3s;
-        }
-      
-        #modal button:hover {
-          background-color: #3a6bab;
-        }
-      
-        /* Admin page link */
-        a.admin-page-link {
-          display: inline-block;
-          padding: 0.625rem 1.25rem;
-          margin-top: 1.25rem;
-          text-decoration: none;
-          font-size: 1rem;
-          font-weight: bold;
-          border-radius: var(--border-radius-sm);
-          box-shadow: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.3);
-          transition: background-color 0.3s, transform 0.2s;
-        }
-      
-        a.admin-page-link.enabled {
-          background-color: var(--banner-bg);
-          color: #fff;
-          cursor: pointer;
-        }
-      
-        a.admin-page-link.enabled:hover {
-          background-color: #3a6bab;
-          transform: scale(1.05);
-        }
-      
-        a.admin-page-link.enabled:active {
-          background-color: #2e5c8c;
-        }
-      
-        a.admin-page-link.disabled {
-          background-color: var(--input-bg);
-          color: var(--light-gray);
-          cursor: not-allowed;
-          pointer-events: all;
-          position: relative;
-          display: none;
-        }
-      
-        a.admin-page-link.disabled::after {
-          content: "You don't have access to this page because you are not an admin";
-          position: absolute;
-          bottom: 130%;
-          left: 50%;
-          transform: translateX(-50%);
-          background-color: var(--tooltip-bg);
-          color: var(--text-color);
-          padding: 0.5rem 0.75rem;
-          border-radius: var(--border-radius-sm);
-          font-size: 0.875rem;
-          white-space: nowrap;
-          box-shadow: 0 0.125rem 0.625rem rgba(0, 0, 0, 0.3);
-          display: none;
-          z-index: 10;
-        }
-      
-        a.admin-page-link.disabled:hover::after {
-          display: block;
-        }
-      
-        /* Responsive regels */
-        @media (max-width: 37.5rem) {
-          .container {
-            flex-direction: column;
-            align-items: center;
-          }
-      
-          .section {
-            width: 90%;
-            margin-bottom: 1.25rem;
-          }
-      
-          #account-actions,
-          #account-management {
-            max-width: 85%;
-            align-items: center;
-            justify-content: center;
-          }
-      
-          .banner,
-          .section {
-            width: 90%;
-          }
-        }
-
-        .input-with-swatch {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        }
-
-        /* style your text input outlines as before */
-        .color-field input[type="text"] {
-        flex: 1;
-        /* …padding, borders, outline rules… */
-        }
-
-        /* swatch wrapper: relative, so the hidden picker can sit on top */
-        .color-swatch-wrapper {
-        position: relative;
-        width: 24px;
-        height: 24px;
-        }
-
-        /* the colored square the user sees */
-        .color-swatch-wrapper .swatch {
-        width: 100%;
-        height: 100%;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-        box-sizing: border-box;
-        }
-
-        /* the real <input type=color> is invisible but clickable */
-        .color-swatch-wrapper input[type="color"] {
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        opacity: 0;
-        cursor: pointer;
-        }
-
-      </style>
-      
-    <script>
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/static/sw_js/sw.js')
-            .then(() => console.log('Service Worker Registered'))
-            .catch(console.error);
-        }
-    </script>
-
-    <script src="/static/admin.js"></script>
-    <script src="/static/custom-alert.js"></script>
-    <script src="/static/js/notifications.js"></script>
-
-    <style>
-    :root {
-        --bg-color:  #2c2c2c;  /* defaults */
-        --hdr-color: #3a3a3a;
-        --ctr-color: #1e1e1e;
-        --btn-color: #424242;
+  <style>
+    /* -------------------------
+       Color scheme (user req)
+       ------------------------- */
+    :root{
+      --bg-color:  #2c2c2c;  /* page background */
+      --hdr-color: #3a3a3a;  /* header / appbar */
+      --ctr-color: #1e1e1e;  /* panels / contrast */
+      --btn-color: #424242;  /* default button */
+      --muted: #98a0ad;
+      --text: #e6eef8;
+      --accent: #4f83cc;
+      --danger: #d9534f;
+      --glass: rgba(255,255,255,0.03);
+      --radius: 12px;
+      --gap: 1rem;
+      --max-inner-width: 1100px;
     }
-    </style>
 
-    <script>
-    fetch("/user-colors")
-            .then(res => {
-                if (!res.ok) throw new Error("Could not load colors");
-                return res.json();
-            })
-            .then(cfg => {
-                document.documentElement.style.setProperty("--bg-color",   cfg.background_color);
-                document.documentElement.style.setProperty("--hdr-color",  cfg.header_color);
-                document.documentElement.style.setProperty("--ctr-color",  cfg.contrasting_color);
-                document.documentElement.style.setProperty("--btn-color",  cfg.button_color);
+    /* Safe defaults */
+    *{box-sizing:border-box}
+    body{
+      margin:0;padding:env(safe-area-inset-top) 0.75rem 2rem 0.75rem;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(180deg,var(--bg-color), #07101a 120%);
+      color:var(--text);
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      display:flex;flex-direction:column;align-items:center;min-height:100vh;
+      /* avoid unexpected zoom on iOS */
+      -webkit-text-size-adjust:100%;
+      -ms-text-size-adjust:100%;
+    }
 
-                window.appConfig = {
-                    backgroundColor:  cfg.background_color,
-                    headerColor:      cfg.header_color,
-                    contrastingColor: cfg.contrasting_color,
-                    buttonColor:      cfg.button_color
-                };
-            })
-            .catch(err => console.error(err));
-        </script>
-    </script>
+    /* Make main flex vertically, allow scroll */
+    body {
+      background: linear-gradient(180deg, var(--bg-color), #07101a);
+      background-size: cover; /* scale to cover the whole area */
+      background-repeat: no-repeat;
+      min-height: 100%;
+    }
+    html, body { min-height: 100%; }
 
-      
+    /* Main container stays grid */
+    main.container {
+      width: 100%;
+      max-width: var(--max-inner-width);
+      margin: 80px auto 0; /* leave space for fixed header */
+      display: grid;
+      grid-template-columns: 1fr minmax(280px, 420px);
+      gap: var(--gap);
+      align-items: start;
+      padding: 0.5rem;
+    }
+
+    /* Right panel: constrain max width and allow scroll internally */
+    aside.panel {
+      max-width: 420px;
+      overflow-y: auto;
+      min-height: 100%;
+    }
+
+    /* Optionally: allow sessions grid to scroll if too tall */
+    .sessions-grid {
+      max-height: 600px; /* adjust as needed */
+      overflow-y: auto;
+    }
+
+    /* Appbar */
+    header.appbar{
+      position:fixed;left:0;right:0;top:0;height:64px;
+      display:flex;align-items:center;gap:1rem;padding:0 0.75rem;
+      background: linear-gradient(180deg,var(--hdr-color), rgba(0,0,0,0.05));
+      border-bottom: 1px solid rgba(255,255,255,0.03); z-index:60;
+      backdrop-filter: blur(6px);
+    }
+    .appbar .back{
+      display:inline-grid;place-items:center;width:44px;height:44px;border-radius:10px;
+      background:var(--glass);color:var(--text);text-decoration:none;font-weight:600;
+      font-size:1.05rem;position:absolute;
+    }
+    .appbar h1{flex:1;margin:0;font-size:1.05rem;text-align:center;font-weight:600}
+
+    /* main container: responsive with flexible sidebar */
+
+    /* mobile first: single column (shrink second column) */
+    @media (max-width:980px){
+      main.container{grid-template-columns:1fr; padding:0.5rem;}
+    }
+
+    /* Panels */
+    .panel{
+      background:var(--ctr-color);
+      border-radius:var(--radius);
+      padding:0.9rem;
+      box-shadow:0 6px 18px rgba(2,6,23,0.6);
+      overflow:visible; /* remove internal scrollbars */
+    }
+
+    /* Profile header */
+    .profile-card{
+      display:flex;gap:0.75rem;align-items:center;padding:0.9rem;border-radius:12px;
+      background:linear-gradient(90deg, rgba(79,131,204,0.06), rgba(79,131,204,0.01));
+    }
+    .avatar{
+      width:56px;height:56px;border-radius:10px;
+      background:linear-gradient(135deg,var(--accent),#2a6fb3);
+      display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;color:#fff;flex-shrink:0;overflow:hidden
+    }
+    .profile-meta{flex:1}
+    .profile-meta h2{margin:0;font-size:1rem}
+    .profile-meta p{margin:4px 0 0;color:var(--muted);font-size:0.85rem}
+
+    /* Forms and controls - unified styling */
+    form.row{display:flex;gap:0.5rem;align-items:center}
+    form .stack{width:100%}
+    input[type=text], input[type=password], input[type=email], select, input[type=file]{
+      width:100%;
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,0.04);
+      background:transparent;
+      color:var(--text);
+      outline:none;
+      font-size:15px; /* avoid iOS zoom */
+      min-height:40px;
+    }
+
+    /* unify select + dropdown arrows */
+    select{ -webkit-appearance:none; appearance:none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) calc(1em + 2px), calc(100% - 11px) calc(1em + 2px); background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right:36px; }
+
+    /* Buttons */
+    button{font-size:15px;min-height:40px;padding:9px 12px;border-radius:10px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+    button.btn{background:var(--btn-color);color:var(--text);font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.05);color:var(--text)}
+    button.danger{background:var(--danger);color:white}
+
+    /* small text */
+    .stack{display:flex;flex-direction:column;gap:0.6rem}
+    .small{font-size:0.85rem;color:var(--muted)}
+
+    /* toggle */
+    .toggle{display:inline-flex;align-items:center;gap:0.6rem}
+    .toggle input[type=checkbox]{width:40px;height:22px;appearance:none;background:rgba(255,255,255,0.06);border-radius:999px;position:relative;cursor:pointer;outline:none}
+    .toggle input[type=checkbox]::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:white;transition:transform .18s}
+    .toggle input[type=checkbox]:checked{background:var(--accent)}
+    .toggle input[type=checkbox]:checked::after{transform:translateX(18px)}
+
+    /* Sessions - responsive card grid instead of forced scrolling table */
+    .sessions-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;gap:0.5rem}
+    .sessions-actions{display:flex;gap:0.5rem;align-items:center}
+    .sessions-grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap:0.6rem;
+      align-items:start;
+      margin-top:6px;
+    }
+    .session-card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      padding:0.6rem;border-radius:10px;border:1px solid rgba(255,255,255,0.02);
+      display:flex;flex-direction:column;gap:0.4rem;font-size:0.88rem;
+    }
+    .session-row{display:flex;justify-content:space-between;align-items:center;gap:0.5rem}
+    .session-meta{display:flex;flex-direction:column;gap:0.15rem;min-width:0}
+    .session-meta .muted{font-size:0.78rem}
+    .session-actions{display:flex;gap:0.5rem;align-items:center}
+
+    /* compact badges and truncation */
+    .badge{padding:6px 8px;border-radius:8px;background:rgba(0,0,0,0.2);font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .muted{color:var(--muted);font-size:0.8rem}
+    .small-ellipsis{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-width:0}
+
+    /* Color settings layout */
+    .colors-grid{display:grid;grid-template-columns:1fr 56px;gap:0.5rem;align-items:center}
+    .swatch{width:44px;height:44px;border-radius:8px;border:1px solid rgba(0,0,0,0.25)}
+
+    hr.sep{margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)}
+
+    footer{max-width:var(--max-inner-width);width:100%;margin-top:1rem;color:var(--muted);font-size:0.9rem;text-align:center}
+
+    /* utilities */
+    .row{display:flex;gap:0.5rem;align-items:center}
+    .muted{color:var(--muted)}
+    .text-truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    /* hide default scrollbars gracefully (only if any appear) */
+    ::-webkit-scrollbar{height:0; width:0}
+    html{scrollbar-width:none}
+    /* ensure inputs & buttons not less than 16px font-size (avoid iOS autoscale in some circumstances) */
+    input, select, button, textarea { font-size:16px; }
+
+    /* Accessibility focus */
+    :focus{outline:2px solid rgba(79,131,204,0.25);outline-offset:2px}
+
+    /* small responsive tweaks */
+    @media (max-width:480px){
+      .appbar h1{font-size:1rem}
+      .profile-card{padding:0.6rem}
+      .avatar{width:48px;height:48px}
+      .session-card{font-size:0.85rem}
+    }
+    .color-section {
+      grid-column: 1 / -1; /* spans all columns */
+    }
+    @media (max-width:980px){
+      .color-section {
+        grid-column: auto; /* default single column */
+      }
+      aside.panel {
+        max-width: 100%;
+      }
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <a href="/index" class="back-button" id="back-button" aria-label="Go back to web app">←</a>
-        <h1>Account</h1>
-    </header>
+  <header class="appbar">
+    <a href="/index" class="back" id="back">←</a>
+    <h1>Account</h1>
+  </header>
 
-    <div class="banner">
-        <div class="profile-pic" id="profile-pic">U</div>
-        <span id="username-display">Loading...</span>
-    </div>
-
-    <div id="verify-modal" style="display:none;">
-        <h3>Verify Your Email</h3>
-        <p>Enter the 6-digit code sent to your new email</p>
-        <input type="text" id="verification-code" maxlength="6">
-        <button id="submit-verification">Verify</button>
-        <button id="resend-code">Resend Code</button>
-    </div>
-    
-    <div class="container">
-        <div class="section" id="account-management">
-            <h2>Account Management</h2>
-            <form id="update-username-form">
-                <input type="text" id="new-username" placeholder="New Username" required>
-                <button type="submit">Update Username</button>
-            </form>
-            <form id="update-password-form">
-                <input type="password" id="current-password" placeholder="Current Password" required>
-                <input type="password" id="new-password" placeholder="New Password" required>
-                <button type="submit">Update Password</button>
-            </form>
-            <form id="update-email-form">
-              <input type="email" id="new-email" placeholder="New email">
-              <button type="submit">Update Email</button>
-            </form>
+  <main class="container">
+    <!-- left: profile + account management -->
+    <section class="panel">
+      <div class="profile-card">
+        <div class="avatar" id="profile-pic">U</div>
+        <div class="profile-meta">
+          <h2 id="username-display">Loading…</h2>
+          <p id="email-display" class="small">…</p>
         </div>
-        <div class="section" id="account-actions">
-            <h2>Account Actions</h2>
-            <button id="delete-account">Delete Account</button>
-            <button id="logout">Logout</button>
-                <h2>Sharing Preferences</h2>
-                <label class="switch">
-                    <input type="checkbox" id="sharing-toggle">
-                    <span class="slider round"></span>
-                </label>
-                <span id="sharing-status">Allow Sharing Notes</span>
-                <h2>Default startpage</h2>
-                <select id="default-startpage" style="width: 100%; padding: 0.75rem; border-radius: var(--border-radius-sm); background-color: var(--input-bg); color: var(--text-color);">
-                    <option value="/index">Personal notes</option>
-                    <option value="/group-notes">Group notes</option>
-                    <option value="/scheduler-page">Scheduler</option>
-                    <option value="/todo_page">Todo</option>
-                    <option value="/pws">Zeeslag (Battleship)</option>
-                </select>
-                <!--Removed the button to set the default startpage, as it is now set automatically -->
-                <a href="/2fa_page" class="admin-page-link enabled">Two-factor authentication</a>
-                <a href="admin_page" id="admin-page-link" class="admin-page-link disabled">Admin Page</a>
+        <div style="display:flex;flex-direction:column;gap:0.4rem">
+          <button class="ghost" id="btn-change-pic">Change</button>
+          <button class="ghost" id="btn-remove-pic">Remove</button>
+        </div>
+      </div>
+
+      <div style="margin-top:0.9rem" class="stack">
+        <label class="small">Username</label>
+        <form id="form-username" class="row">
+          <input type="text" id="new-username" required />
+          <button class="btn" type="submit">Save</button>
+        </form>
+
+        <label class="small">Email</label>
+        <form id="form-email" class="row">
+          <input type="email" id="new-email" />
+          <button class="btn" type="submit">Update</button>
+        </form>
+
+        <label class="small">Change password</label>
+        <form id="form-password" class="stack">
+          <input type="password" id="current-password" placeholder="Current password" required />
+          <input type="password" id="new-password" placeholder="New password" required />
+          <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+            <button class="btn" type="submit">Change</button>
+          </div>
+        </form>
+
+        <div style="display:flex;gap:0.5rem;align-items:center;justify-content:space-between;margin-top:0.5rem">
+          <div>
+            <div class="toggle">
+              <input type="checkbox" id="sharing-toggle" aria-label="Allow sharing" />
             </div>
-            <!-- Admin page link (disabled by default) -->
-            
-
-
-            <style>
-                .switch {
-                    position: relative;
-                    display: inline-block;
-                    width: 60px;
-                    height: 34px;
-                }
-
-                .switch input {
-                    opacity: 0;
-                    width: 0;
-                    height: 0;
-                }
-
-                .slider {
-                    position: absolute;
-                    cursor: pointer;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background-color: #ccc;
-                    transition: .4s;
-                    border-radius: 34px;
-                }
-
-                .slider:before {
-                    position: absolute;
-                    content: "";
-                    height: 26px;
-                    width: 26px;
-                    left: 4px;
-                    bottom: 4px;
-                    background-color: white;
-                    transition: .4s;
-                    border-radius: 50%;
-                }
-
-                input:checked + .slider {
-                    background-color: #4f83cc;
-                }
-
-                input:checked + .slider:before {
-                    transform: translateX(26px);
-                }
-            </style>
-        <div class="section" id="color-settings">
-            <h2>Color Settings</h2>
-          
-            <!-- Presets dropdown -->
-            <label for="color-presets">Preset:</label>
-            <select id="color-presets" style="margin-bottom: 1rem;">
-              <option value="custom">Custom</option>
-              <option value="default">Future Notes – Default</option>
-              <option value="colorful">Future Notes – Colorful</option>
-              <option value="light">Future Notes - Light</option> <!--Hopefully nobody uses this-->
-            </select>
-          
-            <!-- Color inputs with pickers and validation messages -->
-            <div class="color-inputs" style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem;">
-              <!-- We'll repeat this block for each channel -->
-              <div class="color-field">
-                <label for="background-color">Background:</label>
-                <div class="input-with-swatch">
-                  <!-- hex‐text input -->
-                  <input
-                    type="text"
-                    id="background-color"
-                    placeholder="#2c2c2c"
-                    value="#2c2c2c"
-                    pattern="^#([A-Fa-f0-9]{6})$"
-                    required
-                  >
-                  <!-- custom swatch wrapper -->
-                  <div class="color-swatch-wrapper">
-                    <!-- the visible swatch -->
-                    <div class="swatch" id="background-color-swatch"></div>
-                    <!-- the hidden native picker sits on top -->
-                    <input
-                      type="color"
-                      id="background-color-picker"
-                      value="#2c2c2c"
-                    >
-                  </div>
-                </div>
-                <span class="error-msg" aria-live="polite"></span>
-              </div>
-              
-          
-              <!-- Header -->
-              <div class="color-field">
-                <label for="header-color">Header:</label>
-                <div class="input-with-swatch">
-                  <!-- hex‐text input -->
-                  <input
-                    type="text"
-                    id="header-color"
-                    placeholder="#2c2c2c"
-                    value="#2c2c2c"
-                    pattern="^#([A-Fa-f0-9]{6})$"
-                    required
-                  >
-                  <!-- custom swatch wrapper -->
-                  <div class="color-swatch-wrapper">
-                    <!-- the visible swatch -->
-                    <div class="swatch" id="header-color-swatch"></div>
-                    <!-- the hidden native picker sits on top -->
-                    <input
-                      type="color"
-                      id="header-color-picker"
-                      value="#2c2c2c"
-                    >
-                  </div>
-                </div>
-                <span class="error-msg" aria-live="polite"></span>
-              </div>
-              
-          
-              <!-- Contrast -->
-              <div class="color-field">
-                <label for="contrast-color">Contrast:</label>
-                <div class="input-with-swatch">
-                  <!-- hex‐text input -->
-                  <input
-                    type="text"
-                    id="contrast-color"
-                    placeholder="#2c2c2c"
-                    value="#2c2c2c"
-                    pattern="^#([A-Fa-f0-9]{6})$"
-                    required
-                  >
-                  <!-- custom swatch wrapper -->
-                  <div class="color-swatch-wrapper">
-                    <!-- the visible swatch -->
-                    <div class="swatch" id="contrast-color-swatch"></div>
-                    <!-- the hidden native picker sits on top -->
-                    <input
-                      type="color"
-                      id="contrast-color-picker"
-                      value="#2c2c2c"
-                    >
-                  </div>
-                </div>
-                <span class="error-msg" aria-live="polite"></span>
-              </div>
-              
-          
-              <!-- Buttons -->
-              <div class="color-field">
-                <label for="button-color">Buttons:</label>
-                <div class="input-with-swatch">
-                  <!-- hex‐text input -->
-                  <input
-                    type="text"
-                    id="button-color"
-                    placeholder="#2c2c2c"
-                    value="#2c2c2c"
-                    pattern="^#([A-Fa-f0-9]{6})$"
-                    required
-                  >
-                  <!-- custom swatch wrapper -->
-                  <div class="color-swatch-wrapper">
-                    <!-- the visible swatch -->
-                    <div class="swatch" id="button-color-swatch"></div>
-                    <!-- the hidden native picker sits on top -->
-                    <input
-                      type="color"
-                      id="button-color-picker"
-                      value="#2c2c2c"
-                    >
-                  </div>
-                </div>
-                <span class="error-msg" aria-live="polite"></span>
-              </div>
-              
-            </div>
-          
-            <button id="save-colors-btn" style="padding: 0.75rem 1.5rem; border:none; border-radius:4px; cursor:pointer;">
-              Save Colors
-            </button>
+            <div class="small">Allow sharing notes</div>
           </div>
 
-    <!-- Modal for profile picture -->
-    <div id="modal-overlay-2">
-        <div id="modal">
-            <h2>Update Profile Picture</h2>
-            <label for="profile-picture-upload" class="custom-file-upload" id="file-label">Choose a file:</label>
-            <input type="file" id="profile-picture-upload" accept="image/*">
-            <button id="save-profile-picture">Save</button>
-            <button id="delete-profile-picture">Delete profile picture</button>
-            <button onclick="document.getElementById('modal-overlay-2').style.display = 'none'">Cancel</button>
+          <div style="text-align:right">
+            <label class="small">Default start page</label>
+            <select id="default-startpage" aria-label="Default startpage">
+              <option value="/index">Personal notes</option>
+              <option value="/group-notes">Group notes</option>
+              <option value="/scheduler-page">Scheduler</option>
+              <option value="/todo_page">Todo</option>
+              <option value="/pws">Zeeslag (Battleship)</option>
+            </select>
+          </div>
         </div>
+
+        <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+          <a href="/2fa_page" class="ghost" style="padding:10px 12px;border-radius:10px;text-decoration:none;display:inline-flex;align-items:center">Two-factor authentication</a>
+          <a id="admin-link" class="ghost" style="display:inline-flex;align-items:center;padding:10px 12px;border-radius:10px;opacity:0.7;pointer-events:none">Admin Page</a>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:space-between">
+          <button class="danger" id="btn-delete">Delete account</button>
+          <button class="ghost" id="btn-logout">Logout</button>
+        </div>
+      </div>
+
+      <!-- hidden file input for profile pic -->
+      <input id="profile-input" type="file" accept="image/*" style="display:none" />
+    </section>
+
+    <!-- right: sessions + color settings -->
+    <aside class="panel">
+      <div class="sessions-header">
+        <h3 style="margin:0">Active sessions</h3>
+        <div class="sessions-actions">
+          <button class="ghost" id="refresh-sessions">Refresh</button>
+          <button class="danger" id="revoke-all">Revoke all</button>
+        </div>
+      </div>
+
+      <!-- sessions grid + show-all control -->
+      <div id="sessions-wrapper">
+        <div class="sessions-grid" id="sessions-grid">
+          <!-- JS will render compact .session-card elements here -->
+          <div style="grid-column:1/-1;color:var(--muted);text-align:center;padding:8px" id="sessions-loading">Loading…</div>
+        </div>
+
+        <div style="display:flex;justify-content:center;margin-top:8px">
+          <button class="ghost" id="sessions-toggle" style="display:none">Show all</button>
+        </div>
+      </div>
+
+      </aside>
+      <section class="panel color-section">
+    <h3 style="margin:0 0 8px 0">Color settings</h3>
+    <div class="small" style="margin-bottom:8px">Choose a preset or set custom colors. Changes are saved to your account.</div>
+
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+      <select id="color-presets">
+        <option value="custom">Custom</option>
+        <option value="default">Future Notes — Default</option>
+        <option value="colorful">Future Notes — Colorful</option>
+        <option value="light">Future Notes — Light</option>
+      </select>
+      <button class="btn" id="save-colors">Save</button>
     </div>
 
-
-    <div id="modal-overlay" style="
-        display: none; 
-        position: fixed; 
-        top: 0; 
-        left: 0; 
-        width: 100%; 
-        height: 100%; 
-        background-color: rgba(0, 0, 0, 0.6); 
-        z-index: 1000;
-        justify-content: center; 
-        align-items: center;
-    ">
-        <div id="modal" style="
-            background-color: #1E1E1E; 
-            padding: 20px 30px; 
-            border-radius: 12px; 
-            text-align: center; 
-            width: 100%; 
-            max-width: 400px; 
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
-        ">
-            <h2 style="color: #F5F5F5; font-size: 24px; margin-bottom: 20px;">Session Expired</h2>
-            <p style="color: #BDBDBD; margin-bottom: 20px;">Please re-enter your username and password:</p>
-            <input id="username" type="text" placeholder="Username" style="
-                width: 100%; 
-                padding: 12px; 
-                margin: 10px 10px; 
-                border: 1px solid #424242; 
-                border-radius: 8px; 
-                background-color: #2E2E2E; 
-                color: #E0E0E0; 
-                font-size: 16px;
-                outline: none;
-            " />
-            <input id="password" type="password" placeholder="Password" style="
-                width: 100%; 
-                padding: 12px; 
-                margin: 10px 0; 
-                border: 1px solid #424242; 
-                border-radius: 8px; 
-                background-color: #2E2E2E; 
-                color: #E0E0E0; 
-                font-size: 16px;
-                outline: none;
-            " />
-            <button id="submit-credentials" style="
-                background-color: #424242; 
-                color: #E0E0E0; 
-                padding: 12px 20px; 
-                border: none; 
-                border-radius: 8px; 
-                font-size: 16px; 
-                cursor: pointer; 
-                transition: background-color 0.3s ease;
-            " 
-            onmouseover="this.style.backgroundColor='#616161'" 
-            onmouseout="this.style.backgroundColor='#424242'">
-                Submit
-            </button>
-        </div>
+    <div style="display:grid;gap:0.5rem">
+      <div class="colors-grid">
+        <input id="background-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#2c2c2c" />
+        <div class="swatch" id="background-swatch"></div>
+      </div>
+      <div class="colors-grid">
+        <input id="header-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#3a3a3a" />
+        <div class="swatch" id="header-swatch"></div>
+      </div>
+      <div class="colors-grid">
+        <input id="contrast-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#1e1e1e" />
+        <div class="swatch" id="contrast-swatch"></div>
+      </div>
+      <div class="colors-grid">
+        <input id="button-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#424242" />
+        <div class="swatch" id="button-swatch"></div>
+      </div>
     </div>
 
-    <script>
-        document.addEventListener("DOMContentLoaded", async () => {
-        // 1) Patch fetch once (if you haven’t globally done this already)
-        if (!window.__fetchPatched) {
-          const _origFetch = window.fetch;
-          window.fetch = (url, opts = {}) => {
-            opts.credentials = 'include';
-            return _origFetch(url, opts);
-          };
-          window.__fetchPatched = true;
-        }
+  </section>
+  </main>
 
-        // 2) Try to validate the session_key cookie
-        async function validateSession() {
-          try {
-            const res = await fetch("/test-session", { method: "GET" });
-            if (res.status === 200) {
-              hideModal();
-              return true;
-            }
-            if (res.status === 403) {
-              // suspended
-              window.location.href = "/login_page?suspended=true";
-              return false;
-            }
-            window.location.href = "/login_page"
-            return false;
-          } catch (err) {
-            console.error("Session validation error:", err);
-            return false;
-          }
-        }
+  <!-- modals / overlays -->
+  <div class="overlay" id="overlay" role="dialog" aria-hidden="true" style="display:none">
+    <div class="dialog" id="dialog-content"></div>
+  </div>
 
-        // 3) If invalid, try to auto‑login via lasting_key cookie
-        async function attemptAutoLogin() {
-          try {
-            console.log("Attempting auto-login via lasting_key cookie…");
-            const res = await fetch("/login", {
-              method: "POST",
-              headers: {"Content-Type": "application/json"},
-              body: JSON.stringify({})  // no lasting_key in body; backend reads cookie
-            });
-            if (res.ok) {
-              console.log("Auto-login succeeded, reloading page…");
-              // new session_key cookie is set; reload so protected data endpoints work
-              console.log("Reloading page to apply new session…");
-              window.location.reload();
-              return true;
-            }
-            console.warn("Auto-login failed (bad lasting_key).");
-            return false;
-          } catch (err) {
-            console.error("Error during auto-login:", err);
-            return false;
-          }
-        }
+  <footer>&copy; Future Notes</footer>
 
-        // 4) Kick off: if validateSession fails, try auto‑login
-        const sessionOk = await validateSession();
-        if (!sessionOk) {
-          const gotIt = await attemptAutoLogin();
-          if (!gotIt) {
-            // still not logged in → show modal or redirect
-            if (window.location.pathname !== "/login_page") {
-              window.location.href = "/login_page?redirect=/account_page&warning=true";
-            } else {
-              showModal();
-            }
-          }
-          // in both cases we stop further init until after reload
-          return;
-        }
+  <script>
+    // small utility helpers (unchanged)
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
 
-        // 5) At this point session_key is good—fetch your user‑info
-        try {
-          const userInfoRes = await fetch("/user-info", { method: "GET" });
-          if (!userInfoRes.ok) {
-            console.error("Failed to load user info");
-            return;
-          }
-          const u = await userInfoRes.json();
-          // your existing DOM updates:
-          document.getElementById("username-display").textContent = `${u.username} - Account`;
-          const picEl = document.getElementById("profile-pic");
-          if (u.profile_picture) {
-            const url = u.profile_picture.replace(/\\/g, "/");
-            picEl.style.backgroundImage = `url(${url})`;
-            picEl.classList.remove("no-picture");
-            picEl.textContent = "";
-          } else {
-            picEl.classList.add("no-picture");
-            picEl.textContent = u.username[0].toUpperCase();
-          }
-          document.getElementById("sharing-toggle").checked = !!u.allows_sharing;
-
-          // admin link logic
-          const adminLink = document.querySelector("#admin-page-link");
-          if (u.role === "admin") {
-            adminLink.classList.add("enabled");
-            adminLink.classList.remove("disabled");
-          } else {
-            adminLink.classList.add("disabled");
-            adminLink.classList.remove("enabled");
-            adminLink.onclick = e => { e.preventDefault(); console.log("Nope!"); };
-          }
-
-          // default startpage
-          document.getElementById("default-startpage").value = u.startpage || "/index";
-          const usernameInput = document.getElementById("new-username");
-          const emailInput = document.getElementById("new-email");
-          usernameInput.value = u.username;
-            if (u.email !== null && u.email !== undefined) {
-            emailInput.value = u.email;
-            }
-          
-          console.log("User info loaded:", u);
-
-        } catch (err) {
-          console.error("Error fetching user info:", err);
-        }
-      });
-
-        document.addEventListener("DOMContentLoaded", () => {
-        const cfg = window.appConfig || {};
-
-        // store in a JS var if you need it elsewhere
-        const userColors = {
-            bg:  cfg.backgroundColor,
-            hdr: cfg.headerColor,
-            ctr: cfg.contrastingColor,
-            btn: cfg.buttonColor
-        };
-
-        // apply each to the CSS custom properties
-        const root = document.documentElement;
-        root.style.setProperty("--bg-color",  userColors.bg);
-        root.style.setProperty("--hdr-color", userColors.hdr);
-        root.style.setProperty("--ctr-color", userColors.ctr);
-        root.style.setProperty("--btn-color", userColors.btn);
-
-        // now your CSS (using var(--bg-color), etc.) will reflect the user’s choices
-        });
-
-        document.addEventListener("DOMContentLoaded", async () => {
-      const presets = {
-        default: { bg: "#2c2c2c", hdr: "#3a3a3a", ctr: "#1e1e1e", btn: "#424242" },
-        colorful: { bg: "#1b1b1b", hdr: "#2e7d32", ctr: "#1b5e20", btn: "#388e3c" },
-        light: { bg: "#d3d3d3", hdr: "#c5c5c5", ctr: "#e1e1e1", btn: "#bdbdbd" }
+    // ensure fetch sends cookies by default
+    (function(){
+      const orig = window.fetch;
+      window.fetch = (input, init={}) => {
+        init.credentials = init.credentials || 'include';
+        return orig(input, init);
       };
+    })();
 
-      const channels = [
-        { key: "bg", text: "background-color" },
-        { key: "hdr", text: "header-color" },
-        { key: "ctr", text: "contrast-color" },
-        { key: "btn", text: "button-color" },
-      ];
+    /* -------------------------
+       DOM references (unchanged naming)
+       ------------------------- */
+    const usernameDisplay = $('#username-display');
+    const emailDisplay = $('#email-display');
+    const avatar = $('#profile-pic');
+    const fileInput = $('#profile-input');
+    const btnChangePic = $('#btn-change-pic');
+    const btnRemovePic = $('#btn-remove-pic');
 
-      const select     = document.getElementById("color-presets");
-      const saveBtn    = document.getElementById("save-colors-btn");
+    const formUsername = $('#form-username');
+    const formEmail = $('#form-email');
+    const formPassword = $('#form-password');
 
-      // Build inputs map
-      const inputs = {};
-      channels.forEach(c => {
-        inputs[c.key] = {
-          txtEl:    document.getElementById(c.text),
-          pickerEl: document.getElementById(`${c.text}-picker`),
-          swatchEl: document.getElementById(`${c.text}-swatch`),
-          errEl:    document.querySelector(`#${c.text}`).parentNode.nextElementSibling
-        };
-      });
+    const sharingToggle = $('#sharing-toggle');
+    const defaultStart = $('#default-startpage');
 
-      // Validate & style
-      function validateField({ txtEl, pickerEl, swatchEl, errEl }) {
-        const val   = txtEl.value.trim();
-        const valid = /^#([A-Fa-f0-9]{6})$/.test(val);
+    const refreshSessionsBtn = $('#refresh-sessions');
+    const revokeAllBtn = $('#revoke-all');
 
-        txtEl.classList.toggle("invalid",  !valid);
-        txtEl.classList.toggle("valid",     valid);
-        errEl.textContent      = valid ? "" : "Invalid color";
-        errEl.style.visibility = valid ? "hidden" : "visible";
+    const adminLink = $('#admin-link');
 
-        if (valid) {
-          pickerEl.value           = val;
-          swatchEl.style.backgroundColor = val;
-          txtEl.style.color        = val;
+    const colorInputs = {
+      bg: $('#background-color'),
+      hdr: $('#header-color'),
+      ctr: $('#contrast-color'),
+      btn: $('#button-color')
+    };
+    const swatches = {
+      bg: $('#background-swatch'), hdr: $('#header-swatch'), ctr: $('#contrast-swatch'), btn: $('#button-swatch')
+    };
+    const presetSelect = $('#color-presets');
+    const saveColorsBtn = $('#save-colors');
+
+    // small additions for sessions rendering
+    const sessionsGrid = $('#sessions-grid');
+    const sessionsLoading = $('#sessions-loading');
+    const sessionsToggle = $('#sessions-toggle');
+
+    // presets
+    const PRESETS = {
+      default: { bg: '#2c2c2c', hdr: '#3a3a3a', ctr: '#1e1e1e', btn: '#424242' },
+      colorful: { bg: '#121212', hdr: '#2e7d32', ctr: '#1b5e20', btn: '#388e3c' },
+      light: { bg:'#dfe7ec', hdr:'#cfd8df', ctr:'#ffffff', btn:'#bdbdbd' }
+    };
+
+    function setSwatch(key, val){ if(swatches[key]) swatches[key].style.background = val; }
+
+    function showDialog(html){ $('#overlay').style.display='flex'; $('#dialog-content').innerHTML = html; $('#overlay').setAttribute('aria-hidden','false'); }
+    function hideDialog(){ $('#overlay').style.display='none'; $('#dialog-content').innerHTML=''; $('#overlay').setAttribute('aria-hidden','true'); }
+
+    function isHex(v){ return /^#([A-Fa-f0-9]{6})$/.test((v||'').trim()); }
+
+    async function validateSession(){
+      try{
+        const res = await fetch('/test-session');
+        if (res.status === 200) return true;
+        if (res.status === 403) { window.location.href = '/login_page?suspended=true'; return false; }
+        return false;
+      }catch(e){ console.error('validateSession',e); return false; }
+    }
+
+    async function attemptAutoLogin(){
+      try{
+        const res = await fetch('/login', { method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+        if (res.ok){ window.location.reload(); return true; }
+        return false;
+      }catch(e){ console.error('autologin',e); return false; }
+    }
+
+    async function init(){
+      const ok = await validateSession();
+      if (!ok){ const got = await attemptAutoLogin(); if (!got) { window.location.href = '/login_page?redirect=/account_page&warning=true'; return; } return; }
+
+      // fetch user-info
+      try{
+        const r = await fetch('/user-info');
+        if (!r.ok) throw new Error('user-info failed');
+        const u = await r.json();
+        populateUser(u);
+      }catch(e){ console.error(e); }
+
+      // load user colors from api (if available)
+      try{
+        const r = await fetch('/api/user/colors'); if (r.ok){ const d = await r.json(); const cur = { bg: d.backgroundColor, hdr: d.headerColor, ctr: d.contrastingColor, btn: d.buttonColor };
+          Object.entries(cur).forEach(([k,v])=>{ if(v && colorInputs[k]){ colorInputs[k].value = v; setSwatch(k,v); } });
+          // try to match preset
+          for(const key of Object.keys(PRESETS)){ const p=PRESETS[key]; if(p.bg===cur.bg && p.hdr===cur.hdr && p.ctr===cur.ctr && p.btn===cur.btn){ presetSelect.value = key; break; } }
         }
-        return valid;
-      }
+      }catch(e){ console.warn('no user colors',e); }
 
-      // Wire up each field
-      Object.values(inputs).forEach(field => {
-        const { txtEl, pickerEl, swatchEl } = field;
+      // initial sessions
+      fetchSessions();
+    }
 
-        // text ↔ picker events
-        txtEl.addEventListener("input", () => {
-          if (validateField(field)) {
-            swatchEl.style.backgroundColor = txtEl.value.trim();
-          }
-        });
-        pickerEl.addEventListener("input", () => {
-          txtEl.value = pickerEl.value;
-          swatchEl.style.backgroundColor = pickerEl.value;
-          validateField(field);
-        });
+    function populateUser(u){
+      usernameDisplay.textContent = u.username + ' — Account';
+      const letter = (u.username && u.username[0]) ? u.username[0].toUpperCase() : 'U';
+      emailDisplay.textContent = u.email || 'No email set';
 
-        // initial
-        validateField(field);
-      });
+      if (u.profile_picture){ avatar.style.backgroundImage = `url(${u.profile_picture.replace(/\\/g,'/')})`; avatar.textContent=''; avatar.style.backgroundSize='cover'; }
+      else { avatar.style.backgroundImage='none'; avatar.textContent = letter; }
 
-      // Enable/disable custom fields
-      function toggleCustom(on) {
-        Object.values(inputs).forEach(f => {
-          f.txtEl.disabled    = !on;
-          f.pickerEl.disabled = !on;
-        });
-      }
+      sharingToggle.checked = !!u.allows_sharing;
+      defaultStart.value = u.startpage || '/index';
+      $('#new-username').value = u.username || '';
+      if (u.email) $('#new-email').value = u.email;
 
-      // Handle preset changes
-      select.addEventListener("change", () => {
-        if (select.value === "custom") {
-          toggleCustom(true);
-        } else {
-          toggleCustom(false);
-          const p = presets[select.value];
-          Object.entries(inputs).forEach(([k, f]) => {
-            f.txtEl.value    = p[k];
-            f.pickerEl.value = p[k];
-            validateField(f);
-          });
-        }
-      });
+      if (u.role === 'admin'){ adminLink.style.pointerEvents='auto'; adminLink.style.opacity=1; adminLink.href='/admin_page'; }
+    }
 
-      // Load initial from API
-      try {
-        const res  = await fetch("/api/user/colors", {
-          method: "GET",
-          headers: {
-            "Content-Type":  "application/json",
-          }
-        });
-        if (!res.ok) throw new Error(res.status);
-        const data = await res.json();
-        const cur  = {
-          bg:  data.backgroundColor.trim().toLowerCase(),
-          hdr: data.headerColor.trim().toLowerCase(),
-          ctr: data.contrastingColor.trim().toLowerCase(),
-          btn: data.buttonColor.trim().toLowerCase()
-        };
-
-        let match = null;
-        for (const [k,p] of Object.entries(presets)) {
-          if (p.bg===cur.bg && p.hdr===cur.hdr && p.ctr===cur.ctr && p.btn===cur.btn) {
-            match = k; break;
-          }
-        }
-
-        if (match) {
-          select.value = match;
-          toggleCustom(false);
-          Object.entries(inputs).forEach(([k,f]) => {
-            f.txtEl.value    = presets[match][k];
-            f.pickerEl.value = presets[match][k];
-            validateField(f);
-          });
-        } else {
-          select.value = "custom";
-          toggleCustom(true);
-          Object.entries(inputs).forEach(([k,f]) => {
-            f.txtEl.value    = cur[k];
-            f.pickerEl.value = cur[k];
-            validateField(f);
-          });
-        }
-      } catch (err) {
-        console.error("Could not load user colors:", err);
-      }
-
-      // Save handler
-      saveBtn.addEventListener("click", async () => {
-        const allValid = Object.values(inputs).every(validateField);
-        if (!allValid) {
-          alert("Please fix invalid colors before saving.");
-          return;
-        }
-        const payload = {
-          background: inputs.bg.txtEl.value,
-          header:     inputs.hdr.txtEl.value,
-          contrast:   inputs.ctr.txtEl.value,
-          buttons:    inputs.btn.txtEl.value
-        };
-        try {
-          const resp = await fetch("/api/set-colors", {
-            method: "POST",
-            headers: {
-              "Content-Type":  "application/json"
-            },
-            body: JSON.stringify(payload)
-          });
-          if (resp.ok) {
-            alert("Colors saved!");
-            location.reload();
-          } else if (resp.status === 401 || resp.status === 403) {
-            sessionStorage.clear();
-            showModal();
-          } else {
-            const e = await resp.json();
-            alert("Error: " + e.error);
-          }
-        } catch (e) {
-          console.error("Network error:", e);
-          alert("Failed to save colors.");
-        }
-      });
+    // ---------- forms ---------- (unchanged)
+    formUsername.addEventListener('submit', async e =>{
+      e.preventDefault(); const newUsername = $('#new-username').value.trim();
+      try{
+        const res = await fetch('/update-username', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ new_username: newUsername }) });
+        if (res.ok){ alert('Username updated'); usernameDisplay.textContent = newUsername + ' — Account'; } else if (res.status===401){ sessionStorage.clear(); window.location.href='/login_page'; } else { const j = await res.json().catch(()=>({})); alert(j.error||'Failed to update username'); }
+      }catch(e){ alert('Network error'); }
     });
 
+    formEmail.addEventListener('submit', async e =>{
+      e.preventDefault(); const email = $('#new-email').value.trim();
+      try{
+        const res = await fetch('/account/update_email', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+        if (res.ok){ alert('Verification sent — follow the email'); } else { const j = await res.json().catch(()=>({})); alert(j.error||'Failed to update email'); }
+      }catch(e){ alert('Network error'); }
+    });
 
-        document.getElementById("default-startpage").addEventListener("change", async (e) => {
-            const selectedPage = e.target.value;
-            try {
-            const response = await fetch("/update-set-startpage", {
-                method: "POST",
-                headers: {
-                "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ startpage: selectedPage }),
-            });
+    formPassword.addEventListener('submit', async e =>{
+      e.preventDefault(); const cur = $('#current-password').value, nw = $('#new-password').value;
+      try{
+        const res = await fetch('/update-password', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ current_password: cur, new_password: nw }) });
+        if (res.ok){ alert('Password updated'); formPassword.reset(); } else if (res.status===401){ alert('Session expired'); sessionStorage.clear(); window.location.href='/login_page'; } else { const j = await res.json().catch(()=>({})); alert(j.error||'Could not update password'); }
+      }catch(e){ alert('Network error'); }
+    });
 
-            if (!response.ok) {
-                if (response.status === 401) {
-                sessionStorage.clear();
-                showModal();
-                } else {
-                alert("Failed to update default starting page.");
-                }
-            } else {
-                console.log("Default starting page updated successfully!");
-            }
-            } catch (err) {
-            console.error("Error updating default starting page:", err);
-            }
-        });
+    // sharing toggle
+    sharingToggle.addEventListener('change', async e =>{
+      try{
+        const resp = await fetch('/allow-sharing', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ allows_sharing: e.target.checked }) });
+        if (!resp.ok){ if (resp.status===401){ sessionStorage.clear(); window.location.href='/login_page'; } else alert('Failed to update sharing preference'); }
+      }catch(e){ console.error(e); }
+    });
 
-        document.getElementById('update-email-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('new-email').value;
-            
-            const response = await fetch('/account/update_email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            
-            if (response.ok) {
-                // Show verification modal
-                alert("Please click the link in the email to complete updating your email!")
-            } else {
-                const error = await response.json();
-                alert(`Error: ${error.error}`);
-            }
-        });
+    // default startpage
+    defaultStart.addEventListener('change', async e =>{
+      try{
+        const resp = await fetch('/update-set-startpage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startpage: e.target.value }) });
+        if (!resp.ok){ if (resp.status===401){ sessionStorage.clear(); window.location.href='/login_page'; } else alert('Failed to set start page'); }
+      }catch(e){ console.error(e); }
+    });
 
-        document.getElementById('submit-verification').addEventListener('click', async () => {
-            const code = document.getElementById('verification-code').value;
-            
-            // Verify code directly
-            const response = await fetch('/signup/complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    verification_code: code,
-                    skip_email: false
-                })
-            });
-            
-            if (response.ok) {
-                alert('Email updated successfully!');
-                location.reload();
-            } else {
-                alert('Invalid verification code');
-            }
-        });
+    // ---------- profile picture ----------
+    btnChangePic.addEventListener('click', ()=> fileInput.click());
+    fileInput.addEventListener('change', async () =>{
+      if (!fileInput.files || fileInput.files.length===0) return;
+      const fd = new FormData(); fd.append('profile_picture', fileInput.files[0]);
+      try{
+        const r = await fetch('/update-profile-picture', { method:'POST', body: fd });
+        if (r.ok){ alert('Profile picture updated'); window.location.reload(); } else if (r.status===401){ sessionStorage.clear(); window.location.href='/login_page'; } else { alert('Failed to upload picture'); }
+      }catch(e){ console.error(e); alert('Upload failed'); }
+    });
 
-        function showModal() {
-            window.location.href = '/login_page?redirect=/account_page&warning=true';
-        }
+    btnRemovePic.addEventListener('click', async () =>{
+      if (!confirm('Delete profile picture?')) return;
+      try{
+        const r = await fetch('/update-profile-picture', { method:'DELETE' });
+        if (r.ok){ alert('Deleted'); window.location.reload(); } else alert('Failed to delete');
+      }catch(e){ console.error(e); }
+    });
 
-        function hideModal() {
-            const modalOverlay = document.getElementById("modal-overlay");
-            modalOverlay.style.display = "none";
-            console.log("Re-login modal hidden!");
-        }
+    // ---------- sessions (rewired to cards + show-more) ----------
+    function safe(v){ return (v===null||v===undefined||v==='') ? '—' : v; }
+    function isoFmt(iso){ if(!iso) return '—'; try{ const d=new Date(iso); return d.toLocaleString(); }catch(e){ return iso; } }
+    function iso2Flag(iso2){ if(!iso2) return ''; return iso2.toUpperCase().split('').map(c=>String.fromCodePoint(127397 + c.charCodeAt())).join(''); }
 
-        const lastActivePage = sessionStorage.getItem("last_page") || "/index";
-        document.getElementById("back-button").href = lastActivePage;
+    // config: how many cards to show by default
+    const DEFAULT_VISIBLE_SESSIONS = 6;
+    let allSessionsCache = [];
 
-        document.getElementById('profile-picture-upload').addEventListener('change', function() {
-            var fileName = this.files[0] ? this.files[0].name : 'No file selected';
-            document.getElementById('file-label').textContent = fileName;
-        });
+    async function fetchSessions(){
+      // show loading
+      sessionsGrid.innerHTML = '<div id="sessions-loading" style="grid-column:1/-1;color:var(--muted);text-align:center;padding:8px">Loading…</div>';
+      sessionsToggle.style.display = 'none';
+      try{
+        const r = await fetch('/account/sessions');
+        if (r.status===401||r.status===403){ sessionsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--muted)">Unauthorized — please login</div>'; return; }
+        if (!r.ok) throw new Error('failed');
+        const j = await r.json(); renderSessions(j.sessions || []);
+      }catch(e){ console.error(e); sessionsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--muted)">Could not load sessions</div>'; }
+    }
 
+    function renderSessions(list){
+      allSessionsCache = Array.isArray(list) ? list : [];
+      if (!Array.isArray(list) || list.length===0){
+        sessionsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--muted)">No active sessions</div>';
+        sessionsToggle.style.display = 'none';
+        return;
+      }
 
-        document.getElementById("sharing-toggle").addEventListener("change", async (e) => {
-            const allowsSharing = e.target.checked;
+      // determine whether we need toggle
+      const needToggle = list.length > DEFAULT_VISIBLE_SESSIONS;
+      sessionsGrid.innerHTML = '';
+      const visibleList = needToggle ? list.slice(0, DEFAULT_VISIBLE_SESSIONS) : list;
 
-            try {
-                console.log("Sharing toggle pressed, attempting change...")
-                const response = await fetch("/allow-sharing", {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ allows_sharing: allowsSharing }),
-                });
+      for(const s of visibleList) sessionsGrid.appendChild(makeSessionCard(s));
 
-                if (response.ok) {
-                    console.log("Sharing preference updated succesfully!")
-                } else if (response.status === 401) {
-                    sessionStorage.clear();
-                    showModal();
-                } else {
-                    console.log("Failed to update sharing preference!")
-                    alert("Failed to update sharing preference.");
-                }
-            } catch (err) {
-                console.error("Error updating sharing preference:", err);
-            }
-        });
+      if (needToggle){
+        sessionsToggle.style.display = 'inline-block';
+        sessionsToggle.textContent = `Show all (${list.length})`;
+      } else {
+        sessionsToggle.style.display = 'none';
+      }
+    }
 
-        document.getElementById("update-username-form").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const newUsername = document.getElementById("new-username").value;
+    function makeSessionCard(s){
+      const card = document.createElement('div');
+      card.className = 'session-card';
 
-            try {
-                const response = await fetch("/update-username", {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ new_username: newUsername }),
-                });
+      const header = document.createElement('div'); header.className='session-row';
+      const cur = document.createElement('div'); cur.innerHTML = s.is_current ? '<strong>Current</strong>' : '<span class="muted">Inactive</span>';
+      const created = document.createElement('div'); created.className='muted'; created.textContent = isoFmt(s.created_at);
+      header.append(cur, created);
 
-                if (response.ok) {
-                    alert("Username updated successfully!");
-                } else if (response.status === 401) {
-                    sessionStorage.clear();
-                    showModal();
-                } else {
-                    const error = await response.json();
-                    alert(error.error || "An error occurred while updating the username.");
-                }
-            } catch (err) {
-                alert("Network error. Please try again later.");
-            }
-        });
+      const uaDiv = document.createElement('div'); uaDiv.className='session-meta';
+      const uaMain = document.createElement('div'); uaMain.className='small-ellipsis'; uaMain.textContent = safe(s.user_agent_simplified);
+      const uaFull = document.createElement('div'); uaFull.className='muted small-ellipsis'; uaFull.textContent = safe(s.user_agent);
+      uaDiv.append(uaMain, uaFull);
 
-        document.getElementById("update-password-form").addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const currentPassword = document.getElementById("current-password").value;
-            const newPassword = document.getElementById("new-password").value;
+      const ipDiv = document.createElement('div'); ipDiv.className='session-meta';
+      const ipMain = document.createElement('div'); ipMain.className='badge'; ipMain.textContent = safe(s.ip_address);
+      const ipSub = document.createElement('div'); ipSub.className='muted'; ipSub.textContent = `${iso2Flag(s.country_code)} ${safe(s.country_name)}`;
+      ipDiv.append(ipMain, ipSub);
 
-            try {
-                const response = await fetch("/update-password", {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        current_password: currentPassword,
-                        new_password: newPassword,
-                    }),
-                });
+      const footer = document.createElement('div'); footer.className='session-row';
+      const fp = document.createElement('div'); fp.className='muted'; fp.textContent = `FP: ${safe(s.fingerprint)}`;
+      const act = document.createElement('div'); act.className='session-actions';
+      const btn = document.createElement('button'); btn.className='ghost'; btn.textContent = s.is_current ? 'Revoke (current)' : 'Revoke';
+      btn.addEventListener('click', ()=> onRevokeClicked(s, card, btn));
+      act.appendChild(btn);
 
-                if (response.ok) {
-                    alert("Password updated successfully!");
-                } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
-                    sessionStorage.clear();
-                    showModal();
-                } else {
-                    const error = await response.json();
-                    alert(error.error || "An error occurred while updating the password.");
-                }
-            } catch (err) {
-                alert("Network error. Please try again later.");
-            }
-        });
+      footer.append(fp, act);
 
-        document.getElementById("delete-account").addEventListener("click", async () => {
-            const password = prompt("Enter your password to confirm:");
-            
-            // Check if the user pressed cancel (password will be null)
-            if (password === null) {
-                return;  // Exit the function if cancel is pressed
-            }
+      card.append(header, uaDiv, ipDiv, footer);
+      return card;
+    }
 
-            try {
-                const response = await fetch("/delete-account", {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ password }),
-                });
+    // toggle show all / collapse
+    sessionsToggle.addEventListener('click', ()=>{
+      if (sessionsToggle.dataset.expanded === '1'){
+        // collapse
+        renderSessions(allSessionsCache);
+        sessionsToggle.dataset.expanded = '0';
+        sessionsToggle.textContent = `Show all (${allSessionsCache.length})`;
+      } else {
+        // expand fully: clear grid and append all
+        sessionsGrid.innerHTML = '';
+        for(const s of allSessionsCache) sessionsGrid.appendChild(makeSessionCard(s));
+        sessionsToggle.dataset.expanded = '1';
+        sessionsToggle.textContent = 'Collapse';
+      }
+    });
 
-                if (response.status === 200) {
-                    sessionStorage.clear();
-                    localStorage.removeItem("lasting_key");
-                    window.location.href = "/login_page";
-                } else if (response.status === 401) {
-                    sessionStorage.clear();
-                    showModal();
-                } else if (response.status === 400) {
-                    alert("Incorrect password. Please try again.");
-                } else {
-                    alert("An error occurred. Please try again later.");
-                }
-            } catch (error) {
-                alert("An error occurred. Please try again later.");
-            }
-        });
+    async function onRevokeClicked(sessionObj, cardEl, btnEl){
+      const id = sessionObj.id; const isCurrent = !!sessionObj.is_current;
+      const confirmMsg = isCurrent ? 'Revoking the current session will log you out of this browser. Continue?' : `Revoke session from ${safe(sessionObj.ip_address)} (${safe(sessionObj.user_agent_simplified)})?`;
+      if (!confirm(confirmMsg)) return;
+      btnEl.disabled = true; btnEl.textContent = 'Revoking…';
+      try{
+        const res = await fetch(`/account/sessions/${id}/revoke`, { method:'POST' });
+        if (res.status===401){ alert('Session expired — please log in'); window.location.href='/login_page?redirect=/account_page&warning=true'; return; }
+        if (!res.ok){ const j = await res.json().catch(()=>({})); alert('Could not revoke: '+(j.error||res.statusText)); btnEl.disabled=false; btnEl.textContent = isCurrent? 'Revoke (current)':'Revoke'; return; }
+        // remove the card from UI and update cache
+        if (cardEl && cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
+        allSessionsCache = allSessionsCache.filter(s=> s.id !== sessionObj.id);
+        if (isCurrent){ try{ sessionStorage.clear(); localStorage.removeItem('lasting_key'); }catch(e){} window.location.href = '/login_page?revoked_current=true'; }
+      }catch(e){ console.error(e); alert('Network error'); btnEl.disabled=false; btnEl.textContent = isCurrent? 'Revoke (current)':'Revoke'; }
+    }
 
-        document.getElementById("logout").addEventListener("click", () => {
-            fetch("/logout", { method: "POST" });
-            sessionStorage.clear();
-            window.location.href = "/login_page";
-        });
+    revokeAllBtn.addEventListener('click', async ()=>{
+      if (!confirm('Revoke ALL sessions (this will log you out on every device)?')) return;
+      try{
+        const r = await fetch('/account/sessions/revoke_all', { method:'POST' });
+        if (r.status===401){ alert('Session expired'); window.location.href='/login_page'; return; }
+        if (!r.ok){ const j = await r.json().catch(()=>({})); alert('Could not revoke all: '+(j.error||r.statusText)); return; }
+        try{ sessionStorage.clear(); localStorage.removeItem('lasting_key'); }catch(e){}
+        window.location.href = '/login_page?revoked_all=true';
+      }catch(e){ console.error(e); alert('Network error'); }
+    });
 
-        document.getElementById("profile-pic").addEventListener("click", () => {
-            document.getElementById("modal-overlay-2").style.display = "flex";
-        });
+    refreshSessionsBtn.addEventListener('click', fetchSessions);
 
-        document.getElementById("save-profile-picture").addEventListener("click", async () => {
-            const fileInput = document.getElementById("profile-picture-upload");
-            if (fileInput.files.length === 0) {
-                alert("Please select an image.");
-                return;
-            }
+    // ---------- delete & logout ----------
+    $('#btn-delete').addEventListener('click', async ()=>{
+      const pw = prompt('Enter your password to confirm:'); if (pw===null) return;
+      try{
+        const r = await fetch('/delete-account', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password: pw }) });
+        if (r.status===200){ sessionStorage.clear(); localStorage.removeItem('lasting_key'); window.location.href='/login_page'; }
+        else if (r.status===401){ sessionStorage.clear(); window.location.href='/login_page'; }
+        else if (r.status===400){ alert('Incorrect password'); }
+        else { alert('Error deleting account'); }
+      }catch(e){ alert('Network error'); }
+    });
 
-            const formData = new FormData();
-            formData.append("profile_picture", fileInput.files[0]);
+    $('#btn-logout').addEventListener('click', ()=>{ fetch('/logout', { method:'POST' }); sessionStorage.clear(); window.location.href='/login_page'; });
 
-            try {
-                const response = await fetch("/update-profile-picture", {
-                    method: "POST",
-                    body: formData,
-                });
+    // ---------- color settings ----------
+    Object.entries(colorInputs).forEach(([k,el])=>{
+      el.addEventListener('input', ()=>{ const v = el.value.trim(); if(isHex(v)){ setSwatch(k,v); } });
+    });
 
-                if (response.ok) {
-                    alert("Profile picture updated successfully!");
-                    document.getElementById("modal-overlay-2").style.display = "none";
-                    location.reload();
-                } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
-                    sessionStorage.clear();
-                    showModal();
-                } else {
-                    alert("Failed to update profile picture.");
-                }
-            } catch (err) {
-                console.error("Error uploading profile picture:", err);
-            }
-        });
+    presetSelect.addEventListener('change', ()=>{
+      const val = presetSelect.value; if (val==='custom') return; const p = PRESETS[val]; Object.keys(colorInputs).forEach(k=>{ colorInputs[k].value = p[k]; setSwatch(k,p[k]); });
+    });
 
-        document.getElementById("delete-profile-picture").addEventListener("click", async () => {
-            try {
-                const response = await fetch("/update-profile-picture", {
-                    method: "DELETE",
-                });
+    saveColorsBtn.addEventListener('click', async ()=>{
+      const payload = { background: colorInputs.bg.value.trim(), header: colorInputs.hdr.value.trim(), contrast: colorInputs.ctr.value.trim(), buttons: colorInputs.btn.value.trim() };
+      if (!isHex(payload.background)||!isHex(payload.header)||!isHex(payload.contrast)||!isHex(payload.buttons)){ alert('Please use full 6-digit hex colors (e.g. #1a2b3c)'); return; }
+      try{
+        const r = await fetch('/api/set-colors', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        if (r.ok){ alert('Colors saved'); window.location.reload(); }
+        else if (r.status===401){ sessionStorage.clear(); window.location.href='/login_page'; }
+        else { const j = await r.json().catch(()=>({})); alert(j.error||'Failed to save colors'); }
+      }catch(e){ console.error(e); alert('Network error'); }
+    });
 
-                if (response.ok) {
-                    alert("Profile picture deleted successfully!");
-                    document.getElementById("modal-overlay-2").style.display = "none";
-                    location.reload();
-                } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
-                    sessionStorage.clear();
-                    showModal();
-                } else {
-                    alert("Failed to delete profile picture.");
-                }
-            } catch (err) {
-                console.error("Error deleting profile picture:", err);
-            }
-        });
-    </script>
+    // initial run
+    document.addEventListener('DOMContentLoaded', ()=> init());
+  </script>
 </body>
 </html>
