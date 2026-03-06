@@ -247,35 +247,24 @@
             box-shadow: var(--glow) !important;
         }
 
-        /* Loading state */
-        button.loading {
-            pointer-events: none;
-            opacity: 0.7;
+        /* Animated button canvas layer */
+        .btn-canvas-anim {
+        position: absolute;
+        inset: 0;
+        width: 100% !important;
+        height: 100% !important;
+        display: none;
+        pointer-events: none;
+        border-radius: inherit;
         }
-        button.loading .btn-icon,
-        button.loading .btn-label { opacity: 0; }
-        button.loading::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: inherit;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .btn-spinner {
-            position: absolute;
-            inset: 0;
-            display: none;
-            align-items: center;
-            justify-content: center;
-        }
-        button.loading .btn-spinner { display: flex; }
-        .btn-spinner svg {
-            width: 14px; height: 14px;
-            animation: spin 0.7s linear infinite;
-        }
+
+        /* Loading state: show canvas, hide inner content */
+        button.loading .btn-canvas-anim { display: block; }
+        button.loading .btn-label,
+        button.loading svg:not(.btn-canvas-anim),
+        button.loading .btn-spinner { opacity: 0; }
+        button.loading { pointer-events: none; }
+
 
         /* ── TABLES ── */
         .table-wrapper {
@@ -980,12 +969,14 @@
         <div class="action-group _db">
             <div class="action-group-label">Database</div>
             <div class="btn-group">
-                <button id="dump-database">
+                <button id="dump-database"       data-anim="dump">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     <span class="btn-label">Dump Database</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
                 </button>
-                <button id="create-backup-btn">
+                <button id="create-backup-btn"   data-anim="backup">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                     <span class="btn-label">Create Backup</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
@@ -997,27 +988,32 @@
         <div class="action-group deploy">
             <div class="action-group-label">Deployment</div>
             <div class="btn-group">
-                <button id="scan-updates">
+                <button id="scan-updates"        data-anim="scanUpdates">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
                     <span class="btn-label">Scan for Updates</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
                 </button>
-                <button id="run-update">
+                <button id="run-update"          data-anim="runUpdate">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
                     <span class="btn-label">Run Update</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
                 </button>
-                <button id="scan-dev-vs-master">
+                <button id="scan-dev-vs-master"  data-anim="scanDev">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                     <span class="btn-label">Dev vs Master</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
                 </button>
-                <button id="merge-dev-master">
+                <button id="merge-dev-master"    data-anim="merge">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
                     <span class="btn-label">Merge Dev → Master</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
                 </button>
-                <button id="deploy-local">
+                <button id="deploy-local"        data-anim="deploy">
+                    <canvas class="btn-canvas-anim"></canvas>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     <span class="btn-label">Deploy Local Changes</span>
                     <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
@@ -1188,11 +1184,240 @@
     /* ══════════════════════════════════════════
        BUTTON LOADING HELPER
     ══════════════════════════════════════════ */
+    /* ── Animation functions ── */
+    const BTN_ANIMATIONS = {
+
+    deploy(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cy = h / 2, speed = 1.4;
+        const loop = (t * speed) % 1;
+        const x = -20 + (w + 40) * loop;
+        const trailLen = 36;
+        for (let i = trailLen; i >= 0; i--) {
+        const tx = x - i * 2.2;
+        if (tx < 0 || tx > w) continue;
+        const alpha = (1 - i / trailLen) * 0.55 * Math.sin(Math.PI * loop);
+        const r = (1 - i / trailLen) * 2.8;
+        const wobble = Math.sin(t * 18 + i * 0.5) * 1.2;
+        ctx.beginPath();
+        ctx.arc(tx, cy + wobble, r, 0, Math.PI * 2);
+        ctx.fillStyle = i < trailLen * 0.4 ? `rgba(255,200,80,${alpha})` : `rgba(0,212,255,${alpha * 0.6})`;
+        ctx.fill();
+        }
+        if (x > -10 && x < w + 10) {
+        const g = ctx.createRadialGradient(x, cy, 0, x, cy, 14);
+        g.addColorStop(0, 'rgba(0,212,255,0.2)'); g.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - 14, cy - 14, 28, 28);
+        ctx.save(); ctx.translate(x, cy); ctx.shadowBlur = 10; ctx.shadowColor = '#00d4ff';
+        ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-5, -4); ctx.lineTo(-7, 0); ctx.lineTo(-5, 4); ctx.closePath();
+        ctx.fillStyle = '#00d4ff'; ctx.fill();
+        ctx.beginPath(); ctx.arc(9, 0, 1.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-3, -4); ctx.lineTo(-8, -8); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fillStyle = 'rgba(0,180,220,0.8)'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-3, 4); ctx.lineTo(-8, 8); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        }
+        for (let i = 0; i < 3; i++) {
+        const lx = (x - 30 - i * 12 + w * 2) % (w + 20) - 10;
+        const ly = cy - 6 + i * 6;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 8, ly);
+        ctx.strokeStyle = `rgba(0,212,255,${0.12 + i * 0.04})`; ctx.lineWidth = 0.8; ctx.stroke();
+        }
+    },
+
+    backup(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2, cy = h / 2, pulse = (t * 0.9) % 1;
+        for (let ring = 0; ring < 3; ring++) {
+        const phase = (pulse + ring / 3) % 1;
+        const r = phase * Math.min(cx, cy) * 1.4;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(16,185,129,${(1 - phase) * 0.5})`; ctx.lineWidth = 1.2; ctx.stroke();
+        }
+        const ico = 10, breath = 1 + Math.sin(t * 3) * 0.05;
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(breath, breath);
+        ctx.shadowBlur = 12; ctx.shadowColor = '#10b981';
+        ctx.strokeStyle = '#10b981'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(-ico, -ico, ico * 2, ico * 2);
+        ctx.fillStyle = 'rgba(16,185,129,0.3)'; ctx.fillRect(-ico + 2, -ico + 2, ico * 2 - 4, 5); ctx.strokeRect(-ico + 2, -ico + 2, ico * 2 - 4, 5);
+        ctx.fillStyle = 'rgba(16,185,129,0.2)'; ctx.fillRect(-ico + 2, ico - 6, ico * 2 - 4, 4); ctx.strokeRect(-ico + 2, ico - 6, ico * 2 - 4, 4);
+        ctx.beginPath(); ctx.arc(0, 0, 5, -Math.PI / 2, -Math.PI / 2 + t * 2.5, false);
+        ctx.strokeStyle = '#10b981'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+    },
+
+    dump(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cols = Math.floor(w / 10);
+        if (!s.drops) s.drops = Array.from({ length: cols }, (_, i) => ({
+        x: i * 10 + 5, y: -Math.random() * h * 2, speed: 0.8 + Math.random() * 1.4,
+        len: 3 + Math.floor(Math.random() * 4), alpha: 0.4 + Math.random() * 0.5,
+        }));
+        for (const d of s.drops) {
+        d.y += d.speed * h * 0.016 * 3;
+        if (d.y > h + d.len * 10) { d.y = -Math.random() * h; d.speed = 0.8 + Math.random() * 1.4; }
+        ctx.font = `bold 7px 'JetBrains Mono', monospace`;
+        for (let i = 0; i < d.len; i++) {
+            const dy = d.y - i * 9; if (dy < 0 || dy > h) continue;
+            const fade = (d.len - i) / d.len, bright = i === 0 ? 1 : fade * 0.6;
+            ctx.fillStyle = i === 0 ? `rgba(200,240,255,${d.alpha})` : `rgba(0,212,255,${d.alpha * bright})`;
+            ctx.fillText(i === 0 ? '1' : '0', d.x - 3, dy);
+        }
+        }
+        const scanY = (t * 0.4 % 1) * h;
+        ctx.fillStyle = 'rgba(0,212,255,0.06)'; ctx.fillRect(0, scanY - 1, w, 2);
+    },
+
+    scanUpdates(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2, cy = h / 2, maxR = Math.min(cx, cy) * 0.9;
+        const angle = (t * 1.8) % (Math.PI * 2);
+        for (let i = 1; i <= 3; i++) {
+        ctx.beginPath(); ctx.arc(cx, cy, maxR * i / 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,212,255,0.12)'; ctx.lineWidth = 0.8; ctx.stroke();
+        }
+        ctx.save(); ctx.translate(cx, cy);
+        const sweepAngle = Math.PI * 0.45;
+        ctx.beginPath(); ctx.moveTo(0, 0);
+        for (let a = 0; a <= sweepAngle; a += 0.03) { const sw = angle - a; ctx.lineTo(Math.cos(sw) * maxR, Math.sin(sw) * maxR); }
+        ctx.closePath();
+        const sg = ctx.createLinearGradient(Math.cos(angle) * maxR, Math.sin(angle) * maxR, Math.cos(angle - sweepAngle) * maxR, Math.sin(angle - sweepAngle) * maxR);
+        sg.addColorStop(0, 'rgba(0,212,255,0.22)'); sg.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = sg; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(angle) * maxR, Math.sin(angle) * maxR);
+        ctx.strokeStyle = 'rgba(0,212,255,0.8)'; ctx.lineWidth = 1.2; ctx.shadowBlur = 6; ctx.shadowColor = '#00d4ff'; ctx.stroke();
+        ctx.restore();
+        if (!s.pings) s.pings = [];
+        if (Math.random() < 0.03) s.pings.push({ x: cx + Math.cos(angle) * maxR * (0.3 + Math.random() * 0.65), y: cy + Math.sin(angle) * maxR * (0.3 + Math.random() * 0.65), age: 0 });
+        s.pings = s.pings.filter(p => p.age < 1.8);
+        for (const p of s.pings) {
+        p.age += 0.016;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0,212,255,${Math.max(0, 1 - p.age / 1.8)})`; ctx.shadowBlur = 8; ctx.shadowColor = '#00d4ff'; ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fillStyle = '#00d4ff'; ctx.shadowBlur = 10; ctx.fill();
+    },
+
+    runUpdate(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2, cy = h / 2, barY = cy + 10;
+        ctx.fillStyle = 'rgba(0,212,255,0.1)'; ctx.fillRect(8, barY, w - 16, 2);
+        const progress = Math.min((t * 0.6) % 1.2, 1.0);
+        const g = ctx.createLinearGradient(8, 0, 8 + (w - 16) * progress, 0);
+        g.addColorStop(0, 'rgba(0,212,255,0.2)'); g.addColorStop(0.8, 'rgba(0,212,255,0.8)'); g.addColorStop(1, '#ffffff');
+        ctx.fillStyle = g; ctx.fillRect(8, barY, (w - 16) * progress, 2);
+        if (progress < 1) {
+        const lx = 8 + (w - 16) * progress;
+        const lg = ctx.createRadialGradient(lx, barY + 1, 0, lx, barY + 1, 8);
+        lg.addColorStop(0, 'rgba(0,212,255,0.5)'); lg.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = lg; ctx.fillRect(lx - 8, barY - 7, 16, 16);
+        }
+        if (!s.particles) s.particles = [];
+        if (s.particles.length < 12 && Math.random() < 0.25) s.particles.push({ x: cx + (Math.random() - 0.5) * 20, y: cy + 5, vy: -(0.5 + Math.random() * 1.2), alpha: 0.8 + Math.random() * 0.2, size: 1 + Math.random() * 1.5 });
+        s.particles = s.particles.filter(p => p.alpha > 0.02);
+        for (const p of s.particles) { p.y += p.vy; p.alpha -= 0.025; p.x += (Math.random() - 0.5) * 0.3; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fillStyle = `rgba(0,212,255,${p.alpha})`; ctx.fill(); }
+        ctx.save(); ctx.translate(cx, cy - 2 + Math.sin(t * 4) * 2);
+        ctx.strokeStyle = 'rgba(0,212,255,0.9)'; ctx.lineWidth = 1.5; ctx.shadowBlur = 8; ctx.shadowColor = '#00d4ff';
+        ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(0, -6); ctx.lineTo(5, 0); ctx.stroke();
+        ctx.restore();
+    },
+
+    scanDev(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cy = h / 2, phase = (t * 0.7) % 1, pad = 14;
+        let spread = phase < 0.4 ? phase / 0.4 : phase < 0.6 ? 1 : 1 - (phase - 0.6) / 0.4;
+        const off = spread * 7;
+        const cols = ['rgba(0,212,255,', 'rgba(245,158,11,'];
+        for (let i = 0; i < 2; i++) {
+        const yE = cy + (i === 0 ? -off : off);
+        ctx.beginPath(); ctx.moveTo(pad, cy); ctx.bezierCurveTo(w * 0.35, cy, w * 0.45, yE, w * 0.55, yE); ctx.bezierCurveTo(w * 0.65, yE, w * 0.75, cy, w - pad, cy);
+        ctx.strokeStyle = cols[i] + '0.7)'; ctx.lineWidth = 1.5; ctx.shadowBlur = 6; ctx.shadowColor = i === 0 ? '#00d4ff' : '#f59e0b'; ctx.stroke();
+        if (!s.dots) s.dots = [[], []];
+        if (s.dots[i].length < 6 && Math.random() < 0.12) s.dots[i].push({ p: 0 });
+        s.dots[i] = s.dots[i].filter(d => d.p < 1);
+        for (const d of s.dots[i]) {
+            d.p += 0.022;
+            const dx = pad + (w - pad * 2) * d.p;
+            const dy = d.p < 0.35 ? cy : d.p < 0.55 ? cy + (yE - cy) * ((d.p - 0.35) / 0.2) : d.p < 0.65 ? yE : d.p < 0.85 ? yE + (cy - yE) * ((d.p - 0.65) / 0.2) : cy;
+            ctx.beginPath(); ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = cols[i] + `${Math.sin(d.p * Math.PI) * 0.9})`; ctx.shadowBlur = 10; ctx.fill();
+        }
+        }
+        ctx.font = '7px JetBrains Mono'; ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(0,212,255,0.5)'; ctx.fillText('dev', w * 0.5 - 8, cy - 9);
+        ctx.fillStyle = 'rgba(245,158,11,0.5)'; ctx.fillText('main', w * 0.5 - 10, cy + 16);
+    },
+
+    merge(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cy = h / 2, mid = w / 2;
+        const SRC = [{ c: '#00d4ff', y: cy - 7 }, { c: '#f59e0b', y: cy + 7 }];
+        if (!s.streams) s.streams = { '#00d4ff': [], '#f59e0b': [] };
+        if (!s.out) s.out = [];
+        for (const { c, y } of SRC) {
+        if (s.streams[c].length < 6 && Math.random() < 0.15) s.streams[c].push({ p: 0 });
+        s.streams[c] = s.streams[c].filter(p => p.p < 1);
+        ctx.beginPath(); ctx.moveTo(10, y); ctx.bezierCurveTo(mid * 0.6, y, mid * 0.8, cy, mid, cy);
+        ctx.strokeStyle = c === '#00d4ff' ? 'rgba(0,212,255,0.18)' : 'rgba(245,158,11,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+        for (const p of s.streams[c]) {
+            p.p += 0.025;
+            const px = 10 + (mid - 16) * p.p, py = y + (cy - y) * p.p, a = Math.sin(p.p * Math.PI) * 0.9;
+            const hex = Math.round(a * 255).toString(16).padStart(2, '0');
+            ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI * 2); ctx.fillStyle = c + hex; ctx.shadowBlur = 8; ctx.shadowColor = c; ctx.fill();
+        }
+        }
+        const spark = 0.5 + Math.sin(t * 6) * 0.4;
+        const sg = ctx.createRadialGradient(mid, cy, 0, mid, cy, 10);
+        sg.addColorStop(0, `rgba(255,255,255,${spark * 0.9})`); sg.addColorStop(0.3, `rgba(0,212,255,${spark * 0.6})`); sg.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = sg; ctx.fillRect(mid - 10, cy - 10, 20, 20);
+        if (s.out.length < 8 && Math.random() < 0.18) s.out.push({ p: 0 });
+        s.out = s.out.filter(p => p.p < 1);
+        ctx.beginPath(); ctx.moveTo(mid, cy); ctx.lineTo(w - 10, cy); ctx.strokeStyle = 'rgba(0,212,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+        for (const p of s.out) {
+        p.p += 0.022;
+        const px = mid + (w - mid - 10) * p.p, a = Math.sin(p.p * Math.PI) * 0.9;
+        ctx.beginPath(); ctx.arc(px, cy, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${180 + Math.sin(p.p * 4) * 20}, 100%, 70%, ${a})`; ctx.shadowBlur = 8; ctx.shadowColor = '#00d4ff'; ctx.fill();
+        }
+    },
+    };
+
+    /* ── Animation runner ── */
+    function _startBtnAnim(btn, type) {
+    const canvas = btn.querySelector('.btn-canvas-anim');
+    if (!canvas || !BTN_ANIMATIONS[type]) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width  = btn.offsetWidth;
+    canvas.height = btn.offsetHeight;
+    const state = {};
+    let start = null;
+    function frame(ts) {
+        if (!start) start = ts;
+        BTN_ANIMATIONS[type](ctx, canvas.width, canvas.height, (ts - start) / 1000, state);
+        btn._animRaf = requestAnimationFrame(frame);
+    }
+    btn._animRaf = requestAnimationFrame(frame);
+    }
+
+    function _stopBtnAnim(btn) {
+    if (btn._animRaf) { cancelAnimationFrame(btn._animRaf); btn._animRaf = null; }
+    const canvas = btn.querySelector('.btn-canvas-anim');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    /* ── Drop-in replacement for setLoading() ── */
     function setLoading(btn, state) {
-        if (!btn) return;
-        if (state) btn.classList.add('loading');
-        else btn.classList.remove('loading');
-        btn.disabled = state;
+    if (!btn) return;
+    if (state) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+        const type = btn.dataset.anim;
+        if (type) _startBtnAnim(btn, type);
+    } else {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        _stopBtnAnim(btn);
+    }
     }
 
     /* ══════════════════════════════════════════
