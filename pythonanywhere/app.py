@@ -80,6 +80,7 @@ from sqlalchemy.orm import joinedload
 import vt
 import hmac
 import geoip2.database
+import user_agents
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -132,7 +133,7 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
-app.config["SESSION_EXPIRY_HOURS"] = 48
+app.config["SESSION_EXPIRY_HOURS"] = 24
 app.config["SLIDING_SESSION_EXPIRY_MINUTES"] = 30
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
 app.config["SESSION_KEY_SIGNING_KEY"] = os.getenv("SESSION_KEY_SIGNING_KEY")
@@ -502,7 +503,8 @@ class Session(db.Model):
     )
 
     ip_address = db.Column(db.String(45), nullable=False)  # supports IPv6
-    user_agent = db.Column(db.String(255), nullable=True)
+    user_agent = db.Column(db.String(1000), nullable=True)
+    user_agent_summary = db.Column(db.String(100), nullable=True)
     fingerprint = db.Column(db.String(255), nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -1560,14 +1562,15 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
     expiry_hours = app.config.get("SESSION_EXPIRY_HOURS", 24)
 
     ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    user_agent = request.headers.get("User-Agent")
+    user_agent_raw = request.headers.get("User-Agent") or ""
     fingerprint = request.headers.get("X-Device-Fingerprint")
 
     session = Session(
         user_id=user_id,
         token_hash=token_hash,
         ip_address=ip,
-        user_agent=(user_agent[:255] if user_agent else None),
+        user_agent=user_agent_raw,           # store the full, untruncated string
+        user_agent_summary=simplify_user_agent(user_agent_raw),  # e.g. "Chrome on Windows"
         fingerprint=(fingerprint[:255] if fingerprint else None),
         created_at=now,
         last_active=now,
@@ -1578,7 +1581,6 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
     db.session.add(session)
     db.session.commit()
 
-    # optionally link an existing lasting_key raw token to this session (if provided)
     if link_lasting_key_raw:
         lk = verify_lasting_token(link_lasting_key_raw)
         if lk and lk.user_id == user_id:
@@ -1586,7 +1588,6 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
             db.session.add(lk)
             db.session.commit()
 
-    # return raw token and the session id so callers can bind lasting keys
     return raw_token, session.id
 
 def remove_upload_if_orphan(upload_id):
@@ -2549,37 +2550,23 @@ def get_current_db_session():
     return get_session_by_raw_token(raw)
 
 # --- small helper to produce a friendly "user agent" string ---
-def simplify_user_agent(ua: str) -> str:
-    if not ua:
+def simplify_user_agent(ua_string: str) -> str:
+    """Returns a human-readable summary from a raw User-Agent string."""
+    if not ua_string:
         return "Unknown"
-    ua = ua.lower()
-    # quick and conservative checks — you can replace this with 'user_agents' library later
-    browser = "Other browser"
-    if "chrome" in ua and "edg" not in ua and "chromium" not in ua:
-        browser = "Chrome"
-    elif "firefox" in ua:
-        browser = "Firefox"
-    elif "safari" in ua and "chrome" not in ua and "chromium" not in ua:
-        browser = "Safari"
-    elif "edg" in ua or "edge" in ua:
-        browser = "Edge"
-    elif "opera" in ua:
-        browser = "Opera"
 
-    platform = "Unknown OS"
-    if "windows" in ua:
-        platform = "Windows"
-    elif "mac os" in ua or "macintosh" in ua:
-        platform = "macOS"
-    elif "linux" in ua and "android" not in ua:
-        platform = "Linux"
-    elif "android" in ua:
-        platform = "Android"
-    elif "iphone" in ua or "ipad" in ua:
-        platform = "iOS"
+    ua = user_agents.parse(ua_string)
 
-    # short string
-    return f"{browser} on {platform}"
+    browser = ua.browser.family or "Other browser"
+    os = ua.os.family or "Unknown OS"
+
+    # Collapse generic 'Other' values
+    if browser == "Other":
+        browser = "Other browser"
+    if os == "Other":
+        os = "Unknown OS"
+
+    return f"{browser} on {os}"
 
 def create_default_calendar(user_id):
     default_calendar = Calendar(name="My calendar", user_id=user_id, is_default=True)
@@ -5466,7 +5453,108 @@ def serve_board_share_link(token):
 
     share = BoardShare.query.filter_by(token=token).first()
     if not share:
-        return "Share link not found", 404
+        html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Share Link Not Found</title>
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .container {
+                    background: white;
+                    border-radius: 12px;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    padding: 60px 40px;
+                    text-align: center;
+                    max-width: 500px;
+                    animation: slideIn 0.5s ease-out;
+                }
+                @keyframes slideIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                .icon {
+                    font-size: 64px;
+                    margin-bottom: 20px;
+                }
+                h1 {
+                    color: #333;
+                    font-size: 28px;
+                    margin-bottom: 12px;
+                    font-weight: 600;
+                }
+                p {
+                    color: #666;
+                    font-size: 16px;
+                    line-height: 1.6;
+                    margin-bottom: 30px;
+                }
+                .button-group {
+                    display: flex;
+                    gap: 12px;
+                    justify-content: center;
+                }
+                a {
+                    display: inline-block;
+                    padding: 12px 28px;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    font-weight: 500;
+                    transition: all 0.3s ease;
+                    font-size: 14px;
+                }
+                .btn-primary {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                }
+                .btn-primary:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+                }
+                .btn-secondary {
+                    background: #f0f0f0;
+                    color: #333;
+                }
+                .btn-secondary:hover {
+                    background: #e0e0e0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="icon">🔗</div>
+                <h1>Share Link Not Found</h1>
+                <p>The share link you're looking for doesn't exist or has expired. Please check the link and try again.</p>
+                <div class="button-group">
+                    <a href="/" class="btn-primary">Back to Home</a>
+                    <a href="/login_page" class="btn-secondary">Sign In</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return html, 404
 
     # Check login WITHOUT requiring auth decorator
     valid, sess_or_msg = validate_session_key()
@@ -9276,7 +9364,7 @@ def list_sessions():
             "country_code": country_code,   # ISO2 for flag
             "country_name": country_name,   # full name for display
             "user_agent_simplified": simplify_user_agent(s.user_agent),
-            "user_agent": (s.user_agent[:200] if s.user_agent else None),
+            "user_agent": (s.user_agent if s.user_agent else None),
             "fingerprint": s.fingerprint,
             "is_current": (s.id == current_id),
             "created_via_lasting": created_via_lasting
@@ -9338,6 +9426,96 @@ def revoke_all_sessions():
     resp.delete_cookie("session_key")
     resp.delete_cookie("lasting_key")
     return resp
+
+# ── Admin Session Management Routes ──────────────────────────────────────────
+# Add these alongside your existing admin routes.
+# They reuse lookup_country() and simplify_user_agent() already defined above.
+
+# GET /admin/user/<user_id>/sessions
+@app.route("/admin/user/<int:user_id>/sessions", methods=["GET"])
+@require_session_key
+@require_admin
+def admin_list_user_sessions(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    db_sessions = (
+        Session.query
+        .filter_by(user_id=user_id, revoked=False)
+        .order_by(Session.last_active.desc())
+        .all()
+    )
+
+    out = []
+    for s in db_sessions:
+        lk = LastingKey.query.filter_by(session_id=s.id).first()
+        country_info = lookup_country(s.ip_address)
+        country_code, country_name = country_info if country_info else (None, None)
+
+        out.append({
+            "id":                   s.id,
+            "created_at":           s.created_at.isoformat() + "Z",
+            "last_active":          s.last_active.isoformat() + "Z",
+            "ip_address":           s.ip_address,
+            "country_code":         country_code,
+            "country_name":         country_name,
+            "user_agent_simplified": simplify_user_agent(s.user_agent),
+            "user_agent":           (s.user_agent[:200] if s.user_agent else None),
+            "fingerprint":          s.fingerprint,
+            "created_via_lasting":  bool(lk),
+        })
+
+    return jsonify({"sessions": out, "username": user.username}), 200
+
+
+# POST /admin/user/<user_id>/sessions/<session_id>/revoke
+@app.route("/admin/user/<int:user_id>/sessions/<int:session_id>/revoke", methods=["POST"])
+@require_session_key
+@require_admin
+def admin_revoke_user_session(user_id, session_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    s = Session.query.get(session_id)
+    if not s or s.user_id != user_id:
+        return jsonify({"error": "Session not found or does not belong to this user"}), 404
+
+    try:
+        s.revoked = True
+        db.session.add(s)
+
+        # Remove any lasting keys tied to this session
+        for lk in LastingKey.query.filter_by(session_id=s.id).all():
+            db.session.delete(lk)
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not revoke session"}), 500
+
+    return jsonify({"message": "Session revoked"}), 200
+
+
+# POST /admin/user/<user_id>/sessions/revoke_all
+@app.route("/admin/user/<int:user_id>/sessions/revoke_all", methods=["POST"])
+@require_session_key
+@require_admin
+def admin_revoke_all_user_sessions(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    try:
+        Session.query.filter_by(user_id=user_id).update({"revoked": True})
+        LastingKey.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Could not revoke all sessions"}), 500
+
+    return jsonify({"message": "All sessions revoked"}), 200
 
 @app.route("/google/callback")
 def google_callback():

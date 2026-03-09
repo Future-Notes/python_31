@@ -4,7 +4,8 @@
   <meta charset="utf-8" />
   <!-- keep viewport; mobile fixes below -->
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#0b1220" />
+  <meta name="theme-color" content="#3a3a3a" />
+  <script src="/static/admin.js"></script>
   <title>Future Notes — Account</title>
 
   <style>
@@ -140,9 +141,9 @@
 
     /* Buttons */
     button{font-size:15px;min-height:40px;padding:9px 12px;border-radius:10px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
-    button.btn{background:var(--btn-color);color:var(--text);font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
-    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.05);color:var(--text)}
-    button.danger{background:var(--danger);color:white}
+    .btn{background:var(--btn-color);color:var(--text);font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
+    .ghost{background:transparent;border:1px solid rgba(255,255,255,0.05);color:var(--text)}
+    .danger{background:var(--danger);color:white}
 
     /* small text */
     .stack{display:flex;flex-direction:column;gap:0.6rem}
@@ -220,6 +221,7 @@
         max-width: 100%;
       }
     }
+
   </style>
 </head>
 <body>

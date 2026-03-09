@@ -3,488 +3,1223 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#2c2c2c">
+    <meta name="theme-color" content="#080c14">
     <script src="/static/js/check.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-    <title>Admin Page</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <title>Admin Console</title>
     <style>
         :root {
-        --bg-color:  #2c2c2c;
-        --ctr-color: #1e1e1e;
-        --btn-color: #424242;
+            --bg:         #080c14;
+            --surface:    #0d1220;
+            --surface2:   #111827;
+            --border:     rgba(0, 212, 255, 0.12);
+            --border2:    rgba(255,255,255,0.06);
+            --accent:     #00d4ff;
+            --accent2:    #0088aa;
+            --amber:      #f59e0b;
+            --red:        #ef4444;
+            --green:      #10b981;
+            --text:       #e2e8f0;
+            --text-dim:   #64748b;
+            --text-muted: #334155;
+            --glow:       0 0 20px rgba(0,212,255,0.15);
+            --glow-sm:    0 0 10px rgba(0,212,255,0.2);
         }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+
         body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background-color: #2E2E2E;
-            color: #E0E0E0;
+            font-family: 'JetBrains Mono', monospace;
+            background-color: var(--bg);
+            color: var(--text);
             line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        h1 {
-            text-align: center;
-            margin: 20px 0;
-            color: #F5F5F5;
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
         }
 
+        body::after {
+            content: '';
+            position: fixed;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 400px;
+            background: radial-gradient(ellipse, rgba(0,212,255,0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── HEADER ── */
+        header {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 32px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(8,12,20,0.8);
+            backdrop-filter: blur(20px);
+        }
+
+        .back-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface);
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .back-button:hover {
+            background: rgba(0,212,255,0.1);
+            border-color: var(--accent);
+            box-shadow: var(--glow-sm);
+        }
+
+        .header-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+
+        .header-badge {
+            font-size: 11px;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            background: rgba(0,212,255,0.08);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        /* ── PAGE HERO ── */
+        .page-hero {
+            position: relative;
+            z-index: 1;
+            padding: 48px 32px 32px;
+            max-width: 1440px;
+            margin: 0 auto;
+        }
+        .page-hero h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: clamp(32px, 4vw, 52px);
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: #fff;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+        .page-hero h1 span { color: var(--accent); }
+        .page-hero .sub { font-size: 12px; color: var(--text-dim); letter-spacing: 0.05em; }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; }
+        .status-badge img { height: 20px; opacity: 0.7; border-radius: 4px; }
+
+        /* ── MAIN CONTAINER ── */
         .container {
-            max-width: 1400px;
-            margin: 20px auto;
-            padding: 20px;
-            background-color: #3A3A3A;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            position: relative;
+            z-index: 1;
+            max-width: 1440px;
+            margin: 0 auto 60px;
+            padding: 0 32px;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
+        /* ── SECTION LABELS ── */
+        .section-label {
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-
-        th, td {
-            padding: 12px 16px;
-            text-align: left;
-            border-bottom: 1px solid #4A4A4A;
-        }
-
-        th {
-            background-color: #424242;
-            color: #FFFFFF;
-        }
-
-        tr:nth-child(even) {
-            background-color: #383838;
-        }
-
-        tr:hover {
-            background-color: #505050;
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
         }
 
         .section-title {
-            margin-top: 20px;
-            font-size: 1.5em;
-            color: #F5F5F5;
+            font-family: 'Syne', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: #fff;
+            margin: 40px 0 16px;
+            letter-spacing: -0.01em;
         }
 
-        #error-message {
-            color: #FF5252;
-            font-weight: bold;
-            text-align: center;
-        }
-
-        /* Modal Styles */
-        #modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #modal {
-            background-color: #1E1E1E;
-            padding: 20px 30px;
+        /* ── CARDS ── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border2);
             border-radius: 12px;
-            text-align: center;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.2s;
         }
-
-        input, button {
-            font-size: 16px;
-            border-radius: 8px;
-            padding: 10px;
-        }
-
-        input {
-            width: calc(100% - 24px);
-            margin: 10px 0;
-            background-color: #2E2E2E;
-            border: 1px solid #424242;
-            color: #E0E0E0;
-        }
-
-        button {
-            background-color: #424242;
-            color: #E0E0E0;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-
-        button:hover {
-            background-color: #616161;
-        }
-
-        /* Back Button */
-        .back-button {
+        .card::before {
+            content: '';
             position: absolute;
-            top: 20px;
-            left: 20px;
-            width: 50px;
-            height: 50px;
-            background-color: #6a6a6ad5;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #e0e0e0;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0,212,255,0.3), transparent);
+        }
+
+        /* ── BUTTONS ── */
+        button, .db {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            padding: 9px 16px;
+            border-radius: 7px;
+            border: 1px solid var(--border2);
+            background: var(--surface2);
+            color: var(--text);
+            cursor: pointer;
             text-decoration: none;
-            font-size: 24px;
-            font-weight: bold;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            transition: background-color 0.3s, transform 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.18s ease;
+            white-space: nowrap;
+            position: relative;
+            overflow: hidden;
+        }
+        button:hover, .db:hover {
+            background: rgba(0,212,255,0.08);
+            border-color: var(--accent);
+            color: var(--accent);
+            box-shadow: var(--glow-sm);
+        }
+        button:active { transform: scale(0.97); }
+
+        button.deprecated {
+            border-color: rgba(239,68,68,0.3);
+            background: rgba(239,68,68,0.07);
+            color: #fca5a5;
+        }
+        button.deprecated:hover {
+            background: rgba(239,68,68,0.15);
+            border-color: var(--red);
+            color: var(--red);
+            box-shadow: 0 0 10px rgba(239,68,68,0.2);
         }
 
-        .back-button:hover {
-            background-color: #5a5a5a;
-            transform: scale(1.1);
+        .btn-primary {
+            background: rgba(0,212,255,0.12) !important;
+            border-color: var(--accent) !important;
+            color: var(--accent) !important;
+        }
+        .btn-primary:hover {
+            background: rgba(0,212,255,0.2) !important;
+            box-shadow: var(--glow) !important;
         }
 
+        /* Animated button canvas layer */
+        .btn-canvas-anim {
+        position: absolute;
+        inset: 0;
+        width: 100% !important;
+        height: 100% !important;
+        display: none;
+        pointer-events: none;
+        border-radius: inherit;
+        }
+
+        /* Loading state: show canvas, hide inner content */
+        button.loading .btn-canvas-anim { display: block; }
+        button.loading .btn-label,
+        button.loading svg:not(.btn-canvas-anim),
+        button.loading .btn-spinner { opacity: 0; }
+        button.loading { pointer-events: none; }
+
+
+        /* ── TABLES ── */
+        .table-wrapper {
+            border: 1px solid var(--border2);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 32px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            font-family: 'Syne', sans-serif;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            background: var(--surface2);
+            padding: 13px 18px;
+            text-align: left;
+            border-bottom: 1px solid var(--border2);
+        }
+        td {
+            padding: 12px 18px;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            color: var(--text);
+            vertical-align: middle;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr { transition: background 0.15s; }
+        tr:hover td { background: rgba(0,212,255,0.03); }
+        td button { padding: 6px 10px; font-size: 11px; }
+
+        /* ── ERROR MSG ── */
+        #error-message {
+            color: var(--red);
+            font-size: 13px;
+            text-align: center;
+            padding: 8px;
+            display: block;
+        }
+
+        /* ── SESSION MODAL ── */
+        #modal-overlay,
         #password-confirmation-overlay {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(8px);
             z-index: 1000;
             justify-content: center;
             align-items: center;
         }
 
-        #password-confirmation-modal {
-            background-color: #1E1E1E;
-            padding: 20px 30px;
-            border-radius: 12px;
-            text-align: center;
+        #modal, #password-confirmation-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 0 60px rgba(0,0,0,0.6), var(--glow);
+            position: relative;
+        }
+        #modal::before, #password-confirmation-modal::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        }
+        #modal h2, #password-confirmation-modal h2 {
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        #modal p, #password-confirmation-modal p {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 20px;
+        }
+
+        /* ── CUSTOM CONFIRM DIALOG ── */
+        #confirm-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        #confirm-overlay.visible { display: flex; }
+        #confirm-dialog {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
             width: 100%;
             max-width: 400px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+            box-shadow: 0 0 80px rgba(0,0,0,0.7), var(--glow);
+            position: relative;
+            animation: dialogIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
         }
-
-        @media (max-width: 768px) {
-            body {
-                font-size: 14px;
-            }
-
-            h1 {
-                font-size: 1.2em;
-            }
-
-            .container {
-                padding: 15px;
-                margin: 10px;
-            }
-
-            table {
-                width: 100%;
-                font-size: 14px;
-                table-layout: auto;
-                overflow-x: auto;
-                display: block;
-                white-space: nowrap;
-            }
-
-            th, td {
-                padding: 8px 12px;
-                word-wrap: break-word;
-            }
-
-            th {
-                font-size: 14px;
-            }
-
-            .section-title {
-                font-size: 1.3em;
-            }
-
-            input, button {
-                font-size: 14px;
-                padding: 8px;
-            }
-
-            .back-button {
-                width: 40px;
-                height: 40px;
-                font-size: 18px;
-            }
-
-            #modal {
-                max-width: 80%;
-            }
-
-            #password-confirmation-modal {
-                max-width: 80%;
-            }
-
-            /* Ensure the tables are scrollable horizontally */
-            #messages-table, #users-table {
-                display: block;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
+        @keyframes dialogIn {
+            from { opacity: 0; transform: scale(0.92) translateY(8px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
         }
-
-        button.deprecated {
-            background-color: #FF5252;
-            color: #FFFFFF;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
+        #confirm-dialog::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
         }
-
-        button.deprecated:hover {
-            background-color: #FF1744;
+        #confirm-dialog .confirm-icon {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 16px;
         }
-
-        .db {
-            display: inline-block;
-            padding: 10px 20px;
-            background-color: #424242;
-            color: #E0E0E0;
-            text-decoration: none;
-            border-radius: 8px;
-            text-align: center;
-            transition: background-color 0.3s ease;
+        #confirm-dialog.danger .confirm-icon {
+            background: rgba(239,68,68,0.1);
+            border: 1px solid rgba(239,68,68,0.25);
+            color: var(--red);
         }
-
-        .db:hover {
-            background-color: #616161;
+        #confirm-dialog.warning .confirm-icon {
+            background: rgba(245,158,11,0.1);
+            border: 1px solid rgba(245,158,11,0.25);
+            color: var(--amber);
         }
-
-        .button-row {
+        #confirm-dialog.info .confirm-icon {
+            background: rgba(0,212,255,0.08);
+            border: 1px solid var(--border);
+            color: var(--accent);
+        }
+        #confirm-dialog h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: 17px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        #confirm-dialog p {
+            font-size: 13px;
+            color: var(--text-dim);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        #confirm-dialog .confirm-actions {
             display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: center;
-            margin: 20px 0;
-            }
-
-            .button-row button, .button-row a {
-            padding: 10px 20px;
-            font-size: 16px;
-            border-radius: 8px;
-            text-align: center;
-            text-decoration: none;
-            transition: background-color 0.3s ease;
-            }
-
-            .button-row button:hover, .button-row a:hover {
-            background-color: #616161;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        #confirm-dialog .confirm-actions button { min-width: 80px; justify-content: center; }
+        #confirm-dialog .btn-confirm-cancel {
+            background: transparent;
+            border-color: var(--border2);
+            color: var(--text-dim);
+        }
+        #confirm-dialog .btn-confirm-cancel:hover {
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.15);
+            color: var(--text);
+            box-shadow: none;
+        }
+        #confirm-dialog.danger .btn-confirm-ok {
+            background: rgba(239,68,68,0.12);
+            border-color: rgba(239,68,68,0.5);
+            color: #fca5a5;
+        }
+        #confirm-dialog.danger .btn-confirm-ok:hover {
+            background: rgba(239,68,68,0.2);
+            border-color: var(--red);
+            color: var(--red);
+            box-shadow: 0 0 12px rgba(239,68,68,0.2);
+        }
+        #confirm-dialog.warning .btn-confirm-ok {
+            background: rgba(245,158,11,0.12);
+            border-color: rgba(245,158,11,0.4);
+            color: #fcd34d;
         }
 
+        /* ── TOAST SYSTEM ── */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .toast {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 12px;
+            padding: 14px 16px;
+            min-width: 280px;
+            max-width: 380px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            pointer-events: all;
+            position: relative;
+            overflow: hidden;
+            animation: toastIn 0.3s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+            cursor: pointer;
+        }
+        .toast.removing { animation: toastOut 0.25s ease forwards; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(20px) scale(0.95); }
+            to   { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0) scale(1); max-height: 100px; margin-bottom: 0; }
+            to   { opacity: 0; transform: translateX(20px) scale(0.9); max-height: 0; padding: 0; margin-bottom: -10px; }
+        }
+        .toast::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+        }
+        .toast.success { border-color: rgba(16,185,129,0.2); }
+        .toast.success::before { background: linear-gradient(90deg, transparent, var(--green), transparent); }
+        .toast.error { border-color: rgba(239,68,68,0.2); }
+        .toast.error::before { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+        .toast.warning { border-color: rgba(245,158,11,0.2); }
+        .toast.warning::before { background: linear-gradient(90deg, transparent, var(--amber), transparent); }
+        .toast.info { border-color: rgba(0,212,255,0.15); }
+        .toast.info::before { background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+
+        .toast-icon {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .toast.success .toast-icon { background: rgba(16,185,129,0.12); color: var(--green); }
+        .toast.error .toast-icon { background: rgba(239,68,68,0.12); color: var(--red); }
+        .toast.warning .toast-icon { background: rgba(245,158,11,0.1); color: var(--amber); }
+        .toast.info .toast-icon { background: rgba(0,212,255,0.08); color: var(--accent); }
+
+        .toast-body { flex: 1; min-width: 0; }
+        .toast-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 2px;
+        }
+        .toast-message { font-size: 12px; color: var(--text-dim); line-height: 1.5; word-break: break-word; }
+
+        .toast-progress {
+            position: absolute;
+            bottom: 0; left: 0;
+            height: 2px;
+            background: currentColor;
+            opacity: 0.3;
+            transform-origin: left;
+            animation: toastProgress linear forwards;
+        }
+        @keyframes toastProgress { from { scaleX: 1; } to { scaleX: 0; } }
+
+        /* ── INPUTS ── */
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        textarea,
+        select {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg);
+            border: 1px solid var(--border2);
+            border-radius: 8px;
+            color: var(--text);
+            margin: 8px 0;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            outline: none;
+        }
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(0,212,255,0.1);
+        }
+
+        /* ── NOTIFICATION MODAL ── */
         .notif-overlay {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.5); display: flex;
-        align-items: center; justify-content: center; z-index: 1000;
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
         }
         .notif-modal {
-        background: #2c2c2c; /* dark gray */
-        padding: 20px; border-radius: 5px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        width: 90%; max-width: 400px;
-        font-family: sans-serif;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 0 60px rgba(0,0,0,0.6), var(--glow);
+            position: relative;
+            animation: dialogIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+        }
+        .notif-modal::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
         }
         .notif-modal h2 {
-        margin-top: 0; font-size: 1.25em; color: white;
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 20px;
         }
         .notif-modal label {
-        display: block; margin: 10px 0 5px; color: white;
+            font-size: 11px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin: 14px 0 2px;
+            display: block;
         }
-        .notif-modal input[type="text"],
-        .notif-modal textarea,
-        .notif-modal select {
-        width: 100%; padding: 8px; border: 1px solid #ccc;
-        border-radius: 3px; box-sizing: border-box;
-        font-size: 1em; color: #ffffff; background: #f0f0f0; /* light gray */
-        background-color: #2c2c2c; /* dark gray */
-        }
-        .notif-modal textarea {
-        resize: vertical; min-height: 60px; color: #2c2c2c;
-        }
-        .notif-modal select {
-        background: #f0f0f0; /* light gray */
-        background-color: #2c2c2c; /* dark gray */
-        color: white;
-        }
-        .notif-modal .actions {
-        text-align: right; margin-top: 15px;
-        }
-        .notif-modal button {
-        padding: 8px 12px; font-size: 0.9em;
-        border: none; border-radius: 3px;
-        cursor: pointer;
-        }
-        .notif-modal .btn-cancel {
-        margin-right: 8px;
-        }
-        .notif-modal .btn-send {
-        background: #666; color: #fff;
-        }
-        .notif-modal .custom-url {
-        display: none;
-        }
-        .violations-high {
-            color: red;
-            font-weight: bold;
-        }
+        .notif-modal textarea { resize: vertical; min-height: 80px; }
+        .notif-modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+        .notif-modal .btn-cancel { background: transparent; border-color: var(--border2); color: var(--text-dim); }
+        .notif-modal .btn-cancel:hover { background: rgba(255,255,255,0.05); color: var(--text); box-shadow: none; border-color: rgba(255,255,255,0.15); }
+        .notif-modal .btn-send { background: rgba(0,212,255,0.12); border-color: var(--accent); color: var(--accent); }
+        .notif-modal .btn-send:hover { background: rgba(0,212,255,0.22); box-shadow: var(--glow-sm); }
+        .notif-modal .custom-url { display: none; }
 
-        .violations-medium {
-            color: orange;
-            font-weight: bold;
-        }
-
-        .editable-field input[type="text"], 
-        .editable-field input[type="number"] {
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .editable-buttons {
-            display: inline-flex;
-            gap: 5px;
-        }
-
-        .switch {
-        position: relative;
-        display: inline-block;
-        width: 40px;
-        height: 20px;
-        }
-
-        .switch input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-        }
-
+        /* ── TOGGLE ── */
+        .switch { position: relative; display: inline-block; width: 38px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
         .slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background-color: #ccc;
-        transition: .2s;
-        border-radius: 20px;
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background: var(--text-muted);
+            border-radius: 20px;
+            transition: 0.2s;
         }
-
         .slider:before {
-        position: absolute;
-        content: "";
-        height: 16px; width: 16px;
-        left: 2px;
-        bottom: 2px;
-        background-color: white;
-        transition: .2s;
-        border-radius: 50%;
+            content: '';
+            position: absolute;
+            width: 14px; height: 14px;
+            left: 3px; bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+        input:checked + .slider { background: var(--green); }
+        input:checked + .slider:before { transform: translateX(18px); }
+
+        /* ── VIOLATIONS ── */
+        .violations-high { color: var(--red); font-weight: 600; }
+        .violations-medium { color: var(--amber); font-weight: 600; }
+
+        /* ── EDITABLE ── */
+        .editable-field input { margin: 0; }
+        .editable-buttons { display: inline-flex; gap: 4px; margin-top: 4px; }
+
+        /* ── STORAGE WIDGET ── */
+        .storage-widget-root { font-family: 'JetBrains Mono', monospace; margin: 24px 0; }
+        .storage-widget-header h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 16px;
+        }
+        .storage-widget-counters { margin-bottom: 20px; }
+        .storage-total-card {
+            display: inline-flex;
+            gap: 20px;
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-size: 12px;
+        }
+        .storage-total-title { display: none; }
+        .storage-total-values { display: flex; gap: 20px; color: var(--text-dim); }
+        .storage-total-values span { color: var(--text); }
+        .storage-widget-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        .storage-gauge-card {
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            border-radius: 12px;
+            padding: 20px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: border-color 0.2s;
+        }
+        .storage-gauge-card:hover { border-color: var(--border); }
+        .gauge-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+        }
+        .gauge-wrap { position: relative; width: 140px; height: 140px; }
+        .gauge-wrap canvas { width: 100% !important; height: 100% !important; display: block; }
+        .gauge-center {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        .gauge-numbers { margin-top: 12px; font-size: 11px; text-align: center; color: var(--text-dim); line-height: 1.8; }
+        .storage-widget-error { color: var(--red); font-size: 12px; margin-top: 8px; }
+
+        /* ── ACTION BUTTONS (table) ── */
+        .action-btn {
+            padding: 6px 9px !important;
+            border-radius: 7px;
+        }
+        .action-btn svg { pointer-events: none; }
+        .action-btn.btn-login  { color: var(--accent); border-color: rgba(0,212,255,0.2); }
+        .action-btn.btn-login:hover  { background: rgba(0,212,255,0.1); border-color: var(--accent); box-shadow: var(--glow-sm); }
+        .action-btn.btn-delete { color: #fca5a5; border-color: rgba(239,68,68,0.2); }
+        .action-btn.btn-delete:hover { background: rgba(239,68,68,0.12); border-color: var(--red); box-shadow: 0 0 10px rgba(239,68,68,0.2); }
+        .action-btn.btn-ban   { color: #fcd34d; border-color: rgba(245,158,11,0.2); }
+        .action-btn.btn-ban:hover   { background: rgba(245,158,11,0.1); border-color: var(--amber); box-shadow: 0 0 10px rgba(245,158,11,0.15); }
+        .action-btn.btn-unban { color: #6ee7b7; border-color: rgba(16,185,129,0.2); }
+        .action-btn.btn-unban:hover { background: rgba(16,185,129,0.1); border-color: var(--green); box-shadow: 0 0 10px rgba(16,185,129,0.15); }
+        .action-btn.btn-notify { color: var(--text-dim); border-color: var(--border2); }
+        .action-btn.btn-notify:hover { color: var(--accent); border-color: var(--accent); }
+        .action-btn.btn-reset  { color: var(--text-dim); border-color: var(--border2); }
+        .action-btn.btn-reset:hover { color: var(--green); border-color: var(--green); }
+        .action-btn.btn-restore { color: var(--accent); border-color: rgba(0,212,255,0.2); }
+        .action-btn.btn-restore:hover { background: rgba(0,212,255,0.1); }
+        .action-btn.btn-repair { color: var(--amber); border-color: rgba(245,158,11,0.2); }
+        .action-btn.btn-repair:hover { background: rgba(245,158,11,0.08); }
+
+        /* ── TOOLTIPS ── */
+        [data-tip] { position: relative; }
+        [data-tip]:hover::after {
+            content: attr(data-tip);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a2438;
+            border: 1px solid var(--border2);
+            color: var(--text);
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 5px;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 100;
+            letter-spacing: 0.03em;
         }
 
-        input:checked + .slider {
-        background-color: #4CAF50;
+        /* ── SELECT ── */
+        select.role-select {
+            width: auto;
+            padding: 5px 10px;
+            margin: 0;
+            font-size: 12px;
         }
 
-        input:checked + .slider:before {
-        transform: translateX(20px);
+        /* ── DIVIDER ── */
+        .divider { height: 1px; background: var(--border2); margin: 32px 0; }
+
+        /* ── ACTION GROUPS ── */
+        .action-groups {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin: 0 0 28px;
+            animation: fadeUp 0.5s 0.1s ease both;
+        }
+        .action-group {
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: 12px;
+            padding: 16px 18px 14px;
+            position: relative;
+            overflow: hidden;
+        }
+        .action-group::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+        }
+        .action-group.nav::before    { background: linear-gradient(90deg, #6366f1, #818cf8); }
+        .action-group._db::before    { background: linear-gradient(90deg, #00d4ff, #0088aa); }
+        .action-group.deploy::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+        .action-group.users::before  { background: linear-gradient(90deg, #10b981, #059669); }
+
+        .action-group-label {
+            font-family: 'Syne', sans-serif;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        .action-group.nav    .action-group-label { color: #818cf8; }
+        .action-group._db    .action-group-label { color: var(--accent); }
+        .action-group.deploy .action-group-label { color: var(--amber); }
+        .action-group.users  .action-group-label { color: var(--green); }
+
+        .action-group .btn-group { display: flex; flex-direction: column; gap: 6px; }
+        .action-group button,
+        .action-group a._db {
+            width: 100%;
+            justify-content: flex-start;
+            padding: 8px 12px;
+            font-size: 12px;
+            border-radius: 7px;
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+        }
+        .action-group.nav button:hover,
+        .action-group.nav a._db:hover {
+            background: rgba(99,102,241,0.1);
+            border-color: #818cf8;
+            color: #c7d2fe;
+            box-shadow: none;
+        }
+        .action-group.deploy button:hover {
+            background: rgba(245,158,11,0.1);
+            border-color: var(--amber);
+            color: #fcd34d;
+            box-shadow: none;
+        }
+        .action-group.deploy button#deploy-local:hover,
+        .action-group.deploy button#merge-dev-master:hover {
+            background: rgba(239,68,68,0.08);
+            border-color: rgba(239,68,68,0.5);
+            color: #fca5a5;
+        }
+        .action-group.users button:hover {
+            background: rgba(16,185,129,0.1);
+            border-color: var(--green);
+            color: #6ee7b7;
+            box-shadow: none;
+        }
+        .action-group.users button.btn-primary {
+            background: rgba(16,185,129,0.1);
+            border-color: var(--green);
+            color: var(--green);
+        }
+        .action-group.users button.btn-primary:hover { background: rgba(16,185,129,0.18); }
+
+        /* ── SESSIONS MODAL ── */
+        #sessions-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.78);
+            backdrop-filter: blur(10px);
+            z-index: 1500;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #sessions-overlay.visible { display: flex; }
+
+        #sessions-modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 860px;
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 80px rgba(0,0,0,0.7), var(--glow);
+            position: relative;
+            animation: dialogIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+            overflow: hidden;
+        }
+        #sessions-modal::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            z-index: 1;
         }
 
-        /* Storage widget base */
-        .storage-widget-root { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
-        .storage-widget-header h3 { margin: 0 0 8px 0; font-size: 1.05rem; }
-        .storage-widget-counters { margin-bottom: 12px; display:flex; gap:12px; align-items:center; }
-        .storage-total-card { padding: 8px 12px; border-radius:8px; background: var(--bg-color); display:inline-block; }
-        .storage-total-title { font-weight:600; margin-bottom:6px; }
-        .storage-total-values { font-size:0.95rem; color:#eaedf3; }
-
-        /* Grid of gauges */
-        .storage-widget-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
-        .storage-gauge-card { padding: 10px; border-radius:10px; background:var(--bg-color); box-shadow: 0 1px 3px rgba(0,0,0,0.06); min-height:220px; display:flex; flex-direction:column; align-items:center; }
-        .gauge-title { font-weight:600; margin-bottom:8px; }
-        .gauge-wrap { position: relative; width: 160px; height: 160px; }
-        .gauge-wrap canvas { width:100% !important; height:100% !important; display:block; }
-        .gauge-center { position:absolute; inset: 0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.05rem; pointer-events:none; }
-        .gauge-numbers { margin-top:8px; font-size:0.9rem; text-align:center; color:#fff; }
-        .gauge-numbers .num-used, .gauge-numbers .num-total, .gauge-numbers .num-free { margin:2px 0; }
-
-        /* Error */
-        .storage-widget-error { color:#b91c1c; margin-top:8px; }
-
-        /* Responsive tweaks */
-        @media (max-width:600px) {
-        .gauge-wrap { width: 130px; height:130px; }
+        .sessions-modal-header {
+            padding: 24px 28px 20px;
+            border-bottom: 1px solid var(--border2);
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 16px;
         }
+        .sessions-modal-header-left h2 {
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 3px;
+        }
+        .sessions-modal-header-left .sessions-modal-sub {
+            font-size: 11px;
+            color: var(--text-dim);
+            letter-spacing: 0.05em;
+        }
+        .sessions-modal-header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .sessions-modal-body {
+            overflow-y: auto;
+            flex: 1;
+            padding: 20px 28px 24px;
+        }
+
+        /* sessions table inherits the global table styles but needs a tighter wrapper */
+        .sessions-table-wrapper {
+            border: 1px solid var(--border2);
+            border-radius: 12px;
+            overflow: scroll;
+            scrollbar-width: none;
+        }
+        .sessions-table-wrapper::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* empty / loading states */
+        .sessions-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-dim);
+            font-size: 13px;
+        }
+        .sessions-state svg {
+            display: block;
+            margin: 0 auto 12px;
+            opacity: 0.3;
+        }
+
+        /* session row extras */
+        .session-flag {
+            font-size: 18px;
+            line-height: 1;
+            margin-right: 6px;
+        }
+        .session-badge {
+            display: inline-block;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            padding: 2px 7px;
+            border-radius: 20px;
+            font-weight: 600;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+        .session-badge.lasting {
+            background: rgba(245,158,11,0.12);
+            border: 1px solid rgba(245,158,11,0.3);
+            color: #fcd34d;
+        }
+        .session-ua {
+            font-size: 12px;
+            color: var(--text);
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .session-time {
+            font-size: 11px;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 768px) {
+            header { padding: 14px 16px; }
+            .page-hero { padding: 28px 16px 20px; }
+            .container { padding: 0 16px; }
+            table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+            #modal, #password-confirmation-modal, .notif-modal, #confirm-dialog { max-width: 90%; padding: 24px 20px; }
+        }
+
+        /* ── ANIMATIONS ── */
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .page-hero     { animation: fadeUp 0.5s ease both; }
+        .button-row    { animation: fadeUp 0.5s 0.1s ease both; }
+        .table-wrapper { animation: fadeUp 0.5s 0.2s ease both; }
+        .card          { animation: fadeUp 0.5s 0.15s ease both; }
     </style>
+
     <script>
         if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/static/sw_js/sw.js')
-            .then(() => console.log('Service Worker Registered'))
-            .catch(console.error);
+            navigator.serviceWorker.register('/static/sw_js/sw.js')
+                .then(() => console.log('Service Worker Registered'))
+                .catch(console.error);
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script> <!--Include DOMPurify on sensitive pages so custom alert can use it-->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
     <script src="/static/custom-alert.js"></script>
     <script src="static/admin.js"></script>
     <script src="/static/js/notifications.js"></script>
-      
 </head>
 <body>
-    <header>
-        <a href="/account_page" class="back-button" aria-label="Go back to web app">←</a>
-    </header>
-    <div id="modal-overlay">
-        <div id="modal">
-            <h2>Session Expired</h2>
-            <p>Please re-enter your username and password:</p>
-            <input id="username" type="text" placeholder="Username" />
-            <input id="password" type="password" placeholder="Password" />
-            <button id="submit-credentials">Submit</button>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- Custom confirm dialog -->
+<div id="confirm-overlay">
+    <div id="confirm-dialog">
+        <div class="confirm-icon">
+            <svg id="confirm-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+        </div>
+        <h3 id="confirm-title">Are you sure?</h3>
+        <p id="confirm-message"></p>
+        <div class="confirm-actions">
+            <button class="btn-confirm-cancel" id="confirm-cancel-btn">Cancel</button>
+            <button class="btn-confirm-ok" id="confirm-ok-btn">Confirm</button>
         </div>
     </div>
+</div>
 
-    <div class="container">
-        <h1>Admin Page</h1>
-        <img src="https://api.cron-job.org/jobs/7340559/afd022d6a85c5abe/status-7.svg">
-        <p id="error-message"></p>
-
-        <!-- Database Dump Button -->
-        <div class="button-row">
-            <button id="dump-database">Dump Database</button>
-            <a class="db" href="/database">Database editor</a>
-            <a class="db" href="/admin-utm-tracking">UTM Tracking</a>
-            <a class="db" href="/mutations_page">DB Logs</a>
-            <a class="db" href="/checks_page">Supermode</a>
-            <button id="scan-updates">Scan for updates</button>
-            <button id="run-update">Run updates</button>
-            <button id="scan-dev-vs-master">Check Dev vs Master</button>
-            <button id="merge-dev-master">Merge Dev into Master</button>
-            <button id="deploy-local">Deploy Local Changes</button>
-            <button id="create-backup-btn">Create Backup</button>
-            <button id="send-notification-all">Send Notification to All Users</button>
+<div id="sessions-overlay">
+    <div id="sessions-modal">
+        <div class="sessions-modal-header">
+            <div class="sessions-modal-header-left">
+                <h2 id="sessions-modal-title">Sessions</h2>
+                <div class="sessions-modal-sub" id="sessions-modal-sub">USER ID · Active Sessions</div>
+            </div>
+            <div class="sessions-modal-header-right">
+                <button id="sessions-refresh-btn" data-tip="Refresh">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Refresh
+                </button>
+                <button id="sessions-revoke-all-btn" class="deprecated" data-tip="Revoke all sessions for this user">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                    Revoke All
+                </button>
+                <button id="sessions-close-btn" style="padding:8px 10px;" data-tip="Close">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
         </div>
+        <div class="sessions-modal-body">
+            <div class="sessions-table-wrapper">
+                <table id="sessions-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th>IP Address</th>
+                            <th>Device</th>
+                            <th>Created</th>
+                            <th>Last Active</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-table-body">
+                        <tr>
+                            <td colspan="6">
+                                <div class="sessions-state">Click a user to load sessions.</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
 
-        <!-- Place where widget will be injected -->
-        <div id="storage-widget-container"></div>
+<header>
+    <a href="/account_page" class="back-button" aria-label="Go back">←</a>
+    <span class="header-title">Control Center</span>
+    <span class="header-badge">● LIVE</span>
+</header>
 
-        <!-- Password Confirmation Modal -->
-        <div id="password-confirmation-overlay" style="display: none;">
-            <div id="password-confirmation-modal">
-                <h2>Confirm Your Password</h2>
-                <p>Enter your password to confirm database dump:</p>
-                <input id="confirm-password" type="password" placeholder="Password" />
-                <button id="confirm-dump">Confirm</button>
-                <button id="cancel-dump">Cancel</button>
+<!-- Session expired modal -->
+<div id="modal-overlay" style="display:none;">
+    <div id="modal">
+        <h2>Session Expired</h2>
+        <p>Re-enter your credentials to continue.</p>
+        <input id="username" type="text" placeholder="Username" />
+        <input id="password" type="password" placeholder="Password" />
+        <button id="submit-credentials" style="width:100%;margin-top:8px;" class="btn-primary">Authenticate</button>
+    </div>
+</div>
+
+<!-- Password confirmation modal -->
+<div id="password-confirmation-overlay" style="display:none;">
+    <div id="password-confirmation-modal">
+        <h2>Confirm Dump</h2>
+        <p>Enter your password to authorise the database dump.</p>
+        <input id="confirm-password" type="password" placeholder="Password" />
+        <div style="display:flex;gap:8px;margin-top:12px;">
+            <button id="cancel-dump" style="flex:1;">Cancel</button>
+            <button id="confirm-dump" style="flex:1;" class="btn-primary">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Page hero -->
+<div class="page-hero">
+    <h1>Admin <span>Console</span></h1>
+    <div class="sub">SYSTEM ADMINISTRATION · RESTRICTED ACCESS</div>
+    <div class="status-badge">
+        <img src="https://api.cron-job.org/jobs/7340559/afd022d6a85c5abe/status-7.svg" alt="cron status">
+    </div>
+</div>
+
+<div class="container">
+
+    <p id="error-message"></p>
+
+    <!-- Action groups -->
+    <div class="section-label">Quick Actions</div>
+    <div class="action-groups">
+
+        <!-- Navigate -->
+        <div class="action-group nav">
+            <div class="action-group-label">Navigate</div>
+            <div class="btn-group">
+                <a class="db" href="/database">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>
+                    DB Editor
+                </a>
+                <a class="db" href="/admin-utm-tracking">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    UTM Tracking
+                </a>
+                <a class="db" href="/mutations_page">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    DB Logs
+                </a>
+                <a class="db" href="/checks_page">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Supermode
+                </a>
             </div>
         </div>
 
-        <!-- Messages Table -->
-        <h2 class="section-title">Messages</h2>
+        <!-- Database -->
+        <div class="action-group _db">
+            <div class="action-group-label">Database</div>
+            <div class="btn-group">
+                <button id="dump-database"       data-anim="dump">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span class="btn-label">Dump Database</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+                <button id="create-backup-btn"   data-anim="backup">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <span class="btn-label">Create Backup</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Deployment -->
+        <div class="action-group deploy">
+            <div class="action-group-label">Deployment</div>
+            <div class="btn-group">
+                <button id="scan-updates"        data-anim="scanUpdates">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+                    <span class="btn-label">Scan for Updates</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+                <button id="run-update"          data-anim="runUpdate">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                    <span class="btn-label">Run Update</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+                <button id="scan-dev-vs-master"  data-anim="scanDev">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    <span class="btn-label">Dev vs Master</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+                <button id="merge-dev-master"    data-anim="merge">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+                    <span class="btn-label">Merge Dev → Master</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+                <button id="deploy-local"        data-anim="deploy">
+                    <canvas class="btn-canvas-anim"></canvas>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span class="btn-label">Deploy Local Changes</span>
+                    <span class="btn-spinner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/></svg></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Users -->
+        <div class="action-group users">
+            <div class="action-group-label">Users</div>
+            <div class="btn-group">
+                <button id="send-notification-all">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    Notify All Users
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Storage widget -->
+    <div id="storage-widget-container"></div>
+
+    <div class="divider"></div>
+
+    <!-- Messages -->
+    <div class="section-label">Inbox</div>
+    <h2 class="section-title">Messages</h2>
+    <div class="table-wrapper">
         <table id="messages-table">
             <thead>
                 <tr>
@@ -496,7 +1231,12 @@
             </thead>
             <tbody></tbody>
         </table>
-        <h2 class="section-title">Backups</h2>
+    </div>
+
+    <!-- Backups -->
+    <div class="section-label">Recovery Points</div>
+    <h2 class="section-title">Backups</h2>
+    <div class="table-wrapper">
         <table id="backups-table">
             <thead>
                 <tr>
@@ -508,86 +1248,401 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
 
-        <!-- Users Table -->
-        <h2 class="section-title">Users</h2>
+    <!-- Users -->
+    <div class="section-label">Identity Management</div>
+    <h2 class="section-title">Users</h2>
+    <div class="table-wrapper">
         <table id="users-table">
             <thead>
                 <tr>
                     <th>ID</th>
                     <th>Username</th>
-                    <th>Profile Picture</th>
-                    <th>Allows Sharing</th>
-                    <th>Malicious file uploaded</th>
-                    <th>Reset malicous file uploaded counter</th>
+                    <th>Avatar</th>
+                    <th>Sharing</th>
+                    <th>Violations</th>
+                    <th>Reset Violations</th>
                     <th>Role</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
-
     </div>
 
-    <script>
+</div>
 
-        /**
-         * createStorageWidget(containerId, dataOrUrl, options)
-         *
-         * containerId: string id of an existing element in which the widget will be inserted
-         * dataOrUrl: object (already-fetched JSON) OR string URL to fetch JSON from
-         * options: optional object {
-         *   autoFetch: boolean (if true and dataOrUrl is URL, will fetch immediately),
-         *   fetchIntervalMs: number (optional polling interval in ms; widget does NOT auto-poll unless you call updateFromUrl repeatedly)
-         * }
-         *
-         * Returns: {
-         *   update(newData)      // update the widget with already-fetched JSON
-         *   updateFromUrl(url)   // fetch JSON and update
-         *   destroy()            // remove DOM + event listeners + Chart instances
-         * }
-         *
-         * Expected JSON shape for each platform: { used_bytes, total_bytes, free_bytes, free_percent, path?, note? }
-         * If total_bytes is null/undefined or not finite (e.g. localhost), the widget will display '∞' and percent as '—'.
-         */
-        function createStorageWidget(containerId, dataOrUrl, options = {}) {
+<script>
+    /* ══════════════════════════════════════════
+       TOAST SYSTEM
+    ══════════════════════════════════════════ */
+    const TOAST_ICONS = {
+        success: '<polyline points="20 6 9 17 4 12"/>',
+        error:   '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+        warning: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+        info:    '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    };
+
+    function toast(message, type = 'info', title = null, duration = 4000) {
+        const container = document.getElementById('toast-container');
+        const defaultTitles = { success: 'Success', error: 'Error', warning: 'Warning', info: 'Info' };
+        const t = document.createElement('div');
+        t.className = `toast ${type}`;
+        t.innerHTML = `
+            <div class="toast-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[type]||TOAST_ICONS.info}</svg>
+            </div>
+            <div class="toast-body">
+                <div class="toast-title">${title || defaultTitles[type]}</div>
+                <div class="toast-message">${message}</div>
+            </div>
+            <div class="toast-progress" style="animation-duration:${duration}ms; color: var(--${type === 'error' ? 'red' : type === 'success' ? 'green' : type === 'warning' ? 'amber' : 'accent'})"></div>`;
+        t.addEventListener('click', () => removeToast(t));
+        container.appendChild(t);
+        const timer = setTimeout(() => removeToast(t), duration);
+        t._timer = timer;
+        return t;
+    }
+
+    function removeToast(t) {
+        if (t._removed) return;
+        t._removed = true;
+        clearTimeout(t._timer);
+        t.classList.add('removing');
+        setTimeout(() => t.remove(), 280);
+    }
+
+    /* ══════════════════════════════════════════
+       CUSTOM CONFIRM DIALOG
+    ══════════════════════════════════════════ */
+    const CONFIRM_ICONS = {
+        danger:  '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+        warning: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+        info:    '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    };
+    const CONFIRM_OK_LABELS = { danger: 'Delete', warning: 'Proceed', info: 'Confirm' };
+
+    let _confirmResolve = null;
+    const confirmOverlay = document.getElementById('confirm-overlay');
+    const confirmDialog  = document.getElementById('confirm-dialog');
+
+    document.getElementById('confirm-cancel-btn').addEventListener('click', () => {
+        confirmOverlay.classList.remove('visible');
+        if (_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
+    });
+    document.getElementById('confirm-ok-btn').addEventListener('click', () => {
+        confirmOverlay.classList.remove('visible');
+        if (_confirmResolve) { _confirmResolve(true); _confirmResolve = null; }
+    });
+    confirmOverlay.addEventListener('click', e => {
+        if (e.target === confirmOverlay) {
+            confirmOverlay.classList.remove('visible');
+            if (_confirmResolve) { _confirmResolve(false); _confirmResolve = null; }
+        }
+    });
+
+    function showConfirm({ title, message, type = 'info', okLabel = null }) {
+        return new Promise(resolve => {
+            _confirmResolve = resolve;
+            confirmDialog.className = type;
+            document.getElementById('confirm-icon-svg').innerHTML = CONFIRM_ICONS[type] || CONFIRM_ICONS.info;
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-message').textContent = message;
+            document.getElementById('confirm-ok-btn').textContent = okLabel || CONFIRM_OK_LABELS[type] || 'Confirm';
+            confirmOverlay.classList.add('visible');
+            // re-trigger animation
+            confirmDialog.style.animation = 'none';
+            void confirmDialog.offsetHeight;
+            confirmDialog.style.animation = '';
+        });
+    }
+
+    /* ══════════════════════════════════════════
+       BUTTON LOADING HELPER
+    ══════════════════════════════════════════ */
+    /* ── Animation functions ── */
+    const BTN_ANIMATIONS = {
+
+    deploy(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cy = h / 2, speed = 1.4;
+        const loop = (t * speed) % 1;
+        const x = -20 + (w + 40) * loop;
+        const trailLen = 36;
+        for (let i = trailLen; i >= 0; i--) {
+        const tx = x - i * 2.2;
+        if (tx < 0 || tx > w) continue;
+        const alpha = (1 - i / trailLen) * 0.55 * Math.sin(Math.PI * loop);
+        const r = (1 - i / trailLen) * 2.8;
+        const wobble = Math.sin(t * 18 + i * 0.5) * 1.2;
+        ctx.beginPath();
+        ctx.arc(tx, cy + wobble, r, 0, Math.PI * 2);
+        ctx.fillStyle = i < trailLen * 0.4 ? `rgba(255,200,80,${alpha})` : `rgba(0,212,255,${alpha * 0.6})`;
+        ctx.fill();
+        }
+        if (x > -10 && x < w + 10) {
+        const g = ctx.createRadialGradient(x, cy, 0, x, cy, 14);
+        g.addColorStop(0, 'rgba(0,212,255,0.2)'); g.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - 14, cy - 14, 28, 28);
+        ctx.save(); ctx.translate(x, cy); ctx.shadowBlur = 10; ctx.shadowColor = '#00d4ff';
+        ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-5, -4); ctx.lineTo(-7, 0); ctx.lineTo(-5, 4); ctx.closePath();
+        ctx.fillStyle = '#00d4ff'; ctx.fill();
+        ctx.beginPath(); ctx.arc(9, 0, 1.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-3, -4); ctx.lineTo(-8, -8); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fillStyle = 'rgba(0,180,220,0.8)'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-3, 4); ctx.lineTo(-8, 8); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        }
+        for (let i = 0; i < 3; i++) {
+        const lx = (x - 30 - i * 12 + w * 2) % (w + 20) - 10;
+        const ly = cy - 6 + i * 6;
+        ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 8, ly);
+        ctx.strokeStyle = `rgba(0,212,255,${0.12 + i * 0.04})`; ctx.lineWidth = 0.8; ctx.stroke();
+        }
+    },
+
+    backup(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2, cy = h / 2, pulse = (t * 0.9) % 1;
+        for (let ring = 0; ring < 3; ring++) {
+        const phase = (pulse + ring / 3) % 1;
+        const r = phase * Math.min(cx, cy) * 1.4;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(16,185,129,${(1 - phase) * 0.5})`; ctx.lineWidth = 1.2; ctx.stroke();
+        }
+        const ico = 10, breath = 1 + Math.sin(t * 3) * 0.05;
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(breath, breath);
+        ctx.shadowBlur = 12; ctx.shadowColor = '#10b981';
+        ctx.strokeStyle = '#10b981'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(-ico, -ico, ico * 2, ico * 2);
+        ctx.fillStyle = 'rgba(16,185,129,0.3)'; ctx.fillRect(-ico + 2, -ico + 2, ico * 2 - 4, 5); ctx.strokeRect(-ico + 2, -ico + 2, ico * 2 - 4, 5);
+        ctx.fillStyle = 'rgba(16,185,129,0.2)'; ctx.fillRect(-ico + 2, ico - 6, ico * 2 - 4, 4); ctx.strokeRect(-ico + 2, ico - 6, ico * 2 - 4, 4);
+        ctx.beginPath(); ctx.arc(0, 0, 5, -Math.PI / 2, -Math.PI / 2 + t * 2.5, false);
+        ctx.strokeStyle = '#10b981'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+    },
+
+    dump(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cols = Math.floor(w / 10);
+        if (!s.drops) s.drops = Array.from({ length: cols }, (_, i) => ({
+        x: i * 10 + 5, y: -Math.random() * h * 2, speed: 0.8 + Math.random() * 1.4,
+        len: 3 + Math.floor(Math.random() * 4), alpha: 0.4 + Math.random() * 0.5,
+        }));
+        for (const d of s.drops) {
+        d.y += d.speed * h * 0.016 * 3;
+        if (d.y > h + d.len * 10) { d.y = -Math.random() * h; d.speed = 0.8 + Math.random() * 1.4; }
+        ctx.font = `bold 7px 'JetBrains Mono', monospace`;
+        for (let i = 0; i < d.len; i++) {
+            const dy = d.y - i * 9; if (dy < 0 || dy > h) continue;
+            const fade = (d.len - i) / d.len, bright = i === 0 ? 1 : fade * 0.6;
+            ctx.fillStyle = i === 0 ? `rgba(200,240,255,${d.alpha})` : `rgba(0,212,255,${d.alpha * bright})`;
+            ctx.fillText(i === 0 ? '1' : '0', d.x - 3, dy);
+        }
+        }
+        const scanY = (t * 0.4 % 1) * h;
+        ctx.fillStyle = 'rgba(0,212,255,0.06)'; ctx.fillRect(0, scanY - 1, w, 2);
+    },
+
+    scanUpdates(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2, cy = h / 2, maxR = Math.min(cx, cy) * 0.9;
+        const angle = (t * 1.8) % (Math.PI * 2);
+        for (let i = 1; i <= 3; i++) {
+        ctx.beginPath(); ctx.arc(cx, cy, maxR * i / 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(0,212,255,0.12)'; ctx.lineWidth = 0.8; ctx.stroke();
+        }
+        ctx.save(); ctx.translate(cx, cy);
+        const sweepAngle = Math.PI * 0.45;
+        ctx.beginPath(); ctx.moveTo(0, 0);
+        for (let a = 0; a <= sweepAngle; a += 0.03) { const sw = angle - a; ctx.lineTo(Math.cos(sw) * maxR, Math.sin(sw) * maxR); }
+        ctx.closePath();
+        const sg = ctx.createLinearGradient(Math.cos(angle) * maxR, Math.sin(angle) * maxR, Math.cos(angle - sweepAngle) * maxR, Math.sin(angle - sweepAngle) * maxR);
+        sg.addColorStop(0, 'rgba(0,212,255,0.22)'); sg.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = sg; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(angle) * maxR, Math.sin(angle) * maxR);
+        ctx.strokeStyle = 'rgba(0,212,255,0.8)'; ctx.lineWidth = 1.2; ctx.shadowBlur = 6; ctx.shadowColor = '#00d4ff'; ctx.stroke();
+        ctx.restore();
+        if (!s.pings) s.pings = [];
+        if (Math.random() < 0.03) s.pings.push({ x: cx + Math.cos(angle) * maxR * (0.3 + Math.random() * 0.65), y: cy + Math.sin(angle) * maxR * (0.3 + Math.random() * 0.65), age: 0 });
+        s.pings = s.pings.filter(p => p.age < 1.8);
+        for (const p of s.pings) {
+        p.age += 0.016;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0,212,255,${Math.max(0, 1 - p.age / 1.8)})`; ctx.shadowBlur = 8; ctx.shadowColor = '#00d4ff'; ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI * 2); ctx.fillStyle = '#00d4ff'; ctx.shadowBlur = 10; ctx.fill();
+    },
+
+    runUpdate(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cx = w / 2, cy = h / 2, barY = cy + 10;
+        ctx.fillStyle = 'rgba(0,212,255,0.1)'; ctx.fillRect(8, barY, w - 16, 2);
+        const progress = Math.min((t * 0.6) % 1.2, 1.0);
+        const g = ctx.createLinearGradient(8, 0, 8 + (w - 16) * progress, 0);
+        g.addColorStop(0, 'rgba(0,212,255,0.2)'); g.addColorStop(0.8, 'rgba(0,212,255,0.8)'); g.addColorStop(1, '#ffffff');
+        ctx.fillStyle = g; ctx.fillRect(8, barY, (w - 16) * progress, 2);
+        if (progress < 1) {
+        const lx = 8 + (w - 16) * progress;
+        const lg = ctx.createRadialGradient(lx, barY + 1, 0, lx, barY + 1, 8);
+        lg.addColorStop(0, 'rgba(0,212,255,0.5)'); lg.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = lg; ctx.fillRect(lx - 8, barY - 7, 16, 16);
+        }
+        if (!s.particles) s.particles = [];
+        if (s.particles.length < 12 && Math.random() < 0.25) s.particles.push({ x: cx + (Math.random() - 0.5) * 20, y: cy + 5, vy: -(0.5 + Math.random() * 1.2), alpha: 0.8 + Math.random() * 0.2, size: 1 + Math.random() * 1.5 });
+        s.particles = s.particles.filter(p => p.alpha > 0.02);
+        for (const p of s.particles) { p.y += p.vy; p.alpha -= 0.025; p.x += (Math.random() - 0.5) * 0.3; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fillStyle = `rgba(0,212,255,${p.alpha})`; ctx.fill(); }
+        ctx.save(); ctx.translate(cx, cy - 2 + Math.sin(t * 4) * 2);
+        ctx.strokeStyle = 'rgba(0,212,255,0.9)'; ctx.lineWidth = 1.5; ctx.shadowBlur = 8; ctx.shadowColor = '#00d4ff';
+        ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(0, -6); ctx.lineTo(5, 0); ctx.stroke();
+        ctx.restore();
+    },
+
+    scanDev(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cy = h / 2, phase = (t * 0.7) % 1, pad = 14;
+        let spread = phase < 0.4 ? phase / 0.4 : phase < 0.6 ? 1 : 1 - (phase - 0.6) / 0.4;
+        const off = spread * 7;
+        const cols = ['rgba(0,212,255,', 'rgba(245,158,11,'];
+        for (let i = 0; i < 2; i++) {
+        const yE = cy + (i === 0 ? -off : off);
+        ctx.beginPath(); ctx.moveTo(pad, cy); ctx.bezierCurveTo(w * 0.35, cy, w * 0.45, yE, w * 0.55, yE); ctx.bezierCurveTo(w * 0.65, yE, w * 0.75, cy, w - pad, cy);
+        ctx.strokeStyle = cols[i] + '0.7)'; ctx.lineWidth = 1.5; ctx.shadowBlur = 6; ctx.shadowColor = i === 0 ? '#00d4ff' : '#f59e0b'; ctx.stroke();
+        if (!s.dots) s.dots = [[], []];
+        if (s.dots[i].length < 6 && Math.random() < 0.12) s.dots[i].push({ p: 0 });
+        s.dots[i] = s.dots[i].filter(d => d.p < 1);
+        for (const d of s.dots[i]) {
+            d.p += 0.022;
+            const dx = pad + (w - pad * 2) * d.p;
+            const dy = d.p < 0.35 ? cy : d.p < 0.55 ? cy + (yE - cy) * ((d.p - 0.35) / 0.2) : d.p < 0.65 ? yE : d.p < 0.85 ? yE + (cy - yE) * ((d.p - 0.65) / 0.2) : cy;
+            ctx.beginPath(); ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = cols[i] + `${Math.sin(d.p * Math.PI) * 0.9})`; ctx.shadowBlur = 10; ctx.fill();
+        }
+        }
+        ctx.font = '7px JetBrains Mono'; ctx.shadowBlur = 0;
+        ctx.fillStyle = 'rgba(0,212,255,0.5)'; ctx.fillText('dev', w * 0.5 - 8, cy - 9);
+        ctx.fillStyle = 'rgba(245,158,11,0.5)'; ctx.fillText('main', w * 0.5 - 10, cy + 16);
+    },
+
+    merge(ctx, w, h, t, s) {
+        ctx.clearRect(0, 0, w, h);
+        const cy = h / 2, mid = w / 2;
+        const SRC = [{ c: '#00d4ff', y: cy - 7 }, { c: '#f59e0b', y: cy + 7 }];
+        if (!s.streams) s.streams = { '#00d4ff': [], '#f59e0b': [] };
+        if (!s.out) s.out = [];
+        for (const { c, y } of SRC) {
+        if (s.streams[c].length < 6 && Math.random() < 0.15) s.streams[c].push({ p: 0 });
+        s.streams[c] = s.streams[c].filter(p => p.p < 1);
+        ctx.beginPath(); ctx.moveTo(10, y); ctx.bezierCurveTo(mid * 0.6, y, mid * 0.8, cy, mid, cy);
+        ctx.strokeStyle = c === '#00d4ff' ? 'rgba(0,212,255,0.18)' : 'rgba(245,158,11,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+        for (const p of s.streams[c]) {
+            p.p += 0.025;
+            const px = 10 + (mid - 16) * p.p, py = y + (cy - y) * p.p, a = Math.sin(p.p * Math.PI) * 0.9;
+            const hex = Math.round(a * 255).toString(16).padStart(2, '0');
+            ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI * 2); ctx.fillStyle = c + hex; ctx.shadowBlur = 8; ctx.shadowColor = c; ctx.fill();
+        }
+        }
+        const spark = 0.5 + Math.sin(t * 6) * 0.4;
+        const sg = ctx.createRadialGradient(mid, cy, 0, mid, cy, 10);
+        sg.addColorStop(0, `rgba(255,255,255,${spark * 0.9})`); sg.addColorStop(0.3, `rgba(0,212,255,${spark * 0.6})`); sg.addColorStop(1, 'rgba(0,212,255,0)');
+        ctx.fillStyle = sg; ctx.fillRect(mid - 10, cy - 10, 20, 20);
+        if (s.out.length < 8 && Math.random() < 0.18) s.out.push({ p: 0 });
+        s.out = s.out.filter(p => p.p < 1);
+        ctx.beginPath(); ctx.moveTo(mid, cy); ctx.lineTo(w - 10, cy); ctx.strokeStyle = 'rgba(0,212,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
+        for (const p of s.out) {
+        p.p += 0.022;
+        const px = mid + (w - mid - 10) * p.p, a = Math.sin(p.p * Math.PI) * 0.9;
+        ctx.beginPath(); ctx.arc(px, cy, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${180 + Math.sin(p.p * 4) * 20}, 100%, 70%, ${a})`; ctx.shadowBlur = 8; ctx.shadowColor = '#00d4ff'; ctx.fill();
+        }
+    },
+    };
+
+    /* ── Animation runner ── */
+    function _startBtnAnim(btn, type) {
+    const canvas = btn.querySelector('.btn-canvas-anim');
+    if (!canvas || !BTN_ANIMATIONS[type]) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width  = btn.offsetWidth;
+    canvas.height = btn.offsetHeight;
+    const state = {};
+    let start = null;
+    function frame(ts) {
+        if (!start) start = ts;
+        BTN_ANIMATIONS[type](ctx, canvas.width, canvas.height, (ts - start) / 1000, state);
+        btn._animRaf = requestAnimationFrame(frame);
+    }
+    btn._animRaf = requestAnimationFrame(frame);
+    }
+
+    function _stopBtnAnim(btn) {
+    if (btn._animRaf) { cancelAnimationFrame(btn._animRaf); btn._animRaf = null; }
+    const canvas = btn.querySelector('.btn-canvas-anim');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    /* ── Drop-in replacement for setLoading() ── */
+    function setLoading(btn, state) {
+    if (!btn) return;
+    if (state) {
+        btn.classList.add('loading');
+        btn.disabled = true;
+        const type = btn.dataset.anim;
+        if (type) _startBtnAnim(btn, type);
+    } else {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        _stopBtnAnim(btn);
+    }
+    }
+
+    /* ══════════════════════════════════════════
+       SVG ICON HELPER (for table buttons)
+    ══════════════════════════════════════════ */
+    const ICONS = {
+        key:     '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        trash:   '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+        ban:     '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>',
+        check:   '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+        bell:    '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
+        refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+        restore: '<path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 .49-3.99"/>',
+        wrench:  '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+        monitor: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+    };
+
+    function icon(name, size = 13) {
+        return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+    }
+
+    /* ══════════════════════════════════════════
+       STORAGE WIDGET (unchanged logic)
+    ══════════════════════════════════════════ */
+    function createStorageWidget(containerId, dataOrUrl, options = {}) {
         const container = document.getElementById(containerId);
         if (!container) throw new Error("Container element not found: " + containerId);
+        const cfg = Object.assign({ autoFetch: true }, options);
 
-        const cfg = Object.assign({
-            autoFetch: true
-        }, options);
-
-        // Internal helpers
         function humanBytes(bytes) {
             if (bytes === null || bytes === undefined) return "—";
             if (!isFinite(bytes)) return "∞";
             const units = ["B","KB","MB","GB","TB","PB"];
-            let u = 0;
-            let n = Number(bytes);
+            let u = 0; let n = Number(bytes);
             while (n >= 1024 && u < units.length-1) { n /= 1024; u++; }
             return `${n % 1 === 0 ? n : n.toFixed(2)} ${units[u]}`;
         }
         function safeNumber(v) {
             if (v === null || v === undefined) return null;
             if (typeof v === "number") return Number.isFinite(v) ? v : (v === Infinity ? Infinity : null);
-            // try parse strings like "Infinity" or numeric strings
             if (typeof v === "string") {
-            if (v.toLowerCase() === "infinity" || v.toLowerCase() === "inf") return Infinity;
-            const n = Number(v);
-            return Number.isFinite(n) ? n : null;
+                if (v.toLowerCase() === "infinity" || v.toLowerCase() === "inf") return Infinity;
+                const n = Number(v); return Number.isFinite(n) ? n : null;
             }
             return null;
         }
-        function pctString(used, total) {
-            if (!isFinite(total) || total === null) return "—";
-            if (total === 0) return "0%";
-            const pct = Math.max(0, Math.min(100, (used / total) * 100));
-            return `${pct.toFixed(1)}%`;
-        }
 
-        // Build DOM
-        container.innerHTML = ""; // clear
+        container.innerHTML = "";
         container.classList.add("storage-widget-root");
 
         const header = document.createElement("div");
@@ -595,23 +1650,20 @@
         header.innerHTML = `<h3>Storage Overview</h3>`;
         container.appendChild(header);
 
-        // Counters section (Total)
         const counters = document.createElement("div");
         counters.className = "storage-widget-counters";
         counters.innerHTML = `
             <div class="storage-total-card">
-            <div class="storage-total-title">Total</div>
-            <div class="storage-total-values">
-                <span class="storage-total-used">Used: —</span>
-                <span class="storage-total-sep"> / </span>
-                <span class="storage-total-total">Total: —</span>
-                <span class="storage-total-free">Free: —</span>
-            </div>
-            </div>
-        `;
+                <div class="storage-total-title">Total</div>
+                <div class="storage-total-values">
+                    <span class="storage-total-used">Used: —</span>
+                    <span class="storage-total-sep">/</span>
+                    <span class="storage-total-total">Total: —</span>
+                    <span class="storage-total-free">Free: —</span>
+                </div>
+            </div>`;
         container.appendChild(counters);
 
-        // Gauges grid
         const grid = document.createElement("div");
         grid.className = "storage-widget-grid";
         const platforms = ["local", "dropbox", "mega", "total"];
@@ -621,67 +1673,38 @@
             card.id = `${containerId}-card-${p}`;
             const title = p === "total" ? "Combined" : p[0].toUpperCase() + p.slice(1);
             card.innerHTML = `
-            <div class="gauge-title">${title}</div>
-            <div class="gauge-wrap">
-                <canvas id="${containerId}-chart-${p}" width="200" height="200"></canvas>
-                <div class="gauge-center" id="${containerId}-center-${p}">—</div>
-            </div>
-            <div class="gauge-numbers" id="${containerId}-nums-${p}">
-                <div class="num-used">Used: —</div>
-                <div class="num-total">Total: —</div>
-                <div class="num-free">Free: —</div>
-            </div>
-            `;
+                <div class="gauge-title">${title}</div>
+                <div class="gauge-wrap">
+                    <canvas id="${containerId}-chart-${p}" width="200" height="200"></canvas>
+                    <div class="gauge-center" id="${containerId}-center-${p}">—</div>
+                </div>
+                <div class="gauge-numbers" id="${containerId}-nums-${p}">
+                    <div class="num-used">Used: —</div>
+                    <div class="num-total">Total: —</div>
+                    <div class="num-free">Free: —</div>
+                </div>`;
             grid.appendChild(card);
         });
         container.appendChild(grid);
 
-        // Chart.js instances map
         const charts = {};
-
-        // Create Chart.js doughnuts
         function createChart(canvasId) {
             const ctx = document.getElementById(canvasId).getContext("2d");
-            const chart = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Used', 'Free'],
-                datasets: [{
-                data: [1, 1],
-                // default colors; you can override via CSS variables if you prefer
-                backgroundColor: ['#3b82f6','#e5e7eb'],
-                borderWidth: 0
-                }]
-            },
-            options: {
-                animation: { duration: 400 },
-                cutout: '75%',
-                maintainAspectRatio: false,
-                plugins: {
-                legend: { display: false },
-                tooltip: { enabled: false }
-                }
-            }
+            return new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: ['Used','Free'], datasets: [{ data: [1,1], backgroundColor: ['#00d4ff','#1a2235'], borderWidth: 0 }] },
+                options: { animation: { duration: 600 }, cutout: '78%', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } } }
             });
-            return chart;
         }
+        platforms.forEach(p => { charts[p] = createChart(`${containerId}-chart-${p}`); });
 
-        platforms.forEach(p => {
-            charts[p] = createChart(`${containerId}-chart-${p}`);
-        });
-
-        // Update helper (data should be the JSON returned by server)
         function applyData(data) {
             if (!data) return;
-            // Normalise/interpret platform sections
-            const local = data.local || {};
-            const dropbox = data.dropbox || {};
-            const mega = data.mega || {};
-
+            const local = data.local || {}, dropbox = data.dropbox || {}, mega = data.mega || {};
             const localUsed = safeNumber(local.used_bytes) || 0;
             const localTotal = safeNumber(local.total_bytes);
             const localFree = safeNumber(local.free_bytes);
-            const paTotalUsed = safeNumber(local.pythonanywhere_total_used_bytes); // may be null
+            const paTotalUsed = safeNumber(local.pythonanywhere_total_used_bytes);
             const dropUsed = safeNumber(dropbox.used_bytes) || 0;
             const dropTotal = safeNumber(dropbox.total_bytes);
             const dropFree = safeNumber(dropbox.free_bytes);
@@ -689,58 +1712,41 @@
             const megaTotal = safeNumber(mega.total_bytes);
             const megaFree = safeNumber(mega.free_bytes);
 
-            // Combined totals: if any total is infinite/null treat combined total as infinite
             let combinedUsed = 0, combinedTotal = 0, combinedHasInfinite = false;
-            [ {u: localUsed, t: localTotal},
-            {u: dropUsed, t: dropTotal},
-            {u: megaUsed, t: megaTotal}
-            ].forEach(x => {
-            combinedUsed += (x.u || 0);
-            if (!isFinite(x.t) || x.t === null) combinedHasInfinite = true;
-            else combinedTotal += (x.t || 0);
+            [{u:localUsed,t:localTotal},{u:dropUsed,t:dropTotal},{u:megaUsed,t:megaTotal}].forEach(x => {
+                combinedUsed += (x.u || 0);
+                if (!isFinite(x.t) || x.t === null) combinedHasInfinite = true;
+                else combinedTotal += (x.t || 0);
             });
             if (combinedHasInfinite) combinedTotal = Infinity;
 
-            // update numeric total counters area
-            const totalUsedNode = container.querySelector(".storage-total-used");
-            const totalTotalNode = container.querySelector(".storage-total-total");
-            const totalFreeNode = container.querySelector(".storage-total-free");
-            totalUsedNode.textContent = `Used: ${humanBytes(combinedUsed)}`;
-            totalTotalNode.textContent = `Total: ${humanBytes(combinedTotal)}`;
+            container.querySelector(".storage-total-used").textContent = `Used: ${humanBytes(combinedUsed)}`;
+            container.querySelector(".storage-total-total").textContent = `Total: ${humanBytes(combinedTotal)}`;
             const combinedFree = isFinite(combinedTotal) ? Math.max(0, combinedTotal - combinedUsed) : Infinity;
-            totalFreeNode.textContent = `Free: ${humanBytes(combinedFree)}`;
+            container.querySelector(".storage-total-free").textContent = `Free: ${humanBytes(combinedFree)}`;
 
-            // Helper to update chart and numbers for a platform key
             function updatePlatform(key, used, total, free) {
-            const chart = charts[key];
-            const center = document.getElementById(`${containerId}-center-${key}`);
-            const nums = document.getElementById(`${containerId}-nums-${key}`);
-            const usedNode = nums.querySelector(".num-used");
-            const totalNode = nums.querySelector(".num-total");
-            const freeNode = nums.querySelector(".num-free");
-
-            usedNode.textContent = `Used: ${humanBytes(used)}`;
-            totalNode.textContent = `Total: ${humanBytes(total)}`;
-            freeNode.textContent = `Free: ${humanBytes(free)}`;
-
-            if (!isFinite(total) || total === null) {
-                // show indefinite / cannot compute percent
-                center.textContent = `${humanBytes(used)}`;
-                // Chart: show used slice only
-                chart.data.datasets[0].data = [used || 0, 0.000001]; // small second slice to render a full circle
-            } else {
-                const safeTotal = Math.max(1, total);
-                const safeFree = Math.max(0, safeTotal - (used || 0));
-                const percent = Math.max(0, Math.min(100, ((used || 0) / safeTotal) * 100));
-                center.textContent = `${percent.toFixed(1)}%`;
-                chart.data.datasets[0].data = [used || 0, safeFree];
-            }
-            chart.update();
+                const chart = charts[key];
+                const center = document.getElementById(`${containerId}-center-${key}`);
+                const nums = document.getElementById(`${containerId}-nums-${key}`);
+                nums.querySelector(".num-used").textContent = `Used: ${humanBytes(used)}`;
+                nums.querySelector(".num-total").textContent = `Total: ${humanBytes(total)}`;
+                nums.querySelector(".num-free").textContent = `Free: ${humanBytes(free)}`;
+                if (!isFinite(total) || total === null) {
+                    center.textContent = humanBytes(used);
+                    chart.data.datasets[0].data = [used || 0, 0.000001];
+                } else {
+                    const safeTotal = Math.max(1, total);
+                    const safeFree = Math.max(0, safeTotal - (used || 0));
+                    const percent = Math.max(0, Math.min(100, ((used || 0) / safeTotal) * 100));
+                    center.textContent = `${percent.toFixed(1)}%`;
+                    chart.data.datasets[0].data = [used || 0, safeFree];
+                }
+                chart.update();
             }
 
             updatePlatform("local", localUsed, localTotal, localFree);
-            // --- show optional PythonAnywhere total-used under the local card, if present ---
-            (function updateLocalPATotal() {
+            (function() {
                 const localCardNums = document.getElementById(`${containerId}-nums-local`);
                 if (!localCardNums) return;
                 let paNode = localCardNums.querySelector(".num-pa-used");
@@ -748,1183 +1754,847 @@
                     if (!paNode) {
                         paNode = document.createElement("div");
                         paNode.className = "num-pa-used";
-                        // insert after free node (if present) otherwise append
                         const freeNode = localCardNums.querySelector(".num-free");
-                        if (freeNode && freeNode.nextSibling) {
-                            localCardNums.insertBefore(paNode, freeNode.nextSibling);
-                        } else {
-                            localCardNums.appendChild(paNode);
-                        }
+                        if (freeNode && freeNode.nextSibling) localCardNums.insertBefore(paNode, freeNode.nextSibling);
+                        else localCardNums.appendChild(paNode);
                     }
                     paNode.textContent = `PA total used: ${humanBytes(paTotalUsed)}`;
-                } else {
-                    // remove if present and not available
-                    if (paNode) paNode.remove();
-                }
+                } else { if (paNode) paNode.remove(); }
             })();
             updatePlatform("dropbox", dropUsed, dropTotal, dropFree);
             updatePlatform("mega", megaUsed, megaTotal, megaFree);
             updatePlatform("total", combinedUsed, combinedTotal, combinedFree);
         }
 
-        // Public API
         async function updateFromUrl(url) {
             const res = await fetch(url, { credentials: 'same-origin' });
             if (!res.ok) throw new Error("Failed to fetch storage data: " + res.status);
             const data = await res.json();
-            applyData(data);
-            return data;
+            applyData(data); return data;
         }
+        function update(newData) { applyData(newData); }
+        function destroy() { Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} }); container.innerHTML = ""; }
 
-        function update(newData) {
-            applyData(newData);
-        }
-
-        function destroy() {
-            // destroy Chart instances
-            Object.values(charts).forEach(c => {
-            try { c.destroy(); } catch (e) {}
-            });
-            container.innerHTML = "";
-        }
-
-        // initialize
         if (typeof dataOrUrl === "string") {
             if (cfg.autoFetch) {
-            updateFromUrl(dataOrUrl).catch(err => {
-                console.error("Storage widget fetch error:", err);
-                // show minimal UI error
-                container.querySelector(".storage-widget-header").insertAdjacentHTML("afterend",
-                `<div class="storage-widget-error">Error loading storage data</div>`);
-            });
+                updateFromUrl(dataOrUrl).catch(err => {
+                    console.error("Storage widget fetch error:", err);
+                    container.querySelector(".storage-widget-header").insertAdjacentHTML("afterend", `<div class="storage-widget-error">Error loading storage data</div>`);
+                });
             }
         } else if (typeof dataOrUrl === "object" && dataOrUrl !== null) {
             update(dataOrUrl);
         }
-
         return { update, updateFromUrl, destroy };
+    }
+
+    let _sessionsUserId   = null;
+    let _sessionsUsername = null;
+
+    const sessionsOverlay = document.getElementById('sessions-overlay');
+
+    function flagImg(code) {
+        if (!code || code.length !== 2) {
+            return `<svg class="session-flag" style="width:20px;height:14px;margin-right:6px;vertical-align:middle;opacity:0.3;" viewBox="0 0 20 14" fill="none"><rect width="20" height="14" rx="2" fill="#334155"/><line x1="4" y1="4" x2="16" y2="10" stroke="#64748b" stroke-width="1.5"/><line x1="4" y1="10" x2="16" y2="4" stroke="#64748b" stroke-width="1.5"/></svg>`;
         }
+        const lower = code.toLowerCase();
+        return `<img class="session-flag" src="https://flagcdn.com/20x15/${lower}.png" width="20" height="15" alt="${code}" onerror="this.style.opacity='0.2'" />`;
+    }
 
-        function showModal() {
-            window.location.href = '/login_page?redirect=/admin_page&warning=true';
-        }
-
-        function hideModal() {
-            const modalOverlay = document.getElementById("modal-overlay");
-            modalOverlay.style.display = "none";
-            location.reload();
-        }
-
-        document.getElementById("deploy-local").addEventListener("click", async () => {
-            if (!confirm("Are you sure you want to deploy local changes to the production environment? This action cannot be undone.")) {
-                return;
-            }
-            try {
-                const response = await fetch("/deploy/local", {
-                    method: "POST",
-                    
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    alert(data.status || "Deployment successful.");
-                } else {
-                    const errorData = await response.json();
-                    alert(`Deployment failed: ${errorData.error || response.statusText}`);
-                }
-            } catch (error) {
-                console.error("Error during deployment:", error);
-                alert("An unexpected error occurred during deployment.");
-            }
+    function fmtDate(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return d.toLocaleString(undefined, {
+            year: 'numeric', month: 'short', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
         });
+    }
 
+    async function openSessionsModal(userId, username) {
+        _sessionsUserId   = userId;
+        _sessionsUsername = username;
+        document.getElementById('sessions-modal-title').textContent = `Sessions — ${username}`;
+        document.getElementById('sessions-modal-sub').textContent   = `User ID ${userId}`;
+        sessionsOverlay.classList.add('visible');
+        await loadSessions();
+    }
 
-        document.getElementById('create-backup-btn').addEventListener('click', async () => {
-            try {
-                const response = await fetch('/create_backup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    
-                }
-                });
+    async function loadSessions() {
+        if (!_sessionsUserId) return;
+        const tbody = document.getElementById('sessions-table-body');
+        tbody.innerHTML = `<tr><td colspan="6"><div class="sessions-state">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Loading sessions…
+        </div></td></tr>`;
 
-                if (!response.ok) {
-                const error = await response.json();
-                console.error('Backup failed:', error);
-                alert(`Backup failed: ${error.error || response.statusText}`);
-                return;
-                }
+        try {
+            const res  = await fetch(`/admin/user/${_sessionsUserId}/sessions`);
+            const data = await res.json();
+            if (!res.ok) { toast(data.error || 'Failed to fetch sessions.', 'error'); return; }
+            renderSessions(data.sessions);
+        } catch (e) {
+            toast('Network error fetching sessions.', 'error');
+        }
+    }
 
-                const data = await response.json();
-                console.log('Backup created:', data.file);
-                alert(`Backup created successfully: ${data.file}`);
-                fetchBackups();  // Refresh the backups list
-            } catch (err) {
-                console.error('Network or server error:', err);
-                alert('Could not create backup. Check console for details.');
-            }
-        });
+    function renderSessions(sessions) {
+        const tbody = document.getElementById('sessions-table-body');
+        tbody.innerHTML = '';
 
-        // when the DOM is loaded, attach our click handler
-        document.addEventListener('DOMContentLoaded', () => {
-        const btn = document.getElementById('send-notification-all');
-        if (!btn) {
-            console.warn('No #send-notification-all button found');
+        if (!sessions.length) {
+            tbody.innerHTML = `<tr><td colspan="6"><div class="sessions-state">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                No active sessions found.
+            </div></td></tr>`;
             return;
         }
+
+        sessions.forEach(s => {
+            const tr = document.createElement('tr');
+            const flag     = flagImg(s.country_code);
+            const location = s.country_name || 'Unknown';
+            const lastingBadge = s.created_via_lasting
+                ? `<span class="session-badge lasting">Lasting Key</span>` : '';
+
+            tr.innerHTML = `
+                <div style="display:flex;align-items:center;">
+                    ${flag}
+                    <span style="font-size:12px;">${sanitizeHTML(location)}</span>
+                </div>
+                <td style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--accent);">
+                    ${sanitizeHTML(s.ip_address || '—')}
+                </td>
+                <td>
+                    <div class="session-ua" title="${sanitizeHTML(s.user_agent || '')}">
+                        ${sanitizeHTML(s.user_agent_simplified || s.user_agent || '—')}
+                    </div>
+                    ${lastingBadge}
+                </td>
+                <td><span class="session-time">${fmtDate(s.created_at)}</span></td>
+                <td><span class="session-time">${fmtDate(s.last_active)}</span></td>
+                <td>
+                    <button class="action-btn btn-delete sessions-revoke-btn"
+                            data-session-id="${s.id}"
+                            data-tip="Revoke this session">
+                        ${icon('ban')} Revoke
+                    </button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+
+        // attach revoke listeners
+        tbody.querySelectorAll('.sessions-revoke-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const sid = btn.dataset.sessionId;
+                const ok  = await showConfirm({
+                    title:   'Revoke Session',
+                    message: `Revoke session #${sid} for ${_sessionsUsername}? They will be signed out on that device.`,
+                    type:    'danger',
+                    okLabel: 'Revoke'
+                });
+                if (!ok) return;
+                setLoading(btn, true);
+                try {
+                    const res = await fetch(`/admin/user/${_sessionsUserId}/sessions/${sid}/revoke`, { method: 'POST' });
+                    const d   = await res.json();
+                    if (!res.ok) { toast(d.error || 'Revoke failed.', 'error'); return; }
+                    toast('Session revoked.', 'success');
+                    await loadSessions();
+                } catch (e) {
+                    toast('Network error.', 'error');
+                } finally {
+                    setLoading(btn, false);
+                }
+            });
+        });
+    }
+
+    // Revoke All
+    document.getElementById('sessions-revoke-all-btn').addEventListener('click', async () => {
+        if (!_sessionsUserId) return;
+        const ok = await showConfirm({
+            title:   'Revoke All Sessions',
+            message: `This will sign ${_sessionsUsername} out of every device and delete all their lasting keys.`,
+            type:    'danger',
+            okLabel: 'Revoke All'
+        });
+        if (!ok) return;
+        const btn = document.getElementById('sessions-revoke-all-btn');
+        setLoading(btn, true);
+        try {
+            const res = await fetch(`/admin/user/${_sessionsUserId}/sessions/revoke_all`, { method: 'POST' });
+            const d   = await res.json();
+            if (!res.ok) { toast(d.error || 'Failed.', 'error'); return; }
+            toast(`All sessions for ${_sessionsUsername} revoked.`, 'success');
+            await loadSessions();
+        } catch (e) {
+            toast('Network error.', 'error');
+        } finally {
+            setLoading(btn, false);
+        }
+    });
+
+    // Refresh
+    document.getElementById('sessions-refresh-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('sessions-refresh-btn');
+        setLoading(btn, true);
+        await loadSessions();
+        setLoading(btn, false);
+    });
+
+    // Close
+    document.getElementById('sessions-close-btn').addEventListener('click', () => {
+        sessionsOverlay.classList.remove('visible');
+    });
+    sessionsOverlay.addEventListener('click', e => {
+        if (e.target === sessionsOverlay) sessionsOverlay.classList.remove('visible');
+    });
+
+    /* ══════════════════════════════════════════
+       MODAL HELPERS
+    ══════════════════════════════════════════ */
+    function showModal() { window.location.href = '/login_page?redirect=/admin_page&warning=true'; }
+    function hideModal() {
+        document.getElementById("modal-overlay").style.display = "none";
+        location.reload();
+    }
+
+    /* ══════════════════════════════════════════
+       DEPLOY LOCAL
+    ══════════════════════════════════════════ */
+    document.getElementById("deploy-local").addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        const ok = await showConfirm({
+            title: 'Deploy Local Changes',
+            message: 'This will push local changes to production. The action cannot be undone.',
+            type: 'danger',
+            okLabel: 'Deploy'
+        });
+        if (!ok) return;
+        setLoading(btn, true);
+        try {
+            const response = await fetch("/deploy/local", { method: "POST" });
+            const data = await response.json();
+            if (response.ok) toast(data.status || "Deployment successful.", 'success', 'Deployed');
+            else toast(data.error || response.statusText, 'error', 'Deployment failed');
+        } catch (error) {
+            console.error(error);
+            toast("An unexpected error occurred during deployment.", 'error');
+        } finally { setLoading(btn, false); }
+    });
+
+    /* ══════════════════════════════════════════
+       CREATE BACKUP
+    ══════════════════════════════════════════ */
+    document.getElementById('create-backup-btn').addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        setLoading(btn, true);
+        try {
+            const response = await fetch('/create_backup', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            const data = await response.json();
+            if (!response.ok) { toast(data.error || response.statusText, 'error', 'Backup failed'); return; }
+            toast(`Backup created: ${data.file}`, 'success', 'Backup created');
+            fetchBackups();
+        } catch (err) {
+            toast('Could not create backup. Check console for details.', 'error');
+        } finally { setLoading(btn, false); }
+    });
+
+    /* ══════════════════════════════════════════
+       NOTIFICATION MODAL
+    ══════════════════════════════════════════ */
+    document.addEventListener('DOMContentLoaded', () => {
+        const btn = document.getElementById('send-notification-all');
+        if (!btn) return;
         btn.addEventListener('click', () => {
             showNotificationModal({
-            // this onSend is exactly your "send to all users" logic
-            onSend: ({ title, message, module }) => {
-                return fetch('/admin/notification', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, message, module })
-                })
-                .then(res => {
-                if (!res.ok) {
-                    return res.json().then(j => Promise.reject(j.error || res.statusText));
+                onSend: ({ title, message, module }) => {
+                    return fetch('/admin/notification', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title, message, module })
+                    }).then(res => {
+                        if (!res.ok) return res.json().then(j => Promise.reject(j.error || res.statusText));
+                        return res.json();
+                    });
                 }
-                return res.json();
-                });
-            }
             });
         });
-        });
+    });
 
-        // 1) buildModal now just returns an overlay with inputs + buttons
-        function buildModal() {
+    function buildModal() {
         const overlay = document.createElement('div');
         overlay.className = 'notif-overlay';
+        overlay.style.display = 'flex';
         overlay.innerHTML = `
             <div class="notif-modal">
-            <h2>Send Notification</h2>
-            <label for="notif-title">Title</label>
-            <input type="text" id="notif-title" placeholder="Notification title">
-
-            <label for="notif-message">Message</label>
-            <textarea id="notif-message" placeholder="Your message here"></textarea>
-
-            <label for="notif-module">Module / URL</label>
-            <select id="notif-module">
-                <option value="">-- select --</option>
-                <option value="/index">Notes</option>
-                <option value="/group-notes">Group notes</option>
-                <option value="/scheduler-page">Scheduler</option>
-                <option value="/todo-page">To-Do</option>
-                <option value="custom">Custom…</option>
-            </select>
-
-            <div class="custom-url" style="display:none;">
-                <label for="notif-custom-url">Custom URL</label>
-                <input type="text" id="notif-custom-url" placeholder="/your-path">
-            </div>
-
-            <div class="actions">
-                <button class="btn-cancel">Cancel</button>
-                <button class="btn-send">Send</button>
-            </div>
+                <h2>Send Notification</h2>
+                <label for="notif-title">Title</label>
+                <input type="text" id="notif-title" placeholder="Notification title">
+                <label for="notif-message">Message</label>
+                <textarea id="notif-message" placeholder="Your message here"></textarea>
+                <label for="notif-module">Module / URL</label>
+                <select id="notif-module">
+                    <option value="">— select —</option>
+                    <option value="/index">Notes</option>
+                    <option value="/group-notes">Group notes</option>
+                    <option value="/scheduler-page">Scheduler</option>
+                    <option value="/todo-page">To-Do</option>
+                    <option value="custom">Custom…</option>
+                </select>
+                <div class="custom-url" style="display:none;">
+                    <label for="notif-custom-url">Custom URL</label>
+                    <input type="text" id="notif-custom-url" placeholder="/your-path">
+                </div>
+                <div class="actions">
+                    <button class="btn-cancel">Cancel</button>
+                    <button class="btn-send">Send</button>
+                </div>
             </div>`;
         return overlay;
-        }
+    }
 
-        // 2) A single function that shows the modal, wires up events, and calls YOUR callback on Send
-        function showNotificationModal(opts) {
-        // opts = { onSend: ({ title, message, module })=>Promise, headerText? }
+    function showNotificationModal(opts) {
         const overlay = buildModal();
         document.body.appendChild(overlay);
-
-        const sel         = overlay.querySelector('#notif-module');
-        const customDiv   = overlay.querySelector('.custom-url');
+        const sel = overlay.querySelector('#notif-module');
+        const customDiv = overlay.querySelector('.custom-url');
         const customInput = overlay.querySelector('#notif-custom-url');
-
-        sel.addEventListener('change', () => {
-            customDiv.style.display = sel.value === 'custom' ? 'block' : 'none';
-        });
-
-        overlay.querySelector('.btn-cancel').addEventListener('click', () => {
-            document.body.removeChild(overlay);
-        });
-
+        sel.addEventListener('change', () => { customDiv.style.display = sel.value === 'custom' ? 'block' : 'none'; });
+        overlay.querySelector('.btn-cancel').addEventListener('click', () => document.body.removeChild(overlay));
+        overlay.addEventListener('click', e => { if (e.target === overlay) document.body.removeChild(overlay); });
         overlay.querySelector('.btn-send').addEventListener('click', () => {
-            const title   = overlay.querySelector('#notif-title').value.trim();
+            const title = overlay.querySelector('#notif-title').value.trim();
             const message = overlay.querySelector('#notif-message').value.trim();
-            let module    = sel.value === 'custom'
-                            ? customInput.value.trim()
-                            : sel.value;
-
-            // Validation
-            if (!title || !message || !module) {
-            return alert('All fields are required.');
-            }
-            if (!module.startsWith('/')) {
-            return alert('Module must start with a slash (/).');
-            }
-
-            // Call the provided callback
+            let module = sel.value === 'custom' ? customInput.value.trim() : sel.value;
+            if (!title || !message || !module) return toast('All fields are required.', 'warning', 'Incomplete');
+            if (!module.startsWith('/')) return toast('Module must start with a slash (/)', 'warning', 'Invalid URL');
+            const sendBtn = overlay.querySelector('.btn-send');
+            setLoading(sendBtn, true);
             opts.onSend({ title, message, module })
-            .then(res => {
-                alert(res.message || 'Notification sent!');
-                document.body.removeChild(overlay);
-            })
-            .catch(err => {
-                alert('Error: ' + (err.error || err));
-            });
+                .then(res => {
+                    document.body.removeChild(overlay);
+                    toast(res.message || 'Notification sent to all users.', 'success', 'Sent');
+                })
+                .catch(err => {
+                    setLoading(sendBtn, false);
+                    toast(err.error || String(err), 'error', 'Failed to send');
+                });
         });
-        }
+    }
 
-        // Show modal for a given userId
-        async function showUserNotificationModal(user_id) {
+    async function showUserNotificationModal(user_id) {
         showNotificationModal({
             onSend: ({ title, message, module }) =>
-            fetch(`/admin/notification/user`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id, title, message, module })
-            }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j)))
+                fetch(`/admin/notification/user`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id, title, message, module })
+                }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j)))
         });
-        }
+    }
 
-        async function fetchAdminData() {
-            try {
-                const response = await fetch("/admin", {
-                    method: "GET",
-                    
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    populateMessagesTable(data.messages);
-                    populateUsersTable(data.users);
-                    fetchBackups();
-                    // creates and auto-fetches
-                    const widget = createStorageWidget("storage-widget-container", "/admin/storage", { autoFetch: true });
-                } else if (response.status === 401) {
-                    alert("Session expired. Please log in again.");
-                    sessionStorage.clear();
-                    showModal();
-                } else {
-                    document.getElementById("error-message").textContent =
-                        "Failed to fetch data. Please try again later.";
-                }
-            } catch (error) {
-                console.error("Error fetching admin data:", error);
-                document.getElementById("error-message").textContent =
-                    "An unexpected error occurred. Please try again later.";
-            }
-        }
-
-        async function fetchBackups() {
-            try {
-                const response = await fetch("/list", { method: "GET" });
-                if (!response.ok) {
-                    console.error("Failed to fetch backups.");
-                    return;
-                }
-                const { backups } = await response.json();
-                const tableBody = document.querySelector("#backups-table tbody");
-                tableBody.innerHTML = "";
-                if (backups.length === 0) {
-                    const row = document.createElement("tr");
-                    row.innerHTML = `<td colspan="4" style="text-align:center;color:#aaa;">No backups found.</td>`;
-                    tableBody.appendChild(row);
-                }
-                backups
-                    .sort((a, b) => {
-                        // parse timestamp from filename (YYYYMMDD_HHMMSS)
-                        const parseTs = fn => {
-                            const m = fn.match(/backup_(\d{8})_(\d{6})\.db/);
-                            if (!m) return 0;
-                            const [_, D, T] = m;
-                            return new Date(
-                                `${D.slice(0,4)}-${D.slice(4,6)}-${D.slice(6,8)}T` +
-                                `${T.slice(0,2)}:${T.slice(2,4)}:${T.slice(4,6)}`
-                            ).getTime();
-                        };
-                        return parseTs(b.filename) - parseTs(a.filename);
-                    })
-                    
-                    .forEach(backup => {
-                        const row = document.createElement("tr");
-
-                        // pretty date from filename if possible
-                        let displayDate = backup.created_at;
-                        const m = backup.filename.match(/backup_(\d{8})_(\d{6})\.db/);
-                        if (m) {
-                            const [_, D, T] = m;
-                            displayDate = `${D.slice(0,4)}-${D.slice(4,6)}-${D.slice(6,8)}` +
-                                        ` ${T.slice(0,2)}:${T.slice(2,4)}:${T.slice(4,6)}`;
-                        }
-
-                        // build cells
-                        row.innerHTML = `
-                            <td>${backup.filename}</td>
-                            <td>${displayDate}</td>
-                            <td style="text-align:center;">
-                            ${backup.outdated_schema ? '❌' : '✅'}
-                            </td>
-                            <td>
-                            <button onclick="restoreBackup('${backup.filename}')">
-                                Restore
-                            </button>
-                            ${backup.outdated_schema ? `<button onclick="matchBackup('${backup.filename}')">MCT</button>` : ""}
-                            <button onclick="deleteBackup('${backup.filename}')" style="background-color:red;">
-                                Delete
-                            </button>
-                            </td>
-                        `;
-                        tableBody.appendChild(row);
-                    });
-            } catch (err) {
-                console.error("Error fetching backups:", err);
-            }
-        }
-
-
-        async function restoreBackup(filename) {
-            if (!confirm(`Are you absolutely sure you want to restore "${filename}"? This will overwrite the live database.`)) {
-                return;
-            }
-
-            const resp = await fetch('/restore', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filename})
-            });
-
-            const result = await resp.json();
-            if (resp.ok) {
-                alert(result.status);
-                fetchBackups();  // Refresh the backups list
-            } else {
-                alert(`Restore failed: ${result.error}`);
-            }
-        }
-
-        async function matchBackup(filename) {
-            const resp = await fetch('/restore/repair', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({filename})
-            });
-
-            const result = await resp.json();
-            if(resp.ok) {
-                alert(result.status);
+    /* ══════════════════════════════════════════
+       FETCH ADMIN DATA
+    ══════════════════════════════════════════ */
+    async function fetchAdminData() {
+        try {
+            const response = await fetch("/admin", { method: "GET" });
+            if (response.ok) {
+                const data = await response.json();
+                populateMessagesTable(data.messages);
+                populateUsersTable(data.users);
                 fetchBackups();
+                createStorageWidget("storage-widget-container", "/admin/storage", { autoFetch: true });
+            } else if (response.status === 401) {
+                toast("Session expired. Please log in again.", 'error', 'Auth required');
+                sessionStorage.clear();
+                showModal();
             } else {
-                alert(`Repair failed: ${result.error}`)
+                document.getElementById("error-message").textContent = "Failed to fetch data. Please try again later.";
             }
+        } catch (error) {
+            console.error("Error fetching admin data:", error);
+            document.getElementById("error-message").textContent = "An unexpected error occurred.";
         }
+    }
 
-        async function deleteBackup(filename) {
-            if (!confirm("Are you sure you want to delete this backup? This cannot be undone.")) {
+    /* ══════════════════════════════════════════
+       BACKUPS TABLE
+    ══════════════════════════════════════════ */
+    async function fetchBackups() {
+        try {
+            const response = await fetch("/list", { method: "GET" });
+            if (!response.ok) { console.error("Failed to fetch backups."); return; }
+            const { backups } = await response.json();
+            const tableBody = document.querySelector("#backups-table tbody");
+            tableBody.innerHTML = "";
+            if (backups.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">No backups found.</td></tr>`;
                 return;
             }
-            try {
-                const resp = await fetch('/backup/delete', {
-                    method: 'DELETE', 
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({filename})
-                });
-                let result = {};
-                try {
-                    result = await resp.json();
-                } catch (e) {
-                    result = { error: "Server returned invalid response." };
-                }
-                if(resp.ok) {
-                    alert(result.status || "Backup deleted successfully.");
-                    fetchBackups();
-                } else {
-                    alert(`Deletion failed: ${result.error || resp.statusText}`);
-                }
-            } catch (err) {
-                alert("Network error or server unreachable.");
-                console.error(err);
-            }
-        }
-
-
-        async function fetchUserStatus() {
-            try {
-                const response = await fetch("/admin/user-status", {
-                    method: "GET",
-                    
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    updateBanButtons(data.users);
-                } else {
-                    console.error("Failed to fetch user status.");
-                }
-            } catch (error) {
-                console.error("Error fetching user status:", error);
-            }
-        }
-
-        function updateBanButtons(users) {
-            const tableBody = document.querySelector("#users-table tbody");
-            const rows = tableBody.querySelectorAll("tr");
-
-            // Loop through each user from the API data
-            users.forEach((user) => {
-                // For each row in the table
-                rows.forEach((row) => {
-                    // Select the first cell of the row
-                    const firstCell = row.querySelector("td:first-child");
-                    if (firstCell && firstCell.textContent.trim() === String(user.id)) {
-                        // If a matching row is found, update the button text
-                        const banButton = row.querySelector("button[onclick^='banUser']");
-                        if (banButton) {
-                            banButton.textContent = user.suspended ? "Unban" : "🚫";
-                        }
-                    }
-                });
-            });
-        }
-
-
-        function populateMessagesTable(messages) {
-            const tableBody = document.querySelector("#messages-table tbody");
-            tableBody.innerHTML = "";
-
-            messages.forEach((message) => {
+            backups.sort((a, b) => {
+                const parseTs = fn => {
+                    const m = fn.match(/backup_(\d{8})_(\d{6})\.db/);
+                    if (!m) return 0;
+                    const [_, D, T] = m;
+                    return new Date(`${D.slice(0,4)}-${D.slice(4,6)}-${D.slice(6,8)}T${T.slice(0,2)}:${T.slice(2,4)}:${T.slice(4,6)}`).getTime();
+                };
+                return parseTs(b.filename) - parseTs(a.filename);
+            }).forEach(backup => {
                 const row = document.createElement("tr");
+                let displayDate = backup.created_at;
+                const m = backup.filename.match(/backup_(\d{8})_(\d{6})\.db/);
+                if (m) {
+                    const [_, D, T] = m;
+                    displayDate = `${D.slice(0,4)}-${D.slice(4,6)}-${D.slice(6,8)} ${T.slice(0,2)}:${T.slice(2,4)}:${T.slice(4,6)}`;
+                }
                 row.innerHTML = `
-                    <td>${message.id}</td>
-                    <td>${message.email}</td>
-                    <td>${sanitizeHTML(message.message)}</td>
-                    <td>
-                        <button onclick="deleteMessage(${message.id})">Delete</button>
-                    </td>
-                `;
+                    <td>${backup.filename}</td>
+                    <td>${displayDate}</td>
+                    <td style="text-align:center;">${backup.outdated_schema ? '❌' : '✅'}</td>
+                    <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <button class="action-btn btn-restore" data-tip="Restore this backup" onclick="restoreBackup('${backup.filename}', this)">${icon('restore')} Restore</button>
+                        ${backup.outdated_schema ? `<button class="action-btn btn-repair" data-tip="Match & repair schema" onclick="matchBackup('${backup.filename}', this)">${icon('wrench')} Repair</button>` : ""}
+                        <button class="action-btn btn-delete" data-tip="Delete backup" onclick="deleteBackup('${backup.filename}', this)">${icon('trash')} Delete</button>
+                    </td>`;
                 tableBody.appendChild(row);
             });
-            if (messages.length === 0) {
-                const row = document.createElement("tr");
-                row.innerHTML = `<td colspan="4" style="text-align:center;color:#aaa;">No messages found.</td>`;
-                tableBody.appendChild(row);
-            }
+        } catch (err) { console.error("Error fetching backups:", err); }
+    }
+
+    async function restoreBackup(filename, btn) {
+        const ok = await showConfirm({
+            title: 'Restore Backup',
+            message: `Restoring "${filename}" will overwrite the live database. This cannot be undone.`,
+            type: 'danger',
+            okLabel: 'Restore'
+        });
+        if (!ok) return;
+        setLoading(btn, true);
+        const resp = await fetch('/restore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename}) });
+        const result = await resp.json();
+        setLoading(btn, false);
+        if (resp.ok) { toast(result.status, 'success', 'Restored'); fetchBackups(); }
+        else toast(`Restore failed: ${result.error}`, 'error');
+    }
+
+    async function matchBackup(filename, btn) {
+        setLoading(btn, true);
+        const resp = await fetch('/restore/repair', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename}) });
+        const result = await resp.json();
+        setLoading(btn, false);
+        if (resp.ok) { toast(result.status, 'success', 'Repaired'); fetchBackups(); }
+        else toast(`Repair failed: ${result.error}`, 'error');
+    }
+
+    async function deleteBackup(filename, btn) {
+        const ok = await showConfirm({
+            title: 'Delete Backup',
+            message: `"${filename}" will be permanently deleted. This cannot be undone.`,
+            type: 'danger',
+            okLabel: 'Delete'
+        });
+        if (!ok) return;
+        setLoading(btn, true);
+        try {
+            const resp = await fetch('/backup/delete', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({filename}) });
+            let result = {};
+            try { result = await resp.json(); } catch(e) { result = { error: "Invalid server response." }; }
+            setLoading(btn, false);
+            if (resp.ok) { toast(result.status || "Backup deleted.", 'success', 'Deleted'); fetchBackups(); }
+            else toast(`Deletion failed: ${result.error || resp.statusText}`, 'error');
+        } catch (err) {
+            setLoading(btn, false);
+            toast("Network error or server unreachable.", 'error');
         }
+    }
 
-        function sanitizeHTML(str) {
-            const temp = document.createElement('div');
-            temp.textContent = str;
-            return temp.innerHTML;
+    /* ══════════════════════════════════════════
+       USERS TABLE
+    ══════════════════════════════════════════ */
+    function populateMessagesTable(messages) {
+        const tableBody = document.querySelector("#messages-table tbody");
+        tableBody.innerHTML = "";
+        messages.forEach((message) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${message.id}</td>
+                <td>${message.email}</td>
+                <td>${sanitizeHTML(message.message)}</td>
+                <td><button class="action-btn btn-delete" onclick="deleteMessage(${message.id}, this)" data-tip="Delete message">${icon('trash')}</button></td>`;
+            tableBody.appendChild(row);
+        });
+        if (messages.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-dim);">No messages found.</td></tr>`;
         }
+    }
 
-        function populateUsersTable(users) {
-            const tableBody = document.querySelector("#users-table tbody");
-            tableBody.innerHTML = "";
+    function sanitizeHTML(str) {
+        const temp = document.createElement('div');
+        temp.textContent = str;
+        return temp.innerHTML;
+    }
 
-            const currentUserId = sessionStorage.getItem("current_user_id");
-
-            users.forEach((user) => {
-                // Skip rendering the current admin user (optional)
-                if (user.id == currentUserId) {
-                    return;
-                }
-
-                // Determine color class for violations
-                let violationClass = "";
-                if (user.malicious_violations >= 8) violationClass = "violations-high";
-                else if (user.malicious_violations >= 5) violationClass = "violations-medium";
-
-                const row = document.createElement("tr");
-                row.innerHTML = `
-                    <td class="user-id">${user.id}</td>
-
-                    <!-- Username (clickable) -->
-                    <td class="editable username-cell" data-user-id="${user.id}">
-                        <span class="display username-text">${sanitizeHTML(user.username)}</span>
-                    </td>
-
-                    <!-- Profile picture (clickable to open file picker) -->
-                    <td class="editable profile-picture-cell" data-user-id="${user.id}">
-                        ${ user.profile_picture ? `<img src="${sanitizeHTML(user.profile_picture)}" alt="Profile" width="40" />` : `<span class="display profile-text">N/A</span>`}
-                    </td>
-
-                    <!-- Allows sharing (clickable switch) -->
-                    <td class="editable allows-sharing-cell" data-user-id="${user.id}">
-                        <label class="switch">
-                            <input type="checkbox" class="allows-sharing-checkbox" ${user.allows_sharing ? "checked" : ""} />
-                            <span class="slider"></span>
-                        </label>
-                    </td>
-
-                    <!-- Malicious violations (clickable number) -->
-                    <td class="editable malicious-cell ${violationClass}" data-user-id="${user.id}">
-                        <span class="display violations-text">${user.malicious_violations}</span>
-                    </td>
-                    <td>
-                        <button class="small reset-violations-btn" title="Reset violations">♻️</button>
-                    </td>
-
-                    <!-- Role dropdown -->
-                    <td class="role-cell" data-user-id="${user.id}">
-                        <select class="role-select">
-                            <option value="user" ${user.role === "user" ? "selected" : ""}>User</option>
-                            <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
-                        </select>
-                    </td>
-
-                    <!-- Actions: login | delete | ban/unban | notify -->
-                    <td class="actions-cell" data-user-id="${user.id}">
-                        ${user.role !== "admin" ? `<button class="action login-btn" title="Login as user">🔑</button>` : ""}
-                        <button class="action delete-btn" title="Delete user">🗑️</button>
-                        <button class="action ban-btn" title="${user.suspended ? "Unban user" : "Ban user"}">
-                            ${user.suspended ? "✅ Unban" : "🚫 Ban"}
-                        </button>
-
-                        <button class="action notify-btn" title="Notify user">🔔</button>
-                    </td>
-
-                `;
-
-                tableBody.appendChild(row);
-
-                // Attach handlers (use functions defined below)
-                const uid = user.id;
-                attachUsernameEdit(row.querySelector(".username-cell"), uid, user.username);
-                attachProfilePictureHandler(row.querySelector(".profile-picture-cell"), uid);
-                attachAllowsSharingHandler(row.querySelector(".allows-sharing-checkbox"), uid);
-                attachViolationsHandler(row.querySelector(".malicious-cell"), uid, user.malicious_violations);
-                attachRoleHandler(row.querySelector(".role-select"), uid);
-                attachActionButtons(row.querySelector(".actions-cell"), uid);
-            });
-
-            if (users.length === 0) {
-                const row = document.createElement("tr");
-                row.innerHTML = `<td colspan="8" style="text-align:center;color:#aaa;">No users found.</td>`;
-                tableBody.appendChild(row);
-            }
+    function populateUsersTable(users) {
+        const tableBody = document.querySelector("#users-table tbody");
+        tableBody.innerHTML = "";
+        const currentUserId = sessionStorage.getItem("current_user_id");
+        users.forEach((user) => {
+            if (user.id == currentUserId) return;
+            let violationClass = "";
+            if (user.malicious_violations >= 8) violationClass = "violations-high";
+            else if (user.malicious_violations >= 5) violationClass = "violations-medium";
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td class="user-id">${user.id}</td>
+                <td class="editable username-cell" data-user-id="${user.id}">
+                    <span class="display username-text">${sanitizeHTML(user.username)}</span>
+                </td>
+                <td class="editable profile-picture-cell" data-user-id="${user.id}">
+                    ${user.profile_picture ? `<img src="${sanitizeHTML(user.profile_picture)}" alt="Profile" width="36" style="border-radius:50%;border:1px solid var(--border);cursor:pointer;" />` : `<span style="color:var(--text-dim);cursor:pointer;">—</span>`}
+                </td>
+                <td class="editable allows-sharing-cell" data-user-id="${user.id}">
+                    <label class="switch">
+                        <input type="checkbox" class="allows-sharing-checkbox" ${user.allows_sharing ? "checked" : ""} />
+                        <span class="slider"></span>
+                    </label>
+                </td>
+                <td class="editable malicious-cell ${violationClass}" data-user-id="${user.id}">
+                    <span class="display violations-text">${user.malicious_violations}</span>
+                </td>
+                <td>
+                    <button class="action-btn btn-reset small reset-violations-btn" data-tip="Reset violations" title="Reset violations">
+                        ${icon('refresh')}
+                    </button>
+                </td>
+                <td class="role-cell" data-user-id="${user.id}">
+                    <select class="role-select">
+                        <option value="user" ${user.role === "user" ? "selected" : ""}>user</option>
+                        <option value="admin" ${user.role === "admin" ? "selected" : ""}>admin</option>
+                    </select>
+                </td>
+                <td class="actions-cell" data-user-id="${user.id}" style="display:flex;gap:5px;flex-wrap:wrap;">
+                    ${user.role !== "admin" ? `<button class="action-btn btn-login" data-tip="Login as user">${icon('key')}</button>` : ""}
+                    <button class="action-btn btn-delete" data-tip="Delete user">${icon('trash')}</button>
+                    <button class="action-btn ${user.suspended ? 'btn-unban' : 'btn-ban'}" data-tip="${user.suspended ? 'Unban user' : 'Ban user'}">${icon(user.suspended ? 'check' : 'ban')}</button>
+                    <button class="action-btn btn-notify" data-tip="Notify user">${icon('bell')}</button>
+                    <button class="action-btn btn-sessions" data-tip="View sessions">${icon('monitor')}</button>
+                </td>`;
+            tableBody.appendChild(row);
+            const uid = user.id;
+            attachUsernameEdit(row.querySelector(".username-cell"), uid, user.username);
+            attachProfilePictureHandler(row.querySelector(".profile-picture-cell"), uid);
+            attachAllowsSharingHandler(row.querySelector(".allows-sharing-checkbox"), uid);
+            attachViolationsHandler(row.querySelector(".malicious-cell"), uid, user.malicious_violations);
+            attachRoleHandler(row.querySelector(".role-select"), uid);
+            attachActionButtons(row.querySelector(".actions-cell"), uid);
+        });
+        if (users.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-dim);">No users found.</td></tr>`;
         }
+    }
 
-        // ---------------------------
-        // Username editing
-        // ---------------------------
-        function attachUsernameEdit(cell, userId, currentUsername) {
-            // avoid adding multiple listeners by removing existing
-            cell.replaceWith(cell.cloneNode(true));
-            cell = document.querySelector(`td.username-cell[data-user-id="${userId}"]`);
-
-            cell.addEventListener("click", function onClick(e) {
-                // Prevent if click on inner controls
-                if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
-
-                const original = sanitizeHTML(currentUsername);
-                cell.innerHTML = `
-                    <div class="editable-field">
-                        <input type="text" class="username-input" value="${original}" />
-                        <div class="editable-buttons">
-                            <button class="confirm-username">✔️</button>
-                            <button class="cancel-username">❌</button>
-                        </div>
-                    </div>
-                `;
-
-                const confirmBtn = cell.querySelector(".confirm-username");
-                const cancelBtn = cell.querySelector(".cancel-username");
-
-                confirmBtn.addEventListener("click", async (ev) => {
-                    ev.stopPropagation();
-                    const newValue = cell.querySelector(".username-input").value.trim();
-                    if (!newValue) return alert("Username cannot be empty");
-                    try {
-                        const res = await fetch(`/admin/user/${userId}/username`, {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ username: newValue })
-                        });
-                        if (!res.ok) {
-                            const err = await res.json().catch(()=>({error:"Unknown"}));
-                            return alert("Failed to update username: " + (err.error || res.statusText));
-                        }
-                        fetchAdminData();
-                    } catch (e) {
-                        console.error(e);
-                        alert("Network error while updating username");
-                    }
-                });
-
-                cancelBtn.addEventListener("click", (ev) => {
-                    ev.stopPropagation();
-                    cell.innerHTML = `<span class="display username-text">${original}</span>`;
-                });
-            }, { once: true });
-        }
-
-        // ---------------------------
-        // Profile picture file picker + upload/delete
-        // ---------------------------
-        function attachProfilePictureHandler(cell, userId) {
-            // re-query after potential clones
-            cell = document.querySelector(`td.profile-picture-cell[data-user-id="${userId}"]`);
-            cell.addEventListener("click", (e) => {
-                // If clicking on an inner button (none expected) ignore
-                if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
-
-                // create file input
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-
-                input.addEventListener("change", async () => {
-                    const file = input.files[0];
-                    if (!file) return;
-                    // client-side size check
-                    const MAX_BYTES = 5 * 1024 * 1024;
-                    if (file.size > MAX_BYTES) return alert("File too large (max 5 MB)");
-
-                    const form = new FormData();
-                    form.append("profile_picture", file);
-
-                    try {
-                        const res = await fetch(`/admin/user/${userId}/profile_picture`, {
-                            method: "POST",
-                            body: form
-                        });
-                        if (!res.ok) {
-                            const err = await res.json().catch(()=>({error:"Unknown"}));
-                            return alert("Upload failed: " + (err.error || res.statusText));
-                        }
-                        fetchAdminData();
-                    } catch (err) {
-                        console.error(err);
-                        alert("Network error while uploading profile picture");
-                    }
-                });
-
-                // For delete: show a confirm option if there's a picture
-                const hasPic = !!cell.querySelector("img");
-                if (hasPic) {
-                    // small prompt: replace or delete
-                    const choice = confirm("Replace profile picture? Cancel will delete the existing one.");
-                    if (!choice) {
-                        // Delete flow
-                        (async () => {
-                            try {
-                                const res = await fetch(`/admin/user/${userId}/profile_picture`, { method: "DELETE" });
-                                if (!res.ok) {
-                                    const err = await res.json().catch(()=>({error:"Unknown"}));
-                                    return alert("Delete failed: " + (err.error || res.statusText));
-                                }
-                                fetchAdminData();
-                            } catch (e) {
-                                console.error(e);
-                                alert("Network error while deleting profile picture");
-                            }
-                        })();
-                        return;
-                    }
-                }
-
-                input.click();
-            });
-        }
-
-        // ---------------------------
-        // Allows_sharing toggle
-        // ---------------------------
-        function attachAllowsSharingHandler(checkbox, userId) {
-            if (!checkbox) return;
-            checkbox.addEventListener("change", async () => {
-                const value = checkbox.checked;
+    function attachUsernameEdit(cell, userId, currentUsername) {
+        cell.replaceWith(cell.cloneNode(true));
+        cell = document.querySelector(`td.username-cell[data-user-id="${userId}"]`);
+        cell.addEventListener("click", function onClick(e) {
+            if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+            const original = sanitizeHTML(currentUsername);
+            cell.innerHTML = `<div class="editable-field"><input type="text" class="username-input" value="${original}" /><div class="editable-buttons"><button class="confirm-username" style="padding:4px 8px;">✔</button><button class="cancel-username" style="padding:4px 8px;">✕</button></div></div>`;
+            cell.querySelector(".confirm-username").addEventListener("click", async (ev) => {
+                ev.stopPropagation();
+                const newValue = cell.querySelector(".username-input").value.trim();
+                if (!newValue) return toast("Username cannot be empty", 'warning');
                 try {
-                    const res = await fetch(`/admin/user/${userId}/allows_sharing`, {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ allows_sharing: value })
+                    const res = await fetch(`/admin/user/${userId}/username`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({username: newValue}) });
+                    if (!res.ok) { const err = await res.json().catch(()=>({error:"Unknown"})); return toast("Failed to update username: " + (err.error || res.statusText), 'error'); }
+                    toast(`Username updated to "${newValue}"`, 'success', 'Updated');
+                    fetchAdminData();
+                } catch(e) { toast("Network error while updating username", 'error'); }
+            });
+            cell.querySelector(".cancel-username").addEventListener("click", (ev) => { ev.stopPropagation(); cell.innerHTML = `<span class="display username-text">${original}</span>`; });
+        }, { once: true });
+    }
+
+    function attachProfilePictureHandler(cell, userId) {
+        cell = document.querySelector(`td.profile-picture-cell[data-user-id="${userId}"]`);
+        cell.addEventListener("click", (e) => {
+            if (e.target.tagName === "BUTTON" || e.target.tagName === "INPUT") return;
+            const input = document.createElement("input");
+            input.type = "file"; input.accept = "image/*";
+            input.addEventListener("change", async () => {
+                const file = input.files[0]; if (!file) return;
+                if (file.size > 5 * 1024 * 1024) return toast("File too large (max 5 MB)", 'warning');
+                const form = new FormData(); form.append("profile_picture", file);
+                try {
+                    const res = await fetch(`/admin/user/${userId}/profile_picture`, { method: "POST", body: form });
+                    if (!res.ok) { const err = await res.json().catch(()=>({error:"Unknown"})); return toast("Upload failed: " + (err.error || res.statusText), 'error'); }
+                    toast("Profile picture updated.", 'success');
+                    fetchAdminData();
+                } catch(err) { toast("Network error while uploading profile picture", 'error'); }
+            });
+            const hasPic = !!cell.querySelector("img");
+            if (hasPic) {
+                showConfirm({ title: 'Replace Photo', message: 'Replace the profile picture? Choose Cancel to delete the existing one instead.', type: 'info', okLabel: 'Replace' })
+                    .then(replace => {
+                        if (replace) { input.click(); }
+                        else {
+                            fetch(`/admin/user/${userId}/profile_picture`, { method: "DELETE" })
+                                .then(res => res.ok ? (toast("Profile picture deleted.", 'success'), fetchAdminData()) : res.json().then(e => toast("Delete failed: " + (e.error || res.statusText), 'error')))
+                                .catch(() => toast("Network error while deleting profile picture", 'error'));
+                        }
                     });
-                    if (!res.ok) {
-                        const err = await res.json().catch(()=>({error:"Unknown"}));
-                        alert("Failed to update setting: " + (err.error || res.statusText));
-                        // revert toggle on failure
-                        checkbox.checked = !value;
-                    } else {
-                        // optional: toast success
-                    }
-                } catch (e) {
-                    console.error(e);
-                    alert("Network error while updating setting");
+            } else { input.click(); }
+        });
+    }
+
+    function attachAllowsSharingHandler(checkbox, userId) {
+        if (!checkbox) return;
+        checkbox.addEventListener("change", async () => {
+            const value = checkbox.checked;
+            try {
+                const res = await fetch(`/admin/user/${userId}/allows_sharing`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({allows_sharing: value}) });
+                if (!res.ok) {
+                    const err = await res.json().catch(()=>({error:"Unknown"}));
+                    toast("Failed: " + (err.error || res.statusText), 'error');
                     checkbox.checked = !value;
                 }
-            });
-        }
-
-        // ---------------------------
-        // Malicious violations editable + reset button
-        // ---------------------------
-        // Replace your old attachViolationsHandler with this version:
-        function attachViolationsHandler(cell, userId, currentValue) {
-            // ensure we're working with the fresh cell element (avoid multiple listeners)
-            const row = cell.parentElement;
-            // find the reset button in the same row (you put it in its own <td>)
-            const resetBtn = row.querySelector(".reset-violations-btn");
-
-            // Remove previous listeners safely by cloning nodes
-            if (resetBtn) {
-                const newReset = resetBtn.cloneNode(true);
-                resetBtn.parentElement.replaceChild(newReset, resetBtn);
-            }
-
-            // Re-query reset button after potential replace
-            const resetBtnFinal = row.querySelector(".reset-violations-btn");
-
-            // Attach reset handler (if present)
-            if (resetBtnFinal) {
-                resetBtnFinal.addEventListener("click", async (ev) => {
-                    ev.stopPropagation();
-                    if (!confirm("Reset violations to 0 for this user?")) return;
-                    try {
-                        const res = await fetch(`/admin/user/${userId}/violations`, {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ malicious_violations: 0 })
-                        });
-                        if (!res.ok) {
-                            const err = await res.json().catch(() => ({ error: "Unknown" }));
-                            return alert("Failed to reset: " + (err.error || res.statusText));
-                        }
-                        fetchAdminData();
-                    } catch (e) {
-                        console.error(e);
-                        alert("Network error while resetting violations");
-                    }
-                });
-            }
-
-            // Remove existing click listener by replacing the cell node, then re-query
-            const newCell = cell.cloneNode(true);
-            cell.parentElement.replaceChild(newCell, cell);
-            cell = row.querySelector(".malicious-cell[data-user-id='" + userId + "']");
-
-            // Clicking the cell (not the reset button) opens inline edit
-            cell.addEventListener("click", (e) => {
-                // If click was on the reset button (which is in a sibling cell) or on inner controls, ignore
-                if (e.target.classList && e.target.classList.contains("reset-violations-btn")) return;
-
-                const original = currentValue;
-                cell.innerHTML = `
-                    <div class="editable-field">
-                        <input type="number" class="violations-input" min="0" value="${original}" />
-                        <div class="editable-buttons">
-                            <button class="confirm-violations">✔️</button>
-                            <button class="cancel-violations">❌</button>
-                        </div>
-                    </div>
-                `;
-
-                const confirmBtn = cell.querySelector(".confirm-violations");
-                const cancelBtn = cell.querySelector(".cancel-violations");
-
-                confirmBtn.addEventListener("click", async (ev) => {
-                    ev.stopPropagation();
-                    const newVal = parseInt(cell.querySelector(".violations-input").value, 10);
-                    if (Number.isNaN(newVal) || newVal < 0) return alert("Invalid value");
-                    try {
-                        const res = await fetch(`/admin/user/${userId}/violations`, {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ malicious_violations: newVal })
-                        });
-                        if (!res.ok) {
-                            const err = await res.json().catch(() => ({ error: "Unknown" }));
-                            return alert("Failed to update: " + (err.error || res.statusText));
-                        }
-                        fetchAdminData();
-                    } catch (e) {
-                        console.error(e);
-                        alert("Network error while updating violations");
-                    }
-                });
-
-                cancelBtn.addEventListener("click", (ev) => {
-                    ev.stopPropagation();
-                    // restore the cell display (value only — reset button is in sibling cell)
-                    cell.innerHTML = `<span class="display violations-text">${original}</span>`;
-                });
-            }, { once: true });
-        }
-
-
-        // ---------------------------
-        // Role dropdown -> uses existing /admin PUT route (user_id + new_role)
-        // ---------------------------
-        function attachRoleHandler(selectElem, userId) {
-            selectElem.addEventListener("change", async () => {
-                const newRole = selectElem.value;
-                try {
-                    const res = await fetch("/admin", {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ user_id: userId, new_role: newRole })
-                    });
-                    if (!res.ok) {
-                        const err = await res.json().catch(()=>({error:"Unknown"}));
-                        alert("Failed to change role: " + (err.error || res.statusText));
-                        // optionally refresh to restore previous value
-                        fetchAdminData();
-                        return;
-                    }
-                    fetchAdminData();
-                } catch (e) {
-                    console.error(e);
-                    alert("Network error while updating role");
-                    fetchAdminData();
-                }
-            });
-        }
-
-        // ---------------------------
-        // Actions buttons (delegates to your existing functions)
-        // ---------------------------
-        function attachActionButtons(actionsCell, userId) {
-            // ensure existing actions exist in global scope: loginUser, deleteUser, banUser, showUserNotificationModal
-            const loginBtn = actionsCell.querySelector(".login-btn");
-            const deleteBtn = actionsCell.querySelector(".delete-btn");
-            const banBtn = actionsCell.querySelector(".ban-btn");
-            const notifyBtn = actionsCell.querySelector(".notify-btn");
-
-            if (loginBtn) loginBtn.addEventListener("click", () => typeof loginUser === "function" && loginUser(userId));
-            if (deleteBtn) deleteBtn.addEventListener("click", () => typeof deleteUser === "function" && deleteUser(userId));
-            if (banBtn) banBtn.addEventListener("click", () => typeof banUser === "function" && banUser(userId));
-            if (notifyBtn) notifyBtn.addEventListener("click", () => typeof showUserNotificationModal === "function" && showUserNotificationModal(userId));
-        }
-
-        function confirmViolations(userId, btn) {
-            const input = btn.parentElement.parentElement.querySelector("input");
-            const newValue = parseInt(input.value);
-            if (isNaN(newValue) || newValue < 0) return alert("Invalid value");
-
-            // Send to backend (placeholder)
-            console.log(`Set malicious violations for ${userId} to ${newValue}`);
-
-            const cell = btn.closest("td");
-            cell.innerHTML = newValue;
-            if (newValue >= 8) cell.className = "editable malicious violations-high";
-            else if (newValue >= 5) cell.className = "editable malicious violations-medium";
-            else cell.className = "editable malicious";
-        }
-
-
-        async function resetViolations(userId) {
-            try {
-                const response = await fetch("/admin/reset_violations", {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: userId })
-                });
-
-                if (response.ok) {
-                    alert(`Malicious violations reset for user ${userId}`);
-                    fetchAdminData(); // Refresh the table
-                } else {
-                    const data = await response.json();
-                    alert(`Failed to reset: ${data.error || "Unknown error"}`);
-                }
-            } catch (error) {
-                console.error("Error resetting violations:", error);
-                alert("Unexpected error. Check console.");
-            }
-        }
-
-
-        async function deleteMessage(id) {
-            try {
-                const response = await fetch("/admin", {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json",
-                        
-                    },
-                    body: JSON.stringify({ target: id, type: "message" }),
-                });
-
-                if (response.ok) {
-                    fetchAdminData();
-                } else {
-                    alert("Failed to delete message.");
-                }
-            } catch (error) {
-                console.error("Error deleting message:", error);
-            }
-        }
-
-        async function deleteUser(id) {
-            if (confirm("Are you sure you want to delete this user?")) {
-                try {
-                    const response = await fetch("/admin", {
-                        method: "DELETE",
-                        headers: {
-                            "Content-Type": "application/json",
-                            
-                        },
-                        body: JSON.stringify({ target: id, type: "user" }),
-                    });
-
-                    if (response.ok) {
-                        alert("User deleted successfully.");
-                        fetchAdminData();
-                    } else {
-                        alert("Failed to delete user.");
-                    }
-                } catch (error) {
-                    console.error("Error deleting user:", error);
-                }
-            }
-        }
-
-        async function banUser(userId) {
-            if (confirm("Are you sure you want to ban/unban this user?")) {
-                try {
-                    const response = await fetch("/admin/ban", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            
-                        },
-                        body: JSON.stringify({ user_id: userId }),
-                    });
-
-                    if (response.ok) {
-                        alert("User banned/unbanned successfully.");
-                        fetchAdminData();
-                    } else {
-                        alert("Failed to ban/unban user.");
-                    }
-                } catch (error) {
-                    console.error("Error banning/unbanning user:", error);
-                }
-            }
-        }
-
-        async function loginUser(userId) {
-            if (!confirm("You will be logged out of your own account and logged in as the selected user. Proceed?")) {
-                return;
-            }
-
-            // 1) if this is the first impersonation, back up admin_lasting_key in localStorage
-            if (!localStorage.getItem("admin_lasting_key")) {
-                // since we can’t read HttpOnly lasting_key cookie, trigger the backend:
-                // we call login with keep_login=false so it will echo the existing lasting_key in JSON
-                const resp = await fetch("/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({})  
-                });
-                if (resp.ok) {
-                const data = await resp.json();
-                localStorage.setItem("admin_lasting_key", data.lasting_key);
-                }
-            }
-
-            // 2) tell the server to impersonate
-            const response = await fetch("/admin/login-as-user", {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ user_id: userId })
-            });
-
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                return alert(err.error || "Failed to log in as the user.");
-            }
-            const data = await response.json();
-            // 3) mark which user we’re now impersonating
-            sessionStorage.setItem("impersonated_user_id", userId);
-            alert("Now impersonating user");
-            window.location.href = data.startpage;  // or the returned startpage if you prefer
-        }
-
-
-        async function changeUserRole(userId, newRole) {
-            try {
-                const response = await fetch("/admin", {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json",
-                        
-                    },
-                    body: JSON.stringify({ user_id: userId, new_role: newRole }),
-                });
-
-                if (response.ok) {
-                    alert("Role updated successfully.");
-                    location.reload();
-                } else {
-                    alert("Failed to update role.");
-                }
-            } catch (error) {
-                console.error("Error updating role:", error);
-            }
-        }
-
-        document.getElementById("dump-database").addEventListener("click", () => {
-            const overlay = document.getElementById("password-confirmation-overlay");
-            overlay.style.display = "flex";
+            } catch(e) { toast("Network error", 'error'); checkbox.checked = !value; }
         });
+    }
 
-        async function scanForUpdates() {
-            try {
-            const response = await fetch("/admin/scan-updates", {
-                method: "GET",
-                headers: {
-                "Content-Type": "application/json",
-                
-                },
-            });
-            if (response.ok) {
-                const data = await response.json();
-                if (data.update_available) {
-                alert(`${data.commits_behind} update(s) available.`);
-                } else {
-                alert("Your code is up-to-date.");
-                }
-            } else {
-                const error = await response.json();
-                alert(error.error || "Failed to scan for updates.");
-            }
-            } catch (error) {
-            console.error("Error scanning for updates:", error);
-            alert("An unexpected error occurred while scanning for updates.");
-            }
+    function attachViolationsHandler(cell, userId, currentValue) {
+        const row = cell.parentElement;
+        const resetBtn = row.querySelector(".reset-violations-btn");
+        if (resetBtn) {
+            const newReset = resetBtn.cloneNode(true);
+            resetBtn.parentElement.replaceChild(newReset, resetBtn);
         }
-
-        async function runUpdate() {
-            try {
-            const response = await fetch("/admin/update", {
-                method: "POST",
-                headers: {
-                "Content-Type": "application/json",
-                
-                },
+        const resetBtnFinal = row.querySelector(".reset-violations-btn");
+        if (resetBtnFinal) {
+            resetBtnFinal.addEventListener("click", async (ev) => {
+                ev.stopPropagation();
+                const ok = await showConfirm({ title: 'Reset Violations', message: 'Set this user\'s violation count back to zero?', type: 'warning', okLabel: 'Reset' });
+                if (!ok) return;
+                try {
+                    const res = await fetch(`/admin/user/${userId}/violations`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({malicious_violations: 0}) });
+                    if (!res.ok) { const err = await res.json().catch(()=>({error:"Unknown"})); return toast("Failed: " + (err.error || res.statusText), 'error'); }
+                    toast("Violations reset to 0.", 'success');
+                    fetchAdminData();
+                } catch(e) { toast("Network error", 'error'); }
             });
-            if (response.ok) {
-                const data = await response.json();
-                alert(data.status || "Update initiated successfully.");
-            } else {
-                const error = await response.json();
-                alert(error.error || "Failed to initiate update.");
-            }
-            } catch (error) {
-            console.error("Error initiating update:", error);
-            alert("An unexpected error occurred while initiating update.");
-            }
         }
-
-        document.getElementById("scan-updates").addEventListener("click", scanForUpdates);
-        document.getElementById("run-update").addEventListener("click", runUpdate);
-
-        async function scanDevVsMaster() {
-            try {
-            const response = await fetch("/admin/scan-dev-vs-master", {
-                method: "GET",
-                headers: {
-                "Content-Type": "application/json",
-                
-                },
+        const newCell = cell.cloneNode(true);
+        cell.parentElement.replaceChild(newCell, cell);
+        cell = row.querySelector(".malicious-cell[data-user-id='" + userId + "']");
+        cell.addEventListener("click", (e) => {
+            if (e.target.classList && e.target.classList.contains("reset-violations-btn")) return;
+            const original = currentValue;
+            cell.innerHTML = `<div class="editable-field"><input type="number" class="violations-input" min="0" value="${original}" /><div class="editable-buttons"><button class="confirm-violations" style="padding:4px 8px;">✔</button><button class="cancel-violations" style="padding:4px 8px;">✕</button></div></div>`;
+            cell.querySelector(".confirm-violations").addEventListener("click", async (ev) => {
+                ev.stopPropagation();
+                const newVal = parseInt(cell.querySelector(".violations-input").value, 10);
+                if (Number.isNaN(newVal) || newVal < 0) return toast("Invalid value", 'warning');
+                try {
+                    const res = await fetch(`/admin/user/${userId}/violations`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({malicious_violations: newVal}) });
+                    if (!res.ok) { const err = await res.json().catch(()=>({error:"Unknown"})); return toast("Failed: " + (err.error || res.statusText), 'error'); }
+                    toast(`Violations set to ${newVal}.`, 'success');
+                    fetchAdminData();
+                } catch(e) { toast("Network error", 'error'); }
             });
+            cell.querySelector(".cancel-violations").addEventListener("click", (ev) => { ev.stopPropagation(); cell.innerHTML = `<span class="display violations-text">${original}</span>`; });
+        }, { once: true });
+    }
 
-            if (response.ok) {
-                const data = await response.json();
-
-                if (data.dev_ahead_of_master) {
-                alert(`Dev is ahead of Master by ${data.commits_ahead} commit(s).`);
-                } else {
-                alert("Dev branch is not ahead of Master.");
-                }
-            } else {
-                const error = await response.json();
-                alert(error.error || "Failed to check dev vs master.");
-            }
-            } catch (error) {
-            console.error("Error checking dev vs master:", error);
-            alert("An unexpected error occurred while checking dev vs master.");
-            }
-        }
-
-        document.getElementById("scan-dev-vs-master").addEventListener("click", scanDevVsMaster);
-
-        async function mergeDevIntoMaster() {
-            if (!confirm("Are you sure you want to merge Dev into Master? This cannot be undone.")) return;
-
+    function attachRoleHandler(selectElem, userId) {
+        selectElem.addEventListener("change", async () => {
+            const newRole = selectElem.value;
             try {
-            const response = await fetch("/admin/merge-dev-into-master", {
-                method: "POST",
-                headers: {
-                "Content-Type": "application/json",
-                
-                },
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                alert(data.status || "Merge completed successfully.");
-            } else {
-                const error = await response.json();
-                alert(error.error || "Merge failed.");
-            }
-            } catch (error) {
-            console.error("Error merging branches:", error);
-            alert("An unexpected error occurred while merging.");
-            }
-        }
-
-        document.getElementById("merge-dev-master").addEventListener("click", mergeDevIntoMaster);
-
-        document.getElementById("confirm-dump").addEventListener("click", async () => {
-            const password = document.getElementById("confirm-password").value.trim();
-
-            if (!password) {
-                alert("Password is required to confirm database dump.");
-                return;
-            }
-
-            try {
-                const response = await fetch("/admin/dump", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        
-                    },
-                    body: JSON.stringify({ password }),
-                });
-
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.style.display = "none";
-                    a.href = url;
-                    a.download = "database_dump.json";
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    alert("Database dump downloaded successfully.");
-                } else {
-                    const error = await response.json();
-                    alert(error.error || "Failed to dump database.");
-                }
-            } catch (error) {
-                console.error("Error dumping database:", error);
-                alert("An unexpected error occurred.");
-            } finally {
-                document.getElementById("password-confirmation-overlay").style.display = "none";
-            }
+                const res = await fetch("/admin", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({user_id: userId, new_role: newRole}) });
+                if (!res.ok) { const err = await res.json().catch(()=>({error:"Unknown"})); toast("Failed: " + (err.error || res.statusText), 'error'); }
+                else toast(`Role updated to "${newRole}".`, 'success');
+                fetchAdminData();
+            } catch(e) { toast("Network error", 'error'); fetchAdminData(); }
         });
+    }
 
-        document.getElementById("cancel-dump").addEventListener("click", () => {
+    function attachActionButtons(actionsCell, userId) {
+        const loginBtn  = actionsCell.querySelector(".btn-login");
+        const deleteBtn = actionsCell.querySelector(".btn-delete");
+        const banBtn    = actionsCell.querySelector(".btn-ban, .btn-unban");
+        const notifyBtn = actionsCell.querySelector(".btn-notify");
+        const sessBtn = actionsCell.querySelector(".btn-sessions");
+        if (loginBtn)  loginBtn.addEventListener("click",  () => typeof loginUser  === "function" && loginUser(userId));
+        if (deleteBtn) deleteBtn.addEventListener("click", () => typeof deleteUser === "function" && deleteUser(userId));
+        if (banBtn)    banBtn.addEventListener("click",    () => typeof banUser    === "function" && banUser(userId));
+        if (notifyBtn) notifyBtn.addEventListener("click", () => typeof showUserNotificationModal === "function" && showUserNotificationModal(userId));
+        if (sessBtn) {const username = actionsCell.closest('tr')?.querySelector('.username-text')?.textContent?.trim() || `User ${userId}`;sessBtn.addEventListener('click', () => openSessionsModal(userId, username));}
+    }
+
+    async function deleteMessage(id, btn) {
+        const ok = await showConfirm({ title: 'Delete Message', message: 'This message will be permanently deleted.', type: 'danger', okLabel: 'Delete' });
+        if (!ok) return;
+        if (btn) setLoading(btn, true);
+        try {
+            const response = await fetch("/admin", { method: "DELETE", headers: {"Content-Type":"application/json"}, body: JSON.stringify({target: id, type: "message"}) });
+            if (response.ok) { toast("Message deleted.", 'success'); fetchAdminData(); }
+            else toast("Failed to delete message.", 'error');
+        } catch(error) { console.error(error); }
+        if (btn) setLoading(btn, false);
+    }
+
+    async function deleteUser(id) {
+        const ok = await showConfirm({ title: 'Delete User', message: 'This user account will be permanently deleted along with all their data.', type: 'danger', okLabel: 'Delete' });
+        if (!ok) return;
+        try {
+            const response = await fetch("/admin", { method: "DELETE", headers: {"Content-Type":"application/json"}, body: JSON.stringify({target: id, type: "user"}) });
+            if (response.ok) { toast("User deleted.", 'success'); fetchAdminData(); }
+            else toast("Failed to delete user.", 'error');
+        } catch(error) { console.error(error); }
+    }
+
+    async function banUser(userId) {
+        const ok = await showConfirm({ title: 'Ban / Unban User', message: 'Toggle this user\'s suspension status?', type: 'warning', okLabel: 'Confirm' });
+        if (!ok) return;
+        try {
+            const response = await fetch("/admin/ban", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({user_id: userId}) });
+            if (response.ok) { toast("User suspension status updated.", 'success'); fetchAdminData(); }
+            else toast("Failed to update user status.", 'error');
+        } catch(error) { console.error(error); }
+    }
+
+    async function loginUser(userId) {
+        const ok = await showConfirm({ title: 'Impersonate User', message: 'You will be logged out of your admin session and impersonating this user.', type: 'warning', okLabel: 'Proceed' });
+        if (!ok) return;
+        if (!localStorage.getItem("admin_lasting_key")) {
+            const resp = await fetch("/login", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({}) });
+            if (resp.ok) { const data = await resp.json(); localStorage.setItem("admin_lasting_key", data.lasting_key); }
+        }
+        const response = await fetch("/admin/login-as-user", { method: "POST", credentials: "include", headers: {"Content-Type":"application/json"}, body: JSON.stringify({user_id: userId}) });
+        if (!response.ok) { const err = await response.json().catch(()=>({})); return toast(err.error || "Failed.", 'error'); }
+        const data = await response.json();
+        sessionStorage.setItem("impersonated_user_id", userId);
+        toast("Impersonation active. Redirecting…", 'info', 'Login as user');
+        setTimeout(() => { window.location.href = data.startpage; }, 1200);
+    }
+
+    async function changeUserRole(userId, newRole) {
+        try {
+            const response = await fetch("/admin", { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify({user_id: userId, new_role: newRole}) });
+            if (response.ok) { toast("Role updated.", 'success'); location.reload(); }
+            else toast("Failed to update role.", 'error');
+        } catch(error) { console.error(error); }
+    }
+
+    /* ══════════════════════════════════════════
+       DUMP DATABASE
+    ══════════════════════════════════════════ */
+    document.getElementById("dump-database").addEventListener("click", () => {
+        document.getElementById("password-confirmation-overlay").style.display = "flex";
+    });
+
+    document.getElementById("confirm-dump").addEventListener("click", async () => {
+        const password = document.getElementById("confirm-password").value.trim();
+        if (!password) { toast("Password required.", 'warning'); return; }
+        const btn = document.getElementById("confirm-dump");
+        setLoading(btn, true);
+        try {
+            const response = await fetch("/admin/dump", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({password}) });
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.style.display = "none"; a.href = url; a.download = "database_dump.json";
+                document.body.appendChild(a); a.click();
+                window.URL.revokeObjectURL(url);
+                toast("Database dump downloaded.", 'success', 'Dump complete');
+            } else {
+                const error = await response.json();
+                toast(error.error || "Failed.", 'error', 'Dump failed');
+            }
+        } catch(error) { toast("Unexpected error.", 'error'); }
+        finally {
+            setLoading(btn, false);
             document.getElementById("password-confirmation-overlay").style.display = "none";
+        }
+    });
+
+    document.getElementById("cancel-dump").addEventListener("click", () => {
+        document.getElementById("password-confirmation-overlay").style.display = "none";
+    });
+
+    /* ══════════════════════════════════════════
+       SCAN / UPDATE / MERGE / DEPLOY
+    ══════════════════════════════════════════ */
+    async function scanForUpdates() {
+        const btn = document.getElementById('scan-updates');
+        setLoading(btn, true);
+        try {
+            const response = await fetch("/admin/scan-updates", { method: "GET" });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.update_available) toast(`${data.commits_behind} update(s) available.`, 'warning', 'Updates found');
+                else toast("Your code is up-to-date.", 'success', 'Up to date');
+            } else { const error = await response.json(); toast(error.error || "Failed to scan.", 'error'); }
+        } catch(error) { toast("Unexpected error while scanning.", 'error'); }
+        finally { setLoading(btn, false); }
+    }
+
+    async function runUpdate() {
+        const btn = document.getElementById('run-update');
+        const ok = await showConfirm({ title: 'Run Update', message: 'Pull and apply the latest remote changes?', type: 'warning', okLabel: 'Update' });
+        if (!ok) return;
+        setLoading(btn, true);
+        try {
+            const response = await fetch("/admin/update", { method: "POST" });
+            if (response.ok) { const data = await response.json(); toast(data.status || "Update initiated.", 'success', 'Updated'); }
+            else { const error = await response.json(); toast(error.error || "Failed to update.", 'error'); }
+        } catch(error) { toast("Unexpected error while updating.", 'error'); }
+        finally { setLoading(btn, false); }
+    }
+
+    document.getElementById("scan-updates").addEventListener("click", scanForUpdates);
+    document.getElementById("run-update").addEventListener("click", runUpdate);
+
+    async function scanDevVsMaster() {
+        const btn = document.getElementById('scan-dev-vs-master');
+        setLoading(btn, true);
+        try {
+            const response = await fetch("/admin/scan-dev-vs-master", { method: "GET" });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.dev_ahead_of_master) toast(`Dev is ahead by ${data.commits_ahead} commit(s).`, 'info', 'Branch status');
+                else toast("Dev branch is not ahead of Master.", 'info', 'Branch status');
+            } else { const error = await response.json(); toast(error.error || "Failed.", 'error'); }
+        } catch(error) { toast("Unexpected error.", 'error'); }
+        finally { setLoading(btn, false); }
+    }
+    document.getElementById("scan-dev-vs-master").addEventListener("click", scanDevVsMaster);
+
+    async function mergeDevIntoMaster() {
+        const btn = document.getElementById('merge-dev-master');
+        const ok = await showConfirm({
+            title: 'Merge Dev → Master',
+            message: 'This will merge the dev branch into master. This cannot be undone.',
+            type: 'danger',
+            okLabel: 'Merge'
         });
+        if (!ok) return;
+        setLoading(btn, true);
+        try {
+            const response = await fetch("/admin/merge-dev-into-master", { method: "POST" });
+            if (response.ok) { const data = await response.json(); toast(data.status || "Merge completed.", 'success', 'Merged'); }
+            else { const error = await response.json(); toast(error.error || "Merge failed.", 'error'); }
+        } catch(error) { toast("Unexpected error.", 'error'); }
+        finally { setLoading(btn, false); }
+    }
+    document.getElementById("merge-dev-master").addEventListener("click", mergeDevIntoMaster);
 
-
-        // Fetch data on page load
-        fetchAdminData();
-    </script>
+    /* ══════════════════════════════════════════
+       INIT
+    ══════════════════════════════════════════ */
+    fetchAdminData();
+</script>
 </body>
 </html>
