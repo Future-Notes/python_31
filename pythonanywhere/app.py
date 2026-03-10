@@ -13418,7 +13418,13 @@ def is_profane(username: str) -> bool:
 # --- MAIN VALIDATION ---
 def is_username_invalid(username: str, reserved_names=None, protected_users=None):
     """
-    Returns: (exists, protected, reason)
+    Check if a username is invalid.
+    
+    Returns:
+        tuple: (exists, protected, reason)
+            - exists: bool, True if the username already exists in DB
+            - protected: bool, True if the username is reserved/protected
+            - reason: str or None, reason why invalid (e.g., "Profanity", "Reserved name")
     """
     if reserved_names is None:
         reserved_names = RESERVED_NAMES
@@ -13440,17 +13446,22 @@ def is_username_invalid(username: str, reserved_names=None, protected_users=None
         if pattern.match(username):
             return False, True, "Reserved regex"
 
-    # --- PROTECTED USERS ---
-    if protected_users:
-        for pu in protected_users:
-            protected_norm = normalize_username(pu.username)
-            if username_norm == protected_norm or similar(username_norm, protected_norm):
-                return False, True, "Protected similarity"
+    # --- EXISTING USERS ---
+    user_exists = User.query.filter_by(username=username).first() is not None
 
-    return False, False, None
+    # --- PROTECTED USERS ---
+    if protected_users is None:
+        protected_users = User.query.filter_by(has_username_protection=True).all()
+
+    for pu in protected_users:
+        protected_norm = normalize_username(pu.username)
+        if username_norm == protected_norm or similar(username_norm, protected_norm):
+            return False, True, "Protected similarity"
+
+    return user_exists, False, None
 
 def validate_username(username: str, protected_users=None):
-    exists, protected, reason = is_username_invalid(username, protected_users=protected_users)
+    exists, protected, reason = is_username_invalid(username)
     if protected or exists:
         return {"exists": exists, "protected": protected, "reason": reason}
 
