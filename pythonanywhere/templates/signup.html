@@ -10,203 +10,305 @@
   <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
   <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
   <link rel="manifest" href="static/site.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
   <script src="/static/js/loader.js"></script>
   <script src="/static/js/check.js"></script>
   <style>
+    :root {
+      --bg-color:  #2c2c2c;
+      --hdr-color: #3a3a3a;
+      --ctr-color: #1e1e1e;
+      --btn-color: #424242;
+
+      --accent:       #5b8cf7;
+      --accent-dim:   rgba(91,140,247,0.15);
+      --accent-glow:  rgba(91,140,247,0.22);
+      --text-primary: #e8e8e8;
+      --text-muted:   #9a9a9a;
+      --text-dim:     #606060;
+      --border:       rgba(255,255,255,0.07);
+      --border-hover: rgba(255,255,255,0.13);
+      --danger:       #e07070;
+      --danger-bg:    rgba(224,112,112,0.08);
+      --success:      #6bc97a;
+      --success-bg:   rgba(107,201,122,0.08);
+      --radius:       8px;
+      --radius-sm:    6px;
+      --ease:         cubic-bezier(0.4,0,0.2,1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { height: 100%; }
+
     body {
-      background-color: #2c2c2c;
-      color: #e0e0e0;
-      font-family: Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+      font-weight: 400;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
+      align-items: center;
       justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      padding: 0;
+      padding: 24px 16px;
+      position: relative;
+      overflow-x: hidden;
     }
 
-    h1 {
-      margin-bottom: 20px;
-      color: #e0e0e0;
+    /* Subtle vignette */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 90% 80% at 50% 50%,
+          transparent 30%,
+          rgba(10,10,10,0.35) 100%);
+      pointer-events: none;
+      z-index: 0;
     }
 
-    .form-container {
+    /* Faint accent wash */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(91,140,247,0.055) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Back button ── */
+    .back-button {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      width: 38px;
+      height: 38px;
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      border-radius: 50%;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      text-align: center;
+      justify-content: center;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 17px;
+      font-family: 'Outfit', sans-serif;
+      transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+      z-index: 10;
+    }
+    .back-button:hover {
+      background: var(--btn-color);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    /* ── Page wrapper ── */
+    .page-wrapper {
+      position: relative;
+      z-index: 1;
       width: 100%;
       max-width: 400px;
       opacity: 0;
-      transform: translateY(-20px);
-      animation: fadeIn 1s ease-out forwards;
+      transform: translateY(14px);
+      animation: revealUp 0.55s var(--ease) 0.05s forwards;
     }
 
-    @keyframes fadeIn {
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    @keyframes revealUp {
+      to { opacity: 1; transform: translateY(0); }
     }
 
-    form {
-      background-color: #3a3a3a;
-      padding: 25px;
-      border-radius: 8px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-      width: 100%;
+    /* ── Logo / heading area ── */
+    .logo-area {
+      text-align: center;
+      margin-bottom: 28px;
     }
 
-    label {
+    .logo-icon {
+      width: 46px;
+      height: 46px;
+      background: var(--ctr-color);
+      border: 1px solid var(--border-hover);
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04) inset;
+    }
+
+    .logo-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .logo-area h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+
+    .logo-area p {
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow:
+          0 1px 0 rgba(255,255,255,0.05) inset,
+          0 20px 60px rgba(0,0,0,0.4),
+          0 4px 16px rgba(0,0,0,0.25);
+    }
+
+    /* ── Field ── */
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
       display: block;
-      text-align: left;
-      margin-bottom: 10px;
-      font-size: 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+      margin-bottom: 7px;
     }
 
     input[type="text"],
     input[type="password"] {
       width: 100%;
-      padding: 12px;
-      margin-bottom: 20px;
-      border: none;
-      border-radius: 5px;
-      background-color: #5a5a5a;
-      color: #e0e0e0;
-      box-sizing: border-box;
-      transition: background-color 0.3s ease;
+      padding: 10px 13px;
+      background: var(--ctr-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      outline: none;
+      transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
     }
-
+    input[type="text"]::placeholder,
+    input[type="password"]::placeholder {
+      color: var(--text-dim);
+    }
+    input[type="text"]:hover,
+    input[type="password"]:hover {
+      border-color: var(--border-hover);
+    }
     input[type="text"]:focus,
     input[type="password"]:focus {
-      outline: none;
-      background-color: #7a7a7a;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
     }
 
-    button {
-      width: 100%;
-      padding: 12px;
-      border: none;
-      border-radius: 5px;
-      background-color: #5a5a5a;
-      color: #e0e0e0;
-      cursor: pointer;
-      font-size: 16px;
-      font-weight: bold;
-      transition: background 0.3s ease;
-    }
-
-    button:hover {
-      background-color: #4a4a4a;
-    }
-
-    p {
-      margin-top: 20px;
-    }
-
-    a {
-      color: #7a7a7a;
-      text-decoration: none;
-      transition: color 0.3s ease;
-    }
-
-    a:hover {
-      color: #9a9a9a;
-    }
-
-    .back-button {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      width: 50px;
-      height: 50px;
-      background-color: #6a6a6a;
-      border-radius: 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      color: #e0e0e0;
-      text-decoration: none;
-      font-size: 24px;
-      font-weight: bold;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-      transition: background 0.3s, transform 0.2s;
-    }
-
-    .back-button:hover {
-      background-color: #5a5a5a;
-      transform: scale(1.1);
-    }
-
-    .page-title {
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translate(-50%, -100%);
-      font-size: 36px;
-      font-weight: bold;
-      color: #e0e0e0;
-      opacity: 0;
-      animation: slideInFromTop 1s ease-out forwards;
-      text-align: center;
-      margin: 0;
-    }
-
-    @keyframes slideInFromTop {
-      to {
-        transform: translate(-50%, 20px);
-        opacity: 1;
-      }
-    }
-
-    /* Styles for the password tip */
-    .hidden {
+    /* ── Inline tips ── */
+    .tip {
+      font-size: 12px;
+      margin-top: -10px;
+      margin-bottom: 14px;
+      padding: 8px 11px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
       display: none;
+      line-height: 1.5;
+    }
+    .tip.visible { display: block; }
+
+    .tip.error {
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-color: rgba(224,112,112,0.2);
+    }
+    .tip.success {
+      color: var(--success);
+      background: var(--success-bg);
+      border-color: rgba(107,201,122,0.2);
+    }
+    .tip a {
+      color: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
 
-    #password-tip {
-      font-size: 0.9rem;
-      text-align: left;
-      margin-bottom: 20px;
-      transition: color 0.3s;
+    /* ── Button ── */
+    .btn {
+      width: 100%;
+      padding: 11px;
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: background 0.18s var(--ease), box-shadow 0.18s var(--ease), transform 0.1s;
+      box-shadow: 0 2px 12px rgba(91,140,247,0.28), 0 1px 0 rgba(255,255,255,0.1) inset;
+      position: relative;
+      overflow: hidden;
     }
-
-    #password-tip.error {
-      color: #f44336;
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0);
+      transition: background 0.15s;
     }
-
-    #password-tip.success {
-      color: #4caf50;
+    .btn:hover {
+      background: #6f9cf9;
+      box-shadow: 0 4px 18px rgba(91,140,247,0.38);
     }
+    .btn:hover::after { background: rgba(255,255,255,0.05); }
+    .btn:active { transform: translateY(1px); }
 
-    /* Shake animation */
+    /* ── Footer ── */
+    .form-footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--text-dim);
+      line-height: 1.9;
+    }
+    .form-footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.18s;
+    }
+    .form-footer a:hover { color: var(--accent); }
+
+    /* ── Shake animation ── */
     @keyframes shake {
-      0% { transform: translateX(0); }
-      25% { transform: translateX(-5px); }
-      50% { transform: translateX(5px); }
-      75% { transform: translateX(-5px); }
+      0%   { transform: translateX(0); }
+      25%  { transform: translateX(-5px); }
+      50%  { transform: translateX(5px); }
+      75%  { transform: translateX(-5px); }
       100% { transform: translateX(0); }
     }
-    
-    .shake {
-      animation: shake 0.3s;
-    }
+    .shake { animation: shake 0.3s; }
 
-    #username-tip.error {
-    color: #f44336;
-    font-size: 0.9rem;
-    text-align: left;
-    margin-bottom: 20px;
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      body { justify-content: flex-start; padding-top: 64px; }
+      .card { padding: 22px 18px; }
     }
-
-    #username-tip.success {
-    color: #4caf50;
-    font-size: 0.9rem;
-    text-align: left;
-    margin-bottom: 20px;
-    }
-
   </style>
   <script>
     if ('serviceWorker' in navigator) {
@@ -219,321 +321,318 @@
   <script src="static/admin.js"></script>
 </head>
 <body>
-  <h1 class="page-title">Future Notes</h1>
+
   <a href="/" class="back-button" aria-label="Go back to homepage">←</a>
 
-  <div class="form-container">
-    <h1>Sign Up</h1>
-    <form id="signup-form">
-      <label for="username">Username:</label>
-      <input type="text" id="username" required>
-      <label for="password">Password:</label>
-      <input type="password" id="password" required>
-      <!-- This tip is hidden by default -->
-      <div id="password-tip" class="hidden"></div>
-      <div id="username-tip" class="hidden"></div>
-      <button type="submit">Sign Up</button>
-    </form>
-    <p>Already have an account? <a id="login-link" href="/login_page">Login</a></p>
+  <div class="page-wrapper">
+
+    <!-- Logo area -->
+    <div class="logo-area">
+      <div class="logo-icon">
+        <img src="/static/android-chrome-192x192.png" width="100" height="100">
+      </div>
+      <h1>Future Notes</h1>
+      <p>Create your account</p>
+    </div>
+
+    <!-- Card -->
+    <div class="card">
+      <form id="signup-form" novalidate>
+
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" autocomplete="username" placeholder="Choose a username" required>
+        </div>
+        <div id="username-tip" class="tip"></div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="new-password" placeholder="••••••••" required>
+        </div>
+        <div id="password-tip" class="tip"></div>
+
+        <button type="submit" class="btn">Create account</button>
+
+      </form>
+    </div>
+
+    <div class="form-footer">
+      Already have an account? <a id="login-link" href="/login_page">Sign in</a>
+    </div>
+
   </div>
 
   <script>
-  document.addEventListener("DOMContentLoaded", () => {
-    // Patch fetch once (if not already done)
-    if (!window.__fetchPatched) {
-      const _f = window.fetch;
-      window.fetch = (url, opts = {}) => {
-        opts.credentials = 'include';
-        return _f(url, opts);
-      };
-      window.__fetchPatched = true;
-    }
+document.addEventListener("DOMContentLoaded", () => {
 
-    // Carry over query params to login link
-    const query = window.location.search;
-    if (query) {
-      const link = document.getElementById("login-link");
-      if (link) link.href = "/login_page" + query;
-    }
-
-    const substitutions = {
-      a: '[a@4]+?',
-      s: '[s$5z]+?',
-      i: '[i!1|l]+?',
-      o: '[o0]+?',
-      e: '[e3€]+?',
-      t: '[t7+]+?',
-      c: '[c(]+?',
-      u: '[uuv]+?',
-      d: '[dcl]+?',
-      b: '[b8]+?',
-      g: '[g69]+?',
-      l: '[l1!|]+?',
-      r: '[r]+?',
-      m: '[m]+?',
-      n: '[n]+?'
+  // Patch fetch once
+  if (!window.__fetchPatched) {
+    const _f = window.fetch;
+    window.fetch = (url, opts = {}) => {
+      opts.credentials = 'include';
+      return _f(url, opts);
     };
+    window.__fetchPatched = true;
+  }
 
-    function wordToLeetRegex(word) {
-      return word
-        .split('')
-        .map(char => `(${substitutions[char.toLowerCase()] || char})[^a-zA-Z0-9_\\-\\.]*?`)
-        .join('');
+  // Carry over query params to login link
+  const query = window.location.search;
+  if (query) {
+    const link = document.getElementById("login-link");
+    if (link) link.href = "/login_page" + query;
+  }
+
+  const passwordInput = document.getElementById("password");
+  const passwordTip   = document.getElementById("password-tip");
+  const usernameInput = document.getElementById("username");
+  const usernameTip   = document.getElementById("username-tip");
+
+  function setTip(el, msg, type) {
+    el.textContent = '';
+    el.innerHTML = msg;
+    el.className = 'tip visible ' + (type || '');
+  }
+
+  function hideTip(el) {
+    el.className = 'tip';
+    el.textContent = '';
+  }
+
+  function hasSequentialPattern(str) {
+    if (str.length < 4) return false;
+    str = str.toLowerCase();
+
+    for (let i = 0; i <= str.length - 4; i++) {
+
+      let asc = 1;
+      let desc = 1;
+
+      for (let j = i; j < str.length - 1; j++) {
+        if (str.charCodeAt(j) + 1 === str.charCodeAt(j + 1)) {
+          asc++;
+          if (asc >= 4) return true;
+        } else break;
+      }
+
+      for (let j = i; j < str.length - 1; j++) {
+        if (str.charCodeAt(j) - 1 === str.charCodeAt(j + 1)) {
+          desc++;
+          if (desc >= 4) return true;
+        } else break;
+      }
     }
 
-    const forbiddenWords = [
-      "ass", "shit", "fuck", "bitch", "dick", "piss", "cunt", "slut", "whore",
-      "bastard", "damn", "crap", "nigger", "faggot", "cock", "pussy",
-      "motherfucker", "arse", "retard", "wanker", "twat", "spaz", "idiot", "stupid", "moron"
-    ];
+    return false;
+  }
 
-    const leetRegexString = forbiddenWords
-      .map(word => `(${wordToLeetRegex(word)})`)
-      .join('|');
+  function hasExcessiveRepetition(str) {
+    return /(.)\1{4,}/.test(str);
+  }
 
-    const forbiddenRegex = new RegExp(`(^|[^a-zA-Z0-9])(${leetRegexString})($|[^a-zA-Z0-9])`, 'giu');
+  function debounce(fn, delay) {
+    let timer = null;
 
-    const passwordInput = document.getElementById("password");
-    const passwordTip = document.getElementById("password-tip");
-    const usernameInput = document.getElementById("username");
-    const usernameTip = document.getElementById("username-tip");
+    return function (...args) {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), delay);
+    };
+  }
 
-    function hasSequentialPattern(str) {
-      if (str.length < 4) return false;
-      str = str.toLowerCase();
-      for (let i = 0; i <= str.length - 4; i++) {
-        let ascCount = 1;
-        let descCount = 1;
-        for (let j = i; j < str.length - 1; j++) {
-          if (str.charCodeAt(j) + 1 === str.charCodeAt(j + 1)) {
-            ascCount++;
-            if (ascCount >= 4) return true;
-          } else break;
-        }
-        for (let j = i; j < str.length - 1; j++) {
-          if (str.charCodeAt(j) - 1 === str.charCodeAt(j + 1)) {
-            descCount++;
-            if (descCount >= 4) return true;
-          } else break;
-        }
-      }
+  async function checkUsername() {
+
+    const username = usernameInput.value.trim();
+
+    if (username === "") {
+      hideTip(usernameTip);
       return false;
     }
 
-    function hasExcessiveRepetition(str) {
-      return /(.)\1{4,}/.test(str);
+    if (username.length > 80) {
+      setTip(usernameTip, "✖ Username cannot be longer than 80 characters", "error shake");
+      setTimeout(() => usernameTip.classList.remove("shake"), 500);
+      return false;
     }
 
-    function debounce(fn, delay) {
-      let timer = null;
-      return function (...args) {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn.apply(this, args), delay);
-      };
+    if (/_/.test(username)) {
+      setTip(usernameTip, "✖ Underscores are not allowed in the username", "error shake");
+      setTimeout(() => usernameTip.classList.remove("shake"), 500);
+      return false;
     }
 
-    async function checkUsername() {
-      const username = usernameInput.value.trim();
-      usernameTip.classList.remove("hidden");
+    if (username.length < 3) {
+      setTip(usernameTip, "✖ Username must be at least 3 characters long", "error shake");
+      setTimeout(() => usernameTip.classList.remove("shake"), 500);
+      return false;
+    }
 
-      if (username.length > 80) {
-        usernameTip.textContent = "✖ Username cannot be longer than 80 characters";
-        usernameTip.classList.remove("success");
-        usernameTip.classList.add("error", "shake");
+    if (!/[A-Za-z]/.test(username)) {
+      setTip(usernameTip, "✖ Username must contain at least one letter", "error shake");
+      setTimeout(() => usernameTip.classList.remove("shake"), 500);
+      return false;
+    }
+
+    try {
+
+      const res  = await fetch(`/username-check/${encodeURIComponent(username)}`);
+      const data = await res.json();
+
+      if (data.exists) {
+
+        setTip(usernameTip, "✖ Username is already taken", "error shake");
         setTimeout(() => usernameTip.classList.remove("shake"), 500);
         return false;
-      }
 
-      if (forbiddenRegex.test(username)) {
-        usernameTip.textContent = "✖ Username contains inappropriate words";
-        usernameTip.classList.remove("success");
-        usernameTip.classList.add("error", "shake");
-        setTimeout(() => usernameTip.classList.remove("shake"), 500);
-        return false;
-      }
+      } else if (data.protected) {
 
-      if (/_/.test(username)) {
-        usernameTip.textContent = "✖ Underscores are not allowed in the username";
-        usernameTip.classList.remove("success");
-        usernameTip.classList.add("error", "shake");
-        setTimeout(() => usernameTip.classList.remove("shake"), 500);
-        return false;
-      }
-
-      if (username === "") {
-        usernameTip.classList.add("hidden");
-        return false;
-      }
-
-      if (username.length < 3) {
-        usernameTip.textContent = "✖ Username must be at least 3 characters long";
-        usernameTip.classList.remove("success");
-        usernameTip.classList.add("error", "shake");
-        setTimeout(() => usernameTip.classList.remove("shake"), 500);
-        return false;
-      }
-
-      if (!/[A-Za-z]/.test(username)) {
-        usernameTip.textContent = "✖ Username must contain at least one letter";
-        usernameTip.classList.remove("success");
-        usernameTip.classList.add("error", "shake");
-        setTimeout(() => usernameTip.classList.remove("shake"), 500);
-        return false;
-      }
-
-      try {
-        const res = await fetch(`/username-check/${encodeURIComponent(username)}`);
-        const data = await res.json();
-        if (data.exists) {
-          usernameTip.textContent = "✖ Username is already taken";
-          usernameTip.classList.remove("success");
-          usernameTip.classList.add("error", "shake");
-          setTimeout(() => usernameTip.classList.remove("shake"), 500);
-          return false;
-        } else if (data.protected) {
-          usernameTip.innerHTML = "✖ The entered username is too similar to a protected username. <a href='/why-protected-usernames' style='color:inherit; text-decoration:underline;'>Info on why this happens</a>";
-          usernameTip.classList.remove("success");
-          usernameTip.classList.add("error", "shake");
-          setTimeout(() => usernameTip.classList.remove("shake"), 500);
-          return false;
+        if (data.reason === "Profanity") {
+          setTip(usernameTip, "✖ Username contains inappropriate language", "error shake");
+        } else {
+          setTip(usernameTip, "✖ Username is not allowed or too similar to a protected name. <a href='/why-protected-usernames'>Learn more</a>", "error shake");
         }
-      } catch (err) {
-        usernameTip.textContent = "✖ Error checking username";
-        usernameTip.classList.remove("success");
-        usernameTip.classList.add("error", "shake");
+
         setTimeout(() => usernameTip.classList.remove("shake"), 500);
         return false;
       }
 
-      usernameTip.textContent = "✔ Username is valid";
-      usernameTip.classList.remove("error");
-      usernameTip.classList.add("success");
-      return true;
+    } catch {
+
+      setTip(usernameTip, "✖ Error checking username", "error shake");
+      setTimeout(() => usernameTip.classList.remove("shake"), 500);
+      return false;
+
     }
 
-    const debouncedCheckUsername = debounce(checkUsername, 400);
+    setTip(usernameTip, "✔ Username is valid", "success");
+    return true;
+  }
 
-    function checkPassword() {
-      const password = passwordInput.value;
+  const debouncedCheckUsername = debounce(checkUsername, 400);
 
-      if (password === "") {
-        passwordTip.classList.add("hidden");
-        return false;
-      }
-      passwordTip.classList.remove("hidden");
+  function checkPassword() {
 
-      if (password.length < 8) {
-        passwordTip.textContent = "✖ At least 8 characters";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
-      if (!/[A-Z]/.test(password)) {
-        passwordTip.textContent = "✖ At least one uppercase letter";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
-      if (!/[a-z]/.test(password)) {
-        passwordTip.textContent = "✖ At least one lowercase letter";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
-      if (!/\d/.test(password)) {
-        passwordTip.textContent = "✖ At least one digit";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
-      if (!/[!@#$%^&*]/.test(password)) {
-        passwordTip.textContent = "✖ At least one special character (!@#$%^&*)";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
-      if (hasSequentialPattern(password)) {
-        passwordTip.textContent = "✖ No sequential patterns allowed (e.g., 1234 or abcd)";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
-      if (hasExcessiveRepetition(password)) {
-        passwordTip.textContent = "✖ No more than 4 identical consecutive characters allowed";
-        passwordTip.classList.remove("success");
-        passwordTip.classList.add("error");
-        return false;
-      }
+    const password = passwordInput.value;
 
-      passwordTip.textContent = "✔ Password is strong enough";
-      passwordTip.classList.remove("error");
-      passwordTip.classList.add("success");
-      return true;
+    if (password === "") {
+      hideTip(passwordTip);
+      return false;
     }
 
-    passwordTip.addEventListener("animationend", () => {
-      passwordTip.classList.remove("shake");
-    });
+    if (password.length < 8) {
+      setTip(passwordTip, "✖ At least 8 characters", "error");
+      return false;
+    }
 
-    let passwordRequirementsEnabled = false;
+    if (!/[A-Z]/.test(password)) {
+      setTip(passwordTip, "✖ At least one uppercase letter", "error");
+      return false;
+    }
 
-    fetch("/password-eisen")
-      .then(response => response.json())
-      .then(data => {
-        passwordRequirementsEnabled = data.enabled;
+    if (!/[a-z]/.test(password)) {
+      setTip(passwordTip, "✖ At least one lowercase letter", "error");
+      return false;
+    }
 
-        if (passwordRequirementsEnabled) {
-          passwordInput.addEventListener("input", checkPassword);
-          usernameInput.addEventListener("input", debouncedCheckUsername);
-        }
-      })
-      .catch(error => {
-        console.error("Error checking password requirements:", error);
-        passwordRequirementsEnabled = true;
-      });
+    if (!/\d/.test(password)) {
+      setTip(passwordTip, "✖ At least one digit", "error");
+      return false;
+    }
 
-    document.getElementById("signup-form").addEventListener("submit", async e => {
-      e.preventDefault();
+    if (!/[!@#$%^&*]/.test(password)) {
+      setTip(passwordTip, "✖ At least one special character (!@#$%^&*)", "error");
+      return false;
+    }
 
-      const uname = usernameInput.value.trim();
-      const pwd = passwordInput.value;
+    if (hasSequentialPattern(password)) {
+      setTip(passwordTip, "✖ No sequential patterns allowed (e.g., 1234 or abcd)", "error");
+      return false;
+    }
+
+    if (hasExcessiveRepetition(password)) {
+      setTip(passwordTip, "✖ No more than 4 identical consecutive characters allowed", "error");
+      return false;
+    }
+
+    setTip(passwordTip, "✔ Password is strong enough", "success");
+    return true;
+  }
+
+  let passwordRequirementsEnabled = false;
+
+  fetch("/password-eisen")
+    .then(r => r.json())
+    .then(data => {
+
+      passwordRequirementsEnabled = data.enabled;
 
       if (passwordRequirementsEnabled) {
-        const passOk = checkPassword();
-        const userOk = await checkUsername();
-        if (!passOk || !userOk) {
-          const tip = document.getElementById("password-tip");
-          tip.classList.remove("shake");
-          void tip.offsetWidth;
-          tip.classList.add("shake");
-          return;
-        }
+
+        passwordInput.addEventListener("input", checkPassword);
+        usernameInput.addEventListener("input", debouncedCheckUsername);
+
       }
 
-      try {
-        const res = await fetch("/signup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: uname, password: pwd })
-        });
-        const data = await res.json();
-
-        if (res.ok) {
-          if (data.redirect) {
-            window.location.href = data.redirect;
-          } else {
-            sessionStorage.setItem("current_user_id", data.user_id);
-            window.location.href = "/index";
-          }
-        } else {
-          alert(data.error || "Signup failed");
-        }
-      } catch (error) {
-        console.error("Signup error:", error);
-        alert("An error occurred during signup");
-      }
+    })
+    .catch(() => {
+      passwordRequirementsEnabled = true;
     });
+
+  document.getElementById("signup-form").addEventListener("submit", async e => {
+
+    e.preventDefault();
+
+    const uname = usernameInput.value.trim();
+    const pwd   = passwordInput.value;
+
+    if (passwordRequirementsEnabled) {
+
+      const passOk = checkPassword();
+      const userOk = await checkUsername();
+
+      if (!passOk || !userOk) {
+
+        passwordTip.classList.remove("shake");
+        void passwordTip.offsetWidth;
+        passwordTip.classList.add("shake");
+
+        return;
+      }
+    }
+
+    try {
+
+      const res = await fetch("/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: uname, password: pwd })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+
+        if (data.redirect) {
+          window.location.href = data.redirect;
+        } else {
+          sessionStorage.setItem("current_user_id", data.user_id);
+          window.location.href = "/index";
+        }
+
+      } else {
+
+        alert(data.error || "Signup failed");
+
+      }
+
+    } catch (error) {
+
+      console.error("Signup error:", error);
+      alert("An error occurred during signup");
+
+    }
+
   });
+
+});
 </script>
 
 </body>

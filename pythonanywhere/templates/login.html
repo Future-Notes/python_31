@@ -10,279 +10,458 @@
     <link rel="icon" type="image/png" sizes="16x16" href="static/favicon-16x16.png">
     <link rel="favicon" type="image/x-icon" href="static/favicon.ico">
     <link rel="manifest" href="static/site.webmanifest">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="/static/js/loader.js"></script>
     <script src="/static/js/check.js"></script>
     <style>
-        /* Global Styles */
+        :root {
+            /* — App palette (unchanged) — */
+            --bg-color:  #2c2c2c;
+            --hdr-color: #3a3a3a;
+            --ctr-color: #1e1e1e;
+            --btn-color: #424242;
+
+            /* — Login-page extras — */
+            --accent:       #5b8cf7;
+            --accent-dim:   rgba(91,140,247,0.15);
+            --accent-glow:  rgba(91,140,247,0.22);
+            --text-primary: #e8e8e8;
+            --text-muted:   #9a9a9a;
+            --text-dim:     #606060;
+            --border:       rgba(255,255,255,0.07);
+            --border-hover: rgba(255,255,255,0.13);
+            --danger:       #e07070;
+            --danger-bg:    rgba(224,112,112,0.08);
+            --radius:       8px;
+            --radius-sm:    6px;
+            --ease:         cubic-bezier(0.4,0,0.2,1);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html { height: 100%; }
+
         body {
-            background-color: #2c2c2c;
-            color: #e0e0e0;
-            font-family: Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 400;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
+            align-items: center;
             justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            padding: 0;
+            padding: 24px 16px;
+            position: relative;
+            overflow-x: hidden;
         }
 
-        h1 {
-            margin-bottom: 20px;
-            color: #e0e0e0;
+        /* Subtle vignette */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse 90% 80% at 50% 50%,
+                transparent 30%,
+                rgba(10,10,10,0.35) 100%);
+            pointer-events: none;
+            z-index: 0;
         }
 
-        /* Form Container */
-        .form-container {
+        /* Very faint accent wash — top center glow */
+        body::after {
+            content: '';
+            position: fixed;
+            top: -120px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 400px;
+            background: radial-gradient(ellipse, rgba(91,140,247,0.055) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── Back button ── */
+        .back-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 38px;
+            height: 38px;
+            background: var(--hdr-color);
+            border: 1px solid var(--border);
+            border-radius: 50%;
             display: flex;
-            flex-direction: column;
             align-items: center;
-            text-align: center;
+            justify-content: center;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 17px;
+            font-family: 'Outfit', sans-serif;
+            transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+            z-index: 10;
+        }
+        .back-button:hover {
+            background: var(--btn-color);
+            border-color: var(--border-hover);
+            color: var(--text-primary);
+        }
+
+        /* ── Page wrapper ── */
+        .page-wrapper {
+            position: relative;
+            z-index: 1;
             width: 100%;
             max-width: 400px;
             opacity: 0;
-            transform: translateY(-20px);
-            animation: fadeIn 1s ease-out forwards;
+            transform: translateY(14px);
+            animation: revealUp 0.55s var(--ease) 0.05s forwards;
         }
 
-        @keyframes fadeIn {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        @keyframes revealUp {
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        form {
-            background-color: #3a3a3a;
-            padding: 25px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-            width: 100%;
+        /* ── Logo / heading area ── */
+        .logo-area {
+            text-align: center;
+            margin-bottom: 28px;
         }
 
-        label {
+        .logo-icon {
+            width: 46px;
+            height: 46px;
+            background: var(--ctr-color);
+            border: 1px solid var(--border-hover);
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 14px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04) inset;
+        }
+
+        .logo-icon svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        .logo-area h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+            margin-bottom: 4px;
+        }
+
+        .logo-area p {
+            font-size: 13px;
+            color: var(--text-dim);
+            font-weight: 400;
+        }
+
+        /* ── Card ── */
+        .card {
+            background: var(--hdr-color);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px;
+            box-shadow:
+                0 1px 0 rgba(255,255,255,0.05) inset,
+                0 20px 60px rgba(0,0,0,0.4),
+                0 4px 16px rgba(0,0,0,0.25);
+        }
+
+        /* ── Alerts ── */
+        .warning-message {
+            color: var(--danger);
+            font-size: 13px;
+            padding: 10px 13px;
+            margin-bottom: 18px;
+            background: var(--danger-bg);
+            border: 1px solid rgba(224,112,112,0.2);
+            border-radius: var(--radius-sm);
+            display: none;
+        }
+        .warning-message.visible { display: block; }
+
+        /* ── Field ── */
+        .field {
+            margin-bottom: 16px;
+        }
+
+        .field label {
             display: block;
-            text-align: left;
-            margin-bottom: 10px;
-            font-size: 14px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.03em;
+            margin-bottom: 7px;
         }
 
         input[type="text"],
         input[type="password"] {
             width: 100%;
-            padding: 12px;
-            margin-bottom: 20px;
-            border: none;
-            border-radius: 5px;
-            background-color: #5a5a5a;
-            color: #e0e0e0;
-            box-sizing: border-box;
-            transition: background-color 0.3s ease;
+            padding: 10px 13px;
+            background: var(--ctr-color);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 400;
+            outline: none;
+            transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease);
         }
-
+        input[type="text"]::placeholder,
+        input[type="password"]::placeholder {
+            color: var(--text-dim);
+        }
+        input[type="text"]:hover,
+        input[type="password"]:hover {
+            border-color: var(--border-hover);
+        }
         input[type="text"]:focus,
         input[type="password"]:focus {
-            outline: none;
-            background-color: #7a7a7a;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
-        /* Custom Checkbox */
-        .checkbox-container {
+        /* ── Divider ── */
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 20px 0;
+        }
+
+        /* ── Checkbox ── */
+        .checkbox-row {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 9px;
             cursor: pointer;
+            user-select: none;
             margin-bottom: 20px;
         }
+        .checkbox-row input { display: none; }
 
-        .checkbox-container input {
-            display: none;
-        }
-
-        .checkbox-custom {
-            width: 20px;
-            height: 20px;
-            border-radius: 3px;
-            background: #5a5a5a;
+        .cb-box {
+            width: 17px;
+            height: 17px;
+            flex-shrink: 0;
+            background: var(--ctr-color);
+            border: 1px solid var(--border-hover);
+            border-radius: 4px;
             display: flex;
-            justify-content: center;
             align-items: center;
-            transition: background 0.3s ease;
+            justify-content: center;
+            transition: background 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
         }
-
-        .checkbox-custom::after {
-            content: "✔";
-            font-size: 14px;
-            color: #e0e0e0;
+        .cb-box svg {
+            opacity: 0;
+            transform: scale(0.5);
+            transition: opacity 0.15s, transform 0.15s;
+        }
+        .checkbox-row input:checked + .cb-box {
+            background: var(--accent);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-dim);
+        }
+        .checkbox-row input:checked + .cb-box svg {
             opacity: 1;
-            transition: opacity 0.2s;
+            transform: scale(1);
         }
 
-        .checkbox-container input:not(:checked) + .checkbox-custom::after {
-            opacity: 0;
+        .cb-label {
+            font-size: 13px;
+            color: var(--text-muted);
         }
 
-        .checkbox-container input:checked + .checkbox-custom {
-            background: #7a7a7a;
-        }
-
-        /* Add new warning message styles */
-        .warning-message {
-            color: #ff6666;
-            padding: 10px;
-            margin: 10px 0;
-            text-align: center;
-            display: none;
-            border: 1px solid #ff4444;
-            border-radius: 5px;
-            background-color: rgba(255, 68, 68, 0.1);
-        }
-
-        .warning-message.visible {
-            display: block;
-        }
-
-        button {
+        /* ── Button ── */
+        .btn {
             width: 100%;
-            padding: 12px;
+            padding: 11px;
+            background: var(--accent);
             border: none;
-            border-radius: 5px;
-            background-color: #5a5a5a;
-            color: #e0e0e0;
+            border-radius: var(--radius-sm);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.01em;
             cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            transition: background 0.3s ease;
+            transition: background 0.18s var(--ease), box-shadow 0.18s var(--ease), transform 0.1s;
+            box-shadow: 0 2px 12px rgba(91,140,247,0.28), 0 1px 0 rgba(255,255,255,0.1) inset;
+            position: relative;
+            overflow: hidden;
         }
-
-        button:hover {
-            background-color: #4a4a4a;
+        .btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0);
+            transition: background 0.15s;
         }
+        .btn:hover {
+            background: #6f9cf9;
+            box-shadow: 0 4px 18px rgba(91,140,247,0.38);
+        }
+        .btn:hover::after { background: rgba(255,255,255,0.05); }
+        .btn:active { transform: translateY(1px); }
 
-        p {
+        /* ── Footer ── */
+        .form-footer {
             margin-top: 20px;
-        }
-
-        a {
-            color: #7a7a7a;
-            text-decoration: none;
-            transition: color 0.3s ease;
-        }
-
-        a:hover {
-            color: #9a9a9a;
-        }
-
-        /* Back Button */
-        .back-button {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            width: 50px;
-            height: 50px;
-            background-color: #6a6a6a;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #e0e0e0;
-            text-decoration: none;
-            font-size: 24px;
-            font-weight: bold;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            transition: background 0.3s, transform 0.2s;
-        }
-
-        .back-button:hover {
-            background-color: #5a5a5a;
-            transform: scale(1.1);
-        }
-
-       /* Large Title */
-        .page-title {
-            position: absolute;
-            top: 0;
-            left: 50%;
-            transform: translate(-50%, -100%);
-            font-size: 36px;
-            font-weight: bold;
-            color: #e0e0e0;
-            opacity: 0;
-            animation: slideInFromTop 1s ease-out forwards;
             text-align: center;
-            margin: 0;
+            font-size: 12.5px;
+            color: var(--text-dim);
+            line-height: 1.9;
         }
-
-        @keyframes slideInFromTop {
-            to {
-                transform: translate(-50%, 20px);
-                opacity: 1;
-            }
+        .form-footer a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.18s;
         }
+        .form-footer a:hover { color: var(--accent); }
+        .sep { margin: 0 6px; opacity: 0.4; }
 
-        /* 2FA modal styles (modern, minimal) */
+        /* ── 2FA Modal ── */
         #twofa-modal-backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(10, 10, 12, 0.55);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
+            position: fixed;
+            inset: 0;
+            background: rgba(8,8,10,0.65);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(4px);
+            padding: 20px;
         }
+
         #twofa-modal {
-        width: 100%;
-        max-width: 420px;
-        background: #2a2a2a;
-        border-radius: 10px;
-        box-shadow: 0 10px 30px rgba(2,6,23,0.35);
-        padding: 20px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            width: 100%;
+            max-width: 380px;
+            background: var(--hdr-color);
+            border: 1px solid var(--border-hover);
+            border-radius: var(--radius);
+            padding: 28px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+            animation: modalIn 0.25s var(--ease);
         }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(10px) scale(0.98); }
+            to   { opacity: 1; transform: none; }
+        }
+
         #twofa-modal h2 {
-        margin: 0 0 8px;
-        font-size: 18px;
+            font-size: 17px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+            letter-spacing: -0.01em;
         }
         #twofa-modal p.sub {
-        margin: 0 0 12px;
-        color: #fff;
-        font-size: 13px;
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            line-height: 1.5;
         }
+
         #twofa-code-input {
-        width: 100%;
-        box-sizing: border-box;
-        font-size: 16px;
-        padding: 10px 12px;
-        border: 1px solid #d7d7d7;
-        border-radius: 6px;
-        margin-bottom: 10px;
+            width: 100%;
+            padding: 11px 13px;
+            background: var(--ctr-color);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 400;
+            letter-spacing: 0.2em;
+            text-align: center;
+            outline: none;
+            margin-bottom: 14px;
+            transition: border-color 0.18s, box-shadow 0.18s;
         }
+        #twofa-code-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
         .twofa-row {
-        display:flex;
-        gap:8px;
-        align-items:center;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
         }
-        #twofa-submit-btn, #twofa-cancel-btn {
-        padding: 10px 14px;
-        border-radius: 6px;
-        border: none;
-        cursor: pointer;
-        font-weight: 600;
+
+        #twofa-submit-btn {
+            padding: 9px 18px;
+            background: var(--accent);
+            border: none;
+            border-radius: var(--radius-sm);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(91,140,247,0.25);
+            transition: background 0.18s, box-shadow 0.18s;
         }
-        #twofa-submit-btn { background: #146; color: #fff; }
-        #twofa-cancel-btn { background: #eee; color: #111; }
-        #twofa-error { color: #b33; font-size: 13px; margin-top: 8px; display:none; }
-        #twofa-info { font-size: 13px; color: #444; margin-top: 8px; }
-        #twofa-modal .small {
-        font-size: 12px; color: #fff; margin-top: 8px;
+        #twofa-submit-btn:hover { background: #6f9cf9; }
+        #twofa-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #twofa-cancel-btn {
+            padding: 9px 16px;
+            background: var(--btn-color);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-muted);
+            font-family: 'Outfit', sans-serif;
+            font-size: 13px;
+            font-weight: 400;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
         }
+        #twofa-cancel-btn:hover { background: #4e4e4e; color: var(--text-primary); }
+
         .twofa-alt {
-        background: none; border: none; color: #146; cursor: pointer;
-        padding: 6px 8px; font-size: 13px;
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-family: 'Outfit', sans-serif;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 6px 4px;
+            margin-left: auto;
+            transition: color 0.15s;
         }
-        @media (prefers-reduced-motion: no-preference){
-        #twofa-modal-backdrop.show { animation: fadeIn .15s ease-in; }
-        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+        .twofa-alt:hover { color: var(--accent); }
+
+        #twofa-error {
+            color: var(--danger);
+            font-size: 12.5px;
+            margin-top: 10px;
+            display: none;
+        }
+        #twofa-info {
+            font-size: 11.5px;
+            color: var(--text-dim);
+            margin-top: 8px;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 480px) {
+            body { justify-content: flex-start; padding-top: 64px; }
+            .card { padding: 22px 18px; }
+            #twofa-modal { padding: 22px 18px; }
+            .twofa-row { flex-direction: column; align-items: stretch; }
+            #twofa-submit-btn, #twofa-cancel-btn { width: 100%; text-align: center; }
+            .twofa-alt { margin-left: 0; text-align: center; }
         }
     </style>
     <script>
@@ -292,39 +471,73 @@
             .catch(console.error);
         }
     </script>
-
     <script src="/static/custom-alert.js"></script>
     <script src="static/admin.js"></script>
 </head>
 <body>
-    <h1 class="page-title">Future Notes</h1>
+
     <a href="/" class="back-button" aria-label="Go back to homepage">←</a>
 
-    <div class="form-container">
-        <h1>Login</h1>
-        <div id="warning-message" class="warning-message">
-            You need to log in to access that page.
+    <div class="page-wrapper">
+
+        <!-- Logo area -->
+        <div class="logo-area">
+            <div class="logo-icon">
+                <img src="/static/android-chrome-192x192.png" width="100" height="100">
+            </div>
+            <h1>Future Notes</h1>
+            <p>Sign in to your account</p>
         </div>
-        <div id="ban-message" class="warning-message">
-            You are suspended and cannot log in.
+
+        <!-- Card -->
+        <div class="card">
+
+            <div id="warning-message" class="warning-message">
+                You need to log in to access that page.
+            </div>
+            <div id="ban-message" class="warning-message">
+                Your account has been suspended.
+            </div>
+
+            <form id="login-form" novalidate>
+
+                <div class="field">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" autocomplete="username" placeholder="Your username" required>
+                </div>
+
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" required>
+                </div>
+
+                <div class="divider"></div>
+
+                <label class="checkbox-row">
+                    <input type="checkbox" id="remember-me" checked>
+                    <span class="cb-box">
+                        <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                            <path d="M1 3.5L3.5 6L8 1" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </span>
+                    <span class="cb-label">Keep me signed in</span>
+                </label>
+
+                <button type="submit" class="btn">Sign in</button>
+
+            </form>
+
         </div>
-        <form id="login-form">
-            <label for="username">Username:</label>
-            <input type="text" id="username" required>
-            <label for="password">Password:</label>
-            <input type="password" id="password" required>
-            
-            <label class="checkbox-container">
-                <input type="checkbox" id="remember-me" checked>
-                <span class="checkbox-custom"></span>
-                Remember Me
-            </label>
-            
-            <button type="submit">Login</button>
-        </form>
-        <p>Don't have an account? <a id="signup-link" href="/signup_page">Sign Up</a> Forgot your password? <a href="/reset-password">Reset your password (requires email)</a></p>
+
+        <div class="form-footer">
+            No account? <a id="signup-link" href="/signup_page">Sign up</a>
+            <span class="sep">·</span>
+            <a href="/reset-password">Forgot password</a>
+        </div>
+
     </div>
 
+    <!-- 2FA Modal -->
     <div id="twofa-modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
         <div id="twofa-modal" role="document" aria-labelledby="twofa-title">
             <h2 id="twofa-title">Two-step verification</h2>
@@ -332,51 +545,45 @@
 
             <label for="twofa-code-input" class="sr-only">2FA code</label>
             <input id="twofa-code-input" inputmode="numeric" autocomplete="one-time-code"
-                maxlength="12" placeholder="123 456" aria-label="2FA code" />
+                maxlength="12" placeholder="· · · · · ·" aria-label="2FA code" />
 
-            <div class="twofa-row" style="margin-top:6px;">
-            <button id="twofa-submit-btn">Verify</button>
-            <button id="twofa-cancel-btn" class="secondary">Cancel</button>
-            <button id="twofa-use-backup" class="twofa-alt" title="Use a backup code">Use backup code</button>
+            <div class="twofa-row">
+                <button id="twofa-submit-btn">Verify</button>
+                <button id="twofa-cancel-btn">Cancel</button>
+                <button id="twofa-use-backup" class="twofa-alt">Use backup code</button>
             </div>
 
             <div id="twofa-error" role="alert"></div>
-            <div id="twofa-info" class="small">If your code isn't working, check your device clock.</div>
+            <div id="twofa-info">If your code isn't working, check your device clock.</div>
         </div>
     </div>
 
     <script>
         document.addEventListener("DOMContentLoaded", async () => {
-    // 1) Patch fetch once (if not already done globally)
     if (!window.__fetchPatched) {
         const _f = window.fetch;
         window.fetch = (url, opts = {}) => {
             opts = opts || {};
-            // only set credentials if not explicitly provided
             if (!opts.credentials) opts.credentials = 'include';
             return _f(url, opts);
         };
         window.__fetchPatched = true;
     }
 
-    // small cookie helper
     function getCookie(name) {
         const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
         return v ? v.pop() : '';
     }
     function deleteCookie(name) {
-        // remove cookie for current path
         document.cookie = name + "=; Max-Age=0; path=/; SameSite=Strict";
     }
 
-    // 2) Propagate any ?redirect, ?warning or ?suspended flags to the signup link
     const query = window.location.search;
     if (query) {
         const link = document.getElementById("signup-link");
         if (link) link.href = "/signup_page" + query;
     }
 
-    // 3) Show any warning/suspended banners
     const params = new URLSearchParams(query);
     if (params.get("warning") === "true") {
         document.getElementById("warning-message").classList.add("visible");
@@ -387,20 +594,16 @@
 
     const redirectUrl = params.get("redirect") || "/index";
 
-    // ----------------------------
-    // 2FA modal helpers (available early so fastPath can call them)
-    // ----------------------------
-    const backdrop = document.getElementById('twofa-modal-backdrop');
-    const modal = document.getElementById('twofa-modal');
+    const backdrop  = document.getElementById('twofa-modal-backdrop');
     const codeInput = document.getElementById('twofa-code-input');
     const submitBtn = document.getElementById('twofa-submit-btn');
     const cancelBtn = document.getElementById('twofa-cancel-btn');
     const backupBtn = document.getElementById('twofa-use-backup');
-    const errorBox = document.getElementById('twofa-error');
+    const errorBox  = document.getElementById('twofa-error');
 
     let currentLoginToken = null;
-    let currentKeepLogin = false;
-    let currentRedirect = '/index';
+    let currentKeepLogin  = false;
+    let currentRedirect   = '/index';
 
     function showError(msg) {
         if (!errorBox) return;
@@ -408,23 +611,19 @@
         errorBox.textContent = msg || '';
     }
 
-    function escHandler(e){
-        if (e.key === 'Escape') hideTwoFAModal();
-    }
+    function escHandler(e){ if (e.key === 'Escape') hideTwoFAModal(); }
 
     function showTwoFAModal(login_token, keep_login=false, redirect='/index') {
         currentLoginToken = login_token;
-        currentKeepLogin = Boolean(keep_login);
-        currentRedirect = redirect || '/index';
+        currentKeepLogin  = Boolean(keep_login);
+        currentRedirect   = redirect || '/index';
         showError('');
         if (codeInput) codeInput.value = '';
         if (backdrop) {
             backdrop.style.display = 'flex';
             backdrop.setAttribute('aria-hidden', 'false');
         }
-        // focus in next tick
-        setTimeout(()=> { try { codeInput && codeInput.focus(); } catch(e){} }, 50);
-        // add key handlers
+        setTimeout(()=>{ try { codeInput && codeInput.focus(); } catch(e){} }, 50);
         window.addEventListener('keydown', escHandler);
     }
 
@@ -446,22 +645,17 @@
         showError('');
         submitBtn.disabled = true;
         const prevTxt = submitBtn.textContent;
-        submitBtn.textContent = 'Verifying...';
+        submitBtn.textContent = 'Verifying…';
 
         try {
             const res = await fetch('/login/2fa', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({
-                    login_token: currentLoginToken,
-                    code: code,
-                    keep_login: currentKeepLogin
-                })
+                body: JSON.stringify({ login_token: currentLoginToken, code, keep_login: currentKeepLogin })
             });
             const j = await res.json().catch(()=>({}));
             if (res.ok) {
-                // clear pending cookie if present
                 deleteCookie('pending_login_token');
                 try { sessionStorage.setItem('current_user_id', j.user_id); } catch(e){}
                 window.location.href = currentRedirect || j.startpage || '/index';
@@ -477,7 +671,6 @@
         }
     }
 
-    // UI bindings for modal controls (safe to add even if elements missing)
     try {
         if (submitBtn) submitBtn.addEventListener('click', () => {
             const code = codeInput.value.trim();
@@ -492,15 +685,11 @@
         if (codeInput) codeInput.addEventListener('keyup', (e) => {
             if (e.key === 'Enter') submitBtn && submitBtn.click();
         });
-    } catch (e) {
-        // ignore binding errors
-    }
+    } catch (e) {}
 
-    // expose to global so other code (and fastPath) can call it
     window.__showTwoFAModal = showTwoFAModal;
 
-    // helper: wait (poll) for pending_login_token cookie to appear (returns token or null)
-    async function waitForPendingCookie(timeoutMs = 1000, interval = 100) {
+    async function waitForPendingCookie(timeoutMs=1000, interval=100) {
         const start = Date.now();
         while ((Date.now() - start) < timeoutMs) {
             const tok = getCookie('pending_login_token');
@@ -510,16 +699,11 @@
         return null;
     }
 
-    // ----------------------------
-    // fastPath: try session, then lasting_key (and handle 2FA)
-    // ----------------------------
     async function fastPath() {
-        // a) try session
         let r = await fetch("/test-session", { method: "GET" });
         if (r.status === 200) {
             const info = await r.json().catch(()=>({ startpage: redirectUrl }));
             try { sessionStorage.setItem("current_user_id", info.user_id); } catch(e){}
-            console.log("Session still valid!");
             window.location.href = params.get("redirect") || info.startpage || "/index";
             return true;
         }
@@ -528,95 +712,64 @@
             return true;
         }
 
-        // b) try lasting_key cookie
         r = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}) // backend reads lasting_key cookie
+            body: JSON.stringify({})
         });
-
-        // parse JSON if possible
         let data;
-        try { data = await r.json(); } catch (e) { data = {}; }
+        try { data = await r.json(); } catch(e) { data = {}; }
 
-        // fully authenticated response (no 2FA)
         if (r.ok && data && data.user_id) {
             try { sessionStorage.setItem("current_user_id", data.user_id); } catch(e){}
             window.location.href = redirectUrl || data.startpage || "/index";
             return true;
         }
 
-        // server indicates 2FA is required
         if (r.ok && data && data["2fa_required"]) {
-            // If we're *on* the login page, show the modal in-place (don't reload)
             const onLoginPage = window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1;
-
             if (onLoginPage) {
-                // If server returned token in JSON, show immediately
                 if (data.login_token) {
                     window.__showTwoFAModal(data.login_token, false, redirectUrl);
                     return true;
                 }
-
-                // Otherwise the server likely set pending_login_token cookie. Try to read it.
-                // Poll briefly (browser should have applied Set-Cookie by now in most browsers).
                 const pending = getCookie('pending_login_token') || await waitForPendingCookie(1000, 100);
-
                 if (pending) {
-                    // delete then show modal
                     deleteCookie('pending_login_token');
                     window.__showTwoFAModal(pending, false, redirectUrl);
                     return true;
                 }
-
-                // If we reach here, cookie wasn't visible after a brief wait.
-                // Avoid reload/redirect loop. Show a friendly message so the user can refresh manually.
-                // Create a temporary non-intrusive banner (or you can use your existing warning-message element).
                 try {
                     const warn = document.getElementById('warning-message');
                     if (warn) {
                         warn.textContent = "Two-factor login started — please refresh the page to continue.";
                         warn.classList.add('visible');
-                    } else {
-                        alert("Two-factor login started — please refresh the page to continue.");
-                    }
-                } catch (e) {}
+                    } else { alert("Two-factor login started — please refresh the page to continue."); }
+                } catch(e) {}
                 return true;
             } else {
-                // not on login page: redirect to login_page. The login page will pick up pending_login_token cookie
                 window.location.href = '/login_page' + (params.get('redirect') ? '?redirect=' + encodeURIComponent(params.get('redirect')) : '');
                 return true;
             }
         }
 
-        // If server didn't explicitly return 2fa_required but set the pending cookie (edge cases),
-        // check for pending_login_token cookie and show modal if present (only if we are on login page)
         const pending = getCookie('pending_login_token');
         if (pending && (window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1)) {
-            // clear it immediately to reduce leakage
             deleteCookie('pending_login_token');
             window.__showTwoFAModal(pending, false, redirectUrl);
             return true;
         }
-
         return false;
     }
 
-    // run fastPath (if it succeeds you'll be redirected)
     await fastPath();
 
-    // If we reach here and we're on the login page, also check if a pending token cookie exists
-    // (this covers the case where a previous request set the cookie but fastPath didn't detect it)
     const pendingOnLoad = getCookie('pending_login_token');
     if (pendingOnLoad && (window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1)) {
         deleteCookie('pending_login_token');
-        // show modal in-place
         window.__showTwoFAModal(pendingOnLoad, false, redirectUrl);
     }
 
-    // ----------------------------
-    // 6) Form submission (username/password)
-    // ----------------------------
     document.getElementById("login-form").addEventListener("submit", async e => {
         e.preventDefault();
         const user = document.getElementById("username").value.trim();
@@ -630,7 +783,6 @@
         const params = new URLSearchParams(window.location.search);
         const redirectUrlLocal = params.get("redirect") || "/index";
 
-        // send login request
         const res = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -642,29 +794,22 @@
 
         if (res.ok) {
             if (data["2fa_required"]) {
-                // if server returned token in JSON we can show modal immediately
-                // otherwise it may have set pending_login_token cookie; modal code handles both cases
                 if (data.login_token) {
                     window.__showTwoFAModal(data.login_token, keep, redirectUrlLocal);
                 } else {
-                    // try to read cookie immediately and poll briefly as backup
                     const p = getCookie('pending_login_token') || await waitForPendingCookie(1000, 100);
                     if (p) {
                         deleteCookie('pending_login_token');
                         window.__showTwoFAModal(p, keep, redirectUrlLocal);
                     } else {
-                        // fallback: show message asking user to refresh
                         const warn = document.getElementById('warning-message');
                         if (warn) {
                             warn.textContent = "Two-factor login started — please refresh the page to continue.";
                             warn.classList.add('visible');
-                        } else {
-                            alert("Two-factor login started — please refresh the page to continue.");
-                        }
+                        } else { alert("Two-factor login started — please refresh the page to continue."); }
                     }
                 }
             } else {
-                // existing successful branch (no 2FA)
                 try { sessionStorage.setItem("current_user_id", data.user_id); } catch(e){}
                 window.location.href = redirectUrlLocal || data.startpage || "/index";
             }
@@ -676,9 +821,6 @@
     });
 
 }); // DOMContentLoaded
-
-
-        </script>
-
+    </script>
 </body>
 </html>

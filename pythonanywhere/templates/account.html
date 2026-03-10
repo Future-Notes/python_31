@@ -173,7 +173,6 @@
     }
     .session-row{display:flex;justify-content:space-between;align-items:center;gap:0.5rem}
     .session-meta{display:flex;flex-direction:column;gap:0.15rem;min-width:0}
-    .session-meta .muted{font-size:0.78rem}
     .session-actions{display:flex;gap:0.5rem;align-items:center}
 
     /* compact badges and truncation */
@@ -187,29 +186,47 @@
 
     hr.sep{margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)}
 
-    footer{max-width:var(--max-inner-width);width:100%;margin-top:1rem;color:var(--muted);font-size:0.9rem;text-align:center}
+/* ---------- tip styles + shake (added) ---------- */
+.tip{
+  display:none;
+  margin-top:6px;
+  padding:8px 10px;
+  border-radius:8px;
+  font-size:0.9rem;
+  line-height:1.3;
+  border:1px solid transparent;
+}
+.tip.visible{display:block}
+.tip.error{ color:var(--danger); background: rgba(217,83,79,0.06); border-color: rgba(217,83,79,0.14); }
+.tip.success{ color:#7bd58c; background: rgba(123,213,140,0.06); border-color: rgba(107,201,122,0.12); }
 
-    /* utilities */
-    .row{display:flex;gap:0.5rem;align-items:center}
-    .muted{color:var(--muted)}
-    .text-truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes shake {
+  0%   { transform: translateX(0); }
+  25%  { transform: translateX(-6px); }
+  50%  { transform: translateX(6px); }
+  75%  { transform: translateX(-6px); }
+  100% { transform: translateX(0); }
+}
+.shake { animation: shake 0.35s; }
 
-    /* hide default scrollbars gracefully (only if any appear) */
-    ::-webkit-scrollbar{height:0; width:0}
-    html{scrollbar-width:none}
-    /* ensure inputs & buttons not less than 16px font-size (avoid iOS autoscale in some circumstances) */
-    input, select, button, textarea { font-size:16px; }
+/* utilities */
+footer{max-width:var(--max-inner-width);width:100%;margin-top:1rem;color:var(--muted);font-size:0.9rem;text-align:center}
 
-    /* Accessibility focus */
-    :focus{outline:2px solid rgba(79,131,204,0.25);outline-offset:2px}
+/* hide default scrollbars gracefully (only if any appear) */
+::-webkit-scrollbar{height:0; width:0}
+html{scrollbar-width:none}
+input, select, button, textarea { font-size:16px; }
 
-    /* small responsive tweaks */
-    @media (max-width:480px){
-      .appbar h1{font-size:1rem}
-      .profile-card{padding:0.6rem}
-      .avatar{width:48px;height:48px}
-      .session-card{font-size:0.85rem}
-    }
+/* Accessibility focus */
+:focus{outline:2px solid rgba(79,131,204,0.25);outline-offset:2px}
+
+/* small responsive tweaks */
+@media (max-width:480px){
+  .appbar h1{font-size:1rem}
+  .profile-card{padding:0.6rem}
+  .avatar{width:48px;height:48px}
+  .session-card{font-size:0.85rem}
+}
     .color-section {
       grid-column: 1 / -1; /* spans all columns */
     }
@@ -251,6 +268,8 @@
           <input type="text" id="new-username" required />
           <button class="btn" type="submit">Save</button>
         </form>
+        <!-- username inline tip -->
+        <div id="username-tip" class="tip" aria-live="polite"></div>
 
         <label class="small">Email</label>
         <form id="form-email" class="row">
@@ -262,6 +281,9 @@
         <form id="form-password" class="stack">
           <input type="password" id="current-password" placeholder="Current password" required />
           <input type="password" id="new-password" placeholder="New password" required />
+          <!-- password inline tip -->
+          <div id="password-tip" class="tip" aria-live="polite"></div>
+
           <div style="display:flex;gap:0.5rem;justify-content:flex-end">
             <button class="btn" type="submit">Change</button>
           </div>
@@ -396,6 +418,13 @@
     const formEmail = $('#form-email');
     const formPassword = $('#form-password');
 
+    const newUsernameInput = $('#new-username');
+    const currentPasswordInput = $('#current-password');
+    const newPasswordInput = $('#new-password');
+
+    const usernameTip = $('#username-tip');
+    const passwordTip = $('#password-tip');
+
     const sharingToggle = $('#sharing-toggle');
     const defaultStart = $('#default-startpage');
 
@@ -452,6 +481,190 @@
       }catch(e){ console.error('autologin',e); return false; }
     }
 
+    // ---------- USERNAME & PASSWORD VALIDATION (copied/adapted from signup) ----------
+    let currentUsername = null;
+    let passwordRequirementsEnabled = false;
+
+    function setTip(el, msg, type) {
+      if (!el) return;
+      el.innerHTML = msg;
+      el.className = 'tip visible ' + (type || '');
+    }
+    function hideTip(el) {
+      if (!el) return;
+      el.className = 'tip';
+      el.textContent = '';
+    }
+
+    function hasSequentialPattern(str) {
+      if (!str || str.length < 4) return false;
+      str = str.toLowerCase();
+
+      for (let i = 0; i <= str.length - 4; i++) {
+
+        let asc = 1;
+        let desc = 1;
+
+        for (let j = i; j < str.length - 1; j++) {
+          if (str.charCodeAt(j) + 1 === str.charCodeAt(j + 1)) {
+            asc++;
+            if (asc >= 4) return true;
+          } else break;
+        }
+
+        for (let j = i; j < str.length - 1; j++) {
+          if (str.charCodeAt(j) - 1 === str.charCodeAt(j + 1)) {
+            desc++;
+            if (desc >= 4) return true;
+          } else break;
+        }
+      }
+
+      return false;
+    }
+
+    function hasExcessiveRepetition(str) {
+      return /(.)\1{4,}/.test(str);
+    }
+
+    function debounce(fn, delay) {
+      let timer = null;
+      return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), delay);
+      };
+    }
+
+    async function checkUsername(showTip = true) {
+      const username = (newUsernameInput.value || '').trim();
+
+      if (username === "") {
+        if (showTip) hideTip(usernameTip);
+        return false;
+      }
+
+      if (username.length > 80) {
+        if (showTip) { setTip(usernameTip, "✖ Username cannot be longer than 80 characters", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
+        return false;
+      }
+
+      if (/_/.test(username)) {
+        if (showTip) { setTip(usernameTip, "✖ Underscores are not allowed in the username", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
+        return false;
+      }
+
+      if (username.length < 3) {
+        if (showTip) { setTip(usernameTip, "✖ Username must be at least 3 characters long", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
+        return false;
+      }
+
+      if (!/[A-Za-z]/.test(username)) {
+        if (showTip) { setTip(usernameTip, "✖ Username must contain at least one letter", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
+        return false;
+      }
+
+      // If user didn't actually change username, consider it valid
+      if (currentUsername && username === currentUsername) {
+        if (showTip) setTip(usernameTip, "✔ Username is unchanged", "success");
+        return true;
+      }
+
+      // call backend to check
+      try {
+        const res = await fetch(`/username-check/${encodeURIComponent(username)}`);
+        if (!res.ok) throw new Error('network');
+        const data = await res.json();
+
+        if (data.exists) {
+          if (showTip) { setTip(usernameTip, "✖ Username is already taken", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
+          return false;
+        } else if (data.protected) {
+          if (showTip) {
+            if (data.reason === "Profanity") setTip(usernameTip, "✖ Username contains inappropriate language", "error shake");
+            else setTip(usernameTip, "✖ Username is not allowed or too similar to a protected name. <a href='/why-protected-usernames'>Learn more</a>", "error shake");
+            setTimeout(()=>usernameTip.classList.remove('shake'),500);
+          }
+          return false;
+        }
+      } catch (e) {
+        if (showTip) { setTip(usernameTip, "✖ Error checking username", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
+        return false;
+      }
+
+      if (showTip) setTip(usernameTip, "✔ Username is valid", "success");
+      return true;
+    }
+
+    function checkPassword(showTip = true) {
+      const password = newPasswordInput.value || '';
+
+      if (password === "") {
+        if (showTip) hideTip(passwordTip);
+        return false;
+      }
+
+      if (password.length < 8) {
+        if (showTip) setTip(passwordTip, "✖ At least 8 characters", "error");
+        return false;
+      }
+
+      if (!/[A-Z]/.test(password)) {
+        if (showTip) setTip(passwordTip, "✖ At least one uppercase letter", "error");
+        return false;
+      }
+
+      if (!/[a-z]/.test(password)) {
+        if (showTip) setTip(passwordTip, "✖ At least one lowercase letter", "error");
+        return false;
+      }
+
+      if (!/\d/.test(password)) {
+        if (showTip) setTip(passwordTip, "✖ At least one digit", "error");
+        return false;
+      }
+
+      if (!/[!@#$%^&*]/.test(password)) {
+        if (showTip) setTip(passwordTip, "✖ At least one special character (!@#$%^&*)", "error");
+        return false;
+      }
+
+      if (hasSequentialPattern(password)) {
+        if (showTip) setTip(passwordTip, "✖ No sequential patterns allowed (e.g., 1234 or abcd)", "error");
+        return false;
+      }
+
+      if (hasExcessiveRepetition(password)) {
+        if (showTip) setTip(passwordTip, "✖ No more than 4 identical consecutive characters allowed", "error");
+        return false;
+      }
+
+      if (showTip) setTip(passwordTip, "✔ Password is strong enough", "success");
+      return true;
+    }
+
+    const debouncedCheckUsername = debounce(checkUsername, 400);
+
+    // query server to see whether password rules are enabled
+    (function initPasswordRequirementFlag(){
+      fetch("/password-eisen")
+        .then(r => r.json())
+        .then(data => {
+          passwordRequirementsEnabled = !!data.enabled;
+          if (passwordRequirementsEnabled) {
+            newPasswordInput.addEventListener("input", () => checkPassword(true));
+            newUsernameInput.addEventListener("input", debouncedCheckUsername);
+          }
+        })
+        .catch(() => {
+          // If the request fails, default to enabling requirements
+          passwordRequirementsEnabled = true;
+          newPasswordInput.addEventListener("input", () => checkPassword(true));
+          newUsernameInput.addEventListener("input", debouncedCheckUsername);
+        });
+    })();
+
+    // ---------- end validation code ----------
+
     async function init(){
       const ok = await validateSession();
       if (!ok){ const got = await attemptAutoLogin(); if (!got) { window.location.href = '/login_page?redirect=/account_page&warning=true'; return; } return; }
@@ -479,6 +692,7 @@
 
     function populateUser(u){
       usernameDisplay.textContent = u.username + ' — Account';
+      currentUsername = u.username || null;
       const letter = (u.username && u.username[0]) ? u.username[0].toUpperCase() : 'U';
       emailDisplay.textContent = u.email || 'No email set';
 
@@ -493,12 +707,24 @@
       if (u.role === 'admin'){ adminLink.style.pointerEvents='auto'; adminLink.style.opacity=1; adminLink.href='/admin_page'; }
     }
 
-    // ---------- forms ---------- (unchanged)
+    // ---------- forms ---------- (modified to validate before submit)
     formUsername.addEventListener('submit', async e =>{
-      e.preventDefault(); const newUsername = $('#new-username').value.trim();
+      e.preventDefault();
+      const newUsername = (newUsernameInput.value || '').trim();
+
+      // run the same validation & backend check as signup
+      const ok = await checkUsername(true);
+      if (!ok) {
+        // visual shake
+        usernameTip.classList.remove('shake'); void usernameTip.offsetWidth; usernameTip.classList.add('shake');
+        return;
+      }
+
       try{
         const res = await fetch('/update-username', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ new_username: newUsername }) });
-        if (res.ok){ alert('Username updated'); usernameDisplay.textContent = newUsername + ' — Account'; } else if (res.status===401){ sessionStorage.clear(); window.location.href='/login_page'; } else { const j = await res.json().catch(()=>({})); alert(j.error||'Failed to update username'); }
+        if (res.ok){ alert('Username updated'); usernameDisplay.textContent = newUsername + ' — Account'; currentUsername = newUsername; }
+        else if (res.status===401){ sessionStorage.clear(); window.location.href='/login_page'; }
+        else { const j = await res.json().catch(()=>({})); alert(j.error||'Failed to update username'); }
       }catch(e){ alert('Network error'); }
     });
 
@@ -511,10 +737,21 @@
     });
 
     formPassword.addEventListener('submit', async e =>{
-      e.preventDefault(); const cur = $('#current-password').value, nw = $('#new-password').value;
+      e.preventDefault();
+      const cur = currentPasswordInput.value || '';
+      const nw = newPasswordInput.value || '';
+
+      if (passwordRequirementsEnabled) {
+        const passOk = checkPassword(true);
+        if (!passOk) {
+          passwordTip.classList.remove('shake'); void passwordTip.offsetWidth; passwordTip.classList.add('shake');
+          return;
+        }
+      }
+
       try{
         const res = await fetch('/update-password', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ current_password: cur, new_password: nw }) });
-        if (res.ok){ alert('Password updated'); formPassword.reset(); } else if (res.status===401){ alert('Session expired'); sessionStorage.clear(); window.location.href='/login_page'; } else { const j = await res.json().catch(()=>({})); alert(j.error||'Could not update password'); }
+        if (res.ok){ alert('Password updated'); formPassword.reset(); hideTip(passwordTip); } else if (res.status===401){ alert('Session expired'); sessionStorage.clear(); window.location.href='/login_page'; } else { const j = await res.json().catch(()=>({})); alert(j.error||'Could not update password'); }
       }catch(e){ alert('Network error'); }
     });
 
@@ -707,6 +944,10 @@
         else { const j = await r.json().catch(()=>({})); alert(j.error||'Failed to save colors'); }
       }catch(e){ console.error(e); alert('Network error'); }
     });
+
+    // live input hooks (connect debounced username check & password check if password reqs enabled)
+    newUsernameInput.addEventListener('input', debouncedCheckUsername);
+    newPasswordInput.addEventListener('input', () => { if (passwordRequirementsEnabled) checkPassword(true); });
 
     // initial run
     document.addEventListener('DOMContentLoaded', ()=> init());

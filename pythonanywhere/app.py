@@ -61,6 +61,7 @@ from cryptography.fernet import Fernet, InvalidToken
 import base64
 from collections import deque
 import difflib
+from difflib import SequenceMatcher
 import dropbox
 from dropbox.exceptions import ApiError
 try:
@@ -81,6 +82,9 @@ import vt
 import hmac
 import geoip2.database
 import user_agents
+from better_profanity import profanity
+import unicodedata
+from unidecode import unidecode
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -158,6 +162,7 @@ dbx = dropbox.Dropbox(
     app_key=os.getenv("DROPBOX_APP_KEY"),
     app_secret=os.getenv("DROPBOX_APP_SECRET"),
 )
+profanity.load_censor_words()
 MIN_VALID_DT = datetime(1970, 1, 1, tzinfo=timezone.utc)
 mega_client = Mega()
 try:
@@ -8684,70 +8689,12 @@ def contact():
 
 @app.route('/username-check/<string:username>', methods=['GET'])
 def check_username(username):
-    # Block impersonation of reserved names (case-insensitive, normalized, similar)
-    reserved_names = ["admin", "administrator", "moderator", "mod", "support", "staff", "root", "system"]
-    norm_input = re.sub(r'[_\-]', '', username.lower())
 
-    # Direct reserved name match
-    for reserved in reserved_names:
-        norm_reserved = re.sub(r'[_\-]', '', reserved.lower())
-        # Case-insensitive and normalized match
-        if username.lower() == reserved or norm_input == norm_reserved:
-            return jsonify({"exists": False, "protected": True, "reason": "Reserved name"}), 200
-        # Levenshtein similarity
-        def levenshtein(a, b):
-            if a == b:
-                return 0
-            if len(a) < len(b):
-                return levenshtein(b, a)
-            if len(b) == 0:
-                return len(a)
-            previous_row = range(len(b) + 1)
-            for i, c1 in enumerate(a):
-                current_row = [i + 1]
-                for j, c2 in enumerate(b):
-                    insertions = previous_row[j + 1] + 1
-                    deletions = current_row[j] + 1
-                    substitutions = previous_row[j] + (c1 != c2)
-                    current_row.append(min(insertions, deletions, substitutions))
-                previous_row = current_row
-            return previous_row[-1]
-        if levenshtein(norm_input, norm_reserved) <= 1:
-            return jsonify({"exists": False, "protected": True, "reason": "Reserved name similarity"}), 200
-        # Regex: block substrings or extra digits/letters
-        pattern = re.compile(rf"^{re.escape(reserved)}[\d\w\-_.]*$", re.IGNORECASE)
-        if pattern.match(username):
-            return jsonify({"exists": False, "protected": True, "reason": "Reserved name regex similarity"}), 200
+    result = validate_username(username)
 
-    # Check for exact match in database
-    user = User.query.filter_by(username=username).first()
-    if user:
-        return jsonify({"exists": True, "protected": False}), 200
+    if result:
+        return jsonify(result), 200
 
-    # Check for similarity to protected usernames in DB
-    protected_users = User.query.filter_by(has_username_protection=True).all()
-    for protected_user in protected_users:
-        protected_name = protected_user.username
-
-        # Case-insensitive match
-        if username.lower() == protected_name.lower():
-            return jsonify({"exists": False, "protected": True, "reason": "Case-insensitive match"}), 200
-
-        # Remove underscores/dashes and compare
-        norm_protected = re.sub(r'[_\-]', '', protected_name.lower())
-        if norm_input == norm_protected:
-            return jsonify({"exists": False, "protected": True, "reason": "Normalized match"}), 200
-
-        # Levenshtein distance <= 1 (very similar)
-        if levenshtein(username.lower(), protected_name.lower()) <= 1:
-            return jsonify({"exists": False, "protected": True, "reason": "Levenshtein similarity"}), 200
-
-        # Regex: block usernames that are substrings or have extra digits/letters at the end
-        pattern = re.compile(rf"^{re.escape(protected_name)}[\d\w\-_.]*$", re.IGNORECASE)
-        if pattern.match(username):
-            return jsonify({"exists": False, "protected": True, "reason": "Regex similarity"}), 200
-
-    # If no match found
     return jsonify({"exists": False, "protected": False}), 200
 
 # User info
@@ -11828,8 +11775,10 @@ def update_username():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    if User.query.filter_by(username=data['new_username']).first():
-        return jsonify({"error": "Username already exists"}), 400
+    result = validate_username()
+
+    if result["exists"] or result["protected"]:
+        return jsonify({"error": "Invalid username"}), 400
 
     user.username = data['new_username']
     db.session.commit()
@@ -13399,46 +13348,172 @@ def get_username(user_id):
         return jsonify({"error": "User not found"}), 404
     return jsonify({"username": user.username}), 200
 
+# --- CONFIG ---
+RESERVED_NAMES = [
+    "admin", "administrator", "moderator", "mod",
+    "support", "staff", "root", "system"
+]
+
+LEET_MAP = str.maketrans({
+    '@': 'a', '4': 'a', '1': 'i', '!': 'i', '|': 'i',
+    '3': 'e', '$': 's', '0': 'o', '7': 't',
+    '5': 's', '+': 't', '8': 'b', '9': 'g',
+    'µ': 'u', 'υ': 'u', 'ү': 'u', 'ᵤ': 'u'
+})
+
+# --- UTILITIES ---
+def levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if len(a) < len(b):
+        a, b = b, a
+    if len(b) == 0:
+        return len(a)
+
+    prev_row = list(range(len(b) + 1))
+    for i, c1 in enumerate(a):
+        cur_row = [i + 1]
+        for j, c2 in enumerate(b):
+            insertions = prev_row[j + 1] + 1
+            deletions = cur_row[j] + 1
+            substitutions = prev_row[j] + (c1 != c2)
+            cur_row.append(min(insertions, deletions, substitutions))
+        prev_row = cur_row
+    return prev_row[-1]
+
+def normalize_username(username: str) -> str:
+    # Lowercase, NFKC normalization
+    username = unicodedata.normalize('NFKC', username.lower())
+    # Remove separators
+    username = re.sub(r'[\s._-]+', '', username)
+    # Apply leet / homoglyph mapping
+    username = username.translate(LEET_MAP)
+    # Remove repeated letters (for fuzzy profanity matching)
+    username = re.sub(r'(.)\1+', r'\1', username)
+    # ASCII fallback for extra safety
+    username = unidecode(username)
+    return username
+
+def similar(a: str, b: str) -> bool:
+    # Use Levenshtein + sequence matcher
+    dist = levenshtein(a, b)
+    ratio = SequenceMatcher(None, a, b).ratio()
+    return dist <= 2 or ratio > 0.8
+
+def is_profane(username: str) -> bool:
+    profanity.load_censor_words()
+    username_lower = username.lower()
+    username_fuzzy = re.sub(r'(.)\1+', r'\1', username_lower)  # collapse repeats only for fuzzy check
+
+    for bad_word in profanity.CENSOR_WORDSET:
+        bad_word = str(bad_word).lower()
+        if len(bad_word) < 3:
+            continue  # skip very short words to reduce false positives
+        if bad_word in username_lower:
+            return True
+        if levenshtein(username_fuzzy, bad_word) <= 1:
+            return True
+    return False
+
+# --- MAIN VALIDATION ---
+def is_username_invalid(username: str, reserved_names=None, protected_users=None):
+    """
+    Returns: (exists, protected, reason)
+    """
+    if reserved_names is None:
+        reserved_names = RESERVED_NAMES
+
+    username_norm = normalize_username(username)
+
+    # --- PROFANITY CHECK ---
+    if is_profane(username):
+        return False, True, "Profanity"
+
+    # --- RESERVED NAMES ---
+    for reserved in reserved_names:
+        reserved_norm = normalize_username(reserved)
+        if username_norm == reserved_norm:
+            return False, True, "Reserved name"
+        if similar(username_norm, reserved_norm):
+            return False, True, "Reserved similarity"
+        pattern = re.compile(rf"^{re.escape(reserved)}[\w\d._-]*$", re.IGNORECASE)
+        if pattern.match(username):
+            return False, True, "Reserved regex"
+
+    # --- PROTECTED USERS ---
+    if protected_users:
+        for pu in protected_users:
+            protected_norm = normalize_username(pu.username)
+            if username_norm == protected_norm or similar(username_norm, protected_norm):
+                return False, True, "Protected similarity"
+
+    return False, False, None
+
+def validate_username(username: str, protected_users=None):
+    exists, protected, reason = is_username_invalid(username, protected_users=protected_users)
+    if protected or exists:
+        return {"exists": exists, "protected": protected, "reason": reason}
+
+    # --- DATABASE CHECK ---
+    if User.query.filter_by(username=username).first():
+        return {"exists": True, "protected": False}
+
+    return {"exists": False, "protected": False, "reason": None}
+
 # Authentication
 
 # app.py
 @app.route('/signup', methods=['POST'])
 def signup():
+
     data = request.get_json()
+
+    username = data["username"]
+
+    # FULL validation
+    result = validate_username(username)
+
+    if result["exists"] or result["protected"]:
+        return jsonify({"error": "Invalid username"}), 400
+
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+
     user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_ip = user_ip.split(',')[0].strip()  # first IP in the list
+    user_ip = user_ip.split(',')[0].strip()
 
     cleanup_expired_signup_sessions()
 
-    # IP-ban check remains unchanged
     banned_ip = IpAddres.query.join(User)\
         .filter(IpAddres.ip == user_ip, User.suspended.is_(True))\
         .first()
+
     if banned_ip:
         return jsonify({"error": "Please get unbanned first!"}), 403
 
-    # Check username availability
-    if User.query.filter_by(username=data['username']).first():
-        return jsonify({"error": "Username already exists"}), 400
-
     # Create signup session
     session_id = str(uuid.uuid4())
+
     signup_session = SignupSession(
         id=session_id,
-        username=data['username'],
+        username=username,
         hashed_password=hashed_password,
         user_ip=user_ip
     )
+
     db.session.add(signup_session)
     db.session.commit()
 
     resp = jsonify({"redirect": "/signup/email"})
+
     resp.set_cookie(
-        "signup_session", session_id,
-        httponly=True, secure=True, samesite="Strict",
-        max_age=60*60  # 1 hour expiration
+        "signup_session",
+        session_id,
+        httponly=True,
+        secure=True,
+        samesite="Strict",
+        max_age=60*60
     )
+
     return resp
 
 # Helper function to create user from signup session
@@ -13945,6 +14020,22 @@ def reset_password_redirect():
     # Redirect to form with token
     return render_template("reset_password.html")
 
+@app.route('/reset_password/validate_token', methods=["GET"])
+def reset_password_validate_token():
+    token = request.args.get('token')
+    if not token:
+        return jsonify({'error': 'Token is required'}), 400
+
+    # Validate token
+    reset_token = PasswordResetToken.query.filter_by(token=token).first()
+    if not reset_token:
+        return jsonify({'error': 'Invalid token'}), 400
+    if reset_token.used:
+        return jsonify({'error': 'Token already used'}), 400
+    if datetime.utcnow() > reset_token.expires_at:
+        return jsonify({'error': 'Token expired'}), 400
+
+    return jsonify({"valid": "Token is valid!"}), 200
 
 # Step 2: Modify the reset_password endpoint
 @app.route('/reset_password', methods=['POST'])
@@ -14048,7 +14139,7 @@ def undo_reset():
     token = request.args.get('token')
     if not token:
         return jsonify({'error': 'Token is required'}), 400
-    
+
     undo_token = ResetUndoToken.query.filter_by(token=token, used=False).first()
     if not undo_token:
         return jsonify({'error': 'Invalid token'}), 400
@@ -14056,58 +14147,271 @@ def undo_reset():
         return jsonify({'error': 'Token already used'}), 400
     if datetime.utcnow() > undo_token.expires_at:
         return jsonify({'error': 'Token expired'}), 400
-    
+
     user = User.query.get(undo_token.user_id)
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    
+
     # Restore old password
     user.password = undo_token.old_password_hash
-    
+
     # Mark undo token as used
     undo_token.used = True
-    
+
     db.session.commit()
 
-    # Render success page with auto-redirect
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Password Reset Reverted</title>
-        <meta http-equiv="refresh" content="5;url=/login_page">
-        <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color:#2c2c2c;}
-            .success { color: #2ecc71; font-size: 24px; }
-            .loader { 
-                width: 50px; 
-                height: 50px;
-                border: 5px solid #f3f3f3;
-                border-top: 5px solid #3498db;
-                border-radius: 50%;
-                margin: 20px auto;
-                animation: spin 1s linear infinite;
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2c2c2c">
+    <title>Reset Reverted - Future Notes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color:  #2c2c2c; --hdr-color: #3a3a3a;
+            --ctr-color: #1e1e1e;
+            --accent:       #5b8cf7;
+            --accent-glow:  rgba(91,140,247,0.22);
+            --text-primary: #e8e8e8; --text-muted: #9a9a9a; --text-dim: #606060;
+            --border:       rgba(255,255,255,0.07); --border-hover: rgba(255,255,255,0.13);
+            --radius: 8px; --radius-sm: 6px;
+            --ease: cubic-bezier(0.4,0,0.2,1);
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { height: 100%; }
+        body {
+            background-color: var(--bg-color); color: var(--text-primary);
+            font-family: 'Outfit', sans-serif; font-weight: 400;
+            min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 24px 16px; position: relative; overflow-x: hidden;
+        }
+        body::before {
+            content: ''; position: fixed; inset: 0;
+            background: radial-gradient(ellipse 90% 80% at 50% 50%, transparent 30%, rgba(10,10,10,0.35) 100%);
+            pointer-events: none; z-index: 0;
+        }
+        body::after {
+            content: ''; position: fixed; top: -120px; left: 50%; transform: translateX(-50%);
+            width: 600px; height: 400px;
+            background: radial-gradient(ellipse, rgba(91,140,247,0.055) 0%, transparent 70%);
+            pointer-events: none; z-index: 0;
+        }
+        .page-wrapper {
+            position: relative; z-index: 1; width: 100%; max-width: 400px;
+            opacity: 0; transform: translateY(14px);
+            animation: revealUp 0.55s var(--ease) 0.05s forwards;
+        }
+        @keyframes revealUp { to { opacity: 1; transform: translateY(0); } }
+        .logo-area { text-align: center; margin-bottom: 28px; }
+        .logo-icon {
+            width: 46px; height: 46px; background: var(--ctr-color);
+            border: 1px solid var(--border-hover); border-radius: 12px;
+            display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04) inset;
+        }
+        .logo-icon svg { width: 22px; height: 22px; }
+        .logo-area h1 { font-size: 22px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.02em; margin-bottom: 4px; }
+        .logo-area p { font-size: 13px; color: var(--text-dim); }
+        .card {
+            background: var(--hdr-color); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 32px 28px;
+            box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 20px 60px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.25);
+            text-align: center;
+        }
+        .icon-wrap { width: 88px; height: 88px; margin: 0 auto 24px; }
+        .card-title { font-size: 18px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; margin-bottom: 10px; }
+        .card-body { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 28px; }
+        /* Progress bar redirect indicator */
+        .redirect-bar-wrap {
+            margin-bottom: 18px;
+        }
+        .redirect-label {
+            font-size: 11.5px; color: var(--text-dim); margin-bottom: 8px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .redirect-track {
+            width: 100%; height: 3px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden;
+        }
+        .redirect-fill {
+            height: 100%; width: 0%; background: var(--accent);
+            border-radius: 2px;
+            box-shadow: 0 0 8px rgba(91,140,247,0.5);
+            transition: width 0.25s linear;
+        }
+        .btn {
+            width: 100%; padding: 11px; background: var(--accent); border: none;
+            border-radius: var(--radius-sm); color: #fff; font-family: 'Outfit', sans-serif;
+            font-size: 14px; font-weight: 500; letter-spacing: 0.01em; cursor: pointer;
+            transition: background 0.18s var(--ease), box-shadow 0.18s var(--ease), transform 0.1s;
+            box-shadow: 0 2px 12px rgba(91,140,247,0.28), 0 1px 0 rgba(255,255,255,0.1) inset;
+            text-decoration: none; display: block;
+        }
+        .btn:hover { background: #6f9cf9; box-shadow: 0 4px 18px rgba(91,140,247,0.38); }
+        .btn:active { transform: translateY(1px); }
+        @media (max-width: 480px) {
+            body { justify-content: flex-start; padding-top: 64px; }
+            .card { padding: 24px 18px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-wrapper">
+    <div class="logo-area">
+        <div class="logo-icon">
+            <img src="/static/android-chrome-192x192.png" width="100" height="100">
+        </div>
+        <h1>Future Notes</h1>
+        <p>Account security</p>
+    </div>
+
+    <div class="card">
+
+        <!-- Animated SVG success icon -->
+        <div class="icon-wrap">
+            <svg viewBox="0 0 88 88" fill="none" style="width:88px;height:88px;overflow:visible;">
+                <defs>
+                    <filter id="sg" x="-50%" y="-50%" width="200%" height="200%">
+                        <feGaussianBlur stdDeviation="3" result="b"/>
+                        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                    <filter id="sg2" x="-80%" y="-80%" width="260%" height="260%">
+                        <feGaussianBlur stdDeviation="6" result="b"/>
+                        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+                <circle cx="44" cy="44" r="34" fill="rgba(91,140,247,0.06)" filter="url(#sg2)" opacity="0">
+                    <animate attributeName="opacity" values="0;1" dur="0.3s" begin="0s" fill="freeze"/>
+                </circle>
+                <!-- Ripples -->
+                <circle cx="44" cy="44" r="33" fill="none" stroke="#5b8cf7" stroke-width="1.5">
+                    <animate attributeName="r" values="33;58" dur="1s" begin="0.55s" fill="freeze" calcMode="spline" keySplines="0.15 0 0.3 1"/>
+                    <animate attributeName="opacity" values="0.55;0" dur="1s" begin="0.55s" fill="freeze"/>
+                </circle>
+                <circle cx="44" cy="44" r="33" fill="none" stroke="#8ab0ff" stroke-width="0.8">
+                    <animate attributeName="r" values="33;68" dur="1.2s" begin="0.7s" fill="freeze" calcMode="spline" keySplines="0.15 0 0.3 1"/>
+                    <animate attributeName="opacity" values="0.3;0" dur="1.2s" begin="0.7s" fill="freeze"/>
+                </circle>
+                <circle cx="44" cy="44" r="33" fill="none" stroke="#5b8cf7" stroke-width="0.5">
+                    <animate attributeName="r" values="33;50" dur="0.7s" begin="0.45s" fill="freeze"/>
+                    <animate attributeName="opacity" values="0.4;0" dur="0.7s" begin="0.45s" fill="freeze"/>
+                </circle>
+                <!-- Cardinal sparks -->
+                <line x1="44" y1="8"  x2="44" y2="3"  stroke="#5b8cf7" stroke-width="1.6" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="y1" values="9;5"  dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="y2" values="3;-4" dur="0.5s" begin="0.62s" fill="freeze"/>
+                </line>
+                <line x1="44" y1="80" x2="44" y2="85" stroke="#5b8cf7" stroke-width="1.6" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="y1" values="79;83" dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="y2" values="85;92" dur="0.5s" begin="0.62s" fill="freeze"/>
+                </line>
+                <line x1="80" y1="44" x2="85" y2="44" stroke="#5b8cf7" stroke-width="1.6" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="x1" values="79;83" dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="x2" values="85;92" dur="0.5s" begin="0.62s" fill="freeze"/>
+                </line>
+                <line x1="8" y1="44" x2="3" y2="44" stroke="#5b8cf7" stroke-width="1.6" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="x1" values="9;5"  dur="0.5s" begin="0.62s" fill="freeze"/>
+                    <animate attributeName="x2" values="3;-4" dur="0.5s" begin="0.62s" fill="freeze"/>
+                </line>
+                <!-- Diagonal sparks -->
+                <line x1="68" y1="20" x2="73" y2="15" stroke="#8ab0ff" stroke-width="1.2" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;0.9;0" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x1" values="67;71" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y1" values="21;17" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x2" values="73;79" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y2" values="15;9"  dur="0.5s" begin="0.68s" fill="freeze"/>
+                </line>
+                <line x1="68" y1="68" x2="73" y2="73" stroke="#8ab0ff" stroke-width="1.2" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;0.9;0" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x1" values="67;71" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y1" values="67;71" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x2" values="73;79" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y2" values="73;79" dur="0.5s" begin="0.68s" fill="freeze"/>
+                </line>
+                <line x1="20" y1="20" x2="15" y2="15" stroke="#8ab0ff" stroke-width="1.2" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;0.9;0" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x1" values="21;17" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y1" values="21;17" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x2" values="15;9"  dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y2" values="15;9"  dur="0.5s" begin="0.68s" fill="freeze"/>
+                </line>
+                <line x1="20" y1="68" x2="15" y2="73" stroke="#8ab0ff" stroke-width="1.2" stroke-linecap="round" opacity="0">
+                    <animate attributeName="opacity" values="0;0.9;0" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x1" values="21;17" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y1" values="67;71" dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="x2" values="15;9"  dur="0.5s" begin="0.68s" fill="freeze"/>
+                    <animate attributeName="y2" values="73;79" dur="0.5s" begin="0.68s" fill="freeze"/>
+                </line>
+                <!-- Circle fill + draw-on -->
+                <circle cx="44" cy="44" r="33" fill="rgba(91,140,247,0.09)" opacity="0">
+                    <animate attributeName="opacity" values="0;1" dur="0.4s" begin="0s" fill="freeze"/>
+                </circle>
+                <circle cx="44" cy="44" r="33" fill="none" stroke="#5b8cf7" stroke-width="2.4"
+                    stroke-linecap="round" stroke-dasharray="207.3" stroke-dashoffset="207.3" filter="url(#sg)">
+                    <animate attributeName="stroke-dashoffset" from="207.3" to="0"
+                        dur="0.58s" begin="0s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+                </circle>
+                <!-- Checkmark -->
+                <path d="M29 45 L39 55.5 L61 30.5" fill="none" stroke="#5b8cf7" stroke-width="3"
+                    stroke-linecap="round" stroke-linejoin="round"
+                    stroke-dasharray="50" stroke-dashoffset="50" filter="url(#sg)">
+                    <animate attributeName="stroke-dashoffset" from="50" to="0"
+                        dur="0.38s" begin="0.5s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+                </path>
+            </svg>
+        </div>
+
+        <p class="card-title">Password reset reverted</p>
+        <p class="card-body">Your previous password has been restored and all active sessions have been signed out. You can now sign in with your original password.</p>
+
+        <!-- Animated redirect progress bar -->
+        <div class="redirect-bar-wrap">
+            <div class="redirect-label">
+                <span>Redirecting to sign in</span>
+                <span id="countdown-label">5s</span>
+            </div>
+            <div class="redirect-track">
+                <div class="redirect-fill" id="redirect-fill"></div>
+            </div>
+        </div>
+
+        <a href="/login_page" class="btn">Sign in now</a>
+    </div>
+</div>
+
+<script>
+    (function() {
+        var total  = 5000;
+        var start  = Date.now();
+        var fill   = document.getElementById("redirect-fill");
+        var label  = document.getElementById("countdown-label");
+        var timer  = setInterval(function() {
+            var elapsed = Date.now() - start;
+            var pct     = Math.min((elapsed / total) * 100, 100);
+            var secs    = Math.max(0, Math.ceil((total - elapsed) / 1000));
+            fill.style.width  = pct + "%";
+            label.textContent = secs + "s";
+            if (elapsed >= total) {
+                clearInterval(timer);
+                window.location.href = "/login_page";
             }
-            p {
-                color: white;
-            }
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="success">✓ Password reset reverted successfully!</div>
-        <div class="loader"></div>
-        <p>Redirecting to login...</p>
-        <p><a href="/login_page">Click here if not redirected</a></p>
-    </body>
-    </html>
-    """
+        }, 50);
+    })();
+</script>
+
+</body>
+</html>"""
 
     resp = make_response(html)
-
     resp.delete_cookie("lasting_key")
     resp.delete_cookie("session_key")
     return resp
