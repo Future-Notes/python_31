@@ -235,7 +235,6 @@ app.config['SECRET_KEY'] = os.urandom(24)
 # Token serializer
 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 TOKEN_EXPIRATION = 3600  # seconds (1 hour)
-session_keys = {}
 games = {}
 BOARD_SIZE = 10
 CORRECT_PIN = "1234"
