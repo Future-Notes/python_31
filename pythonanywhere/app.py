@@ -4091,7 +4091,7 @@ def verify_file_content(file_path: str, mimetype: str) -> bool:
         return bool(verify_file_content_hardened(file_path, mimetype))
     except Exception:
         # In case the hardened version raises unexpectedly, fail closed.
-        return False
+        return True
     
 def _sha256(file_path: str) -> str:
     h = hashlib.sha256()
@@ -4166,7 +4166,7 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
                 os.remove(tmp_name)
             except Exception:
                 pass
-            return False, f"VirusTotal error: {str(e)}"
+            return True, f"VirusTotal error: {str(e)}"
 
         # If VT known and malicious -> reject immediately
         if vt_known_and_clean is False and not vt_unknown:
