@@ -85,6 +85,9 @@ import user_agents
 from better_profanity import profanity
 import unicodedata
 from unidecode import unidecode
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_limiter.errors import RateLimitExceeded
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -100,6 +103,21 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'poolclass': NullPool
 }
+def get_user_or_ip():
+    """
+    Returns a unique identifier for rate limiting:
+      - user_id if logged in
+      - IP address otherwise
+    """
+    if hasattr(g, "user") and g.user:
+        return str(g.user.id)
+    return get_remote_address()
+
+limiter = Limiter(
+    key_func=get_user_or_ip,   # <-- use our custom function
+    app=app,
+    default_limits=["2000 per day", "500 per hour"],
+)
 def load_secrets():
     with app.app_context():
         secrets = AppSecret.query.all()
@@ -137,6 +155,7 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config["RATELIMIT_HEADERS_ENABLED"] = True
 app.config["SESSION_EXPIRY_HOURS"] = 24
 app.config["SLIDING_SESSION_EXPIRY_MINUTES"] = 30
 app.config["LASTING_KEY_SIGNING_KEY"] = os.getenv("LASTING_KEY_SIGNING_KEY")
@@ -2592,13 +2611,27 @@ def allowed_file(filename):
 def require_session_key(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
+        # Validate session
         valid, resp = validate_session_key()
         if not valid:
             code = 403 if "suspended" in resp else 401
             return jsonify({"error": resp}), code
 
+        # Set user in g
         g.user_id = resp["user_id"]
-        return func(*args, **kwargs)
+
+        # Apply slightly stricter global limit for all authenticated users
+        # Example: 1500 per day, 400 per hour
+        key = str(g.user_id)
+        limit_str = "1500 per day, 400 per hour"
+        try:
+            # Use RouteLimit as a context manager
+            with limiter.limit(limit_str, key_func=lambda: key):
+                return func(*args, **kwargs)
+        except RateLimitExceeded:
+            # Friendly, localized 429 could go here
+            return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
+
     return wrapper
 
 def get_user_from_session(func):
@@ -3800,6 +3833,20 @@ def get_recursive_folder_tree(root_folder):
     dfs(root_folder)
     return result
 
+def get_user_id(session_key=None):
+    """
+    Return user_id for a raw session token (or cookie if not provided), or None.
+    """
+    raw = session_key or request.cookies.get('session_key')
+    if not raw:
+        return None
+
+    db_session = get_session_by_raw_token(raw)
+    if not db_session:
+        return None
+
+    return db_session.user_id
+
 def delete_notes_and_attachments(note_objs_or_ids, user, owner_group_id=None):
     """
     Delete notes and their uploads. Accepts either:
@@ -4701,6 +4748,22 @@ def im_a_teapot(e):
         return jsonify({"error": "I'm a teapot"}), 418
     return render_template('418.html'), 418
 
+@app.errorhandler(RateLimitExceeded)
+def rate_limit_handler(e):
+    # Determine user language, e.g., from request headers or user session
+    lang = getattr(g, "user_lang", "en")  # fallback to English
+    messages = {
+        "en": "You`re going a bit too fast! Please slow down.",
+        "nl": "Je gaat een beetje te snel! Doe rustig aan alsjeblieft"
+    }
+
+    response = jsonify({
+        "error": "rate_limit_exceeded",
+        "message": messages.get(lang, messages["en"])
+    })
+    response.status_code = 429  # HTTP status for Too Many Requests
+    return response
+
 @app.errorhandler(404)
 def page_not_found(error):
     # Check if the error is related to the profile pictures URL
@@ -4724,11 +4787,46 @@ def brew_coffee():
 
 @app.route('/')
 def home():
-    # Try to detect language from Accept-Language header
+    # Check for manual language override via query param (e.g. /?lang=en)
+    lang_param = request.args.get('lang')
+    if lang_param in ('en', 'nl'):
+        resp = make_response(
+            render_template('home_dutch.html') if lang_param == 'nl'
+            else render_template('home.html')
+        )
+        resp.set_cookie('lang_pref', lang_param, max_age=60*60*24*365, samesite='Lax')
+        return resp
+
+    # Check for existing manual preference cookie
+    lang_cookie = request.cookies.get('lang_pref')
+    if lang_cookie == 'nl':
+        return render_template('home_dutch.html')
+    if lang_cookie == 'en':
+        return render_template('home.html')
+
+    # No preference set — auto-detect and redirect
     lang = request.accept_languages.best_match(['nl', 'en'])
     if lang == 'nl':
-        return render_template('home_dutch.html')
+        return redirect('/nl')
     return render_template('home.html')
+
+
+@app.route('/nl')
+def home_nl():
+    # Check for manual override via query param (e.g. /nl?lang=nl)
+    lang_param = request.args.get('lang')
+    if lang_param in ('en', 'nl'):
+        resp = make_response(
+            render_template('home_dutch.html') if lang_param == 'nl'
+            else redirect('/')
+        )
+        if lang_param != 'nl':
+            # They switched away, set cookie and redirect to EN
+            resp = make_response(redirect('/'))
+        resp.set_cookie('lang_pref', lang_param, max_age=60*60*24*365, samesite='Lax')
+        return resp
+
+    return render_template('home_dutch.html')
 
 @app.route('/favicon.ico')
 def send_favicon():
@@ -4913,6 +5011,12 @@ def help_editor():
 def manage_2fa():
     return render_template("setup_2fa.html")
 
+@app.cli.command("list-routes")
+def list_routes():
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(rule.methods)
+        print(f"{rule} -> {rule.endpoint} [{methods}]")
+
 #---------------------------------API routes--------------------------------
 
 
@@ -5041,6 +5145,7 @@ from datetime import datetime
 from flask import render_template
 
 @app.route('/s/<token>', methods=['GET'])
+@limiter.limit("100 per hour", override_defaults=True)
 def public_share(token):
     # fetch shared node sets
     folder_ids, note_ids, root_folder_id, root_note_id = get_shared_node_sets_for_token(token)
@@ -5191,6 +5296,7 @@ def public_share(token):
 # API: get folder contents for a token
 # -------------------------------------------------------
 @app.route('/s/<token>/api/folder/<int:folder_id>', methods=['GET'])
+@limiter.limit("100 per hour", override_defaults=True)
 def shared_folder_contents(token, folder_id):
     folder_ids, note_ids, root_folder_id, root_note_id = get_shared_node_sets_for_token(token)
     if not folder_ids:
@@ -5243,6 +5349,7 @@ def shared_folder_contents(token, folder_id):
 
 @app.route('/s/<token>/visit', methods=['POST'])
 @get_user_from_session
+@limiter.limit("100 per hour", override_defaults=True)
 def public_share_visit(token):
     # pick canonical share row for counting visits: use first created share for the token
     share = (Share.query
@@ -5353,10 +5460,20 @@ def api_create_share_link(board_id):
     url = make_share_url(token)
     return jsonify({"token": token, "url": url, "permission": permission}), 201
 
+def send_email_board_key():
+    """
+    Rate limit per board. Combines board_id from the URL and the user ID
+    to make the limit specific per board per user.
+    """
+    user_id = getattr(g, "user_id", None) or "anon"
+    # board_id is in kwargs — we can get it from flask request.view_args
+    board_id = request.view_args.get("board_id")
+    return f"user:{user_id}:board:{board_id}"
 
 # Send the share link by email (owner only)
 @app.route('/api/boards/<int:board_id>/share_links/send_email', methods=['POST'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=send_email_board_key, override_defaults=True)
 def api_send_share_link_email(board_id):
     """
     Body: {
@@ -5449,6 +5566,7 @@ def api_send_share_link_email(board_id):
 
 
 @app.route('/board/s/<token>')
+@limiter.limit("20 per hour", override_defaults=True)
 def serve_board_share_link(token):
     """
     Visiting the token:
@@ -7549,6 +7667,7 @@ def invites_status():
 
 @app.route('/invites/send', methods=['POST'])
 @require_session_key
+@limiter.limit("10 per day, 3 per hour", key_func=get_user_id, override_defaults=True)
 def send_invite():
     data = request.get_json() or {}
     email = (data.get('email') or '').strip().lower()
@@ -8586,6 +8705,7 @@ def mark_notification_notified(notif_id):
 # Homepage
 
 @app.route('/contact', methods=['POST'])
+@limiter.limit("1 per minute, 10 per hour")
 def contact():
     data = request.json
     email = data['email']
@@ -9262,20 +9382,6 @@ def api_google_connect():
         "oauth_state": returned_state
     }), 200
 
-def get_user_id(session_key=None):
-    """
-    Return user_id for a raw session token (or cookie if not provided), or None.
-    """
-    raw = session_key or request.cookies.get('session_key')
-    if not raw:
-        return None
-
-    db_session = get_session_by_raw_token(raw)
-    if not db_session:
-        return None
-
-    return db_session.user_id
-
 geo_cache: dict[str, tuple[str, str]] = {}
 
 def lookup_country(ip):
@@ -9322,6 +9428,7 @@ def list_sessions():
 # --- POST /account/sessions/<id>/revoke  (revoke a single session)
 @app.route("/account/sessions/<int:session_id>/revoke", methods=["POST"])
 @require_session_key
+@limiter.limit("30 per hour", key_func=get_user_id, override_defaults=True)
 def revoke_session(session_id):
     user_id = g.user_id
     s = Session.query.get(session_id)
@@ -9356,6 +9463,7 @@ def revoke_session(session_id):
 # --- POST /account/sessions/revoke_all  (revoke all sessions + delete all lasting keys)
 @app.route("/account/sessions/revoke_all", methods=["POST"])
 @require_session_key
+@limiter.limit("5 per hour", key_func=get_user_id, override_defaults=True)
 def revoke_all_sessions():
     user_id = g.user_id
     try:
@@ -11753,6 +11861,7 @@ def share_note(note_id):
 
 @app.route('/update-password', methods=['PUT'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=get_user_id, override_defaults=True)
 def update_password():
     data = request.json
     user = User.query.get(g.user_id)  # Use g.user_id directly
@@ -11769,6 +11878,7 @@ def update_password():
 
 @app.route('/update-username', methods=['PUT'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=get_user_id, override_defaults=True)
 def update_username():
     data = request.json
     user = User.query.get(g.user_id)  # Use g.user_id directly
@@ -11786,6 +11896,7 @@ def update_username():
 
 @app.route('/delete-account', methods=['DELETE'])
 @require_session_key
+@limiter.limit("0.33 per hour", key_func=get_user_id, override_defaults=True)
 def delete_account():
     data = request.json
     user = User.query.get(g.user_id)
@@ -13358,6 +13469,7 @@ LEET_MAP = str.maketrans({
     '@': 'a', '4': 'a', '1': 'i', '!': 'i', '|': 'i',
     '3': 'e', '$': 's', '0': 'o', '7': 't',
     '5': 's', '+': 't', '8': 'b', '9': 'g',
+    # keep these, unidecode helps with many other homoglyphs
     'µ': 'u', 'υ': 'u', 'ү': 'u', 'ᵤ': 'u'
 })
 
@@ -13382,44 +13494,116 @@ def levenshtein(a: str, b: str) -> int:
     return prev_row[-1]
 
 def normalize_username(username: str) -> str:
-    # Lowercase, NFKC normalization
-    username = unicodedata.normalize('NFKC', username.lower())
-    # Remove separators
-    username = re.sub(r'[\s._-]+', '', username)
-    # Apply leet / homoglyph mapping
-    username = username.translate(LEET_MAP)
-    # Remove repeated letters (for fuzzy profanity matching)
-    username = re.sub(r'(.)\1+', r'\1', username)
-    # ASCII fallback for extra safety
-    username = unidecode(username)
-    return username
+    """
+    Normalize a username to a canonical ascii form suitable for fuzzy checks:
+    - Normalize unicode (NFKD)
+    - Strip combining diacritics
+    - Use unidecode to map homoglyphs to ASCII
+    - Lowercase
+    - Replace common leet characters (LEET_MAP)
+    - Remove separators (space, dot, underscore, hyphen)
+    - Collapse repeated characters
+    """
+    if username is None:
+        return ""
+
+    # 1) NFKD decomposition -> separates base + diacritics
+    s = unicodedata.normalize('NFKD', username)
+
+    # 2) Remove combining marks (diacritics)
+    s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+
+    # 3) Transliterate to ASCII for many homoglyphs
+    s = unidecode(s)
+
+    # 4) Lowercase
+    s = s.lower()
+
+    # 5) Replace separators with nothing
+    s = re.sub(r'[\s._\-]+', '', s)
+
+    # 6) Apply leet map (digits & common symbols -> letters)
+    s = s.translate(LEET_MAP)
+
+    # 7) Collapse repeated letters (aaaa -> a) to reduce obfuscation attempts
+    s = re.sub(r'(.)\1+', r'\1', s)
+
+    # final safe ASCII
+    return s
+
+def fuzzy_substring_match(haystack: str, needle: str, max_dist: int = 1) -> bool:
+    """
+    Sliding-window fuzzy substring match using Levenshtein distance.
+    Returns True if any substring of haystack of length ~len(needle) is within max_dist.
+    We test lengths len(needle)-1, len(needle), len(needle)+1 to allow small insert/delete obfuscation.
+    """
+    if not haystack or not needle:
+        return False
+
+    L = len(needle)
+    lengths_to_check = set()
+    for delta in (-1, 0, 1):
+        ll = L + delta
+        if ll >= 1:
+            lengths_to_check.add(ll)
+
+    for ll in lengths_to_check:
+        if ll > len(haystack):
+            continue
+        for i in range(0, len(haystack) - ll + 1):
+            sub = haystack[i:i+ll]
+            if levenshtein(sub, needle) <= max_dist:
+                return True
+    return False
 
 def similar(a: str, b: str) -> bool:
-    # Use Levenshtein + sequence matcher
-    dist = levenshtein(a, b)
-    ratio = SequenceMatcher(None, a, b).ratio()
+    # Use Levenshtein + sequence matcher on normalized ascii forms
+    an = normalize_username(a)
+    bn = normalize_username(b)
+    dist = levenshtein(an, bn)
+    ratio = SequenceMatcher(None, an, bn).ratio()
     return dist <= 2 or ratio > 0.8
 
 def is_profane(username: str) -> bool:
-    profanity.load_censor_words()
-    username_lower = username.lower()
-    username_fuzzy = re.sub(r'(.)\1+', r'\1', username_lower)  # collapse repeats only for fuzzy check
+    """
+    Profanity check that:
+    - normalizes username to ascii form
+    - checks direct substring matches against profanity set
+    - checks fuzzy substring matches (sliding-window Levenshtein) for short edit distances
+    """
+    if not username:
+        return False
 
-    for bad_word in profanity.CENSOR_WORDSET:
-        bad_word = str(bad_word).lower()
+    # ensure the profanity list is loaded (depends on library)
+    try:
+        profanity.load_censor_words()
+        badset = {str(w).lower() for w in profanity.CENSOR_WORDSET}
+    except Exception:
+        # If profanity package is not available, fall back to an empty set (or provide your own list)
+        badset = set()
+
+    username_norm = normalize_username(username)
+
+    # quick wins: exact substring of any bad word
+    for bad_word in badset:
         if len(bad_word) < 3:
-            continue  # skip very short words to reduce false positives
-        if bad_word in username_lower:
+            continue
+        bw = bad_word.lower()
+        if bw in username_norm:
             return True
-        if levenshtein(username_fuzzy, bad_word) <= 1:
+        # fuzzy substring: allow small edits/leet obfuscation:
+        # use max_dist = 1 for short words, maybe 2 for longer
+        max_dist = 1 if len(bw) <= 5 else 2
+        if fuzzy_substring_match(username_norm, bw, max_dist=max_dist):
             return True
+
     return False
 
 # --- MAIN VALIDATION ---
 def is_username_invalid(username: str, reserved_names=None, protected_users=None):
     """
     Check if a username is invalid.
-    
+
     Returns:
         tuple: (exists, protected, reason)
             - exists: bool, True if the username already exists in DB
@@ -13440,11 +13624,11 @@ def is_username_invalid(username: str, reserved_names=None, protected_users=None
         reserved_norm = normalize_username(reserved)
         if username_norm == reserved_norm:
             return False, True, "Reserved name"
+        # prefix-style reserved (e.g. admin123) should be blocked; check on normalized forms
+        if username_norm.startswith(reserved_norm):
+            return False, True, "Reserved prefix"
         if similar(username_norm, reserved_norm):
             return False, True, "Reserved similarity"
-        pattern = re.compile(rf"^{re.escape(reserved)}[\w\d._-]*$", re.IGNORECASE)
-        if pattern.match(username):
-            return False, True, "Reserved regex"
 
     # --- EXISTING USERS ---
     user_exists = User.query.filter_by(username=username).first() is not None
@@ -13461,13 +13645,14 @@ def is_username_invalid(username: str, reserved_names=None, protected_users=None
     return user_exists, False, None
 
 def validate_username(username: str, protected_users=None):
-    exists, protected, reason = is_username_invalid(username)
+    # forward protected_users into the deeper call
+    exists, protected, reason = is_username_invalid(username, protected_users=protected_users)
     if protected or exists:
         return {"exists": exists, "protected": protected, "reason": reason}
 
-    # --- DATABASE CHECK ---
+    # --- DATABASE CHECK (redundant with earlier but kept for backward compatibility) ---
     if User.query.filter_by(username=username).first():
-        return {"exists": True, "protected": False}
+        return {"exists": True, "protected": False, "reason": "Exists"}
 
     return {"exists": False, "protected": False, "reason": None}
 
@@ -13475,6 +13660,7 @@ def validate_username(username: str, protected_users=None):
 
 # app.py
 @app.route('/signup', methods=['POST'])
+@limiter.limit("30/hour", override_defaults=True)
 def signup():
 
     data = request.get_json()
@@ -13583,6 +13769,7 @@ def create_user_from_signup_session(signup_session, skip_email=False):
 
 # Email verification endpoint
 @app.route('/signup/verify_email')
+@limiter.limit("10 per hour")
 def verify_email_via_link():
     """Endpoint for email verification link"""
     code = request.args.get('code')
@@ -13831,6 +14018,7 @@ def complete_signup_internal(signup_session):
 
 # Updated email sending endpoint
 @app.route('/signup/send_verification', methods=['POST'])
+@limiter.limit("10 per hour", override_defaults=True)
 def send_verification_email():
     data = request.get_json()
     session_id = request.cookies.get('signup_session')
@@ -13955,6 +14143,7 @@ def complete_signup():
     
 # Password reset request endpoint
 @app.route('/reset_password_request', methods=['POST'])
+@limiter.limit("3 per hour")
 def reset_password_request():
     data = request.get_json()
     username = data.get('username', '').strip()
@@ -14014,6 +14203,7 @@ def reset_password_request():
 # Password reset validation endpoint
 # New endpoint: Token validation and redirection
 @app.route('/reset_password', methods=['GET'])
+@limiter.limit("15 per hour")
 def reset_password_redirect():
     token = request.args.get('token')
     if not token:
@@ -14032,6 +14222,7 @@ def reset_password_redirect():
     return render_template("reset_password.html")
 
 @app.route('/reset_password/validate_token', methods=["GET"])
+@limiter.limit("50 per hour")
 def reset_password_validate_token():
     token = request.args.get('token')
     if not token:
@@ -14429,6 +14620,7 @@ def undo_reset():
 
 
 @app.route('/login', methods=['POST'])
+@limiter.limit("8 per hour")
 def login():
     data = request.get_json(silent=True) or {}
 
@@ -14611,6 +14803,7 @@ def login():
 
 @app.route('/2fa/setup', methods=['POST'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=get_user_id, override_defaults=True)
 def twofa_setup():
     user = User.query.get(g.user_id)
     if not user:
@@ -14637,6 +14830,7 @@ def twofa_setup():
 
 @app.route('/2fa/confirm', methods=['POST'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=get_user_id, override_defaults=True)
 def twofa_confirm():
     user = User.query.get(g.user_id)
     if not user:
@@ -14677,6 +14871,7 @@ def twofa_confirm():
 
 @app.route('/2fa/disable', methods=['POST'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=get_user_id, override_defaults=True)
 def twofa_disable():
     """
     Disable 2FA for the currently authenticated user.
@@ -14724,6 +14919,7 @@ def twofa_disable():
 
 @app.route('/2fa/backup/regenerate', methods=['POST'])
 @require_session_key
+@limiter.limit("3 per hour", key_func=get_user_id, override_defaults=True)
 def twofa_backup_regenerate():
     """
     Regenerate backup codes for the current user (returns plaintext codes once).
@@ -14763,6 +14959,7 @@ def twofa_backup_regenerate():
     return jsonify({"backup_codes": new_plain}), 200
 
 @app.route('/login/2fa', methods=['POST'])
+@limiter.limit("8 per hour")
 def login_2fa():
     data = request.get_json() or {}
     token = data.get('login_token')
@@ -14904,6 +15101,7 @@ def twofa_status():
     return resp
 
 @app.route('/logout', methods=['POST'])
+@limiter.limit("20 per hour")
 def logout():
     # Revoke session_key on server side if you persist them
     session_key = request.cookies.get("session_key")

@@ -2,21 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <!-- keep viewport; mobile fixes below -->
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#3a3a3a" />
   <script src="/static/admin.js"></script>
   <title>Future Notes — Account</title>
 
   <style>
-    /* -------------------------
-       Color scheme (user req)
-       ------------------------- */
     :root{
-      --bg-color:  #2c2c2c;  /* page background */
-      --hdr-color: #3a3a3a;  /* header / appbar */
-      --ctr-color: #1e1e1e;  /* panels / contrast */
-      --btn-color: #424242;  /* default button */
+      --bg-color:  #2c2c2c;
+      --hdr-color: #3a3a3a;
+      --ctr-color: #1e1e1e;
+      --btn-color: #424242;
       --muted: #98a0ad;
       --text: #e6eef8;
       --accent: #4f83cc;
@@ -27,7 +23,6 @@
       --max-inner-width: 1100px;
     }
 
-    /* Safe defaults */
     *{box-sizing:border-box}
     body{
       margin:0;padding:env(safe-area-inset-top) 0.75rem 2rem 0.75rem;
@@ -37,25 +32,22 @@
       -webkit-font-smoothing:antialiased;
       -moz-osx-font-smoothing:grayscale;
       display:flex;flex-direction:column;align-items:center;min-height:100vh;
-      /* avoid unexpected zoom on iOS */
       -webkit-text-size-adjust:100%;
       -ms-text-size-adjust:100%;
     }
 
-    /* Make main flex vertically, allow scroll */
     body {
       background: linear-gradient(180deg, var(--bg-color), #07101a);
-      background-size: cover; /* scale to cover the whole area */
+      background-size: cover;
       background-repeat: no-repeat;
       min-height: 100%;
     }
     html, body { min-height: 100%; }
 
-    /* Main container stays grid */
     main.container {
       width: 100%;
       max-width: var(--max-inner-width);
-      margin: 80px auto 0; /* leave space for fixed header */
+      margin: 80px auto 0;
       display: grid;
       grid-template-columns: 1fr minmax(280px, 420px);
       gap: var(--gap);
@@ -63,20 +55,17 @@
       padding: 0.5rem;
     }
 
-    /* Right panel: constrain max width and allow scroll internally */
     aside.panel {
       max-width: 420px;
       overflow-y: auto;
       min-height: 100%;
     }
 
-    /* Optionally: allow sessions grid to scroll if too tall */
     .sessions-grid {
-      max-height: 600px; /* adjust as needed */
+      max-height: 600px;
       overflow-y: auto;
     }
 
-    /* Appbar */
     header.appbar{
       position:fixed;left:0;right:0;top:0;height:64px;
       display:flex;align-items:center;gap:1rem;padding:0 0.75rem;
@@ -91,23 +80,18 @@
     }
     .appbar h1{flex:1;margin:0;font-size:1.05rem;text-align:center;font-weight:600}
 
-    /* main container: responsive with flexible sidebar */
-
-    /* mobile first: single column (shrink second column) */
     @media (max-width:980px){
       main.container{grid-template-columns:1fr; padding:0.5rem;}
     }
 
-    /* Panels */
     .panel{
       background:var(--ctr-color);
       border-radius:var(--radius);
       padding:0.9rem;
       box-shadow:0 6px 18px rgba(2,6,23,0.6);
-      overflow:visible; /* remove internal scrollbars */
+      overflow:visible;
     }
 
-    /* Profile header */
     .profile-card{
       display:flex;gap:0.75rem;align-items:center;padding:0.9rem;border-radius:12px;
       background:linear-gradient(90deg, rgba(79,131,204,0.06), rgba(79,131,204,0.01));
@@ -121,10 +105,9 @@
     .profile-meta h2{margin:0;font-size:1rem}
     .profile-meta p{margin:4px 0 0;color:var(--muted);font-size:0.85rem}
 
-    /* Forms and controls - unified styling */
     form.row{display:flex;gap:0.5rem;align-items:center}
     form .stack{width:100%}
-    input[type=text], input[type=password], input[type=email], select, input[type=file]{
+    input[type=text], input[type=password], input[type=email], input[type=file]{
       width:100%;
       padding:10px 12px;
       border-radius:10px;
@@ -132,31 +115,24 @@
       background:transparent;
       color:var(--text);
       outline:none;
-      font-size:15px; /* avoid iOS zoom */
+      font-size:15px;
       min-height:40px;
     }
 
-    /* unify select + dropdown arrows */
-    select{ -webkit-appearance:none; appearance:none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) calc(1em + 2px), calc(100% - 11px) calc(1em + 2px); background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; padding-right:36px; }
-
-    /* Buttons */
     button{font-size:15px;min-height:40px;padding:9px 12px;border-radius:10px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
     .btn{background:var(--btn-color);color:var(--text);font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
     .ghost{background:transparent;border:1px solid rgba(255,255,255,0.05);color:var(--text)}
     .danger{background:var(--danger);color:white}
 
-    /* small text */
     .stack{display:flex;flex-direction:column;gap:0.6rem}
     .small{font-size:0.85rem;color:var(--muted)}
 
-    /* toggle */
     .toggle{display:inline-flex;align-items:center;gap:0.6rem}
     .toggle input[type=checkbox]{width:40px;height:22px;appearance:none;background:rgba(255,255,255,0.06);border-radius:999px;position:relative;cursor:pointer;outline:none}
     .toggle input[type=checkbox]::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:white;transition:transform .18s}
     .toggle input[type=checkbox]:checked{background:var(--accent)}
     .toggle input[type=checkbox]:checked::after{transform:translateX(18px)}
 
-    /* Sessions - responsive card grid instead of forced scrolling table */
     .sessions-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;gap:0.5rem}
     .sessions-actions{display:flex;gap:0.5rem;align-items:center}
     .sessions-grid{
@@ -175,68 +151,212 @@
     .session-meta{display:flex;flex-direction:column;gap:0.15rem;min-width:0}
     .session-actions{display:flex;gap:0.5rem;align-items:center}
 
-    /* compact badges and truncation */
     .badge{padding:6px 8px;border-radius:8px;background:rgba(0,0,0,0.2);font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .muted{color:var(--muted);font-size:0.8rem}
     .small-ellipsis{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-width:0}
 
-    /* Color settings layout */
     .colors-grid{display:grid;grid-template-columns:1fr 56px;gap:0.5rem;align-items:center}
     .swatch{width:44px;height:44px;border-radius:8px;border:1px solid rgba(0,0,0,0.25)}
 
     hr.sep{margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)}
 
-/* ---------- tip styles + shake (added) ---------- */
-.tip{
-  display:none;
-  margin-top:6px;
-  padding:8px 10px;
-  border-radius:8px;
-  font-size:0.9rem;
-  line-height:1.3;
-  border:1px solid transparent;
-}
-.tip.visible{display:block}
-.tip.error{ color:var(--danger); background: rgba(217,83,79,0.06); border-color: rgba(217,83,79,0.14); }
-.tip.success{ color:#7bd58c; background: rgba(123,213,140,0.06); border-color: rgba(107,201,122,0.12); }
+    .tip{
+      display:none;
+      margin-top:6px;
+      padding:8px 10px;
+      border-radius:8px;
+      font-size:0.9rem;
+      line-height:1.3;
+      border:1px solid transparent;
+    }
+    .tip.visible{display:block}
+    .tip.error{ color:var(--danger); background: rgba(217,83,79,0.06); border-color: rgba(217,83,79,0.14); }
+    .tip.success{ color:#7bd58c; background: rgba(123,213,140,0.06); border-color: rgba(107,201,122,0.12); }
 
-@keyframes shake {
-  0%   { transform: translateX(0); }
-  25%  { transform: translateX(-6px); }
-  50%  { transform: translateX(6px); }
-  75%  { transform: translateX(-6px); }
-  100% { transform: translateX(0); }
-}
-.shake { animation: shake 0.35s; }
+    @keyframes shake {
+      0%   { transform: translateX(0); }
+      25%  { transform: translateX(-6px); }
+      50%  { transform: translateX(6px); }
+      75%  { transform: translateX(-6px); }
+      100% { transform: translateX(0); }
+    }
+    .shake { animation: shake 0.35s; }
 
-/* utilities */
-footer{max-width:var(--max-inner-width);width:100%;margin-top:1rem;color:var(--muted);font-size:0.9rem;text-align:center}
+    footer{max-width:var(--max-inner-width);width:100%;margin-top:1rem;color:var(--muted);font-size:0.9rem;text-align:center}
 
-/* hide default scrollbars gracefully (only if any appear) */
-::-webkit-scrollbar{height:0; width:0}
-html{scrollbar-width:none}
-input, select, button, textarea { font-size:16px; }
+    ::-webkit-scrollbar{height:0; width:0}
+    html{scrollbar-width:none}
+    input, select, button, textarea { font-size:16px; }
 
-/* Accessibility focus */
-:focus{outline:2px solid rgba(79,131,204,0.25);outline-offset:2px}
+    :focus{outline:2px solid rgba(79,131,204,0.25);outline-offset:2px}
 
-/* small responsive tweaks */
-@media (max-width:480px){
-  .appbar h1{font-size:1rem}
-  .profile-card{padding:0.6rem}
-  .avatar{width:48px;height:48px}
-  .session-card{font-size:0.85rem}
-}
+    @media (max-width:480px){
+      .appbar h1{font-size:1rem}
+      .profile-card{padding:0.6rem}
+      .avatar{width:48px;height:48px}
+      .session-card{font-size:0.85rem}
+    }
     .color-section {
-      grid-column: 1 / -1; /* spans all columns */
+      grid-column: 1 / -1;
     }
     @media (max-width:980px){
       .color-section {
-        grid-column: auto; /* default single column */
+        grid-column: auto;
       }
       aside.panel {
         max-width: 100%;
       }
+    }
+
+    /* =============================================
+       CUSTOM SELECT DROPDOWN
+       ============================================= */
+    .custom-select-wrapper {
+      position: relative;
+      width: 100%;
+    }
+
+    .custom-select-trigger {
+      width: 100%;
+      min-height: 40px;
+      padding: 9px 36px 9px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+      user-select: none;
+      position: relative;
+    }
+
+    .custom-select-trigger:hover {
+      border-color: rgba(79,131,204,0.35);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .custom-select-trigger.open {
+      border-color: rgba(79,131,204,0.55);
+      background: rgba(79,131,204,0.08);
+      box-shadow: 0 0 0 3px rgba(79,131,204,0.12);
+    }
+
+    .custom-select-trigger-text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .custom-select-arrow {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      color: var(--muted);
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+
+    .custom-select-trigger.open .custom-select-arrow {
+      transform: rotate(180deg);
+      color: var(--accent);
+    }
+
+    /* Dropdown panel */
+    .custom-select-dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      z-index: 200;
+      background: #252830;
+      border: 1px solid rgba(79,131,204,0.2);
+      border-radius: 12px;
+      box-shadow:
+        0 8px 32px rgba(0,0,0,0.55),
+        0 2px 8px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.04);
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+      transform-origin: top center;
+      pointer-events: none;
+      transition:
+        opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+        transform 0.18s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+
+    .custom-select-dropdown.open {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: all;
+    }
+
+    .custom-select-options {
+      padding: 5px;
+      max-height: 260px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(79,131,204,0.3) transparent;
+    }
+
+    .custom-select-options::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-select-options::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-select-options::-webkit-scrollbar-thumb {
+      background: rgba(79,131,204,0.3);
+      border-radius: 2px;
+    }
+
+    .custom-select-option {
+      padding: 9px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.1s, color 0.1s;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .custom-select-option:hover {
+      background: rgba(79,131,204,0.14);
+    }
+
+    .custom-select-option.selected {
+      background: rgba(79,131,204,0.18);
+      color: #8fb8e8;
+      font-weight: 600;
+    }
+
+    .custom-select-option.selected::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    /* Separator line between option groups */
+    .custom-select-sep {
+      height: 1px;
+      background: rgba(255,255,255,0.05);
+      margin: 4px 8px;
     }
 
   </style>
@@ -248,7 +368,6 @@ input, select, button, textarea { font-size:16px; }
   </header>
 
   <main class="container">
-    <!-- left: profile + account management -->
     <section class="panel">
       <div class="profile-card">
         <div class="avatar" id="profile-pic">U</div>
@@ -268,7 +387,6 @@ input, select, button, textarea { font-size:16px; }
           <input type="text" id="new-username" required />
           <button class="btn" type="submit">Save</button>
         </form>
-        <!-- username inline tip -->
         <div id="username-tip" class="tip" aria-live="polite"></div>
 
         <label class="small">Email</label>
@@ -281,9 +399,7 @@ input, select, button, textarea { font-size:16px; }
         <form id="form-password" class="stack">
           <input type="password" id="current-password" placeholder="Current password" required />
           <input type="password" id="new-password" placeholder="New password" required />
-          <!-- password inline tip -->
           <div id="password-tip" class="tip" aria-live="polite"></div>
-
           <div style="display:flex;gap:0.5rem;justify-content:flex-end">
             <button class="btn" type="submit">Change</button>
           </div>
@@ -297,21 +413,40 @@ input, select, button, textarea { font-size:16px; }
             <div class="small">Allow sharing notes</div>
           </div>
 
-          <div style="text-align:right">
-            <label class="small">Default start page</label>
-            <select id="default-startpage" aria-label="Default startpage">
-              <option value="/index">Personal notes</option>
-              <option value="/group-notes">Group notes</option>
-              <option value="/scheduler-page">Scheduler</option>
-              <option value="/todo_page">Todo</option>
-              <option value="/pws">Zeeslag (Battleship)</option>
-            </select>
+          <div style="text-align:right;min-width:200px">
+            <label class="small" style="display:block;margin-bottom:4px">Default start page</label>
+            <!-- Custom select replaces native #default-startpage -->
+            <div class="custom-select-wrapper" id="startpage-select-wrapper">
+              <button type="button" class="custom-select-trigger" id="startpage-trigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="custom-select-trigger-text" id="startpage-trigger-text">Personal notes</span>
+                <svg class="custom-select-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="5 8 10 13 15 8"/>
+                </svg>
+              </button>
+              <div class="custom-select-dropdown" id="startpage-dropdown" role="listbox">
+                <div class="custom-select-options" id="startpage-options">
+                  <div class="custom-select-option selected" data-value="/index" role="option">Personal notes</div>
+                  <div class="custom-select-option" data-value="/group-notes" role="option">Group notes</div>
+                  <div class="custom-select-option" data-value="/scheduler-page" role="option">Scheduler</div>
+                  <div class="custom-select-option" data-value="/todo_page" role="option">Todo</div>
+                  <div class="custom-select-option" data-value="/pws" role="option">Zeeslag (Battleship)</div>
+                </div>
+              </div>
+              <!-- Hidden native select for form compatibility / JS reads .value -->
+              <select id="default-startpage" aria-hidden="true" tabindex="-1" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px">
+                <option value="/index">Personal notes</option>
+                <option value="/group-notes">Group notes</option>
+                <option value="/scheduler-page">Scheduler</option>
+                <option value="/todo_page">Todo</option>
+                <option value="/pws">Zeeslag (Battleship)</option>
+              </select>
+            </div>
           </div>
         </div>
 
         <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
           <a href="/2fa_page" class="ghost" style="padding:10px 12px;border-radius:10px;text-decoration:none;display:inline-flex;align-items:center">Two-factor authentication</a>
-          <a id="admin-link" class="ghost" style="display:inline-flex;align-items:center;padding:10px 12px;border-radius:10px;opacity:0.7;pointer-events:none">Admin Page</a>
+          <a id="admin-link" class="ghost" style="display:none;align-items:center;padding:10px 12px;border-radius:10px;opacity:0.7;pointer-events:none">Admin Page</a>
         </div>
 
         <div style="display:flex;gap:0.5rem;margin-top:0.75rem;justify-content:space-between">
@@ -320,11 +455,9 @@ input, select, button, textarea { font-size:16px; }
         </div>
       </div>
 
-      <!-- hidden file input for profile pic -->
       <input id="profile-input" type="file" accept="image/*" style="display:none" />
     </section>
 
-    <!-- right: sessions + color settings -->
     <aside class="panel">
       <div class="sessions-header">
         <h3 style="margin:0">Active sessions</h3>
@@ -334,56 +467,82 @@ input, select, button, textarea { font-size:16px; }
         </div>
       </div>
 
-      <!-- sessions grid + show-all control -->
       <div id="sessions-wrapper">
         <div class="sessions-grid" id="sessions-grid">
-          <!-- JS will render compact .session-card elements here -->
           <div style="grid-column:1/-1;color:var(--muted);text-align:center;padding:8px" id="sessions-loading">Loading…</div>
         </div>
-
         <div style="display:flex;justify-content:center;margin-top:8px">
           <button class="ghost" id="sessions-toggle" style="display:none">Show all</button>
         </div>
       </div>
+    </aside>
 
-      </aside>
-      <section class="panel color-section">
-    <h3 style="margin:0 0 8px 0">Color settings</h3>
-    <div class="small" style="margin-bottom:8px">Choose a preset or set custom colors. Changes are saved to your account.</div>
+    <section class="panel color-section">
+      <h3 style="margin:0 0 8px 0">Color settings</h3>
+      <div class="small" style="margin-bottom:8px">Choose a preset or set custom colors. Changes are saved to your account.</div>
 
-    <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
-      <select id="color-presets">
-        <option value="custom">Custom</option>
-        <option value="default">Future Notes — Default</option>
-        <option value="colorful">Future Notes — Colorful</option>
-        <option value="light">Future Notes — Light</option>
-      </select>
-      <button class="btn" id="save-colors">Save</button>
-    </div>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center">
+        <!-- Custom select replaces native #color-presets -->
+        <div class="custom-select-wrapper" id="preset-select-wrapper" style="flex:1">
+          <button type="button" class="custom-select-trigger" id="preset-trigger" aria-haspopup="listbox" aria-expanded="false">
+            <span class="custom-select-trigger-text" id="preset-trigger-text">Custom</span>
+            <svg class="custom-select-arrow" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="5 8 10 13 15 8"/>
+            </svg>
+          </button>
+          <div class="custom-select-dropdown" id="preset-dropdown" role="listbox">
+            <div class="custom-select-options" id="preset-options">
+              <div class="custom-select-option selected" data-value="custom" role="option">
+                <span style="width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,#444,#222);flex-shrink:0;display:inline-block"></span>
+                Custom
+              </div>
+              <div class="custom-select-sep"></div>
+              <div class="custom-select-option" data-value="default" role="option">
+                <span style="width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,#3a3a3a,#1e1e1e);flex-shrink:0;display:inline-block"></span>
+                Future Notes — Default
+              </div>
+              <div class="custom-select-option" data-value="colorful" role="option">
+                <span style="width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,#2e7d32,#1b5e20);flex-shrink:0;display:inline-block"></span>
+                Future Notes — Colorful
+              </div>
+              <div class="custom-select-option" data-value="light" role="option">
+                <span style="width:10px;height:10px;border-radius:3px;background:linear-gradient(135deg,#cfd8df,#ffffff);flex-shrink:0;display:inline-block"></span>
+                Future Notes — Light
+              </div>
+            </div>
+          </div>
+          <!-- Hidden native select for JS compatibility -->
+          <select id="color-presets" aria-hidden="true" tabindex="-1" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px">
+            <option value="custom">Custom</option>
+            <option value="default">Future Notes — Default</option>
+            <option value="colorful">Future Notes — Colorful</option>
+            <option value="light">Future Notes — Light</option>
+          </select>
+        </div>
+        <button class="btn" id="save-colors">Save</button>
+      </div>
 
-    <div style="display:grid;gap:0.5rem">
-      <div class="colors-grid">
-        <input id="background-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#2c2c2c" />
-        <div class="swatch" id="background-swatch"></div>
+      <div style="display:grid;gap:0.5rem">
+        <div class="colors-grid">
+          <input id="background-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#2c2c2c" />
+          <div class="swatch" id="background-swatch"></div>
+        </div>
+        <div class="colors-grid">
+          <input id="header-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#3a3a3a" />
+          <div class="swatch" id="header-swatch"></div>
+        </div>
+        <div class="colors-grid">
+          <input id="contrast-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#1e1e1e" />
+          <div class="swatch" id="contrast-swatch"></div>
+        </div>
+        <div class="colors-grid">
+          <input id="button-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#424242" />
+          <div class="swatch" id="button-swatch"></div>
+        </div>
       </div>
-      <div class="colors-grid">
-        <input id="header-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#3a3a3a" />
-        <div class="swatch" id="header-swatch"></div>
-      </div>
-      <div class="colors-grid">
-        <input id="contrast-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#1e1e1e" />
-        <div class="swatch" id="contrast-swatch"></div>
-      </div>
-      <div class="colors-grid">
-        <input id="button-color" type="text" pattern="^#([A-Fa-f0-9]{6})$" placeholder="#424242" />
-        <div class="swatch" id="button-swatch"></div>
-      </div>
-    </div>
-
-  </section>
+    </section>
   </main>
 
-  <!-- modals / overlays -->
   <div class="overlay" id="overlay" role="dialog" aria-hidden="true" style="display:none">
     <div class="dialog" id="dialog-content"></div>
   </div>
@@ -391,11 +550,109 @@ input, select, button, textarea { font-size:16px; }
   <footer>&copy; Future Notes</footer>
 
   <script>
-    // small utility helpers (unchanged)
+    /* =============================================
+       CUSTOM SELECT COMPONENT
+       ============================================= */
+    function CustomSelect({ wrapperId, triggerId, triggerTextId, dropdownId, optionsContainerId, nativeSelectId, onChange }) {
+      const trigger = document.getElementById(triggerId);
+      const triggerText = document.getElementById(triggerTextId);
+      const dropdown = document.getElementById(dropdownId);
+      const optionsContainer = document.getElementById(optionsContainerId);
+      const nativeSelect = document.getElementById(nativeSelectId);
+
+      let isOpen = false;
+
+      function open() {
+        isOpen = true;
+        trigger.classList.add('open');
+        dropdown.classList.add('open');
+        trigger.setAttribute('aria-expanded', 'true');
+      }
+
+      function close() {
+        isOpen = false;
+        trigger.classList.remove('open');
+        dropdown.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+
+      function setValue(value, label) {
+        // update trigger text
+        triggerText.textContent = label;
+        // update native select
+        nativeSelect.value = value;
+        // update option highlight
+        optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
+          opt.classList.toggle('selected', opt.dataset.value === value);
+        });
+        // fire change on native select so existing JS listeners work
+        nativeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        if (onChange) onChange(value);
+      }
+
+      // toggle on trigger click
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isOpen ? close() : open();
+      });
+
+      // option clicks
+      optionsContainer.addEventListener('click', (e) => {
+        const opt = e.target.closest('.custom-select-option');
+        if (!opt) return;
+        setValue(opt.dataset.value, opt.textContent.trim());
+        close();
+      });
+
+      // close on outside click
+      document.addEventListener('click', (e) => {
+        if (!document.getElementById(wrapperId).contains(e.target)) close();
+      });
+
+      // keyboard navigation
+      trigger.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); isOpen ? close() : open(); }
+        if (e.key === 'Escape') close();
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const opts = [...optionsContainer.querySelectorAll('.custom-select-option')];
+          const cur = opts.findIndex(o => o.classList.contains('selected'));
+          const next = e.key === 'ArrowDown' ? Math.min(cur + 1, opts.length - 1) : Math.max(cur - 1, 0);
+          if (opts[next]) { setValue(opts[next].dataset.value, opts[next].textContent.trim()); if (!isOpen) open(); }
+        }
+      });
+
+      // expose set method for external use (e.g. populateUser sets startpage value)
+      return { setValue, close };
+    }
+
+    // Instantiate both custom selects
+    const startpageCustomSelect = CustomSelect({
+      wrapperId: 'startpage-select-wrapper',
+      triggerId: 'startpage-trigger',
+      triggerTextId: 'startpage-trigger-text',
+      dropdownId: 'startpage-dropdown',
+      optionsContainerId: 'startpage-options',
+      nativeSelectId: 'default-startpage',
+    });
+
+    const presetCustomSelect = CustomSelect({
+      wrapperId: 'preset-select-wrapper',
+      triggerId: 'preset-trigger',
+      triggerTextId: 'preset-trigger-text',
+      dropdownId: 'preset-dropdown',
+      optionsContainerId: 'preset-options',
+      nativeSelectId: 'color-presets',
+    });
+
+    /* =============================================
+       ORIGINAL PAGE JS (unchanged, except select
+       references now go to the hidden native select
+       which the CustomSelect keeps in sync)
+       ============================================= */
     const $ = sel => document.querySelector(sel);
     const $$ = sel => Array.from(document.querySelectorAll(sel));
 
-    // ensure fetch sends cookies by default
     (function(){
       const orig = window.fetch;
       window.fetch = (input, init={}) => {
@@ -404,9 +661,6 @@ input, select, button, textarea { font-size:16px; }
       };
     })();
 
-    /* -------------------------
-       DOM references (unchanged naming)
-       ------------------------- */
     const usernameDisplay = $('#username-display');
     const emailDisplay = $('#email-display');
     const avatar = $('#profile-pic');
@@ -445,12 +699,10 @@ input, select, button, textarea { font-size:16px; }
     const presetSelect = $('#color-presets');
     const saveColorsBtn = $('#save-colors');
 
-    // small additions for sessions rendering
     const sessionsGrid = $('#sessions-grid');
     const sessionsLoading = $('#sessions-loading');
     const sessionsToggle = $('#sessions-toggle');
 
-    // presets
     const PRESETS = {
       default: { bg: '#2c2c2c', hdr: '#3a3a3a', ctr: '#1e1e1e', btn: '#424242' },
       colorful: { bg: '#121212', hdr: '#2e7d32', ctr: '#1b5e20', btn: '#388e3c' },
@@ -481,7 +733,6 @@ input, select, button, textarea { font-size:16px; }
       }catch(e){ console.error('autologin',e); return false; }
     }
 
-    // ---------- USERNAME & PASSWORD VALIDATION (copied/adapted from signup) ----------
     let currentUsername = null;
     let passwordRequirementsEnabled = false;
 
@@ -499,152 +750,60 @@ input, select, button, textarea { font-size:16px; }
     function hasSequentialPattern(str) {
       if (!str || str.length < 4) return false;
       str = str.toLowerCase();
-
       for (let i = 0; i <= str.length - 4; i++) {
-
-        let asc = 1;
-        let desc = 1;
-
+        let asc = 1; let desc = 1;
         for (let j = i; j < str.length - 1; j++) {
-          if (str.charCodeAt(j) + 1 === str.charCodeAt(j + 1)) {
-            asc++;
-            if (asc >= 4) return true;
-          } else break;
+          if (str.charCodeAt(j) + 1 === str.charCodeAt(j + 1)) { asc++; if (asc >= 4) return true; } else break;
         }
-
         for (let j = i; j < str.length - 1; j++) {
-          if (str.charCodeAt(j) - 1 === str.charCodeAt(j + 1)) {
-            desc++;
-            if (desc >= 4) return true;
-          } else break;
+          if (str.charCodeAt(j) - 1 === str.charCodeAt(j + 1)) { desc++; if (desc >= 4) return true; } else break;
         }
       }
-
       return false;
     }
 
-    function hasExcessiveRepetition(str) {
-      return /(.)\1{4,}/.test(str);
-    }
+    function hasExcessiveRepetition(str) { return /(.)\1{4,}/.test(str); }
 
     function debounce(fn, delay) {
       let timer = null;
-      return function (...args) {
-        clearTimeout(timer);
-        timer = setTimeout(() => fn.apply(this, args), delay);
-      };
+      return function (...args) { clearTimeout(timer); timer = setTimeout(() => fn.apply(this, args), delay); };
     }
 
     async function checkUsername(showTip = true) {
       const username = (newUsernameInput.value || '').trim();
-
-      if (username === "") {
-        if (showTip) hideTip(usernameTip);
-        return false;
-      }
-
-      if (username.length > 80) {
-        if (showTip) { setTip(usernameTip, "✖ Username cannot be longer than 80 characters", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
-        return false;
-      }
-
-      if (/_/.test(username)) {
-        if (showTip) { setTip(usernameTip, "✖ Underscores are not allowed in the username", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
-        return false;
-      }
-
-      if (username.length < 3) {
-        if (showTip) { setTip(usernameTip, "✖ Username must be at least 3 characters long", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
-        return false;
-      }
-
-      if (!/[A-Za-z]/.test(username)) {
-        if (showTip) { setTip(usernameTip, "✖ Username must contain at least one letter", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
-        return false;
-      }
-
-      // If user didn't actually change username, consider it valid
-      if (currentUsername && username === currentUsername) {
-        if (showTip) setTip(usernameTip, "✔ Username is unchanged", "success");
-        return true;
-      }
-
-      // call backend to check
+      if (username === "") { if (showTip) hideTip(usernameTip); return false; }
+      if (username.length > 80) { if (showTip) { setTip(usernameTip, "✖ Username cannot be longer than 80 characters", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
+      if (/_/.test(username)) { if (showTip) { setTip(usernameTip, "✖ Underscores are not allowed in the username", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
+      if (username.length < 3) { if (showTip) { setTip(usernameTip, "✖ Username must be at least 3 characters long", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
+      if (!/[A-Za-z]/.test(username)) { if (showTip) { setTip(usernameTip, "✖ Username must contain at least one letter", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
+      if (currentUsername && username === currentUsername) { if (showTip) setTip(usernameTip, "✔ Username is unchanged", "success"); return true; }
       try {
         const res = await fetch(`/username-check/${encodeURIComponent(username)}`);
         if (!res.ok) throw new Error('network');
         const data = await res.json();
-
-        if (data.exists) {
-          if (showTip) { setTip(usernameTip, "✖ Username is already taken", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
-          return false;
-        } else if (data.protected) {
-          if (showTip) {
-            if (data.reason === "Profanity") setTip(usernameTip, "✖ Username contains inappropriate language", "error shake");
-            else setTip(usernameTip, "✖ Username is not allowed or too similar to a protected name. <a href='/why-protected-usernames'>Learn more</a>", "error shake");
-            setTimeout(()=>usernameTip.classList.remove('shake'),500);
-          }
-          return false;
-        }
-      } catch (e) {
-        if (showTip) { setTip(usernameTip, "✖ Error checking username", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); }
-        return false;
-      }
-
+        if (data.exists) { if (showTip) { setTip(usernameTip, "✖ Username is already taken", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
+        else if (data.protected) { if (showTip) { if (data.reason === "Profanity") setTip(usernameTip, "✖ Username contains inappropriate language", "error shake"); else setTip(usernameTip, "✖ Username is not allowed or too similar to a protected name. <a href='/why-protected-usernames'>Learn more</a>", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
+      } catch (e) { if (showTip) { setTip(usernameTip, "✖ Error checking username", "error shake"); setTimeout(()=>usernameTip.classList.remove('shake'),500); } return false; }
       if (showTip) setTip(usernameTip, "✔ Username is valid", "success");
       return true;
     }
 
     function checkPassword(showTip = true) {
       const password = newPasswordInput.value || '';
-
-      if (password === "") {
-        if (showTip) hideTip(passwordTip);
-        return false;
-      }
-
-      if (password.length < 8) {
-        if (showTip) setTip(passwordTip, "✖ At least 8 characters", "error");
-        return false;
-      }
-
-      if (!/[A-Z]/.test(password)) {
-        if (showTip) setTip(passwordTip, "✖ At least one uppercase letter", "error");
-        return false;
-      }
-
-      if (!/[a-z]/.test(password)) {
-        if (showTip) setTip(passwordTip, "✖ At least one lowercase letter", "error");
-        return false;
-      }
-
-      if (!/\d/.test(password)) {
-        if (showTip) setTip(passwordTip, "✖ At least one digit", "error");
-        return false;
-      }
-
-      if (!/[!@#$%^&*]/.test(password)) {
-        if (showTip) setTip(passwordTip, "✖ At least one special character (!@#$%^&*)", "error");
-        return false;
-      }
-
-      if (hasSequentialPattern(password)) {
-        if (showTip) setTip(passwordTip, "✖ No sequential patterns allowed (e.g., 1234 or abcd)", "error");
-        return false;
-      }
-
-      if (hasExcessiveRepetition(password)) {
-        if (showTip) setTip(passwordTip, "✖ No more than 4 identical consecutive characters allowed", "error");
-        return false;
-      }
-
+      if (password === "") { if (showTip) hideTip(passwordTip); return false; }
+      if (password.length < 8) { if (showTip) setTip(passwordTip, "✖ At least 8 characters", "error"); return false; }
+      if (!/[A-Z]/.test(password)) { if (showTip) setTip(passwordTip, "✖ At least one uppercase letter", "error"); return false; }
+      if (!/[a-z]/.test(password)) { if (showTip) setTip(passwordTip, "✖ At least one lowercase letter", "error"); return false; }
+      if (!/\d/.test(password)) { if (showTip) setTip(passwordTip, "✖ At least one digit", "error"); return false; }
+      if (!/[!@#$%^&*]/.test(password)) { if (showTip) setTip(passwordTip, "✖ At least one special character (!@#$%^&*)", "error"); return false; }
+      if (hasSequentialPattern(password)) { if (showTip) setTip(passwordTip, "✖ No sequential patterns allowed (e.g., 1234 or abcd)", "error"); return false; }
+      if (hasExcessiveRepetition(password)) { if (showTip) setTip(passwordTip, "✖ No more than 4 identical consecutive characters allowed", "error"); return false; }
       if (showTip) setTip(passwordTip, "✔ Password is strong enough", "success");
       return true;
     }
 
     const debouncedCheckUsername = debounce(checkUsername, 400);
 
-    // query server to see whether password rules are enabled
     (function initPasswordRequirementFlag(){
       fetch("/password-eisen")
         .then(r => r.json())
@@ -656,20 +815,15 @@ input, select, button, textarea { font-size:16px; }
           }
         })
         .catch(() => {
-          // If the request fails, default to enabling requirements
           passwordRequirementsEnabled = true;
           newPasswordInput.addEventListener("input", () => checkPassword(true));
           newUsernameInput.addEventListener("input", debouncedCheckUsername);
         });
     })();
 
-    // ---------- end validation code ----------
-
     async function init(){
       const ok = await validateSession();
       if (!ok){ const got = await attemptAutoLogin(); if (!got) { window.location.href = '/login_page?redirect=/account_page&warning=true'; return; } return; }
-
-      // fetch user-info
       try{
         const r = await fetch('/user-info');
         if (!r.ok) throw new Error('user-info failed');
@@ -677,16 +831,19 @@ input, select, button, textarea { font-size:16px; }
         populateUser(u);
       }catch(e){ console.error(e); }
 
-      // load user colors from api (if available)
       try{
         const r = await fetch('/api/user/colors'); if (r.ok){ const d = await r.json(); const cur = { bg: d.backgroundColor, hdr: d.headerColor, ctr: d.contrastingColor, btn: d.buttonColor };
           Object.entries(cur).forEach(([k,v])=>{ if(v && colorInputs[k]){ colorInputs[k].value = v; setSwatch(k,v); } });
-          // try to match preset
-          for(const key of Object.keys(PRESETS)){ const p=PRESETS[key]; if(p.bg===cur.bg && p.hdr===cur.hdr && p.ctr===cur.ctr && p.btn===cur.btn){ presetSelect.value = key; break; } }
+          // try to match preset and update custom select
+          let matched = false;
+          for(const key of Object.keys(PRESETS)){ const p=PRESETS[key]; if(p.bg===cur.bg && p.hdr===cur.hdr && p.ctr===cur.ctr && p.btn===cur.btn){
+            const labels = { default: 'Future Notes — Default', colorful: 'Future Notes — Colorful', light: 'Future Notes — Light' };
+            presetCustomSelect.setValue(key, labels[key] || key);
+            matched = true; break;
+          }}
         }
       }catch(e){ console.warn('no user colors',e); }
 
-      // initial sessions
       fetchSessions();
     }
 
@@ -700,26 +857,23 @@ input, select, button, textarea { font-size:16px; }
       else { avatar.style.backgroundImage='none'; avatar.textContent = letter; }
 
       sharingToggle.checked = !!u.allows_sharing;
-      defaultStart.value = u.startpage || '/index';
+
+      // sync startpage custom select
+      const spVal = u.startpage || '/index';
+      const spLabels = { '/index': 'Personal notes', '/group-notes': 'Group notes', '/scheduler-page': 'Scheduler', '/todo_page': 'Todo', '/pws': 'Zeeslag (Battleship)' };
+      startpageCustomSelect.setValue(spVal, spLabels[spVal] || spVal);
+
       $('#new-username').value = u.username || '';
       if (u.email) $('#new-email').value = u.email;
 
-      if (u.role === 'admin'){ adminLink.style.pointerEvents='auto'; adminLink.style.opacity=1; adminLink.href='/admin_page'; }
+      if (u.role === 'admin'){ adminLink.style.pointerEvents='auto'; adminLink.style.display = 'block'; adminLink.style.opacity=1; adminLink.href='/admin_page'; }
     }
 
-    // ---------- forms ---------- (modified to validate before submit)
     formUsername.addEventListener('submit', async e =>{
       e.preventDefault();
       const newUsername = (newUsernameInput.value || '').trim();
-
-      // run the same validation & backend check as signup
       const ok = await checkUsername(true);
-      if (!ok) {
-        // visual shake
-        usernameTip.classList.remove('shake'); void usernameTip.offsetWidth; usernameTip.classList.add('shake');
-        return;
-      }
-
+      if (!ok) { usernameTip.classList.remove('shake'); void usernameTip.offsetWidth; usernameTip.classList.add('shake'); return; }
       try{
         const res = await fetch('/update-username', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ new_username: newUsername }) });
         if (res.ok){ alert('Username updated'); usernameDisplay.textContent = newUsername + ' — Account'; currentUsername = newUsername; }
@@ -740,22 +894,18 @@ input, select, button, textarea { font-size:16px; }
       e.preventDefault();
       const cur = currentPasswordInput.value || '';
       const nw = newPasswordInput.value || '';
-
       if (passwordRequirementsEnabled) {
         const passOk = checkPassword(true);
-        if (!passOk) {
-          passwordTip.classList.remove('shake'); void passwordTip.offsetWidth; passwordTip.classList.add('shake');
-          return;
-        }
+        if (!passOk) { passwordTip.classList.remove('shake'); void passwordTip.offsetWidth; passwordTip.classList.add('shake'); return; }
       }
-
       try{
         const res = await fetch('/update-password', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ current_password: cur, new_password: nw }) });
-        if (res.ok){ alert('Password updated'); formPassword.reset(); hideTip(passwordTip); } else if (res.status===401){ alert('Session expired'); sessionStorage.clear(); window.location.href='/login_page'; } else { const j = await res.json().catch(()=>({})); alert(j.error||'Could not update password'); }
+        if (res.ok){ alert('Password updated'); formPassword.reset(); hideTip(passwordTip); }
+        else if (res.status===401){ alert('Session expired'); sessionStorage.clear(); window.location.href='/login_page'; }
+        else { const j = await res.json().catch(()=>({})); alert(j.error||'Could not update password'); }
       }catch(e){ alert('Network error'); }
     });
 
-    // sharing toggle
     sharingToggle.addEventListener('change', async e =>{
       try{
         const resp = await fetch('/allow-sharing', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ allows_sharing: e.target.checked }) });
@@ -763,7 +913,7 @@ input, select, button, textarea { font-size:16px; }
       }catch(e){ console.error(e); }
     });
 
-    // default startpage
+    // The hidden native select fires 'change' — original listener still works
     defaultStart.addEventListener('change', async e =>{
       try{
         const resp = await fetch('/update-set-startpage', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ startpage: e.target.value }) });
@@ -771,14 +921,15 @@ input, select, button, textarea { font-size:16px; }
       }catch(e){ console.error(e); }
     });
 
-    // ---------- profile picture ----------
     btnChangePic.addEventListener('click', ()=> fileInput.click());
     fileInput.addEventListener('change', async () =>{
       if (!fileInput.files || fileInput.files.length===0) return;
       const fd = new FormData(); fd.append('profile_picture', fileInput.files[0]);
       try{
         const r = await fetch('/update-profile-picture', { method:'POST', body: fd });
-        if (r.ok){ alert('Profile picture updated'); window.location.reload(); } else if (r.status===401){ sessionStorage.clear(); window.location.href='/login_page'; } else { alert('Failed to upload picture'); }
+        if (r.ok){ alert('Profile picture updated'); window.location.reload(); }
+        else if (r.status===401){ sessionStorage.clear(); window.location.href='/login_page'; }
+        else { alert('Failed to upload picture'); }
       }catch(e){ console.error(e); alert('Upload failed'); }
     });
 
@@ -790,17 +941,14 @@ input, select, button, textarea { font-size:16px; }
       }catch(e){ console.error(e); }
     });
 
-    // ---------- sessions (rewired to cards + show-more) ----------
     function safe(v){ return (v===null||v===undefined||v==='') ? '—' : v; }
     function isoFmt(iso){ if(!iso) return '—'; try{ const d=new Date(iso); return d.toLocaleString(); }catch(e){ return iso; } }
     function iso2Flag(iso2){ if(!iso2) return ''; return iso2.toUpperCase().split('').map(c=>String.fromCodePoint(127397 + c.charCodeAt())).join(''); }
 
-    // config: how many cards to show by default
     const DEFAULT_VISIBLE_SESSIONS = 6;
     let allSessionsCache = [];
 
     async function fetchSessions(){
-      // show loading
       sessionsGrid.innerHTML = '<div id="sessions-loading" style="grid-column:1/-1;color:var(--muted);text-align:center;padding:8px">Loading…</div>';
       sessionsToggle.style.display = 'none';
       try{
@@ -815,70 +963,48 @@ input, select, button, textarea { font-size:16px; }
       allSessionsCache = Array.isArray(list) ? list : [];
       if (!Array.isArray(list) || list.length===0){
         sessionsGrid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--muted)">No active sessions</div>';
-        sessionsToggle.style.display = 'none';
-        return;
+        sessionsToggle.style.display = 'none'; return;
       }
-
-      // determine whether we need toggle
       const needToggle = list.length > DEFAULT_VISIBLE_SESSIONS;
       sessionsGrid.innerHTML = '';
       const visibleList = needToggle ? list.slice(0, DEFAULT_VISIBLE_SESSIONS) : list;
-
       for(const s of visibleList) sessionsGrid.appendChild(makeSessionCard(s));
-
-      if (needToggle){
-        sessionsToggle.style.display = 'inline-block';
-        sessionsToggle.textContent = `Show all (${list.length})`;
-      } else {
-        sessionsToggle.style.display = 'none';
-      }
+      if (needToggle){ sessionsToggle.style.display = 'inline-block'; sessionsToggle.textContent = `Show all (${list.length})`; }
+      else { sessionsToggle.style.display = 'none'; }
     }
 
     function makeSessionCard(s){
-      const card = document.createElement('div');
-      card.className = 'session-card';
-
+      const card = document.createElement('div'); card.className = 'session-card';
       const header = document.createElement('div'); header.className='session-row';
       const cur = document.createElement('div'); cur.innerHTML = s.is_current ? '<strong>Current</strong>' : '<span class="muted">Inactive</span>';
       const created = document.createElement('div'); created.className='muted'; created.textContent = isoFmt(s.created_at);
       header.append(cur, created);
-
       const uaDiv = document.createElement('div'); uaDiv.className='session-meta';
       const uaMain = document.createElement('div'); uaMain.className='small-ellipsis'; uaMain.textContent = safe(s.user_agent_simplified);
       const uaFull = document.createElement('div'); uaFull.className='muted small-ellipsis'; uaFull.textContent = safe(s.user_agent);
       uaDiv.append(uaMain, uaFull);
-
       const ipDiv = document.createElement('div'); ipDiv.className='session-meta';
       const ipMain = document.createElement('div'); ipMain.className='badge'; ipMain.textContent = safe(s.ip_address);
       const ipSub = document.createElement('div'); ipSub.className='muted'; ipSub.textContent = `${iso2Flag(s.country_code)} ${safe(s.country_name)}`;
       ipDiv.append(ipMain, ipSub);
-
       const footer = document.createElement('div'); footer.className='session-row';
       const fp = document.createElement('div'); fp.className='muted'; fp.textContent = `FP: ${safe(s.fingerprint)}`;
       const act = document.createElement('div'); act.className='session-actions';
       const btn = document.createElement('button'); btn.className='ghost'; btn.textContent = s.is_current ? 'Revoke (current)' : 'Revoke';
       btn.addEventListener('click', ()=> onRevokeClicked(s, card, btn));
       act.appendChild(btn);
-
       footer.append(fp, act);
-
       card.append(header, uaDiv, ipDiv, footer);
       return card;
     }
 
-    // toggle show all / collapse
     sessionsToggle.addEventListener('click', ()=>{
       if (sessionsToggle.dataset.expanded === '1'){
-        // collapse
-        renderSessions(allSessionsCache);
-        sessionsToggle.dataset.expanded = '0';
-        sessionsToggle.textContent = `Show all (${allSessionsCache.length})`;
+        renderSessions(allSessionsCache); sessionsToggle.dataset.expanded = '0'; sessionsToggle.textContent = `Show all (${allSessionsCache.length})`;
       } else {
-        // expand fully: clear grid and append all
         sessionsGrid.innerHTML = '';
         for(const s of allSessionsCache) sessionsGrid.appendChild(makeSessionCard(s));
-        sessionsToggle.dataset.expanded = '1';
-        sessionsToggle.textContent = 'Collapse';
+        sessionsToggle.dataset.expanded = '1'; sessionsToggle.textContent = 'Collapse';
       }
     });
 
@@ -891,7 +1017,6 @@ input, select, button, textarea { font-size:16px; }
         const res = await fetch(`/account/sessions/${id}/revoke`, { method:'POST' });
         if (res.status===401){ alert('Session expired — please log in'); window.location.href='/login_page?redirect=/account_page&warning=true'; return; }
         if (!res.ok){ const j = await res.json().catch(()=>({})); alert('Could not revoke: '+(j.error||res.statusText)); btnEl.disabled=false; btnEl.textContent = isCurrent? 'Revoke (current)':'Revoke'; return; }
-        // remove the card from UI and update cache
         if (cardEl && cardEl.parentNode) cardEl.parentNode.removeChild(cardEl);
         allSessionsCache = allSessionsCache.filter(s=> s.id !== sessionObj.id);
         if (isCurrent){ try{ sessionStorage.clear(); localStorage.removeItem('lasting_key'); }catch(e){} window.location.href = '/login_page?revoked_current=true'; }
@@ -911,7 +1036,6 @@ input, select, button, textarea { font-size:16px; }
 
     refreshSessionsBtn.addEventListener('click', fetchSessions);
 
-    // ---------- delete & logout ----------
     $('#btn-delete').addEventListener('click', async ()=>{
       const pw = prompt('Enter your password to confirm:'); if (pw===null) return;
       try{
@@ -925,13 +1049,14 @@ input, select, button, textarea { font-size:16px; }
 
     $('#btn-logout').addEventListener('click', ()=>{ fetch('/logout', { method:'POST' }); sessionStorage.clear(); window.location.href='/login_page'; });
 
-    // ---------- color settings ----------
     Object.entries(colorInputs).forEach(([k,el])=>{
       el.addEventListener('input', ()=>{ const v = el.value.trim(); if(isHex(v)){ setSwatch(k,v); } });
     });
 
+    // The hidden native presetSelect fires 'change' — hook it to apply presets
     presetSelect.addEventListener('change', ()=>{
-      const val = presetSelect.value; if (val==='custom') return; const p = PRESETS[val]; Object.keys(colorInputs).forEach(k=>{ colorInputs[k].value = p[k]; setSwatch(k,p[k]); });
+      const val = presetSelect.value; if (val==='custom') return; const p = PRESETS[val];
+      Object.keys(colorInputs).forEach(k=>{ colorInputs[k].value = p[k]; setSwatch(k,p[k]); });
     });
 
     saveColorsBtn.addEventListener('click', async ()=>{
@@ -945,11 +1070,9 @@ input, select, button, textarea { font-size:16px; }
       }catch(e){ console.error(e); alert('Network error'); }
     });
 
-    // live input hooks (connect debounced username check & password check if password reqs enabled)
     newUsernameInput.addEventListener('input', debouncedCheckUsername);
     newPasswordInput.addEventListener('input', () => { if (passwordRequirementsEnabled) checkPassword(true); });
 
-    // initial run
     document.addEventListener('DOMContentLoaded', ()=> init());
   </script>
 </body>

@@ -1,23 +1,35 @@
 <!DOCTYPE html>
 <html lang="nl">
 <head>
-  <meta charset="UTF‑8">
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Future Notes | Alles-in-een productiviteitsapp</title>
-  <meta name="description" content="Future Notes — Organiseer notities, taken, agenda's en notitiegroepen in één geïntegreerde, mobielvriendelijke app. Ga nu gratis aan de slag!">
-  <meta name="keywords" content="notities app, taak beheerder, agenda, agenda integratie, samenwerkingsgroepen, productiviteit">
-  <meta name="theme-color" content="#121212">
-  <link rel="canonical" href="https://bosbes.eu.pythonanywhere.com/">
+  <title>Future Notes | Alles-in-één Productiviteitsapp</title>
+  <meta name="description" content="Future Notes — Notities, taken, borden en agenda in één geïntegreerde, mobiele app. Start gratis!">
+  <meta name="keywords" content="notitie app, taakbeheer, kanban bord, agenda, samenwerken, productiviteit, future notes">
+  <meta name="theme-color" content="#1e1e1e">
+  <link rel="canonical" href="https://bosbes.eu.pythonanywhere.com/index_nl.html">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="/static/js/check.js"></script>
   <meta name="google-site-verification" content="vBSViwn_En_engn8t-u5fGXCxi32UGP8P4NZN2kIuuM" />
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-1EE1SJQ4TW"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-1EE1SJQ4TW');
+  </script>
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "WebSite",
+    "@type": "WebApplication",
     "name": "Future Notes",
     "url": "https://bosbes.eu.pythonanywhere.com/",
+    "description": "Alles-in-één productiviteitsapp met notities, taken, kanban borden en agenda.",
+    "applicationCategory": "ProductivityApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "nl",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
     "potentialAction": {
       "@type": "SearchAction",
       "target": "https://bosbes.eu.pythonanywhere.com/?s={search_term_string}",
@@ -25,1743 +37,1194 @@
     }
   }
   </script>
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-1EE1SJQ4TW"></script>
-<script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
-
-    gtag('config', 'G-1EE1SJQ4TW');
-</script>
-    <style>
-        :root {
-            --primary: #8a4fff;
-            --primary-light: #a67cff;
-            --primary-dark: #6a3bd9;
-            --secondary: #00d4c7;
-            --secondary-light: #4de6dc;
-            --dark-bg: #121212;
-            --dark-surface: #1e1e1e;
-            --dark-card: #252525;
-            --text-primary: #ffffff;
-            --text-secondary: #b3b3b3;
-            --success: #66bb6a;
-            --error: #f44336;
-            --transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            --transition-fast: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.1);
-            --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.2);
-            --shadow-lg: 0 15px 30px rgba(0, 0, 0, 0.3);
-            --border-radius: 10px;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        html {
-            scroll-behavior: smooth;
-        }
-
-        body {
-            background-color: var(--dark-bg);
-            color: var(--text-primary);
-            line-height: 1.6;
-            overflow-x: hidden;
-            background-image: 
-                radial-gradient(circle at 10% 20%, rgba(138, 79, 255, 0.1) 0%, transparent 20%),
-                radial-gradient(circle at 90% 80%, rgba(0, 212, 199, 0.1) 0%, transparent 20%);
-            background-attachment: fixed;
-        }
-
-        /* Improved Header with subtle animations */
-        header {
-            background-color: rgba(18, 18, 18, 0.747);
-            backdrop-filter: blur(10px);
-            position: fixed;
-            width: 100%;
-            top: 0;
-            z-index: 1000;
-            padding: 1rem 5%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            transition: var(--transition-fast);
-        }
-
-        header.scrolled {
-            padding: 0.8rem 5%;
-            box-shadow: var(--shadow-md);
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            text-decoration: none;
-            transition: var(--transition-fast);
-        }
-
-        .logo:hover {
-            transform: translateY(-2px);
-        }
-
-        .logo i {
-            color: var(--primary);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 1.5rem;
-        }
-
-        .nav-links a {
-            color: var(--text-secondary);
-            text-decoration: none;
-            font-weight: 500;
-            transition: var(--transition);
-            padding: 0.5rem 0;
-            position: relative;
-        }
-
-        .nav-links a:hover {
-            color: var(--text-primary);
-        }
-
-        .nav-links a::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 0;
-            height: 2px;
-            background-color: var(--primary);
-            transition: var(--transition);
-        }
-
-        .nav-links a:hover::after {
-            width: 100%;
-        }
-
-        .nav-links .btn {
-            background: var(--primary);
-            color: white;
-            padding: 0.5rem 1.2rem;
-            border-radius: var(--border-radius);
-            transition: var(--transition);
-            margin: 5px;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .nav-links .btn-secondary {
-            background: transparent;
-            border: 2px solid var(--primary);
-            padding: 0.5rem 1.2rem;
-            border-radius: var(--border-radius);
-            transition: var(--transition-fast);
-        }
-
-        .nav-links .btn:hover {
-            background: var(--primary-light);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(138, 79, 255, 0.4);
-        }
-
-        .nav-links .btn:hover::after {
-            width: 0;
-        }
-
-        .mobile-menu-btn {
-            display: none;
-            background: none;
-            border: none;
-            color: var(--text-primary);
-            font-size: 1.5rem;
-            cursor: pointer;
-            transition: var(--transition);
-        }
-
-        .mobile-menu-btn:hover {
-            color: var(--primary);
-        }
-
-        /* Hero Section with enhanced animations */
-        .hero {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-            padding: 5rem 5% 3rem;
-        }
-
-        .hero-content {
-            max-width: 650px;
-            z-index: 2;
-            animation: fadeInUp 1s ease-out;
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .hero h1 {
-            font-size: 3.5rem;
-            margin-bottom: 1.5rem;
-            background: linear-gradient(45deg, var(--primary), var(--secondary));
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            line-height: 1.2;
-            animation: gradientShift 8s infinite alternate;
-        }
-
-        @keyframes gradientShift {
-            0% { background-position: 0% 50%; }
-            100% { background-position: 100% 50%; }
-        }
-
-        .tagline {
-            font-size: 1.8rem;
-            color: var(--text-secondary);
-            margin-bottom: 1rem;
-            position: relative;
-            display: inline-block;
-        }
-
-        .tagline::after {
-            content: '';
-            position: absolute;
-            bottom: -10px;
-            left: 0;
-            width: 80px;
-            height: 4px;
-            background: var(--primary);
-            border-radius: 2px;
-        }
-
-        @keyframes widthGrow {
-            from { width: 0; }
-            to { width: 80px; }
-        }
-
-        .hero p {
-            font-size: 1.25rem;
-            color: var(--text-secondary);
-            margin-bottom: 2rem;
-            max-width: 90%;
-            animation: fadeIn 1s ease-out 0.2s both;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .cta-buttons {
-            display: flex;
-            gap: 1rem;
-            margin-top: 2rem;
-            animation: fadeIn 1s ease-out 0.4s both;
-        }
-
-        .cta-btn {
-            padding: 0.8rem 2rem;
-            border-radius: var(--border-radius);
-            font-weight: 600;
-            text-decoration: none;
-            transition: var(--transition);
-            display: inline-block;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .cta-btn::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transform: translateX(-100%);
-            transition: transform 0.6s ease;
-        }
-
-        .cta-btn:hover::after {
-            transform: translateX(100%);
-        }
-
-        .cta-primary {
-            background: var(--primary);
-            color: white;
-            box-shadow: var(--shadow-md);
-        }
-
-        .cta-primary:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(138, 79, 255, 0.6);
-        }
-
-        .cta-secondary {
-            background: transparent;
-            color: var(--text-primary);
-            border: 1px solid var(--primary);
-        }
-
-        .cta-secondary:hover {
-            background: rgba(138, 79, 255, 0.1);
-            transform: translateY(-3px);
-        }
-
-        .hero-image {
-            position: absolute;
-            right: 5%;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 40%;
-            max-width: 500px;
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            box-shadow: var(--shadow-lg);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            padding: 0.5rem;
-            background: var(--dark-card);
-            animation: float 6s ease-in-out infinite;
-        }
-
-        @keyframes float {
-            0% { transform: translateY(-50%) translateY(0px); }
-            50% { transform: translateY(-50%) translateY(-15px); }
-            100% { transform: translateY(-50%) translateY(0px); }
-        }
-
-        .app-preview {
-            flex: 1 1 45%;
-            height: 180px;
-            background: var(--dark-surface);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transition: var(--transition);
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .app-preview:hover {
-            transform: translateY(-5px);
-            background: rgba(138, 79, 255, 0.1);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
-        }
-
-        .app-preview i {
-            font-size: 2.5rem;
-            margin-bottom: 0.8rem;
-            transition: var(--transition);
-        }
-
-        .app-preview:hover i {
-            transform: scale(1.2);
-        }
-
-        .app-preview::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: var(--primary);
-            transform: scaleX(0);
-            transform-origin: left;
-            transition: var(--transition);
-        }
-
-        .app-preview:hover::after {
-            transform: scaleX(1);
-        }
-
-        .notes-preview i { color: #8a4fff; }
-        .todos-preview i { color: #66bb6a; }
-        .calendar-preview i { color: #ff7043; }
-        .groups-preview i { color: #29b6f6; }
-
-        /* Project Story with refined styling */
-        .story {
-            padding: 6rem 5%;
-            background: var(--dark-surface);
-            position: relative;
-        }
-
-        .story-content {
-            max-width: 900px;
-            margin: 0 auto;
-            position: relative;
-            z-index: 2;
-        }
-
-        .story-card {
-            background: var(--dark-card);
-            border-radius: var(--border-radius);
-            padding: 3rem;
-            box-shadow: var(--shadow-md);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: var(--transition);
-        }
-
-        .story-card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .dev-info {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-            padding-bottom: 1.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .dev-avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: linear-gradient(45deg, var(--primary), var(--secondary));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2rem;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .dev-details h3 {
-            font-size: 1.8rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .dev-details p {
-            color: var(--text-secondary);
-        }
-
-        .tech-stack {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            margin-top: 1rem;
-        }
-
-        .tech-item {
-            background: rgba(138, 79, 255, 0.1);
-            color: var(--primary);
-            padding: 0.4rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            transition: var(--transition-fast);
-        }
-
-        .tech-item:hover {
-            transform: translateY(-2px);
-            background: rgba(138, 79, 255, 0.2);
-        }
-
-        .story-text p {
-            margin-bottom: 1.5rem;
-            color: var(--text-secondary);
-            line-height: 1.8;
-        }
-
-        .highlight {
-            color: var(--primary);
-            font-weight: 600;
-        }
-
-        /* Features Section with enhanced cards */
-        .features {
-            padding: 6rem 5%;
-            background: var(--dark-bg);
-        }
-
-        .section-title {
-            text-align: center;
-            margin-bottom: 4rem;
-        }
-
-        .section-title h2 {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            position: relative;
-            display: inline-block;
-        }
-
-        .section-title h2::after {
-            content: '';
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 80px;
-            height: 4px;
-            background: var(--primary);
-            border-radius: 2px;
-            animation: widthGrow 1.5s ease-out;
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2.5rem;
-        }
-
-        .feature-card {
-            background: var(--dark-card);
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            transition: var(--transition);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            cursor: pointer;
-            position: relative;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-10px);
-            box-shadow: var(--shadow-lg);
-            border-color: rgba(138, 79, 255, 0.3);
-        }
-
-        .feature-icon {
-            height: 180px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 4rem;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .feature-icon::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, rgba(138, 79, 255, 0.2), transparent);
-            opacity: 0;
-            transition: var(--transition);
-        }
-
-        .feature-card:hover .feature-icon::before {
-            opacity: 1;
-        }
-
-        .notes-icon { background: linear-gradient(45deg, #311b92, #8a4fff); }
-        .todos-icon { background: linear-gradient(45deg, #1b5e20, #66bb6a); }
-        .calendar-icon { background: linear-gradient(45deg, #bf360c, #ff7043); }
-        .groups-icon { background: linear-gradient(45deg, #006064, #29b6f6); }
-
-        .feature-content {
-            padding: 2rem;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .feature-content h3 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .feature-content p {
-            color: var(--text-secondary);
-            margin-bottom: 1.5rem;
-            flex: 1;
-        }
-
-        .feature-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 600;
-            transition: var(--transition);
-            align-self: flex-start;
-            padding: 0.5rem 0;
-        }
-
-        .feature-btn:hover {
-            color: var(--primary-light);
-            gap: 0.8rem;
-        }
-
-        .feature-btn i {
-            transition: var(--transition);
-        }
-
-        .feature-btn:hover i {
-            transform: translateX(5px);
-        }
-
-        /* Feature Details Modal with refined animations */
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2000;
-            opacity: 0;
-            visibility: hidden;
-            transition: var(--transition);
-            backdrop-filter: blur(10px);
-        }
-
-        .modal.active {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .modal-content {
-            background: var(--dark-card);
-            border-radius: var(--border-radius);
-            width: 90%;
-            max-width: 800px;
-            max-height: 90vh;
-            overflow-y: auto;
-            position: relative;
-            transform: translateY(50px);
-            transition: var(--transition);
-            border: 1px solid rgba(138, 79, 255, 0.3);
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-        }
-
-        .modal.active .modal-content {
-            transform: translateY(0);
-        }
-
-        .modal-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-header h3 {
-            font-size: 1.8rem;
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
-        }
-
-        .modal-header h3 i {
-            color: var(--primary);
-        }
-
-        .close-modal {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 1.5rem;
-            cursor: pointer;
-            transition: var(--transition);
-        }
-
-        .close-modal:hover {
-            color: var(--text-primary);
-            transform: rotate(90deg);
-        }
-
-        .modal-body {
-            padding: 2rem;
-        }
-
-        .feature-details p {
-            color: var(--text-secondary);
-            margin-bottom: 1.5rem;
-            line-height: 1.8;
-        }
-
-        .feature-benefits {
-            margin-top: 2rem;
-        }
-
-        .feature-benefits h4 {
-            font-size: 1.2rem;
-            margin-bottom: 1rem;
-            color: var(--primary);
-        }
-
-        .benefits-list {
-            list-style: none;
-            padding-left: 1.5rem;
-        }
-
-        .benefits-list li {
-            margin-bottom: 0.8rem;
-            position: relative;
-            padding-left: 1.5rem;
-            transition: var(--transition-fast);
-        }
-
-        .benefits-list li:hover {
-            transform: translateX(5px);
-        }
-
-        .benefits-list li::before {
-            content: '✓';
-            position: absolute;
-            left: 0;
-            color: var(--primary);
-            font-weight: bold;
-        }
-
-        /* Contact Section with refined form */
-        .contact {
-            padding: 6rem 5%;
-            position: relative;
-        }
-
-        .contact-container {
-            max-width: 700px;
-            margin: 0 auto;
-            background: var(--dark-card);
-            border-radius: var(--border-radius);
-            padding: 3rem;
-            box-shadow: var(--shadow-md);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transition: var(--transition);
-        }
-
-        .contact-container:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-lg);
-        }
-
-        .contact-form .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .contact-form label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-        }
-
-        .contact-form input,
-        .contact-form textarea {
-            width: 100%;
-            padding: 0.8rem 1rem;
-            border-radius: var(--border-radius);
-            background: var(--dark-surface);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-primary);
-            font-size: 1rem;
-            transition: var(--transition);
-        }
-
-        .contact-form input:focus,
-        .contact-form textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(138, 79, 255, 0.3);
-        }
-
-        .contact-form textarea {
-            min-height: 150px;
-            resize: vertical;
-        }
-
-        .submit-btn {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 1rem 2rem;
-            font-size: 1rem;
-            font-weight: 600;
-            border-radius: var(--border-radius);
-            cursor: pointer;
-            transition: var(--transition);
-            display: inline-block;
-            width: auto;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .submit-btn::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transform: translateX(-100%);
-            transition: transform 0.6s ease;
-        }
-
-        .submit-btn:hover::after {
-            transform: translateX(100%);
-        }
-
-        .submit-btn:hover {
-            background: var(--primary-light);
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(138, 79, 255, 0.4);
-        }
-
-        .form-message {
-            margin-top: 1.5rem;
-            padding: 1rem;
-            border-radius: var(--border-radius);
-            display: none;
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        .success-message {
-            background: rgba(102, 187, 106, 0.2);
-            border: 1px solid var(--success);
-            color: var(--success);
-        }
-
-        .error-message {
-            background: rgba(244, 67, 54, 0.2);
-            border: 1px solid var(--error);
-            color: var(--error);
-        }
-
-        /* Footer with refined styling */
-        footer {
-            background: var(--dark-card);
-            padding: 3rem 5% 2rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .footer-content {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            gap: 2rem;
-            margin-bottom: 2rem;
-        }
-
-        .footer-column {
-            flex: 1;
-            min-width: 200px;
-        }
-
-        .footer-column h3 {
-            font-size: 1.2rem;
-            margin-bottom: 1.5rem;
-            position: relative;
-            display: inline-block;
-        }
-
-        .footer-column h3::after {
-            content: '';
-            position: absolute;
-            bottom: -5px;
-            left: 0;
-            width: 40px;
-            height: 3px;
-            background: var(--primary);
-            transition: var(--transition);
-        }
-
-        .footer-column:hover h3::after {
-            width: 60px;
-        }
-
-        .footer-links {
-            list-style: none;
-        }
-
-        .footer-links li {
-            margin-bottom: 0.8rem;
-        }
-
-        .footer-links a {
-            color: var(--text-secondary);
-            text-decoration: none;
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .footer-links a:hover {
-            color: var(--text-primary);
-            padding-left: 5px;
-        }
-
-        .footer-links a i {
-            color: var(--primary);
-        }
-
-        .copyright {
-            text-align: center;
-            padding-top: 2rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .back-to-top {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: var(--primary);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 999;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: var(--transition);
-            box-shadow: var(--shadow-sm);
-        }
-
-        .back-to-top.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        .back-to-top:hover {
-            background: var(--primary-light);
-            transform: translateY(-3px);
-        }
-
-        /* Progress Bar */
-        .progress-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: transparent;
-            z-index: 2000;
-        }
-
-        .progress-bar {
-            height: 4px;
-            background: var(--primary);
-            width: 0%;
-            transition: width 0.2s ease-out;
-        }
-
-        /* Responsive Styles with refined animations */
-        @media (max-width: 992px) {
-            .hero h1 {
-                font-size: 3rem;
-            }
-            
-            .hero-image {
-                width: 45%;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .nav-links {
-                display: none;
-                position: absolute;
-                top: 100%;
-                left: 0;
-                width: 100%;
-                background: var(--dark-bg);
-                flex-direction: column;
-                padding: 1rem 5%;
-                gap: 0;
-                box-shadow: var(--shadow-md);
-                animation: slideDown 0.4s ease-out;
-            }
-            
-            @keyframes slideDown {
-                from {
-                    opacity: 0;
-                    transform: translateY(-10px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-            
-            .nav-links.active {
-                display: flex;
-            }
-            
-            .nav-links a {
-                padding: 1rem 0;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            }
-            
-            .mobile-menu-btn {
-                display: block;
-            }
-            
-            .hero {
-                flex-direction: column;
-                text-align: center;
-                padding-top: 7rem;
-            }
-            
-            .hero-content {
-                max-width: 100%;
-                margin-bottom: 3rem;
-            }
-            
-            .hero p {
-                max-width: 100%;
-            }
-            
-            .cta-buttons {
-                justify-content: center;
-            }
-            
-            .hero-image {
-                position: relative;
-                top: auto;
-                right: auto;
-                transform: none;
-                width: 100%;
-                max-width: 400px;
-                margin: 0 auto;
-                animation: floatMobile 6s ease-in-out infinite;
-            }
-            
-            @keyframes floatMobile {
-                0% { transform: translateY(0px); }
-                50% { transform: translateY(-15px); }
-                100% { transform: translateY(0px); }
-            }
-            
-            .app-preview {
-                height: 150px;
-            }
-
-            .dev-info {
-                flex-direction: column;
-                text-align: center;
-            }
-        }
-
-        @media (max-width: 576px) {
-            .hero h1 {
-                font-size: 2.5rem;
-            }
-            
-            .tagline {
-                font-size: 1.5rem;
-            }
-            
-            .hero p {
-                font-size: 1.1rem;
-            }
-            
-            .cta-buttons {
-                flex-direction: column;
-            }
-            
-            .section-title h2 {
-                font-size: 2rem;
-            }
-            
-            .contact-container {
-                padding: 2rem;
-            }
-            
-            .footer-content {
-                flex-direction: column;
-                gap: 3rem;
-            }
-        }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(45deg, var(--primary), var(--secondary));
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.3s, visibility 0.3s;
-        }
-        
-        .loading-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-        
-        .loading-content {
-            text-align: center;
-            background: var(--dark-surface);
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
-        }
-        
-        .loader {
-            width: 60px;
-            height: 60px;
-            margin: 0 auto 20px;
-            position: relative;
-        }
-        
-        .loader:before {
-            content: '';
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            border: 6px solid #f3f3f3;
-            border-top: 6px solid #3498db;
-            animation: spin 1.2s linear infinite;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        
-        .loader:after {
-            content: '';
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            border: 6px solid transparent;
-            border-top: 6px solid #3498db;
-            opacity: 0.7;
-            animation: spin 0.8s linear infinite reverse;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        
-        .loading-content p {
-            font-size: 18px;
-            color: #2c3e50;
-            margin-top: 15px;
-        }
-        
-        .dots {
-            display: inline-block;
-            position: relative;
-            width: 20px;
-            height: 10px;
-        }
-        
-        .dots::after {
-            content: '...';
-            position: absolute;
-            animation: dots 1.5s infinite steps(4);
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        @keyframes dots {
-            0% { content: ''; }
-            25% { content: '.'; }
-            50% { content: '..'; }
-            75% { content: '...'; }
-            100% { content: ''; }
-        }
-    </style>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-color:   #1e1e1e;
+      --hdr-color:  #2c2c2c;
+      --ctr-color:  #141414;
+      --btn-color:  #3a3a3a;
+      --card-color: #252525;
+      --border:     #333333;
+      --accent:     #4dffc4;
+      --accent-dim: rgba(77,255,196,0.12);
+      --accent-glow:rgba(77,255,196,0.25);
+      --text-primary:   #f0f0f0;
+      --text-secondary: #9a9a9a;
+      --text-muted:     #5a5a5a;
+      --font-display: 'Syne', sans-serif;
+      --font-body:    'DM Sans', sans-serif;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-color);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE TEXTURE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.4;
+    }
+
+    /* ── NAVBAR ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 0 1.25rem;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(28,28,28,0.8);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      transition: border-color 0.3s;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+    }
+
+    .nav-logo img {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+    }
+
+    .nav-logo span {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .nav-lang {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 0.35rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      transition: color 0.2s, border-color 0.2s;
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+    .nav-lang:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── BUTTONS ── */
+    .btn, .btn-secondary, a.btn, a.btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.82rem;
+      letter-spacing: 0.02em;
+      padding: 0.5rem 1.1rem;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .btn, a.btn {
+      background: var(--accent);
+      color: #0a0a0a;
+    }
+    .btn:hover, a.btn:hover {
+      background: #6fffce;
+      box-shadow: 0 0 18px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary, a.btn-secondary {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover, a.btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-lg {
+      padding: 0.85rem 2rem;
+      font-size: 0.95rem;
+      border-radius: var(--radius);
+    }
+
+    /* ── HERO ── */
+    #hero {
+      position: relative;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 6rem 1.5rem 4rem;
+      overflow: hidden;
+    }
+
+    .hero-glow {
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(600px, 90vw);
+      height: min(600px, 90vw);
+      background: radial-gradient(ellipse, rgba(77,255,196,0.07) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.15;
+      mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 0%, transparent 100%);
+      -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 0%, transparent 100%);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      max-width: 680px;
+    }
+
+    .hero-logo {
+      width: 64px;
+      height: 64px;
+      border-radius: 18px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 0 0 1px var(--border), 0 0 24px var(--accent-dim);
+      animation: fadeUp 0.6s ease both;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      border: 1px solid rgba(77,255,196,0.25);
+      padding: 0.3rem 0.75rem;
+      border-radius: 100px;
+      margin-bottom: 1.25rem;
+      animation: fadeUp 0.6s 0.1s ease both;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.4rem, 7vw, 4.2rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      color: var(--text-primary);
+      margin-bottom: 1.25rem;
+      animation: fadeUp 0.6s 0.2s ease both;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: clamp(0.95rem, 2.5vw, 1.1rem);
+      color: var(--text-secondary);
+      max-width: 520px;
+      margin: 0 auto 2.25rem;
+      line-height: 1.7;
+      font-weight: 300;
+      animation: fadeUp 0.6s 0.3s ease both;
+    }
+
+    .hero-cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      animation: fadeUp 0.6s 0.4s ease both;
+    }
+
+    .hero-tools {
+      position: relative;
+      z-index: 1;
+      margin-top: 4rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      animation: fadeUp 0.6s 0.5s ease both;
+    }
+
+    .tool-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      padding: 0.3rem 0.75rem;
+      border-radius: 100px;
+      letter-spacing: 0.04em;
+    }
+
+    .tool-chip i { font-size: 0.65rem; }
+
+    /* ── SECTION COMMON ── */
+    section {
+      position: relative;
+      z-index: 1;
+      padding: 5rem 1.5rem;
+    }
+
+    .section-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.7rem, 4vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      color: var(--text-primary);
+      margin-bottom: 1rem;
+    }
+
+    .section-desc {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      font-weight: 300;
+      max-width: 560px;
+      line-height: 1.75;
+      margin-bottom: 3rem;
+    }
+
+    /* ── DIVIDER ── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent);
+      margin: 0 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── FEATURES GRID ── */
+    #features { background: var(--ctr-color); }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    @media (min-width: 640px) {
+      .features-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (min-width: 1024px) {
+      .features-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
+      /* Row 1: Notes spans 2, Tasks spans 2 */
+      .features-grid .feature-card:nth-child(1) { grid-column: span 2; }
+      .features-grid .feature-card:nth-child(2) { grid-column: span 2; }
+      /* Row 2: Calendar spans 1, Kanban spans 3 */
+      .features-grid .feature-card:nth-child(3) { grid-column: span 1; }
+      .features-grid .feature-card:nth-child(4) { grid-column: span 3; }
+    }
+
+    .feature-card {
+      background: var(--card-color);
+      padding: 2rem 1.75rem;
+      transition: background 0.25s;
+      cursor: default;
+    }
+    .feature-card:hover { background: #2a2a2a; }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(77,255,196,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      color: var(--accent);
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .feature-title {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-desc {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+      font-weight: 300;
+    }
+
+    .feature-tags {
+      margin-top: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .ftag {
+      font-size: 0.65rem;
+      font-family: var(--font-display);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      background: var(--btn-color);
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+    }
+
+    .feature-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.63rem;
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #f0a500;
+      background: rgba(240,165,0,0.1);
+      border: 1px solid rgba(240,165,0,0.2);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+
+    /* ── INTEGRATION SECTION ── */
+    #integration {
+      text-align: center;
+    }
+
+    .integration-visual {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin: 3rem auto 0;
+      max-width: 700px;
+    }
+
+    .int-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .int-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      color: var(--accent);
+      transition: all 0.2s;
+    }
+    .int-icon:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 16px var(--accent-dim);
+    }
+
+    .int-label {
+      font-size: 0.72rem;
+      font-family: var(--font-display);
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    .int-arrow {
+      color: var(--border);
+      font-size: 0.9rem;
+    }
+
+    /* ── GROUPS ── */
+    #groups { background: var(--ctr-color); }
+
+    .groups-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+      align-items: center;
+    }
+
+    @media (min-width: 768px) {
+      .groups-layout { grid-template-columns: 1fr 1fr; }
+    }
+
+    .group-card-mock {
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .mock-header {
+      background: var(--btn-color);
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mock-header i { color: var(--accent); font-size: 0.85rem; }
+
+    .mock-title {
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .mock-members {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-left: auto;
+    }
+
+    .mock-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.55rem;
+      font-family: var(--font-display);
+      font-weight: 700;
+    }
+
+    .mock-body { padding: 1rem; }
+
+    .mock-note {
+      background: var(--card-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-note i { color: var(--accent); font-size: 0.7rem; flex-shrink: 0; }
+
+    .groups-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .groups-list li {
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+
+    .groups-list .gl-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(77,255,196,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-size: 0.7rem;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+
+    .gl-text strong {
+      font-family: var(--font-display);
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+
+    .gl-text span {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      font-weight: 300;
+    }
+
+    /* ── STORAGE STRIP ── */
+    #storage {
+      padding: 3.5rem 1.5rem;
+    }
+
+    .storage-strip {
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+
+    @media (min-width: 640px) {
+      .storage-strip {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    .storage-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(77,255,196,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .storage-text strong {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    .storage-text span {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 300;
+    }
+
+    .storage-strip .btn { margin-left: auto; flex-shrink: 0; }
+
+    /* ── CONTACT ── */
+    #contact { background: var(--ctr-color); }
+
+    .contact-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+
+    @media (min-width: 768px) {
+      .contact-layout { grid-template-columns: 1fr 1.5fr; }
+    }
+
+    .contact-info h2 { margin-bottom: 0.75rem; }
+
+    .contact-form-wrap {
+      background: var(--card-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      background: var(--hdr-color);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.7rem 0.9rem;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      resize: none;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .form-group textarea { min-height: 110px; }
+
+    .form-submit {
+      width: 100%;
+      justify-content: center;
+      padding: 0.75rem;
+      font-size: 0.88rem;
+      border-radius: var(--radius-sm);
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .form-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(0,0,0,0.2);
+      border-top-color: #0a0a0a;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      display: none;
+    }
+
+    .form-submit.loading .spinner { display: inline-block; }
+    .form-submit.loading .btn-label { display: none; }
+
+    .form-msg {
+      margin-top: 0.75rem;
+      font-size: 0.82rem;
+      padding: 0.6rem 0.8rem;
+      border-radius: var(--radius-sm);
+      display: none;
+    }
+    .form-msg.success {
+      display: block;
+      background: rgba(77,255,196,0.1);
+      border: 1px solid rgba(77,255,196,0.3);
+      color: var(--accent);
+    }
+    .form-msg.error {
+      display: block;
+      background: rgba(255,80,80,0.08);
+      border: 1px solid rgba(255,80,80,0.25);
+      color: #ff8080;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--ctr-color);
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .footer-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    @media (min-width: 640px) {
+      .footer-inner {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+    }
+
+    .footer-logo img {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+    }
+
+    .footer-logo span {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.5rem;
+      list-style: none;
+    }
+
+    .footer-links a {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--accent); }
+
+    .footer-copy {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* ── SCROLL REVEAL ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-color); }
+    ::-webkit-scrollbar-thumb { background: var(--btn-color); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    /* ── SELECTION ── */
+    ::selection { background: var(--accent-dim); color: var(--accent); }
+  </style>
 </head>
 <body>
-    <div class="progress-container">
-        <div class="progress-bar" id="progress-bar"></div>
+
+  <!-- NAV -->
+  <nav>
+    <a href="/nl" class="nav-logo">
+      <img src="/static/webp/android-chrome-512x512.webp" alt="Future Notes logo">
+      <span>Future Notes</span>
+    </a>
+    <div class="nav-actions">
+      <a href="/?lang=en" class="nav-lang" title="Switch to English">EN</a>
+      <a href="/help" class="btn-secondary">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
+      <a href="/login_page" class="btn-secondary">Inloggen</a>
+      <a href="/signup_page" class="btn">Registreren</a>
     </div>
-    <!-- Header -->
-    <header>
-        <a href="#" class="logo">
-            <img src="/static/webp/android-chrome-512x512.webp" alt="Future Notes Logo" style="height: 2rem; width: 2rem; border-radius: 6px; vertical-align: middle;">
-            Future Notes
-        </a>
-        <nav class="nav-links">
-            <a href="#">Home</a>
-            <a href="#features">Functies</a>
-            <a href="#story">Over</a>
-            <a href="#contact">Contact</a>
-            <a href="https://3wpydgsh.status.cron-job.org/" target="_blank" rel="noopener noreferrer">Status pagina</a>
-            <a href="/help" class="btn-secondary">Support <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
-            <a href="/login_page" class="btn">Inloggen</a>
-            <a href="/signup_page" class="btn">Registreren</a>
-        </nav>
-        <button class="mobile-menu-btn" aria-label="Mobiele navigatie">
-            <i class="fas fa-bars"></i>
-        </button>
-    </header>
+  </nav>
 
-    <!-- Hero Section -->
-    <section class="hero">
-        <div class="hero-content">
-            <h1>Organiseer je wereld op één plek</h1>
-            <div class="tagline">Een persoonlijk productiviteitsproject</div>
-            <p>Future Notes combineert notities, taken, agenda's en notitiegroepen in een prachtig geïntegreerde, mobielvriendelijke applicatie die meebeweegt met jouw workflow.</p>
-            <div class="cta-buttons">
-                <a href="/signup_page" class="cta-btn cta-primary">Aan de Slag</a>
-                <a href="#features" class="cta-btn cta-secondary">Ontdek Functies</a>
-            </div>
-        </div>
-        <div class="hero-image">
-            <div class="app-preview notes-preview">
-                <i class="fas fa-sticky-note"></i>
-                <span>Notities</span>
-            </div>
-            <div class="app-preview todos-preview">
-                <i class="fas fa-tasks"></i>
-                <span>Taken</span>
-            </div>
-            <div class="app-preview calendar-preview">
-                <i class="fas fa-calendar-alt"></i>
-                <span>Agenda</span>
-            </div>
-            <div class="app-preview groups-preview">
-                <i class="fas fa-users"></i>
-                <span>Groepen</span>
-            </div>
-        </div>
-    </section>
-
-    <!-- Features Section -->
-    <section class="features" id="features">
-        <div class="section-title">
-            <h2>Geïntegreerde Productiviteit App</h2>
-            <p>Al je tools op één plek, naadloos samenwerkend</p>
-        </div>
-        <div class="features-grid">
-            <div class="feature-card" data-feature="notes">
-                <div class="feature-icon notes-icon">
-                    <i class="fas fa-sticky-note"></i>
-                </div>
-                <div class="feature-content">
-                    <h3>Slimme Notities</h3>
-                    <p>Maak snel notities in ons overzichtelijke interface. Deel notities met één klik en vind wat je zoekt via de krachtige zoekfunctie.</p>
-                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
-                </div>
-            </div>
-            <div class="feature-card" data-feature="todos">
-                <div class="feature-icon todos-icon">
-                    <i class="fas fa-tasks"></i>
-                </div>
-                <div class="feature-content">
-                    <h3>Taakbeheer</h3>
-                    <p>Volg je taken met kleurgecodeerde statussen (actief, voltooid, verlopen). Creëer taken met deadlines en prioriteiten die geïntegreerd zijn met je agenda en notities voor een complete workflow.</p>
-                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
-                </div>
-            </div>
-            <div class="feature-card" data-feature="calendar">
-                <div class="feature-icon calendar-icon">
-                    <i class="fas fa-calendar-alt"></i>
-                </div>
-                <div class="feature-content">
-                    <h3>Geïntegreerde Agenda</h3>
-                    <p>Een volledig responsieve agenda die perfect werkt op desktop en mobiel. Naadloos geïntegreerd met je taken en notities, waardoor het een krachtig alternatief is voor standalone agenda-apps.</p>
-                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
-                </div>
-            </div>
-            <div class="feature-card" data-feature="groups">
-                <div class="feature-icon groups-icon">
-                    <i class="fas fa-users"></i>
-                </div>
-                <div class="feature-content">
-                    <h3>Notitie-groepen</h3>
-                    <p>Maak groepen aan met unieke, privé-UUID's. Alle leden kunnen notities bewerken en verwijderen. De groepsbeheerder regelt lidmaatschappen en instellingen. Neem deel aan zoveel groepen als je wilt.</p>
-                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
-                </div>
-            </div>
-            <!--<div class="feature-card" data-feature="flow">
-                <div class="feature-icon" style="background: linear-gradient(45deg, #4527a0, #00d4c7);">
-                    <i class="fas fa-code-branch"></i>
-                </div>
-                <div class="feature-content">
-                    <h3>Flow Module</h3>
-                    <p>Volg de voortgang van je project met een uniek systeem geïnspireerd op Git, maar gericht op impactpunten in plaats van code. Maak branches aan, voeg werk samen en stel een totaal impactdoel in om te visualiseren wanneer je project klaar is. Perfect voor gezamenlijke planning en het bijhouden van mijlpalen.</p>
-                    <a href="#" class="feature-btn">Meer info <i class="fas fa-arrow-right"></i></a>
-                </div>
-            </div> -->
-        </div>
-    </section>
-
-    <!-- Project Story -->
-    <section class="story" id="story">
-        <div class="story-content">
-            <div class="story-card">
-                <div class="dev-info">
-                    <div class="dev-avatar" id="dev-avatar" style="width: 80px; height: 80px; overflow: hidden; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(45deg, var(--primary), var(--secondary));">
-                        <img src="/static/webp/Bosbes_PXL_20240914_1555337522.webp" alt="Bosbes (Nathan)" style="width: 76px; height: 76px; object-fit: cover; border-radius: 50%;">
-                    </div>
-                    <div class="dev-details">
-                        <h3>Nathan (Bosbes)</h3>
-                        <p>Ontwikkelaar & Uitvinder van Future Notes</p>
-                        <div class="tech-stack">
-                            <div class="tech-item">PythonAnywhere</div>
-                            <div class="tech-item">Flask</div>
-                            <div class="tech-item">Web dev</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="story-text">
-                    <p><span class="highlight">Future Notes</span> begon als een persoonlijk hobbyproject - een simpele notitie-app zoals er zoveel zijn. Maar gedurende enkele maanden breidde ik het geleidelijk uit met nieuwe functies terwijl ik steeds meer kennis opdeed van web development.</p>
-                    <p><span class="highlight">PythonAnywhere</span> bood een betrouwbare hostingoplossing die Future Notes sinds het begin ondersteunt. Wat begon als een eenvoudige notitie-app is uitgegroeid tot een complete productiviteitsapplicatie met geïntegreerde modules voor taken, agenda's en samenwerkingsgroepen.</p>
-                    <p>Elke functie is zorgvuldig ontworpen om naadloos met de anderen samen te werken, voor een soepele ervaring die gebruikers helpt hun digitale leven te organiseren zonder te schakelen tussen meerdere applicaties.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <div class="back-to-top" id="back-to-top">
-        <i class="fas fa-arrow-up"></i>
+  <!-- HERO -->
+  <section id="hero">
+    <div class="hero-grid"></div>
+    <div class="hero-glow"></div>
+    <div class="hero-content">
+      <img src="/static/webp/android-chrome-512x512.webp" alt="Future Notes" class="hero-logo">
+      <div class="hero-eyebrow">
+        <i class="fa-solid fa-circle" style="font-size:0.45rem;"></i>
+        Alles-in-één productiviteitsapp
+      </div>
+      <h1>Helder denken.<br><em>Vrij werken.</em></h1>
+      <p class="hero-sub">
+        Notities, taken, borden en agenda — één geïntegreerde werkruimte die niet in de weg staat.
+      </p>
+      <div class="hero-cta">
+        <a href="/signup_page" class="btn btn-lg">Gratis starten</a>
+        <a href="/login_page" class="btn-secondary btn-lg">Inloggen</a>
+      </div>
     </div>
-
-    <!-- Feature Modals -->
-    <div class="modal" id="notes-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-sticky-note"></i> Slimme Notities</h3>
-                <button class="close-modal"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="feature-details">
-                    <p>De notitiemodule is waar Future Notes begon. Wat startte als een simpele tekstverwerker is uitgegroeid tot een krachtige notitieoplossing die de basis vormt van de hele applicatie.</p>
-                    <p>Belangrijke mogelijkheden zijn:</p>
-                    <div class="feature-benefits">
-                        <h4>Kernfuncties:</h4>
-                        <ul class="benefits-list">
-                            <li>Afleidingsvrije schrijfomgeving door een minimalistisch ontwerp</li>
-                            <li>Direct en razendsnel opslaan</li>
-                            <li>Krachtige zoekfunctie door al je notities</li>
-                            <li>Delen met één klik</li>
-                            <li>Organiseren met tags en categorieën</li>
-                            <li>Tekstopmaak (vet, cursief, lijsten)</li>
-                        </ul>
-                    </div>
-                    <div class="feature-benefits">
-                        <h4>Binnenkort beschikbaar:</h4>
-                        <ul class="benefits-list">
-                            <li>Ondersteuning voor afbeeldingen en bestanden</li>
-                            <li>Versiegeschiedenis van notities</li>
-                            <li>Offline toegang op mobiel</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="hero-tools">
+      <span class="tool-chip"><i class="fa-solid fa-note-sticky"></i> Notities</span>
+      <span class="tool-chip"><i class="fa-solid fa-check-square"></i> Taken</span>
+      <span class="tool-chip"><i class="fa-solid fa-table-columns"></i> Borden</span>
+      <span class="tool-chip"><i class="fa-solid fa-calendar-days"></i> Agenda</span>
+      <span class="tool-chip"><i class="fa-solid fa-users"></i> Groepen</span>
     </div>
+  </section>
 
-    <div class="modal" id="todos-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-tasks"></i> Taakbeheer</h3>
-                <button class="close-modal"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="feature-details">
-                    <p>De takenmodule helpt je je werk bij te houden met een eenvoudig maar krachtig systeem dat geïntegreerd is met je notities en agenda.</p>
-                    <p>Elke taak is kleurgecodeerd op basis van status, zodat je in één oogopslag ziet wat aandacht nodig heeft.</p>
-                    <div class="feature-benefits">
-                        <h4>Belangrijke functies:</h4>
-                        <ul class="benefits-list">
-                            <li>Kleurgecodeerde statussen: actief (grijs), voltooid (groen), verlopen (rood)</li>
-                            <li>Deadlines en prioriteitsniveaus</li>
-                            <li>Naadloze integratie met agenda-items</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+  <div class="divider"></div>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="section-inner">
+      <p class="section-label">Jouw tools</p>
+      <h2>Alles wat je nodig hebt,<br>maar niks meer.</h2>
+      <p class="section-desc">Four tightly integrated tools. Use one, use all — or mix them however your workflow demands.</p>
+
+      <div class="features-grid reveal">
+
+        <!-- Notes — row 1, span 2 -->
+        <div class="feature-card">
+          <div class="feature-icon"><i class="fa-solid fa-note-sticky"></i></div>
+          <div class="feature-title">Notes</div>
+          <p class="feature-desc">
+            Your most powerful tool. Write with full markup, attach files, organise with folders, tags, and pins. Search works instantly, on-device and server-side. Share any note publicly — no login needed for the reader.
+          </p>
+          <div class="feature-tags">
+            <span class="ftag">Markup</span>
+            <span class="ftag">Folders</span>
+            <span class="ftag">Tags</span>
+            <span class="ftag">Attachments</span>
+            <span class="ftag">Hybrid search</span>
+            <span class="ftag">Public sharing</span>
+          </div>
         </div>
+
+        <!-- Tasks — row 1, span 2 -->
+        <div class="feature-card">
+          <div class="feature-icon"><i class="fa-solid fa-list-check"></i></div>
+          <div class="feature-title">Tasks</div>
+          <p class="feature-desc">
+            Ruthlessly minimal. Just your to-dos — clear, focused, and optionally linked to notes or calendar entries. Capture what needs doing without the overhead of a full project system, then check it off and move on.
+          </p>
+          <div class="feature-tags">
+            <span class="ftag">Link to notes</span>
+            <span class="ftag">Link to calendar</span>
+          </div>
+        </div>
+
+        <!-- Calendar — row 2, span 1 -->
+        <div class="feature-card">
+          <div class="feature-icon" style="color: #f0a500; background: rgba(240,165,0,0.1); border-color: rgba(240,165,0,0.2);"><i class="fa-solid fa-calendar-days"></i></div>
+          <div class="feature-title">Calendar <span class="feature-badge"><i class="fa-solid fa-bolt"></i> New</span></div>
+          <p class="feature-desc">
+            Brings your tasks and notes into a time view. Syncs with Google Calendar. Drag and resize appointments directly on the grid.
+          </p>
+          <div class="feature-tags">
+            <span class="ftag">Google sync</span>
+            <span class="ftag">Linked tasks</span>
+            <span class="ftag">Drag & resize</span>
+          </div>
+        </div>
+
+        <!-- Kanban — row 2, span 3 -->
+        <div class="feature-card">
+          <div class="feature-icon"><i class="fa-solid fa-table-columns"></i></div>
+          <div class="feature-title">Kanban</div>
+          <p class="feature-desc">
+            Visual project management built around the way work actually flows. Drag cards between lists, assign members, set due dates, and attach notes directly to cards. Boards can be shared with fine-grained read/write permissions — send invite links directly to email so collaborators can join without an account. Whether you're running a solo project or coordinating a team, Kanban gives you a clear, living picture of everything in flight.
+          </p>
+          <div class="feature-tags">
+            <span class="ftag">Drag & drop</span>
+            <span class="ftag">Members</span>
+            <span class="ftag">Due dates</span>
+            <span class="ftag">Permissions</span>
+            <span class="ftag">Share links</span>
+            <span class="ftag">Card notes</span>
+          </div>
+        </div>
+
+      </div>
     </div>
+  </section>
 
-    <div class="modal" id="calendar-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-calendar-alt"></i> Geïntegreerde Agenda</h3>
-                <button class="close-modal"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="feature-details">
-                    <p>De agendamodule is niet zomaar een losse functie - het is de centrale hub die je notities, taken en groepsactiviteiten verbindt in één visuele interface.</p>
-                    <p>Volledig responsief ontworpen voor optimaal gebruik op desktop en mobiel.</p>
-                    <div class="feature-benefits">
-                        <h4>Belangrijke functies:</h4>
-                        <ul class="benefits-list">
-                            <li>Week- en dagweergave</li>
-                            <li>Kleurcodering op basis van type (persoonlijk, groep, taak)</li>
-                            <li>E-mail- en pushmeldingen</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+  <div class="divider"></div>
+
+  <!-- INTEGRATION -->
+  <section id="integration">
+    <div class="section-inner">
+      <p class="section-label">Slim verbonden</p>
+      <h2>Tools die met<br>elkaar praten.</h2>
+      <p class="section-desc" style="margin: 0 auto 0; text-align:center;">
+        Wijs een bordkaart toe met een deadline en er wordt automatisch een taak én een agendaafspraak aangemaakt. Gebruik zoveel integratie als je wilt. Of helemaal geen.
+      </p>
+      <div class="integration-visual reveal">
+        <div class="int-node">
+          <div class="int-icon"><i class="fa-solid fa-table-columns"></i></div>
+          <div class="int-label">Bordkaart</div>
         </div>
+        <div class="int-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+        <div class="int-node">
+          <div class="int-icon"><i class="fa-solid fa-list-check"></i></div>
+          <div class="int-label">Taak</div>
+        </div>
+        <div class="int-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+        <div class="int-node">
+          <div class="int-icon"><i class="fa-solid fa-calendar-days"></i></div>
+          <div class="int-label">Agenda</div>
+        </div>
+        <div class="int-arrow" style="color: var(--accent);">+</div>
+        <div class="int-node">
+          <div class="int-icon"><i class="fa-solid fa-note-sticky"></i></div>
+          <div class="int-label">Notities</div>
+        </div>
+      </div>
     </div>
+  </section>
 
-    <div class="modal" id="groups-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-users"></i> Notitie-groepen</h3>
-                <button class="close-modal"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="feature-details">
-                    <p>Groepsnotities tillen samenwerking naar een hoger niveau door meerdere gebruikers te laten werken in gedeelde ruimtes met gecontroleerde toegang.</p>
-                    <p>Elke groep heeft een unieke UUID voor privacy en flexibele deelname.</p>
-                    <div class="feature-benefits">
-                        <h4>Belangrijke functies:</h4>
-                        <ul class="benefits-list">
-                            <li>Unieke, privé groep-UUID's</li>
-                            <li>Beheerderscontrole voor groepinstellingen</li>
-                            <li>Onbeperkte groepen per gebruiker</li>
-                            <li>Makkelijk gebruikers uitnodigen</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+  <div class="divider"></div>
+
+  <!-- GROUPS -->
+  <section id="groups">
+    <div class="section-inner">
+      <div class="groups-layout">
+        <div>
+          <p class="section-label">Samenwerken</p>
+          <h2>Gedeelde notities,<br>zonder rommel.</h2>
+          <p class="section-desc" style="margin-bottom: 2rem;">
+            Groepsnotities zijn gedeelde werkruimtes — dezelfde krachtige notities, maar eigendom van de groep. Wees lid van meerdere groepen tegelijk.
+          </p>
+          <ul class="groups-list reveal">
+            <li>
+              <div class="gl-icon"><i class="fa-solid fa-users"></i></div>
+              <div class="gl-text">
+                <strong>Leden & eigenaren</strong>
+                <span>Eigenaren beheren leden en rechten. Leden gebruiken notities gewoon normaal.</span>
+              </div>
+            </li>
+            <li>
+              <div class="gl-icon"><i class="fa-solid fa-folder-open"></i></div>
+              <div class="gl-text">
+                <strong>Alle notitie-functies</strong>
+                <span>Opmaak, mappen, tags, bijlagen — alles beschikbaar in groepsnotities.</span>
+              </div>
+            </li>
+            <li>
+              <div class="gl-icon"><i class="fa-solid fa-share-nodes"></i></div>
+              <div class="gl-text">
+                <strong>Deel bordtoegang</strong>
+                <span>Nodig samenwerkende leden uit via e-mail met lees- of schrijfrechten.</span>
+              </div>
+            </li>
+          </ul>
         </div>
+        <div class="group-card-mock reveal">
+          <div class="mock-header">
+            <i class="fa-solid fa-users"></i>
+            <span class="mock-title">Designteam</span>
+            <div class="mock-members">
+              <div class="mock-avatar" style="background:#2e4a3e; color: var(--accent);">JD</div>
+              <div class="mock-avatar" style="background:#3a2e4a; color: #b58fff;">AM</div>
+              <div class="mock-avatar" style="background:#4a3a2e; color: #ffb058;">RK</div>
+            </div>
+          </div>
+          <div class="mock-body">
+            <div class="mock-note"><i class="fa-solid fa-thumbtack"></i> Q4 Merkrichtlijnen</div>
+            <div class="mock-note"><i class="fa-regular fa-note-sticky"></i> Vergadernotities — nov sprint</div>
+            <div class="mock-note"><i class="fa-solid fa-folder"></i> Bestanden / Illustraties</div>
+            <div class="mock-note" style="opacity:0.5;"><i class="fa-solid fa-tag"></i> Archief</div>
+          </div>
+        </div>
+      </div>
     </div>
+  </section>
 
-    <div class="modal" id="flow-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-code-branch"></i> Flow Module</h3>
-                <button class="close-modal"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="modal-body">
-                <div class="feature-details">
-                    <p>De Flow Module is een unieke functie waarmee je de voortgang van je project kunt volgen via een systeem geïnspireerd op Git, maar dan gericht op impactpunten in plaats van code.</p>
-                    <p>Het biedt een visuele weergave van de status van je project en helpt je bijdragen van meerdere gebruikers te beheren.</p>
-                    <div class="feature-benefits">
-                        <h4>Belangrijkste functies:</h4>
-                        <ul class="benefits-list">
-                            <li>Aanmaken van branches voor verschillende projectfases</li>
-                            <li>Impactpunten bijhouden per branch</li>
-                            <li>Branches samenvoegen om werk te combineren</li>
-                            <li>Visualisatie van het totale impactdoel</li>
-                            <li>Samen plannen en mijlpalen volgen</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+  <!-- STORAGE STRIP -->
+  <section id="storage" style="padding: 0 1.5rem 4rem;">
+    <div class="section-inner">
+      <div class="storage-strip reveal">
+        <div class="storage-icon"><i class="fa-solid fa-hard-drive"></i></div>
+        <div class="storage-text">
+          <strong>Gratis opslag, met ruimte om te groeien</strong>
+          <span>Elk account start met opslag inbegrepen. Nodig een vriend uit — jullie krijgen allebei meer. Tot 3 referrals per dag.</span>
         </div>
+        <a href="/signup_page" class="btn">Gratis starten</a>
+      </div>
     </div>
+  </section>
 
-    <!-- Contact Section -->
-    <section class="contact" id="contact">
-        <div class="section-title">
-            <h2>Neem Contact Op</h2>
-            <p>Heb je vragen? Ik hoor graag van je :)</p>
-        </div>
-        <div class="contact-container">
-            <form class="contact-form" id="contact-form">
-                <div class="form-group">
-                    <label for="email">E-mailadres</label>
-                    <input type="email" id="email" name="email" required>
-                </div>
-                <div class="form-group">
-                    <label for="message">Jouw Bericht</label>
-                    <textarea id="message" name="message" required placeholder="Je feedback en vragen zijn altijd welkom..."></textarea>
-                </div>
-                <button type="submit" class="submit-btn">Verstuur Bericht</button>
-                <div class="form-message success-message" id="success-message">
-                    <i class="fas fa-check-circle"></i> Bericht succesvol ontvangen!
-                </div>
-                <div class="form-message error-message" id="error-message">
-                    <i class="fas fa-exclamation-circle"></i> Er is een fout opgetreden. Probeer het opnieuw.
-                </div>
-            </form>
-        </div>
-    </section>
+  <div class="divider"></div>
 
-    <div class="loading-overlay" id="loading-overlay">
-        <div class="loading-content">
-            <div class="loader"></div>
-            <p>Je bericht wordt verzonden<span class="dots"></span></p>
-            <p><small>Dit kan even duren omdat we een e-mail synchroniseren</small></p>
+  <!-- CONTACT -->
+  <section id="contact">
+    <div class="section-inner">
+      <div class="contact-layout">
+        <div class="contact-info">
+          <p class="section-label">Contact</p>
+          <h2>Neem<br>contact op.</h2>
+          <p class="section-desc" style="margin-bottom: 1.5rem;">
+            Een vraag, suggestie of gewoon gedag zeggen? We reageren zo snel mogelijk.
+          </p>
+          <a href="https://3wpydgsh.status.cron-job.org/" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="font-size: 0.8rem;">
+            <i class="fa-solid fa-circle" style="font-size:0.5rem; color: #4dff9a;"></i>
+            Statuspagina
+          </a>
         </div>
+        <div class="contact-form-wrap">
+          <form id="contactForm" onsubmit="handleContact(event)">
+            <div class="form-group">
+              <label for="email">Jouw e-mail</label>
+              <input type="email" id="email" name="email" placeholder="jij@voorbeeld.nl" required>
+            </div>
+            <div class="form-group">
+              <label for="message">Bericht</label>
+              <textarea id="message" name="message" placeholder="Waar wil je over praten?" required></textarea>
+            </div>
+            <button type="submit" class="btn form-submit" id="submitBtn">
+              <span class="btn-label">Bericht versturen</span>
+              <div class="spinner"></div>
+            </button>
+            <div class="form-msg" id="formMsg"></div>
+          </form>
+        </div>
+      </div>
     </div>
+  </section>
 
-    <!-- Footer -->
-    <footer>
-        <div class="footer-content">
-            <div class="footer-column">
-                <h3>Future Notes</h3>
-                <p>Een persoonlijk productiviteitsproject. Organiseer notities, taken, agenda en groepen in één (gratis) applicatie.</p>
-            </div>
-            <div class="footer-column">
-                <h3>Functies</h3>
-                <ul class="footer-links">
-                    <li><a href="#"><i class="fas fa-sticky-note"></i> Notities</a></li>
-                    <li><a href="#"><i class="fas fa-tasks"></i> Taken</a></li>
-                    <li><a href="#"><i class="fas fa-calendar-alt"></i> Agenda</a></li>
-                    <li><a href="#"><i class="fas fa-users"></i> Groepen</a></li>
-                </ul>
-            </div>
-            <div class="footer-column">
-                <h3>Bronnen</h3>
-                <ul class="footer-links">
-                    <li><a href="/guide_page"><i class="fas fa-book"></i> Gebruikershandleiding</a></li>
-                    <li><a href="#contact"><i class="fas fa-envelope"></i> Contact</a></li>
-                    <li><a href="https://www.pythonanywhere.com/" target="_blank"><i class="fas fa-server"></i> Gehost op PythonAnywhere</a></li>
-                </ul>
-            </div>
-            <div class="footer-column">
-                <h3>Privacy en TOS</h3>
-                <ul class="footer-links">
-                    <li><a href="https://bosbes.eu.pythonanywhere.com/privacy">Privacy policy</a></li>
-                    <li><a href="https://bosbes.eu.pythonanywhere.com/tos">Terms of Service</a></li>
-                </ul>
-            </div>
-        </div>
-        <div class="copyright">
-            <p>&copy; 2025 Future Notes</p>
-        </div>
-    </footer>
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-inner">
+      <a href="/nl" class="footer-logo">
+        <img src="/static/webp/android-chrome-512x512.webp" alt="Future Notes">
+        <span>Future Notes</span>
+      </a>
+      <ul class="footer-links">
+        <li><a href="/help">Support</a></li>
+        <li><a href="https://3wpydgsh.status.cron-job.org/" target="_blank" rel="noopener noreferrer">Status</a></li>
+        <li><a href="/login_page">Inloggen</a></li>
+        <li><a href="/signup_page">Registreren</a></li>
+        <li><a href="/?lang=en">EN</a></li>
+      </ul>
+      <span class="footer-copy">© 2025 Future Notes</span>
+    </div>
+  </footer>
 
-    <script>
-        // Mobile menu toggle
-        const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
-        const navLinks = document.querySelector('.nav-links');
-        
-        mobileMenuBtn.addEventListener('click', () => {
-            navLinks.classList.toggle('active');
-        });
+  <script>
+    const reveals = document.querySelectorAll('.reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => entry.target.classList.add('visible'), i * 80);
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+    reveals.forEach(el => observer.observe(el));
 
-        // Scroll progress bar
-        window.onscroll = function() {
-            const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
-            const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-            const scrolled = (winScroll / height) * 100;
-            document.getElementById("progress-bar").style.width = scrolled + "%";
-            
-            // Header scroll effect
-            if (window.scrollY > 50) {
-                document.querySelector('header').classList.add('scrolled');
-            } else {
-                document.querySelector('header').classList.remove('scrolled');
-            }
-            
-            // Back to top button
-            const backToTop = document.getElementById('back-to-top');
-            if (window.scrollY > 500) {
-                backToTop.classList.add('visible');
-            } else {
-                backToTop.classList.remove('visible');
-            }
-        };
-        
-        // Back to top functionality
-        document.getElementById('back-to-top').addEventListener('click', () => {
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
+    async function handleContact(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const msg = document.getElementById('formMsg');
+      const email = document.getElementById('email').value.trim();
+      const message = document.getElementById('message').value.trim();
+
+      btn.disabled = true;
+      btn.classList.add('loading');
+      msg.className = 'form-msg';
+      msg.style.display = 'none';
+
+      try {
+        const response = await fetch('/contact', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, message })
         });
 
-        const devAvatar = document.getElementById('dev-avatar');
-
-        
-        let avatarHoldTimeout;
-        devAvatar.addEventListener('mousedown', () => {
-            avatarHoldTimeout = setTimeout(() => {
-                // Easter egg: Show a fun modal or animation
-                alert("🎉 Easter Egg! Bedankt voor het klikken van de avatar. Een productieve dag toegewenst!");
-            }, 3000);
-        });
-        devAvatar.addEventListener('mouseup', () => {
-            clearTimeout(avatarHoldTimeout);
-        });
-        devAvatar.addEventListener('mouseleave', () => {
-            clearTimeout(avatarHoldTimeout);
-        });
-        
-        // Contact form submission
-        const contactForm = document.getElementById('contact-form');
-        const successMessage = document.getElementById('success-message');
-        const errorMessage = document.getElementById('error-message');
-        const loadingOverlay = document.getElementById('loading-overlay');
-        
-        contactForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const email = document.getElementById('email').value;
-            const message = document.getElementById('message').value;
-            
-            // Show loading animation
-            loadingOverlay.classList.add('active');
-            
-            try {
-                const response = await fetch('/contact', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ email, message })
-                });
-                
-                if (response.ok) {
-                    successMessage.style.display = 'block';
-                    errorMessage.style.display = 'none';
-                    contactForm.reset();
-                    
-                    // Hide success message after 5 seconds
-                    setTimeout(() => {
-                        successMessage.style.display = 'none';
-                    }, 5000);
-                } else {
-                    throw new Error('Server responded with an error');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                successMessage.style.display = 'none';
-                errorMessage.style.display = 'block';
-                
-                // Hide error message after 5 seconds
-                setTimeout(() => {
-                    errorMessage.style.display = 'none';
-                }, 5000);
-            } finally {
-                // Hide loading animation regardless of outcome
-                loadingOverlay.classList.remove('active');
-            }
-        });
-        
-        // Feature modals functionality
-        const featureCards = document.querySelectorAll('.feature-card');
-        const modals = document.querySelectorAll('.modal');
-        const closeButtons = document.querySelectorAll('.close-modal');
-        
-        featureCards.forEach(card => {
-            card.addEventListener('click', () => {
-                const feature = card.getAttribute('data-feature');
-                const modal = document.getElementById(`${feature}-modal`);
-                modal.classList.add('active');
-                document.body.style.overflow = 'hidden';
-            });
-        });
-        
-        closeButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const modal = button.closest('.modal');
-                modal.classList.remove('active');
-                document.body.style.overflow = 'auto';
-            });
-        });
-        
-        modals.forEach(modal => {
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    modal.classList.remove('active');
-                    document.body.style.overflow = 'auto';
-                }
-            });
-        });
-        
-        // Smooth scrolling for anchor links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                const targetId = this.getAttribute('href');
-                if(targetId === '#') return;
-                
-                const targetElement = document.querySelector(targetId);
-                if(targetElement) {
-                    window.scrollTo({
-                        top: targetElement.offsetTop - 80,
-                        behavior: 'smooth'
-                    });
-                    
-                    // Close mobile menu if open
-                    if(navLinks.classList.contains('active')) {
-                        navLinks.classList.remove('active');
-                    }
-                }
-            });
-        });
-        
-        // Animation on scroll
-        const observerOptions = {
-            root: null,
-            rootMargin: '0px',
-            threshold: 0.1
-        };
-        
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
-                }
-            });
-        }, observerOptions);
-        
-        // Observe elements to animate
-        document.querySelectorAll('.hero-content, .story-card, .feature-card, .contact-container').forEach(el => {
-            el.style.opacity = '0';
-            el.style.transform = 'translateY(20px)';
-            el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-            observer.observe(el);
-            
-            el.classList.add('visible');
-        });
-        
-        // Apply visible class with delay for staggered animation
-        setTimeout(() => {
-            document.querySelectorAll('.visible').forEach((el, index) => {
-                setTimeout(() => {
-                    el.style.opacity = '1';
-                    el.style.transform = 'translateY(0)';
-                }, index * 200);
-            });
-        }, 100);
-    </script>
+        if (response.ok) {
+          msg.className = 'form-msg success';
+          msg.textContent = '✓ Bericht verstuurd. We nemen snel contact op.';
+          document.getElementById('contactForm').reset();
+        } else {
+          throw new Error('Server error');
+        }
+      } catch {
+        msg.className = 'form-msg error';
+        msg.textContent = 'Er ging iets mis. Probeer het opnieuw of bekijk de statuspagina.';
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+      }
+    }
+  </script>
 </body>
 </html>
