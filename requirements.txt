@@ -4,10 +4,13 @@ flask-sqlalchemy
 sqlalchemy
 pywebpush
 flask-bcrypt
+bcrypt
 flask-cors
 gitpython
 pillow
 bleach
+jinja2
+itsdangerous
 google-auth
 google-auth-oauthlib
 google-api-python-client
@@ -24,3 +27,6 @@ pytz
 vt-py
 geoip2
 user-agents
+better-profanity
+unidecode
+flask-limiter
