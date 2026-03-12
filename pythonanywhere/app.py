@@ -2794,7 +2794,8 @@ def send_email(
     reply_to=None,
     attachments=None,     # list of filepaths
     inline_images=None,   # list of (cid, filepath)
-    headers=None          # dict of additional headers
+    headers=None,          # dict of additional headers
+    no_template=False
 ):
     """
     Send a multi-part email via Gmail SMTP.
@@ -2813,14 +2814,17 @@ def send_email(
         raise ValueError("GMAIL_USER and GMAIL_APP_PASSWORD must be set")
 
     # Render HTML
-    tpl = jinja_env.get_template('email_templates/base.html')
-    html_body = tpl.render(
-        title=title or subject,
-        content=content_html,
-        buttons=buttons or [],
-        logo_url=logo_url,
-        unsubscribe_url=unsubscribe_url
-    )
+    if no_template:
+        html_body = content_html
+    else:
+        tpl = jinja_env.get_template('email_templates/base.html')
+        html_body = tpl.render(
+            title=title or subject,
+            content=content_html,
+            buttons=buttons or [],
+            logo_url=logo_url,
+            unsubscribe_url=unsubscribe_url
+        )
 
     # Build message
     msg = MIMEMultipart('related')
@@ -8704,87 +8708,701 @@ def mark_notification_notified(notif_id):
 
 # Homepage
 
+def get_contact_email_en():
+    return  """
+        <!DOCTYPE html>
+        <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="color-scheme" content="dark">
+        <meta name="supported-color-schemes" content="dark">
+        <title>We got your message — Future Notes</title>
+        <!--[if mso]>
+        <noscript>
+            <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+            </xml>
+        </noscript>
+        <![endif]-->
+        <style>
+            /* Google Fonts import — supported in Gmail, Apple Mail, some others */
+            @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400&display=swap');
+
+            /* Reset */
+            body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+            table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+            img { -ms-interpolation-mode: bicubic; border: 0; line-height: 100%; outline: none; text-decoration: none; }
+            body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+
+            /* Force dark background on body in all clients */
+            body { background-color: #141414 !important; }
+
+            /* Responsive */
+            @media only screen and (max-width: 620px) {
+            .email-wrapper { width: 100% !important; }
+            .email-body { padding: 0 16px !important; }
+            .feature-cell { display: block !important; width: 100% !important; padding: 0 0 16px 0 !important; }
+            .cta-btn { display: block !important; width: 80% !important; text-align: center !important; margin: 0 auto 12px auto !important; }
+            .hero-title { font-size: 28px !important; }
+            }
+
+            /* Outlook dark mode override */
+            [data-ogsc] body { background-color: #141414 !important; }
+        </style>
+        </head>
+        <body style="margin:0; padding:0; background-color:#141414; font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif;">
+
+        <!-- Preheader (hidden preview text) -->
+        <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; color:#141414; font-size:1px; line-height:1px;">
+            We received your message and will be in touch soon. While you wait — here's what Future Notes can do for you.&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;
+        </div>
+
+        <!-- Outer wrapper -->
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#141414;">
+            <tr>
+            <td align="center" style="padding: 32px 16px;">
+
+                <!-- Email card -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="580" class="email-wrapper"
+                    style="background-color:#1e1e1e; border-radius:16px; overflow:hidden; border:1px solid #2e2e2e;">
+
+                <!-- ═══ HEADER ═══ -->
+                <tr>
+                    <td style="background-color:#252525; border-bottom:1px solid #2e2e2e; padding:20px 32px;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                        <tr>
+                        <td>
+                            <!-- Logo + wordmark -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td style="vertical-align:middle; padding-right:10px;">
+                                <img src="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png"
+                                    alt="Future Notes" width="32" height="32"
+                                    style="display:block; border-radius:8px; width:32px; height:32px;">
+                                </td>
+                                <td style="vertical-align:middle;">
+                                <span style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:16px; color:#f0f0f0; letter-spacing:-0.01em;">Future Notes</span>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td align="right" style="vertical-align:middle;">
+                            <!-- Status pill -->
+                            <span style="display:inline-block; background-color:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.25); border-radius:100px; padding:4px 12px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:#4dffc4;">
+                            ● Message received
+                            </span>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ HERO ═══ -->
+                <tr>
+                    <td style="padding:48px 32px 36px; text-align:center; background-color:#1e1e1e; border-bottom:1px solid #2e2e2e;">
+
+                    <!-- Accent glow circle (background trick via bordered div) -->
+                    <div style="display:inline-block; background:rgba(77,255,196,0.06); border:1px solid rgba(77,255,196,0.15); border-radius:50%; width:72px; height:72px; line-height:72px; text-align:center; margin-bottom:24px; font-size:28px;">
+                        ✉
+                    </div>
+
+                    <h1 class="hero-title" style="font-family:'Syne', 'Georgia', serif; font-weight:800; font-size:34px; color:#f0f0f0; letter-spacing:-0.03em; line-height:1.15; margin:0 0 16px 0;">
+                        We got your<br><span style="color:#4dffc4;">message.</span>
+                    </h1>
+
+                    <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:16px; color:#8a8a8a; line-height:1.7; margin:0 auto; max-width:420px;">
+                        Thanks for reaching out. We've received your message and will get back to you as soon as possible — usually within a business day.
+                    </p>
+                    </td>
+                </tr>
+
+                <!-- ═══ DIVIDER WITH LABEL ═══ -->
+                <tr>
+                    <td style="padding: 36px 32px 8px; text-align:center;">
+                    <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#4dffc4; margin:0 0 4px 0;">While you wait</p>
+                    <h2 style="font-family:'Syne', 'Georgia', serif; font-weight:800; font-size:22px; color:#f0f0f0; letter-spacing:-0.02em; line-height:1.2; margin:0;">
+                        Here's what Future Notes can do for you.
+                    </h2>
+                    </td>
+                </tr>
+
+                <!-- ═══ FEATURE GRID (2×2) ═══ -->
+                <tr>
+                    <td style="padding:24px 32px 8px;" class="email-body">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+
+                        <!-- Row 1 -->
+                        <tr>
+                        <td class="feature-cell" width="50%" style="padding:0 8px 16px 0; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid #2e2e2e; border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <div style="display:inline-block; background:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">📝</div>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Notes</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Full markup, folders, tags, attachments, and instant search. Share notes publicly with a link.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td class="feature-cell" width="50%" style="padding:0 0 16px 8px; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid #2e2e2e; border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <div style="display:inline-block; background:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">✅</div>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Tasks</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Ruthlessly minimal to-dos, linked to your notes and calendar so nothing slips through.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        </tr>
+
+                        <!-- Row 2 -->
+                        <tr>
+                        <td class="feature-cell" width="50%" style="padding:0 8px 0 0; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid #2e2e2e; border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <div style="display:inline-block; background:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">📋</div>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Kanban</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Visual project boards with drag-and-drop cards, members, due dates, and shareable invite links.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td class="feature-cell" width="50%" style="padding:0 0 0 8px; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid rgba(240,165,0,0.2); border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                    <tr>
+                                    <td>
+                                        <div style="display:inline-block; background:rgba(240,165,0,0.1); border:1px solid rgba(240,165,0,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">📅</div>
+                                    </td>
+                                    <td style="padding-left:8px; vertical-align:middle; padding-bottom:12px;">
+                                        <span style="display:inline-block; background:rgba(240,165,0,0.1); border:1px solid rgba(240,165,0,0.2); border-radius:4px; padding:2px 7px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:9px; letter-spacing:0.08em; color:#f0a500;">⚡ NEW</span>
+                                    </td>
+                                    </tr>
+                                </table>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Calendar</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Time-view for tasks and notes. Syncs with Google Calendar. Drag and resize events on the grid.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        </tr>
+
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ CTA BAND ═══ -->
+                <tr>
+                    <td style="padding:36px 32px; background-color:#1a1a1a; border-top:1px solid #2e2e2e; border-bottom:1px solid #2e2e2e; text-align:center;">
+                    <p style="font-family:'Syne', 'Georgia', serif; font-weight:800; font-size:20px; color:#f0f0f0; letter-spacing:-0.02em; margin:0 0 8px 0; line-height:1.2;">
+                        Ready to get organised?
+                    </p>
+                    <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:14px; color:#7a7a7a; margin:0 0 24px 0; line-height:1.6;">
+                        It's free to start — no card required.
+                    </p>
+
+                    <!-- Primary CTA -->
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 12px;">
+                        <tr>
+                        <td style="border-radius:10px; background-color:#4dffc4;" class="cta-btn">
+                            <a href="https://bosbes.eu.pythonanywhere.com/signup_page"
+                            style="display:inline-block; padding:14px 36px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:14px; letter-spacing:0.02em; color:#0a0a0a; text-decoration:none; border-radius:10px; white-space:nowrap;">
+                            Create free account →
+                            </a>
+                        </td>
+                        </tr>
+                    </table>
+
+                    <!-- Secondary CTA -->
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;">
+                        <tr>
+                        <td style="border-radius:10px; border:1px solid #333333;" class="cta-btn">
+                            <a href="https://bosbes.eu.pythonanywhere.com/login_page"
+                            style="display:inline-block; padding:12px 36px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; letter-spacing:0.02em; color:#8a8a8a; text-decoration:none; border-radius:10px; white-space:nowrap;">
+                            Already have an account? Log in
+                            </a>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ REFERRAL NUDGE ═══ -->
+                <tr>
+                    <td style="padding:24px 32px; background-color:#1e1e1e; border-bottom:1px solid #2e2e2e;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                            style="background:rgba(77,255,196,0.05); border:1px solid rgba(77,255,196,0.15); border-radius:10px; overflow:hidden;">
+                        <tr>
+                        <td style="padding:16px 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                            <tr>
+                                <td style="vertical-align:middle; padding-right:14px; width:36px;">
+                                <span style="font-size:20px; line-height:1;">🎁</span>
+                                </td>
+                                <td style="vertical-align:middle;">
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#4dffc4; margin:0 0 3px 0;">Invite a friend, get more storage</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; margin:0; line-height:1.5;">
+                                    Every referral earns you both extra space — up to 3 per day.
+                                </p>
+                                </td>
+                                <td align="right" style="vertical-align:middle; padding-left:14px;">
+                                <a href="https://bosbes.eu.pythonanywhere.com/signup_page"
+                                    style="display:inline-block; background:rgba(77,255,196,0.15); border:1px solid rgba(77,255,196,0.3); border-radius:6px; padding:7px 14px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:11px; color:#4dffc4; text-decoration:none; white-space:nowrap; letter-spacing:0.03em;">
+                                    Get started
+                                </a>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ FOOTER ═══ -->
+                <tr>
+                    <td style="padding:24px 32px; background-color:#161616;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                        <tr>
+                        <td>
+                            <!-- Logo small -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:12px;">
+                            <tr>
+                                <td style="vertical-align:middle; padding-right:7px;">
+                                <img src="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png"
+                                    alt="" width="18" height="18" style="display:block; border-radius:4px; width:18px; height:18px; opacity:0.6;">
+                                </td>
+                                <td style="vertical-align:middle;">
+                                <span style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:12px; color:#4a4a4a;">Future Notes</span>
+                                </td>
+                            </tr>
+                            </table>
+
+                            <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#3a3a3a; line-height:1.6; margin:0 0 10px 0;">
+                            You're receiving this because you submitted our contact form.<br>
+                            We will never send you unsolicited mail.
+                            </p>
+
+                            <!-- Footer links -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td style="padding-right:16px;">
+                                <a href="https://bosbes.eu.pythonanywhere.com" style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#4a4a4a; text-decoration:none;">Home</a>
+                                </td>
+                                <td style="padding-right:16px;">
+                                <a href="https://bosbes.eu.pythonanywhere.com/help" style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#4a4a4a; text-decoration:none;">Support</a>
+                                </td>
+                                <td style="padding-right:16px;">
+                                <a href="https://3wpydgsh.status.cron-job.org/" style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#4a4a4a; text-decoration:none;">Status</a>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td align="right" style="vertical-align:bottom;">
+                            <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#3a3a3a; margin:0;">© 2026 Future Notes</p>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                </table>
+                <!-- /email card -->
+
+            </td>
+            </tr>
+        </table>
+
+        </body>
+        </html>
+        """
+
+def get_contact_email_nl():
+    return """
+        <!DOCTYPE html>
+        <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+        <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="color-scheme" content="dark">
+        <meta name="supported-color-schemes" content="dark">
+        <title>We hebben je bericht ontvangen — Future Notes</title>
+        <!--[if mso]>
+        <noscript>
+            <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+            </xml>
+        </noscript>
+        <![endif]-->
+        <style>
+            /* Google Fonts import — supported in Gmail, Apple Mail, some others */
+            @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400&display=swap');
+
+            /* Reset */
+            body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+            table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+            img { -ms-interpolation-mode: bicubic; border: 0; line-height: 100%; outline: none; text-decoration: none; }
+            body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+
+            /* Force dark background on body in all clients */
+            body { background-color: #141414 !important; }
+
+            /* Responsive */
+            @media only screen and (max-width: 620px) {
+            .email-wrapper { width: 100% !important; }
+            .email-body { padding: 0 16px !important; }
+            .feature-cell { display: block !important; width: 100% !important; padding: 0 0 16px 0 !important; }
+            .cta-btn { display: block !important; width: 80% !important; text-align: center !important; margin: 0 auto 12px auto !important; }
+            .hero-title { font-size: 28px !important; }
+            }
+
+            /* Outlook dark mode override */
+            [data-ogsc] body { background-color: #141414 !important; }
+        </style>
+        </head>
+        <body style="margin:0; padding:0; background-color:#141414; font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif;">
+
+        <!-- Preheader (hidden preview text) -->
+        <div style="display:none; max-height:0; overflow:hidden; mso-hide:all; color:#141414; font-size:1px; line-height:1px;">
+            We hebben je bericht ontvangen en proberen zo snel mogelijk te reageren! Terwijl je wacht, dit is wat Future Notes voor jou kan doen.&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;
+        </div>
+
+        <!-- Outer wrapper -->
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#141414;">
+            <tr>
+            <td align="center" style="padding: 32px 16px;">
+
+                <!-- Email card -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="580" class="email-wrapper"
+                    style="background-color:#1e1e1e; border-radius:16px; overflow:hidden; border:1px solid #2e2e2e;">
+
+                <!-- ═══ HEADER ═══ -->
+                <tr>
+                    <td style="background-color:#252525; border-bottom:1px solid #2e2e2e; padding:20px 32px;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                        <tr>
+                        <td>
+                            <!-- Logo + wordmark -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td style="vertical-align:middle; padding-right:10px;">
+                                <img src="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png"
+                                    alt="Future Notes" width="32" height="32"
+                                    style="display:block; border-radius:8px; width:32px; height:32px;">
+                                </td>
+                                <td style="vertical-align:middle;">
+                                <span style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:16px; color:#f0f0f0; letter-spacing:-0.01em;">Future Notes</span>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td align="right" style="vertical-align:middle;">
+                            <!-- Status pill -->
+                            <span style="display:inline-block; background-color:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.25); border-radius:100px; padding:4px 12px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:#4dffc4;">
+                            ● Bericht ontvangen
+                            </span>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ HERO ═══ -->
+                <tr>
+                    <td style="padding:48px 32px 36px; text-align:center; background-color:#1e1e1e; border-bottom:1px solid #2e2e2e;">
+
+                    <!-- Accent glow circle (background trick via bordered div) -->
+                    <div style="display:inline-block; background:rgba(77,255,196,0.06); border:1px solid rgba(77,255,196,0.15); border-radius:50%; width:72px; height:72px; line-height:72px; text-align:center; margin-bottom:24px; font-size:28px;">
+                        ✉
+                    </div>
+
+                    <h1 class="hero-title" style="font-family:'Syne', 'Georgia', serif; font-weight:800; font-size:34px; color:#f0f0f0; letter-spacing:-0.03em; line-height:1.15; margin:0 0 16px 0;">
+                        We hebben je bericht<br><span style="color:#4dffc4;">ontvangen.</span>
+                    </h1>
+
+                    <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:16px; color:#8a8a8a; line-height:1.7; margin:0 auto; max-width:420px;">
+                        Bedankt dat je contact hebt opgenomen. We proberen zo snel mogelijk een bericht terug te sturen - gewoonlijk in 1 werkdag.
+                    </p>
+                    </td>
+                </tr>
+
+                <!-- ═══ DIVIDER WITH LABEL ═══ -->
+                <tr>
+                    <td style="padding: 36px 32px 8px; text-align:center;">
+                    <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#4dffc4; margin:0 0 4px 0;">Terwijl je wacht</p>
+                    <h2 style="font-family:'Syne', 'Georgia', serif; font-weight:800; font-size:22px; color:#f0f0f0; letter-spacing:-0.02em; line-height:1.2; margin:0;">
+                        Dit is wat Future Notes voor jou kan doen
+                    </h2>
+                    </td>
+                </tr>
+
+                <!-- ═══ FEATURE GRID (2×2) ═══ -->
+                <tr>
+                    <td style="padding:24px 32px 8px;" class="email-body">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+
+                        <!-- Row 1 -->
+                        <tr>
+                        <td class="feature-cell" width="50%" style="padding:0 8px 16px 0; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid #2e2e2e; border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <div style="display:inline-block; background:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">📝</div>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Notities</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Volledige opmaak, organisatie door folder tags en pins, en krachtige zoekfuncties. Eenvoudig delen.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td class="feature-cell" width="50%" style="padding:0 0 16px 8px; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid #2e2e2e; border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <div style="display:inline-block; background:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">✅</div>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Todo</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Superminimale to-dos, gelinked aan jouw agenda zodat je niks mist.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        </tr>
+
+                        <!-- Row 2 -->
+                        <tr>
+                        <td class="feature-cell" width="50%" style="padding:0 8px 0 0; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid #2e2e2e; border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <div style="display:inline-block; background:rgba(77,255,196,0.12); border:1px solid rgba(77,255,196,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">📋</div>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Kanban</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Visuele borden lijsten en sleepbare kaarten, deadlines, deelnemers toewijzen, en makkelijk delen.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td class="feature-cell" width="50%" style="padding:0 0 0 8px; vertical-align:top;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#252525; border:1px solid rgba(240,165,0,0.2); border-radius:12px; overflow:hidden;">
+                            <tr>
+                                <td style="padding:20px;">
+                                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                    <tr>
+                                    <td>
+                                        <div style="display:inline-block; background:rgba(240,165,0,0.1); border:1px solid rgba(240,165,0,0.2); border-radius:8px; width:32px; height:32px; line-height:32px; text-align:center; font-size:14px; margin-bottom:12px;">📅</div>
+                                    </td>
+                                    <td style="padding-left:8px; vertical-align:middle; padding-bottom:12px;">
+                                        <span style="display:inline-block; background:rgba(240,165,0,0.1); border:1px solid rgba(240,165,0,0.2); border-radius:4px; padding:2px 7px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:9px; letter-spacing:0.08em; color:#f0a500;">⚡ NEW</span>
+                                    </td>
+                                    </tr>
+                                </table>
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#f0f0f0; margin:0 0 6px 0; letter-spacing:-0.01em;">Agenda</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; line-height:1.6; margin:0;">
+                                    Agenda die samenwerkt met taken en notities. Versleepbare afspraken, en te koppelen aan Google Agenda.
+                                </p>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        </tr>
+
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ CTA BAND ═══ -->
+                <tr>
+                    <td style="padding:36px 32px; background-color:#1a1a1a; border-top:1px solid #2e2e2e; border-bottom:1px solid #2e2e2e; text-align:center;">
+                    <p style="font-family:'Syne', 'Georgia', serif; font-weight:800; font-size:20px; color:#f0f0f0; letter-spacing:-0.02em; margin:0 0 8px 0; line-height:1.2;">
+                        Klaar om ook jouw workflow te organiseren?
+                    </p>
+                    <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:14px; color:#7a7a7a; margin:0 0 24px 0; line-height:1.6;">
+                        Volledig gratis - geen verborgen kosten
+                    </p>
+
+                    <!-- Primary CTA -->
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 12px;">
+                        <tr>
+                        <td style="border-radius:10px; background-color:#4dffc4;" class="cta-btn">
+                            <a href="https://bosbes.eu.pythonanywhere.com/signup_page"
+                            style="display:inline-block; padding:14px 36px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:14px; letter-spacing:0.02em; color:#0a0a0a; text-decoration:none; border-radius:10px; white-space:nowrap;">
+                            Maak een gratis account →
+                            </a>
+                        </td>
+                        </tr>
+                    </table>
+
+                    <!-- Secondary CTA -->
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto;">
+                        <tr>
+                        <td style="border-radius:10px; border:1px solid #333333;" class="cta-btn">
+                            <a href="https://bosbes.eu.pythonanywhere.com/login_page"
+                            style="display:inline-block; padding:12px 36px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; letter-spacing:0.02em; color:#8a8a8a; text-decoration:none; border-radius:10px; white-space:nowrap;">
+                            Ben jij al aan het optimaliseren? Log in →
+                            </a>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ REFERRAL NUDGE ═══ -->
+                <tr>
+                    <td style="padding:24px 32px; background-color:#1e1e1e; border-bottom:1px solid #2e2e2e;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                            style="background:rgba(77,255,196,0.05); border:1px solid rgba(77,255,196,0.15); border-radius:10px; overflow:hidden;">
+                        <tr>
+                        <td style="padding:16px 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                            <tr>
+                                <td style="vertical-align:middle; padding-right:14px; width:36px;">
+                                <span style="font-size:20px; line-height:1;">🎁</span>
+                                </td>
+                                <td style="vertical-align:middle;">
+                                <p style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:13px; color:#4dffc4; margin:0 0 3px 0;">Nodig vrienden uit en krijg meer opslag!</p>
+                                <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-weight:300; font-size:12px; color:#7a7a7a; margin:0; line-height:1.5;">
+                                    Elke uitnodiging levert je beiden meer opslag op voor jouw bestanden.
+                                </p>
+                                </td>
+                                <td align="right" style="vertical-align:middle; padding-left:14px;">
+                                <a href="https://bosbes.eu.pythonanywhere.com/signup_page"
+                                    style="display:inline-block; background:rgba(77,255,196,0.15); border:1px solid rgba(77,255,196,0.3); border-radius:6px; padding:7px 14px; font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:11px; color:#4dffc4; text-decoration:none; white-space:nowrap; letter-spacing:0.03em;">
+                                    Nu starten
+                                </a>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                <!-- ═══ FOOTER ═══ -->
+                <tr>
+                    <td style="padding:24px 32px; background-color:#161616;">
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                        <tr>
+                        <td>
+                            <!-- Logo small -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:12px;">
+                            <tr>
+                                <td style="vertical-align:middle; padding-right:7px;">
+                                <img src="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png"
+                                    alt="" width="18" height="18" style="display:block; border-radius:4px; width:18px; height:18px; opacity:0.6;">
+                                </td>
+                                <td style="vertical-align:middle;">
+                                <span style="font-family:'Syne', 'Georgia', serif; font-weight:700; font-size:12px; color:#4a4a4a;">Future Notes</span>
+                                </td>
+                            </tr>
+                            </table>
+
+                            <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#3a3a3a; line-height:1.6; margin:0 0 10px 0;">
+                            Je ontvangt deze email omdat je contact hebt opgenomen via het contactformulier.<br>
+                            We sturen je nooit onnodige mails.
+                            </p>
+
+                            <!-- Footer links -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td style="padding-right:16px;">
+                                <a href="https://bosbes.eu.pythonanywhere.com" style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#4a4a4a; text-decoration:none;">Home</a>
+                                </td>
+                                <td style="padding-right:16px;">
+                                <a href="https://bosbes.eu.pythonanywhere.com/help" style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#4a4a4a; text-decoration:none;">Support</a>
+                                </td>
+                                <td style="padding-right:16px;">
+                                <a href="https://3wpydgsh.status.cron-job.org/" style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#4a4a4a; text-decoration:none;">Status</a>
+                                </td>
+                            </tr>
+                            </table>
+                        </td>
+                        <td align="right" style="vertical-align:bottom;">
+                            <p style="font-family:'DM Sans', 'Helvetica Neue', Arial, sans-serif; font-size:11px; color:#3a3a3a; margin:0;">© 2026 Future Notes</p>
+                        </td>
+                        </tr>
+                    </table>
+                    </td>
+                </tr>
+
+                </table>
+                <!-- /email card -->
+
+            </td>
+            </tr>
+        </table>
+
+        </body>
+        </html>
+        """
+
 @app.route('/contact', methods=['POST'])
 @limiter.limit("1 per minute, 10 per hour")
 def contact():
     data = request.json
     email = data['email']
     message = data['message']
+    lang = data.get("lang", "en")  # default English
 
     # First clean with bleach
     message = bleach.clean(message)
     
     try:
-        # Send confirmation email with promo content
-        html_content = """
-        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif; color: white;">
-            
-            <p style="font-size: 16px; line-height: 1.6;">
-                We've received your message and will get back to you shortly. In the meantime, 
-                we'd like to share some of the amazing features that make Future Notes the perfect 
-                tool for organizing your thoughts and tasks.
-            </p>
-            
-            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <h3 style="color: #4A90E2; margin-top: 0;">✨ Key Features of Future Notes ✨</h3>
-                
-                <div style="display: flex; align-items: center; margin: 20px 0;">
-                    <img src="https://images.unsplash.com/photo-1515378791036-0648a3ef77b2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
-                        alt="Organized Notes" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
-                    <div>
-                        <h4 style="margin: 0; color: #333;">Smart Organization</h4>
-                        <p style="margin: 5px 0 0; font-size: 14px;">Categorize, tag, and search your notes with our intuitive system.</p>
-                    </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 20px 0;">
-                    <img src="https://images.unsplash.com/photo-1589652717521-10c0d092dea9?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
-                        alt="Sync Across Devices" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
-                    <div>
-                        <h4 style="margin: 0; color: #333;">Cross-Device Sync</h4>
-                        <p style="margin: 5px 0 0; font-size: 14px;">Access your notes from anywhere - phone, tablet, or computer.</p>
-                    </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 20px 0;">
-                    <img src="https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
-                        alt="Rich Text Editing" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
-                    <div>
-                        <h4 style="margin: 0; color: #333;">Rich Text Editing</h4>
-                        <p style="margin: 5px 0 0; font-size: 14px;">Format your notes with bold, italics, lists, and more.</p>
-                    </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; margin: 20px 0;">
-                    <img src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100&q=80" 
-                        alt="Reminders" style="width: 80px; height: 80px; border-radius: 8px; margin-right: 15px;">
-                    <div>
-                        <h4 style="margin: 0; color: #333;">Smart Reminders</h4>
-                        <p style="margin: 5px 0 0; font-size: 14px;">Set reminders for important tasks and never miss a deadline.</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="https://bosbes.eu.pythonanywhere.com/signup_page" 
-                style="background-color: #4A90E2; color: white; padding: 12px 24px; 
-                        text-decoration: none; border-radius: 4px; font-weight: bold; 
-                        display: inline-block;">Explore Future Notes Now</a>
-            </div>
-            
-            <p style="font-size: 14px; text-align: center; color: #666;">
-                We're constantly working to improve Future Notes. Stay tuned for exciting updates!
-            </p>
-        </div>
-        """
-        
+        if lang == "nl":
+            html_content = get_contact_email_nl()
+            subject = "Bedankt voor je bericht — Future Notes"
+            text_content = (
+                "Bedankt voor je bericht! We hebben het ontvangen en nemen "
+                "zo snel mogelijk contact met je op."
+            )
+        else:
+            html_content = get_contact_email_en()
+            subject = "Thank You for Contacting Future Notes!"
+            text_content = (
+                "Thank you for contacting us! We've received your message "
+                "and will get back to you shortly."
+            )
+
         send_email(
             to_address=email,
-            subject="Thank You for Contacting Future Notes!",
+            subject=subject,
             content_html=html_content,
-            content_text="Thank you for contacting us! We've received your message and will get back to you shortly. In the meantime, check out Future Notes at https://bosbes.eu.pythonanywhere.com",
+            content_text=text_content,
             logo_url="https://bosbes.eu.pythonanywhere.com/static/android-chrome-192x192.png",
-            unsubscribe_url="https://bosbes.eu.pythonanywhere.com"
+            unsubscribe_url="https://bosbes.eu.pythonanywhere.com",
+            no_template=True
         )
         
         # Also send notification to yourself
