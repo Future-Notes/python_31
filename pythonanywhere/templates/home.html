@@ -533,9 +533,6 @@
     }
 
     .group-card-mock {
-      background: var(--hdr-color);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
       overflow: hidden;
     }
 
@@ -635,6 +632,30 @@
       font-size: 0.82rem;
       color: var(--text-secondary);
       font-weight: 300;
+    }
+
+    /* By default, show laptop, hide phone */
+    .group-card-mock .mock-laptop {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .group-card-mock .mock-phone {
+      display: none;
+    }
+
+    /* Mobile breakpoint: hide laptop, show phone */
+    @media (max-width: 767px) {
+      .group-card-mock .mock-laptop {
+        display: none;
+      }
+
+      .group-card-mock .mock-phone {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
     }
 
     /* ── STORAGE STRIP ── */
@@ -1085,8 +1106,9 @@
             </li>
           </ul>
         </div>
-        <div class="group-card-mock reveal">
-          <img src="/static/card-background.png">
+       <div class="group-card-mock reveal">
+          <img src="/static/laptop.png" class="mock-laptop">
+          <img src="/static/mobile-black.png" class="mock-phone">
         </div>
       </div>
     </div>
@@ -1163,6 +1185,21 @@
   </footer>
 
   <script>
+    function resolveLang() {
+      const path = window.location.pathname;
+
+      // Normalize and split the path
+      const segments = path.replace(/^\/+|\/+$/g, "").split("/");
+
+      const firstSegment = segments[0];
+
+      if (firstSegment === "nl") {
+          return "nl";
+      }
+
+      return "en";
+    }
+
     // Scroll reveal
     const reveals = document.querySelectorAll('.reveal');
     const observer = new IntersectionObserver((entries) => {
@@ -1182,6 +1219,7 @@
       const msg = document.getElementById('formMsg');
       const email = document.getElementById('email').value.trim();
       const message = document.getElementById('message').value.trim();
+      const lang = resolveLang();
 
       btn.disabled = true;
       btn.classList.add('loading');
@@ -1192,12 +1230,13 @@
         const response = await fetch('/contact', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, message })
+          body: JSON.stringify({ email, message, lang })
         });
 
         if (response.ok) {
           msg.className = 'form-msg success';
           msg.textContent = '✓ Message sent. We\'ll be in touch soon.';
+          msg.style.display = 'block';
           document.getElementById('contactForm').reset();
         } else {
           throw new Error('Server error');
