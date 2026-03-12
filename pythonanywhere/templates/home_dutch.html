@@ -108,6 +108,7 @@
       align-items: center;
       gap: 0.6rem;
       text-decoration: none;
+      flex-shrink: 0;
     }
 
     .nav-logo img {
@@ -142,6 +143,35 @@
       font-weight: 600;
     }
     .nav-lang:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* Mobile nav fixes */
+    @media (max-width: 640px) {
+
+      /* Tighten the two remaining buttons */
+      .nav-actions .btn,
+      .nav-actions .btn-secondary,
+      .nav-actions a.btn,
+      .nav-actions a.btn-secondary {
+        padding: 0.45rem 0.75rem;
+        font-size: 0.78rem;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .nav-support {
+        display: none !important;
+      }
+    }
+
+    /* On the very smallest phones, drop the logo wordmark too */
+    @media (max-width: 400px) {
+      .nav-logo span {
+        display: none;
+      }
+      .hero-eyebrow {
+        display: none;
+      }
+    }
 
     /* ── BUTTONS ── */
     .btn, .btn-secondary, a.btn, a.btn-secondary {
@@ -385,10 +415,8 @@
 
     @media (min-width: 1024px) {
       .features-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
-      /* Row 1: Notes spans 2, Tasks spans 2 */
       .features-grid .feature-card:nth-child(1) { grid-column: span 2; }
       .features-grid .feature-card:nth-child(2) { grid-column: span 2; }
-      /* Row 2: Calendar spans 1, Kanban spans 3 */
       .features-grid .feature-card:nth-child(3) { grid-column: span 1; }
       .features-grid .feature-card:nth-child(4) { grid-column: span 3; }
     }
@@ -533,9 +561,7 @@
       .groups-layout { grid-template-columns: 1fr 1fr; }
     }
 
-    .group-card-mock {
-      overflow: hidden;
-    }
+    .group-card-mock { overflow: hidden; }
 
     .mock-header {
       background: var(--btn-color);
@@ -635,34 +661,16 @@
       font-weight: 300;
     }
 
-    /* By default, show laptop, hide phone */
-    .group-card-mock .mock-laptop {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
+    .group-card-mock .mock-laptop { display: block; width: 100%; height: auto; }
+    .group-card-mock .mock-phone { display: none; }
 
-    .group-card-mock .mock-phone {
-      display: none;
-    }
-
-    /* Mobile breakpoint: hide laptop, show phone */
     @media (max-width: 767px) {
-      .group-card-mock .mock-laptop {
-        display: none;
-      }
-
-      .group-card-mock .mock-phone {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
+      .group-card-mock .mock-laptop { display: none; }
+      .group-card-mock .mock-phone { display: block; width: 100%; height: auto; }
     }
 
     /* ── STORAGE STRIP ── */
-    #storage {
-      padding: 3.5rem 1.5rem;
-    }
+    #storage { padding: 3.5rem 1.5rem; }
 
     .storage-strip {
       background: var(--hdr-color);
@@ -676,10 +684,7 @@
     }
 
     @media (min-width: 640px) {
-      .storage-strip {
-        flex-direction: row;
-        align-items: center;
-      }
+      .storage-strip { flex-direction: row; align-items: center; }
     }
 
     .storage-icon {
@@ -704,22 +709,13 @@
       display: block;
       margin-bottom: 0.25rem;
     }
-    .storage-text span {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 300;
-    }
-
+    .storage-text span { font-size: 0.85rem; color: var(--text-secondary); font-weight: 300; }
     .storage-strip .btn { margin-left: auto; flex-shrink: 0; }
 
     /* ── CONTACT ── */
     #contact { background: var(--ctr-color); }
 
-    .contact-layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 2.5rem;
-    }
+    .contact-layout { display: grid; grid-template-columns: 1fr; gap: 2.5rem; }
 
     @media (min-width: 768px) {
       .contact-layout { grid-template-columns: 1fr 1.5fr; }
@@ -734,9 +730,7 @@
       padding: 1.75rem;
     }
 
-    .form-group {
-      margin-bottom: 1rem;
-    }
+    .form-group { margin-bottom: 1rem; }
 
     .form-group label {
       display: block;
@@ -782,11 +776,7 @@
       transition: all 0.2s;
     }
 
-    .form-submit:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none !important;
-    }
+    .form-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
 
     .spinner {
       width: 14px;
@@ -839,73 +829,26 @@
     }
 
     @media (min-width: 640px) {
-      .footer-inner {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-      }
+      .footer-inner { flex-direction: row; align-items: center; justify-content: space-between; }
     }
 
-    .footer-logo {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      text-decoration: none;
-    }
+    .footer-logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+    .footer-logo img { width: 26px; height: 26px; border-radius: 6px; }
+    .footer-logo span { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text-secondary); }
 
-    .footer-logo img {
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-    }
-
-    .footer-logo span {
-      font-family: var(--font-display);
-      font-weight: 700;
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.5rem;
-      list-style: none;
-    }
-
-    .footer-links a {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
+    .footer-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; list-style: none; }
+    .footer-links a { font-size: 0.8rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
     .footer-links a:hover { color: var(--accent); }
 
-    .footer-copy {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
+    .footer-copy { font-size: 0.75rem; color: var(--text-muted); }
 
     /* ── SCROLL REVEAL ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
 
     /* ── ANIMATIONS ── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 6px; }
@@ -913,7 +856,6 @@
     ::-webkit-scrollbar-thumb { background: var(--btn-color); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-    /* ── SELECTION ── */
     ::selection { background: var(--accent-dim); color: var(--accent); }
   </style>
 </head>
@@ -927,7 +869,7 @@
     </a>
     <div class="nav-actions">
       <a href="/?lang=en" class="nav-lang" title="Switch to English">EN</a>
-      <a href="/help" class="btn-secondary">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
+      <a href="/help" class="btn-secondary nav-support">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
       <a href="/login_page" class="btn-secondary">Inloggen</a>
       <a href="/signup_page" class="btn">Registreren</a>
     </div>
@@ -972,7 +914,6 @@
 
       <div class="features-grid reveal">
 
-        <!-- Notes — row 1, span 2 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-note-sticky"></i></div>
           <div class="feature-title">Notities</div>
@@ -989,7 +930,6 @@
           </div>
         </div>
 
-        <!-- Tasks — row 1, span 2 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-title">Todo</div>
@@ -1002,7 +942,6 @@
           </div>
         </div>
 
-        <!-- Calendar — row 2, span 1 -->
         <div class="feature-card">
           <div class="feature-icon" style="color: #f0a500; background: rgba(240,165,0,0.1); border-color: rgba(240,165,0,0.2);"><i class="fa-solid fa-calendar-days"></i></div>
           <div class="feature-title">Calendar <span class="feature-badge"><i class="fa-solid fa-bolt"></i> New</span></div>
@@ -1016,7 +955,6 @@
           </div>
         </div>
 
-        <!-- Kanban — row 2, span 3 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-table-columns"></i></div>
           <div class="feature-title">Kanban</div>
@@ -1188,17 +1126,8 @@
   <script>
     function resolveLang() {
       const path = window.location.pathname;
-
-      // Normalize and split the path
       const segments = path.replace(/^\/+|\/+$/g, "").split("/");
-
-      const firstSegment = segments[0];
-
-      if (firstSegment === "nl") {
-          return "nl";
-      }
-
-      return "en";
+      return segments[0] === "nl" ? "nl" : "en";
     }
 
     const reveals = document.querySelectorAll('.reveal');

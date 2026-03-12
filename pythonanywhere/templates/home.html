@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>Future Notes | All-in-One Productivity Suite</title>
   <meta name="description" content="Future Notes — Organize notes, tasks, boards & calendars in one integrated, mobile-friendly workspace. Get started for free today.">
   <meta name="keywords" content="notes app, task manager, kanban board, calendar integration, collaborative groups, productivity suite, future notes">
@@ -36,7 +35,6 @@
     }
   }
   </script>
-
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
@@ -62,9 +60,7 @@
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     html { scroll-behavior: smooth; }
-
     body {
       background: var(--bg-color);
       color: var(--text-primary);
@@ -74,7 +70,6 @@
       overflow-x: hidden;
     }
 
-    /* ── NOISE TEXTURE OVERLAY ── */
     body::before {
       content: '';
       position: fixed;
@@ -107,14 +102,9 @@
       align-items: center;
       gap: 0.6rem;
       text-decoration: none;
+      flex-shrink: 0;
     }
-
-    .nav-logo img {
-      width: 30px;
-      height: 30px;
-      border-radius: 8px;
-    }
-
+    .nav-logo img { width: 30px; height: 30px; border-radius: 8px; }
     .nav-logo span {
       font-family: var(--font-display);
       font-weight: 700;
@@ -142,6 +132,35 @@
     }
     .nav-lang:hover { color: var(--accent); border-color: var(--accent); }
 
+    /* Mobile nav fixes */
+    @media (max-width: 640px) {
+
+      /* Tighten the two remaining buttons */
+      .nav-actions .btn,
+      .nav-actions .btn-secondary,
+      .nav-actions a.btn,
+      .nav-actions a.btn-secondary {
+        padding: 0.45rem 0.75rem;
+        font-size: 0.78rem;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .nav-support {
+        display: none !important;
+      }
+    }
+
+    /* On the very smallest phones, drop the logo wordmark too */
+    @media (max-width: 400px) {
+      .nav-logo span {
+        display: none;
+      }
+      .hero-eyebrow {
+        display: none;
+      }
+    }
+
     /* ── BUTTONS ── */
     .btn, .btn-secondary, a.btn, a.btn-secondary {
       display: inline-flex;
@@ -159,17 +178,12 @@
       transition: all 0.2s ease;
       white-space: nowrap;
     }
-
-    .btn, a.btn {
-      background: var(--accent);
-      color: #0a0a0a;
-    }
+    .btn, a.btn { background: var(--accent); color: #0a0a0a; }
     .btn:hover, a.btn:hover {
       background: #6fffce;
       box-shadow: 0 0 18px var(--accent-glow);
       transform: translateY(-1px);
     }
-
     .btn-secondary, a.btn-secondary {
       background: transparent;
       color: var(--text-secondary);
@@ -179,12 +193,7 @@
       border-color: var(--accent);
       color: var(--accent);
     }
-
-    .btn-lg {
-      padding: 0.85rem 2rem;
-      font-size: 0.95rem;
-      border-radius: var(--radius);
-    }
+    .btn-lg { padding: 0.85rem 2rem; font-size: 0.95rem; border-radius: var(--radius); }
 
     /* ── HERO ── */
     #hero {
@@ -198,18 +207,15 @@
       padding: 6rem 1.5rem 4rem;
       overflow: hidden;
     }
-
     .hero-glow {
       position: absolute;
-      top: 20%;
-      left: 50%;
+      top: 20%; left: 50%;
       transform: translateX(-50%);
       width: min(600px, 90vw);
       height: min(600px, 90vw);
       background: radial-gradient(ellipse, rgba(77,255,196,0.07) 0%, transparent 70%);
       pointer-events: none;
     }
-
     .hero-grid {
       position: absolute;
       inset: 0;
@@ -221,22 +227,14 @@
       mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 0%, transparent 100%);
       -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 0%, transparent 100%);
     }
-
-    .hero-content {
-      position: relative;
-      z-index: 1;
-      max-width: 680px;
-    }
-
+    .hero-content { position: relative; z-index: 1; max-width: 680px; }
     .hero-logo {
-      width: 64px;
-      height: 64px;
+      width: 64px; height: 64px;
       border-radius: 18px;
       margin-bottom: 1.5rem;
       box-shadow: 0 0 0 1px var(--border), 0 0 24px var(--accent-dim);
       animation: fadeUp 0.6s ease both;
     }
-
     .hero-eyebrow {
       align-items: center;
       font-size: 0.72rem;
@@ -252,7 +250,6 @@
       margin-bottom: 1.25rem;
       animation: fadeUp 0.6s 0.1s ease both;
     }
-
     h1 {
       font-family: var(--font-display);
       font-size: clamp(2.4rem, 7vw, 4.2rem);
@@ -263,12 +260,7 @@
       margin-bottom: 1.25rem;
       animation: fadeUp 0.6s 0.2s ease both;
     }
-
-    h1 em {
-      font-style: normal;
-      color: var(--accent);
-    }
-
+    h1 em { font-style: normal; color: var(--accent); }
     .hero-sub {
       font-size: clamp(0.95rem, 2.5vw, 1.1rem);
       color: var(--text-secondary);
@@ -278,7 +270,6 @@
       font-weight: 300;
       animation: fadeUp 0.6s 0.3s ease both;
     }
-
     .hero-cta {
       display: flex;
       flex-wrap: wrap;
@@ -286,7 +277,6 @@
       justify-content: center;
       animation: fadeUp 0.6s 0.4s ease both;
     }
-
     .hero-tools {
       position: relative;
       z-index: 1;
@@ -297,7 +287,6 @@
       justify-content: center;
       animation: fadeUp 0.6s 0.5s ease both;
     }
-
     .tool-chip {
       display: inline-flex;
       align-items: center;
@@ -312,21 +301,11 @@
       border-radius: 100px;
       letter-spacing: 0.04em;
     }
-
     .tool-chip i { font-size: 0.65rem; }
 
     /* ── SECTION COMMON ── */
-    section {
-      position: relative;
-      z-index: 1;
-      padding: 5rem 1.5rem;
-    }
-
-    .section-inner {
-      max-width: 1100px;
-      margin: 0 auto;
-    }
-
+    section { position: relative; z-index: 1; padding: 5rem 1.5rem; }
+    .section-inner { max-width: 1100px; margin: 0 auto; }
     .section-label {
       font-family: var(--font-display);
       font-size: 0.7rem;
@@ -336,7 +315,6 @@
       color: var(--accent);
       margin-bottom: 0.75rem;
     }
-
     h2 {
       font-family: var(--font-display);
       font-size: clamp(1.7rem, 4vw, 2.5rem);
@@ -346,7 +324,6 @@
       color: var(--text-primary);
       margin-bottom: 1rem;
     }
-
     .section-desc {
       font-size: 1rem;
       color: var(--text-secondary);
@@ -367,7 +344,6 @@
 
     /* ── FEATURES GRID ── */
     #features { background: var(--ctr-color); }
-
     .features-grid {
       display: grid;
       grid-template-columns: 1fr;
@@ -377,66 +353,30 @@
       border-radius: var(--radius);
       overflow: hidden;
     }
-
-    @media (min-width: 640px) {
-      .features-grid { grid-template-columns: 1fr 1fr; }
-    }
-
+    @media (min-width: 640px) { .features-grid { grid-template-columns: 1fr 1fr; } }
     @media (min-width: 1024px) {
       .features-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
-      /* Row 1: Notes spans 2, Tasks spans 2 */
       .features-grid .feature-card:nth-child(1) { grid-column: span 2; }
       .features-grid .feature-card:nth-child(2) { grid-column: span 2; }
-      /* Row 2: Calendar spans 1, Kanban spans 3 */
       .features-grid .feature-card:nth-child(3) { grid-column: span 1; }
       .features-grid .feature-card:nth-child(4) { grid-column: span 3; }
     }
-
-    .feature-card {
-      background: var(--card-color);
-      padding: 2rem 1.75rem;
-      transition: background 0.25s;
-      cursor: default;
-    }
+    .feature-card { background: var(--card-color); padding: 2rem 1.75rem; transition: background 0.25s; cursor: default; }
     .feature-card:hover { background: #2a2a2a; }
-
     .feature-icon {
-      width: 40px;
-      height: 40px;
+      width: 40px; height: 40px;
       border-radius: 10px;
       background: var(--accent-dim);
       border: 1px solid rgba(77,255,196,0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       margin-bottom: 1.25rem;
       color: var(--accent);
       font-size: 1rem;
       flex-shrink: 0;
     }
-
-    .feature-title {
-      font-family: var(--font-display);
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-bottom: 0.5rem;
-    }
-
-    .feature-desc {
-      font-size: 0.88rem;
-      color: var(--text-secondary);
-      line-height: 1.65;
-      font-weight: 300;
-    }
-
-    .feature-tags {
-      margin-top: 1rem;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.35rem;
-    }
-
+    .feature-title { font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem; }
+    .feature-desc { font-size: 0.88rem; color: var(--text-secondary); line-height: 1.65; font-weight: 300; }
+    .feature-tags { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.35rem; }
     .ftag {
       font-size: 0.65rem;
       font-family: var(--font-display);
@@ -447,464 +387,106 @@
       padding: 0.2rem 0.55rem;
       border-radius: 4px;
     }
-
     .feature-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      font-size: 0.63rem;
-      font-family: var(--font-display);
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: #f0a500;
-      background: rgba(240,165,0,0.1);
-      border: 1px solid rgba(240,165,0,0.2);
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      margin-left: 0.5rem;
-      vertical-align: middle;
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      font-size: 0.63rem; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.08em;
+      color: #f0a500; background: rgba(240,165,0,0.1); border: 1px solid rgba(240,165,0,0.2);
+      padding: 0.15rem 0.5rem; border-radius: 4px; margin-left: 0.5rem; vertical-align: middle;
     }
 
-    /* ── INTEGRATION SECTION ── */
-    #integration {
-      text-align: center;
-    }
-
+    /* ── INTEGRATION ── */
+    #integration { text-align: center; }
     .integration-visual {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
-      gap: 1rem;
-      margin: 3rem auto 0;
-      max-width: 700px;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+      gap: 1rem; margin: 3rem auto 0; max-width: 700px;
     }
-
-    .int-node {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
+    .int-node { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
     .int-icon {
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-      background: var(--hdr-color);
-      border: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      color: var(--accent);
-      transition: all 0.2s;
+      width: 52px; height: 52px; border-radius: 14px;
+      background: var(--hdr-color); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; color: var(--accent); transition: all 0.2s;
     }
-    .int-icon:hover {
-      border-color: var(--accent);
-      box-shadow: 0 0 16px var(--accent-dim);
-    }
-
-    .int-label {
-      font-size: 0.72rem;
-      font-family: var(--font-display);
-      font-weight: 600;
-      color: var(--text-muted);
-      letter-spacing: 0.05em;
-    }
-
-    .int-arrow {
-      color: var(--border);
-      font-size: 0.9rem;
-    }
+    .int-icon:hover { border-color: var(--accent); box-shadow: 0 0 16px var(--accent-dim); }
+    .int-label { font-size: 0.72rem; font-family: var(--font-display); font-weight: 600; color: var(--text-muted); letter-spacing: 0.05em; }
+    .int-arrow { color: var(--border); font-size: 0.9rem; }
 
     /* ── GROUPS ── */
     #groups { background: var(--ctr-color); }
-
-    .groups-layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 2.5rem;
-      align-items: center;
-    }
-
-    @media (min-width: 768px) {
-      .groups-layout { grid-template-columns: 1fr 1fr; }
-    }
-
-    .group-card-mock {
-      overflow: hidden;
-    }
-
-    .mock-header {
-      background: var(--btn-color);
-      padding: 0.75rem 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      border-bottom: 1px solid var(--border);
-    }
-
+    .groups-layout { display: grid; grid-template-columns: 1fr; gap: 2.5rem; align-items: center; }
+    @media (min-width: 768px) { .groups-layout { grid-template-columns: 1fr 1fr; } }
+    .group-card-mock { overflow: hidden; }
+    .mock-header { background: var(--btn-color); padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.6rem; border-bottom: 1px solid var(--border); }
     .mock-header i { color: var(--accent); font-size: 0.85rem; }
-
-    .mock-title {
-      font-family: var(--font-display);
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .mock-members {
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-      margin-left: auto;
-    }
-
-    .mock-avatar {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      border: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.55rem;
-      font-family: var(--font-display);
-      font-weight: 700;
-    }
-
+    .mock-title { font-family: var(--font-display); font-size: 0.8rem; font-weight: 700; color: var(--text-primary); }
+    .mock-members { display: flex; align-items: center; gap: 0.3rem; margin-left: auto; }
+    .mock-avatar { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.55rem; font-family: var(--font-display); font-weight: 700; }
     .mock-body { padding: 1rem; }
-
-    .mock-note {
-      background: var(--card-color);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 0.65rem 0.85rem;
-      margin-bottom: 0.5rem;
-      font-size: 0.78rem;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
+    .mock-note { background: var(--card-color); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; font-size: 0.78rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem; }
     .mock-note i { color: var(--accent); font-size: 0.7rem; flex-shrink: 0; }
-
-    .groups-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    .groups-list li {
-      display: flex;
-      gap: 0.75rem;
-      align-items: flex-start;
-    }
-
-    .groups-list .gl-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: var(--accent-dim);
-      border: 1px solid rgba(77,255,196,0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--accent);
-      font-size: 0.7rem;
-      flex-shrink: 0;
-      margin-top: 0.1rem;
-    }
-
-    .gl-text strong {
-      font-family: var(--font-display);
-      font-size: 0.88rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      display: block;
-      margin-bottom: 0.2rem;
-    }
-
-    .gl-text span {
-      font-size: 0.82rem;
-      color: var(--text-secondary);
-      font-weight: 300;
-    }
-
-    /* By default, show laptop, hide phone */
-    .group-card-mock .mock-laptop {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    .group-card-mock .mock-phone {
-      display: none;
-    }
-
-    /* Mobile breakpoint: hide laptop, show phone */
+    .groups-list { list-style: none; display: flex; flex-direction: column; gap: 1rem; }
+    .groups-list li { display: flex; gap: 0.75rem; align-items: flex-start; }
+    .groups-list .gl-icon { width: 28px; height: 28px; border-radius: 8px; background: var(--accent-dim); border: 1px solid rgba(77,255,196,0.2); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 0.7rem; flex-shrink: 0; margin-top: 0.1rem; }
+    .gl-text strong { font-family: var(--font-display); font-size: 0.88rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.2rem; }
+    .gl-text span { font-size: 0.82rem; color: var(--text-secondary); font-weight: 300; }
+    .group-card-mock .mock-laptop { display: block; width: 100%; height: auto; }
+    .group-card-mock .mock-phone { display: none; }
     @media (max-width: 767px) {
-      .group-card-mock .mock-laptop {
-        display: none;
-      }
-
-      .group-card-mock .mock-phone {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
+      .group-card-mock .mock-laptop { display: none; }
+      .group-card-mock .mock-phone { display: block; width: 100%; height: auto; }
     }
 
     /* ── STORAGE STRIP ── */
-    #storage {
-      padding: 3.5rem 1.5rem;
-    }
-
+    #storage { padding: 3.5rem 1.5rem; }
     .storage-strip {
-      background: var(--hdr-color);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 2rem 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      align-items: flex-start;
+      background: var(--hdr-color); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; align-items: flex-start;
     }
-
-    @media (min-width: 640px) {
-      .storage-strip {
-        flex-direction: row;
-        align-items: center;
-      }
-    }
-
-    .storage-icon {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: var(--accent-dim);
-      border: 1px solid rgba(77,255,196,0.25);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--accent);
-      font-size: 1.1rem;
-      flex-shrink: 0;
-    }
-
-    .storage-text strong {
-      font-family: var(--font-display);
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      display: block;
-      margin-bottom: 0.25rem;
-    }
-    .storage-text span {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 300;
-    }
-
+    @media (min-width: 640px) { .storage-strip { flex-direction: row; align-items: center; } }
+    .storage-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--accent-dim); border: 1px solid rgba(77,255,196,0.25); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 1.1rem; flex-shrink: 0; }
+    .storage-text strong { font-family: var(--font-display); font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.25rem; }
+    .storage-text span { font-size: 0.85rem; color: var(--text-secondary); font-weight: 300; }
     .storage-strip .btn { margin-left: auto; flex-shrink: 0; }
 
     /* ── CONTACT ── */
     #contact { background: var(--ctr-color); }
-
-    .contact-layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 2.5rem;
-    }
-
-    @media (min-width: 768px) {
-      .contact-layout { grid-template-columns: 1fr 1.5fr; }
-    }
-
+    .contact-layout { display: grid; grid-template-columns: 1fr; gap: 2.5rem; }
+    @media (min-width: 768px) { .contact-layout { grid-template-columns: 1fr 1.5fr; } }
     .contact-info h2 { margin-bottom: 0.75rem; }
-
-    .contact-form-wrap {
-      background: var(--card-color);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.75rem;
-    }
-
-    .form-group {
-      margin-bottom: 1rem;
-    }
-
-    .form-group label {
-      display: block;
-      font-size: 0.75rem;
-      font-family: var(--font-display);
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      margin-bottom: 0.4rem;
-    }
-
-    .form-group input,
-    .form-group textarea {
-      width: 100%;
-      background: var(--hdr-color);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 0.7rem 0.9rem;
-      color: var(--text-primary);
-      font-family: var(--font-body);
-      font-size: 0.9rem;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      resize: none;
-    }
-
-    .form-group input:focus,
-    .form-group textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-dim);
-    }
-
+    .contact-form-wrap { background: var(--card-color); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.75rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.75rem; font-family: var(--font-display); font-weight: 700; letter-spacing: 0.06em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.4rem; }
+    .form-group input, .form-group textarea { width: 100%; background: var(--hdr-color); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.7rem 0.9rem; color: var(--text-primary); font-family: var(--font-body); font-size: 0.9rem; outline: none; transition: border-color 0.2s, box-shadow 0.2s; resize: none; }
+    .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
     .form-group textarea { min-height: 110px; }
-
-    .form-submit {
-      width: 100%;
-      justify-content: center;
-      padding: 0.75rem;
-      font-size: 0.88rem;
-      border-radius: var(--radius-sm);
-      position: relative;
-      transition: all 0.2s;
-    }
-
-    .form-submit:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none !important;
-    }
-
-    .spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(0,0,0,0.2);
-      border-top-color: #0a0a0a;
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-      display: none;
-    }
-
+    .form-submit { width: 100%; justify-content: center; padding: 0.75rem; font-size: 0.88rem; border-radius: var(--radius-sm); position: relative; transition: all 0.2s; }
+    .form-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(0,0,0,0.2); border-top-color: #0a0a0a; border-radius: 50%; animation: spin 0.6s linear infinite; display: none; }
     .form-submit.loading .spinner { display: inline-block; }
     .form-submit.loading .btn-label { display: none; }
-
-    .form-msg {
-      margin-top: 0.75rem;
-      font-size: 0.82rem;
-      padding: 0.6rem 0.8rem;
-      border-radius: var(--radius-sm);
-      display: none;
-    }
-    .form-msg.success {
-      display: block;
-      background: rgba(77,255,196,0.1);
-      border: 1px solid rgba(77,255,196,0.3);
-      color: var(--accent);
-    }
-    .form-msg.error {
-      display: block;
-      background: rgba(255,80,80,0.08);
-      border: 1px solid rgba(255,80,80,0.25);
-      color: #ff8080;
-    }
+    .form-msg { margin-top: 0.75rem; font-size: 0.82rem; padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); display: none; }
+    .form-msg.success { display: block; background: rgba(77,255,196,0.1); border: 1px solid rgba(77,255,196,0.3); color: var(--accent); }
+    .form-msg.error { display: block; background: rgba(255,80,80,0.08); border: 1px solid rgba(255,80,80,0.25); color: #ff8080; }
 
     /* ── FOOTER ── */
-    footer {
-      background: var(--ctr-color);
-      border-top: 1px solid var(--border);
-      padding: 2.5rem 1.5rem;
-      position: relative;
-      z-index: 1;
-    }
-
-    .footer-inner {
-      max-width: 1100px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
-
-    @media (min-width: 640px) {
-      .footer-inner {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-      }
-    }
-
-    .footer-logo {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      text-decoration: none;
-    }
-
-    .footer-logo img {
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-    }
-
-    .footer-logo span {
-      font-family: var(--font-display);
-      font-weight: 700;
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.5rem;
-      list-style: none;
-    }
-
-    .footer-links a {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
+    footer { background: var(--ctr-color); border-top: 1px solid var(--border); padding: 2.5rem 1.5rem; position: relative; z-index: 1; }
+    .footer-inner { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
+    @media (min-width: 640px) { .footer-inner { flex-direction: row; align-items: center; justify-content: space-between; } }
+    .footer-logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+    .footer-logo img { width: 26px; height: 26px; border-radius: 6px; }
+    .footer-logo span { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text-secondary); }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; list-style: none; }
+    .footer-links a { font-size: 0.8rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
     .footer-links a:hover { color: var(--accent); }
-
-    .footer-copy {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
+    .footer-copy { font-size: 0.75rem; color: var(--text-muted); }
 
     /* ── SCROLL REVEAL ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
 
     /* ── ANIMATIONS ── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 6px; }
@@ -912,7 +494,6 @@
     ::-webkit-scrollbar-thumb { background: var(--btn-color); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-    /* ── SELECTION ── */
     ::selection { background: var(--accent-dim); color: var(--accent); }
   </style>
 </head>
@@ -926,7 +507,7 @@
     </a>
     <div class="nav-actions">
       <a href="/nl?lang=nl" class="nav-lang" title="Switch to Dutch">NL</a>
-      <a href="/help" class="btn-secondary">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
+      <a href="/help" class="btn-secondary nav-support">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
       <a href="/login_page" class="btn-secondary">Log in</a>
       <a href="/signup_page" class="btn">Sign up</a>
     </div>
@@ -968,70 +549,41 @@
       <p class="section-label">Your tools</p>
       <h2>Everything you need,<br>nothing you don't.</h2>
       <p class="section-desc">Four tightly integrated tools. Use one, use all — or mix them however your workflow demands.</p>
-
       <div class="features-grid reveal">
-
-        <!-- Notes — row 1, span 2 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-note-sticky"></i></div>
           <div class="feature-title">Notes</div>
-          <p class="feature-desc">
-            Your most powerful tool. Write with full markup, attach files, organise with folders, tags, and pins. Search works instantly, on-device and server-side. Share any note publicly — no login needed for the reader.
-          </p>
+          <p class="feature-desc">Your most powerful tool. Write with full markup, attach files, organise with folders, tags, and pins. Search works instantly, on-device and server-side. Share any note publicly — no login needed for the reader.</p>
           <div class="feature-tags">
-            <span class="ftag">Markup</span>
-            <span class="ftag">Folders</span>
-            <span class="ftag">Tags</span>
-            <span class="ftag">Attachments</span>
-            <span class="ftag">Hybrid search</span>
-            <span class="ftag">Public sharing</span>
+            <span class="ftag">Markup</span><span class="ftag">Folders</span><span class="ftag">Tags</span>
+            <span class="ftag">Attachments</span><span class="ftag">Hybrid search</span><span class="ftag">Public sharing</span>
           </div>
         </div>
-
-        <!-- Tasks — row 1, span 2 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-title">Tasks</div>
-          <p class="feature-desc">
-            Ruthlessly minimal. Just your to-dos — clear, focused, and optionally linked to notes or calendar entries. Capture what needs doing without the overhead of a full project system, then check it off and move on.
-          </p>
+          <p class="feature-desc">Ruthlessly minimal. Just your to-dos — clear, focused, and optionally linked to notes or calendar entries. Capture what needs doing without the overhead of a full project system, then check it off and move on.</p>
           <div class="feature-tags">
-            <span class="ftag">Link to notes</span>
-            <span class="ftag">Link to calendar</span>
+            <span class="ftag">Link to notes</span><span class="ftag">Link to calendar</span>
           </div>
         </div>
-
-        <!-- Calendar — row 2, span 1 -->
         <div class="feature-card">
           <div class="feature-icon" style="color: #f0a500; background: rgba(240,165,0,0.1); border-color: rgba(240,165,0,0.2);"><i class="fa-solid fa-calendar-days"></i></div>
           <div class="feature-title">Calendar <span class="feature-badge"><i class="fa-solid fa-bolt"></i> New</span></div>
-          <p class="feature-desc">
-            Brings your tasks and notes into a time view. Syncs with Google Calendar. Drag and resize appointments directly on the grid.
-          </p>
+          <p class="feature-desc">Brings your tasks and notes into a time view. Syncs with Google Calendar. Drag and resize appointments directly on the grid.</p>
           <div class="feature-tags">
-            <span class="ftag">Google sync</span>
-            <span class="ftag">Linked tasks</span>
-            <span class="ftag">Drag & resize</span>
+            <span class="ftag">Google sync</span><span class="ftag">Linked tasks</span><span class="ftag">Drag & resize</span>
           </div>
         </div>
-
-        <!-- Kanban — row 2, span 3 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-table-columns"></i></div>
           <div class="feature-title">Kanban</div>
-          <p class="feature-desc">
-            Visual project management built around the way work actually flows. Drag cards between lists, assign members, set due dates, and attach notes directly to cards. Boards can be shared with fine-grained read/write permissions — send invite links directly to email so collaborators can join without an account. Whether you're running a solo project or coordinating a team, Kanban gives you a clear, living picture of everything in flight.
-          </p>
+          <p class="feature-desc">Visual project management built around the way work actually flows. Drag cards between lists, assign members, set due dates, and attach notes directly to cards. Boards can be shared with fine-grained read/write permissions — send invite links directly to email so collaborators can join without an account.</p>
           <div class="feature-tags">
-            <span class="ftag">Drag & drop</span>
-            <span class="ftag">Members</span>
-            <span class="ftag">Due dates</span>
-            <span class="ftag">Permissions</span>
-            <span class="ftag">Share links</span>
-            <span class="ftag">Card notes</span>
+            <span class="ftag">Drag & drop</span><span class="ftag">Members</span><span class="ftag">Due dates</span>
+            <span class="ftag">Permissions</span><span class="ftag">Share links</span><span class="ftag">Card notes</span>
           </div>
         </div>
-
       </div>
     </div>
   </section>
@@ -1047,25 +599,13 @@
         Assign a board card with a due date and a task is created in your to-do list, and an appointment lands on your calendar — automatically. Use as much integration as you want. Or none.
       </p>
       <div class="integration-visual reveal">
-        <div class="int-node">
-          <div class="int-icon"><i class="fa-solid fa-table-columns"></i></div>
-          <div class="int-label">Kanban card</div>
-        </div>
+        <div class="int-node"><div class="int-icon"><i class="fa-solid fa-table-columns"></i></div><div class="int-label">Kanban card</div></div>
         <div class="int-arrow"><i class="fa-solid fa-arrow-right"></i></div>
-        <div class="int-node">
-          <div class="int-icon"><i class="fa-solid fa-list-check"></i></div>
-          <div class="int-label">Task</div>
-        </div>
+        <div class="int-node"><div class="int-icon"><i class="fa-solid fa-list-check"></i></div><div class="int-label">Task</div></div>
         <div class="int-arrow"><i class="fa-solid fa-arrow-right"></i></div>
-        <div class="int-node">
-          <div class="int-icon"><i class="fa-solid fa-calendar-days"></i></div>
-          <div class="int-label">Calendar</div>
-        </div>
+        <div class="int-node"><div class="int-icon"><i class="fa-solid fa-calendar-days"></i></div><div class="int-label">Calendar</div></div>
         <div class="int-arrow" style="color: var(--accent);">+</div>
-        <div class="int-node">
-          <div class="int-icon"><i class="fa-solid fa-note-sticky"></i></div>
-          <div class="int-label">Notes</div>
-        </div>
+        <div class="int-node"><div class="int-icon"><i class="fa-solid fa-note-sticky"></i></div><div class="int-label">Notes</div></div>
       </div>
     </div>
   </section>
@@ -1079,34 +619,23 @@
         <div>
           <p class="section-label">Collaboration</p>
           <h2>Notes for teams,<br>without the noise.</h2>
-          <p class="section-desc" style="margin-bottom: 2rem;">
-            Group notes are shared workspaces — same powerful notes, owned by the group. Be a member of multiple groups at once.
-          </p>
+          <p class="section-desc" style="margin-bottom: 2rem;">Group notes are shared workspaces — same powerful notes, owned by the group. Be a member of multiple groups at once.</p>
           <ul class="groups-list reveal">
             <li>
               <div class="gl-icon"><i class="fa-solid fa-users"></i></div>
-              <div class="gl-text">
-                <strong>Members & owners</strong>
-                <span>Owners manage members and permissions. Members use notes normally.</span>
-              </div>
+              <div class="gl-text"><strong>Members & owners</strong><span>Owners manage members and permissions. Members use notes normally.</span></div>
             </li>
             <li>
               <div class="gl-icon"><i class="fa-solid fa-folder-open"></i></div>
-              <div class="gl-text">
-                <strong>Full note features</strong>
-                <span>Markup, folders, tags, file attachments — all available in group notes.</span>
-              </div>
+              <div class="gl-text"><strong>Full note features</strong><span>Markup, folders, tags, file attachments — all available in group notes.</span></div>
             </li>
             <li>
               <div class="gl-icon"><i class="fa-solid fa-share-nodes"></i></div>
-              <div class="gl-text">
-                <strong>Share board access</strong>
-                <span>Invite collaborators to boards via email with read or write permissions.</span>
-              </div>
+              <div class="gl-text"><strong>Share board access</strong><span>Invite collaborators to boards via email with read or write permissions.</span></div>
             </li>
           </ul>
         </div>
-       <div class="group-card-mock reveal">
+        <div class="group-card-mock reveal">
           <img src="/static/laptop.png" class="mock-laptop">
           <img src="/static/mobile-black.png" class="mock-phone">
         </div>
@@ -1137,9 +666,7 @@
         <div class="contact-info">
           <p class="section-label">Contact</p>
           <h2>Get in<br>touch.</h2>
-          <p class="section-desc" style="margin-bottom: 1.5rem;">
-            Have a question, a suggestion, or just want to say hi? We'll get back to you as soon as possible.
-          </p>
+          <p class="section-desc" style="margin-bottom: 1.5rem;">Have a question, a suggestion, or just want to say hi? We'll get back to you as soon as possible.</p>
           <a href="https://3wpydgsh.status.cron-job.org/" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="font-size: 0.8rem;">
             <i class="fa-solid fa-circle" style="font-size:0.5rem; color: #4dff9a;"></i>
             Status page
@@ -1187,20 +714,10 @@
   <script>
     function resolveLang() {
       const path = window.location.pathname;
-
-      // Normalize and split the path
       const segments = path.replace(/^\/+|\/+$/g, "").split("/");
-
-      const firstSegment = segments[0];
-
-      if (firstSegment === "nl") {
-          return "nl";
-      }
-
-      return "en";
+      return segments[0] === "nl" ? "nl" : "en";
     }
 
-    // Scroll reveal
     const reveals = document.querySelectorAll('.reveal');
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry, i) => {
@@ -1212,7 +729,6 @@
     }, { threshold: 0.1 });
     reveals.forEach(el => observer.observe(el));
 
-    // Contact form
     async function handleContact(e) {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
@@ -1232,15 +748,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, message, lang })
         });
-
         if (response.ok) {
           msg.className = 'form-msg success';
           msg.textContent = '✓ Message sent. We\'ll be in touch soon.';
           msg.style.display = 'block';
           document.getElementById('contactForm').reset();
-        } else {
-          throw new Error('Server error');
-        }
+        } else { throw new Error('Server error'); }
       } catch {
         msg.className = 'form-msg error';
         msg.textContent = 'Something went wrong. Please try again or reach out via the status page.';
