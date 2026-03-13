@@ -3106,6 +3106,54 @@ def delete_user_and_data(user):
         # Delete user colors
         UserColor.query.filter_by(user_id=user_to_delete.id).delete()
 
+        # Delete users boards lists and cards
+
+        # Get board ids owned by the user
+        board_ids = [b.id for b in Board.query.filter_by(user_id=user_to_delete.id).all()]
+
+        if board_ids:
+            # Get list ids
+            list_ids = [l.id for l in List.query.filter(List.board_id.in_(board_ids)).all()]
+
+            # Get card ids
+            card_ids = []
+            if list_ids:
+                card_ids = [c.id for c in Card.query.filter(Card.list_id.in_(list_ids)).all()]
+
+            if card_ids:
+                # Delete card activities
+                CardActivity.query.filter(CardActivity.card_id.in_(card_ids)).delete(synchronize_session=False)
+
+                # Delete card members
+                CardMember.query.filter(CardMember.card_id.in_(card_ids)).delete(synchronize_session=False)
+
+                # Delete card background uploads
+                CardBackgroundUpload.query.filter(
+                    CardBackgroundUpload.card_id.in_(card_ids)
+                ).delete(synchronize_session=False)
+
+            # Delete cards
+            if list_ids:
+                Card.query.filter(Card.list_id.in_(list_ids)).delete(synchronize_session=False)
+
+            # Delete lists
+            List.query.filter(List.board_id.in_(board_ids)).delete(synchronize_session=False)
+
+            # Delete board background uploads
+            BoardBackgroundUpload.query.filter(
+                BoardBackgroundUpload.board_id.in_(board_ids)
+            ).delete(synchronize_session=False)
+
+            # Delete board shares
+            BoardShare.query.filter(
+                (BoardShare.board_id.in_(board_ids)) |
+                (BoardShare.user_id == user_to_delete.id) |
+                (BoardShare.invited_by == user_to_delete.id)
+            ).delete(synchronize_session=False)
+
+            # Delete boards
+            Board.query.filter(Board.id.in_(board_ids)).delete(synchronize_session=False)
+
         # Delete uploads
         Upload.query.filter_by(user_id=user_to_delete.id).delete()
 
@@ -14087,7 +14135,6 @@ LEET_MAP = str.maketrans({
     '@': 'a', '4': 'a', '1': 'i', '!': 'i', '|': 'i',
     '3': 'e', '$': 's', '0': 'o', '7': 't',
     '5': 's', '+': 't', '8': 'b', '9': 'g',
-    # keep these, unidecode helps with many other homoglyphs
     'µ': 'u', 'υ': 'u', 'ү': 'u', 'ᵤ': 'u'
 })
 
@@ -14112,49 +14159,20 @@ def levenshtein(a: str, b: str) -> int:
     return prev_row[-1]
 
 def normalize_username(username: str) -> str:
-    """
-    Normalize a username to a canonical ascii form suitable for fuzzy checks:
-    - Normalize unicode (NFKD)
-    - Strip combining diacritics
-    - Use unidecode to map homoglyphs to ASCII
-    - Lowercase
-    - Replace common leet characters (LEET_MAP)
-    - Remove separators (space, dot, underscore, hyphen)
-    - Collapse repeated characters
-    """
     if username is None:
         return ""
 
-    # 1) NFKD decomposition -> separates base + diacritics
     s = unicodedata.normalize('NFKD', username)
-
-    # 2) Remove combining marks (diacritics)
     s = ''.join(ch for ch in s if not unicodedata.combining(ch))
-
-    # 3) Transliterate to ASCII for many homoglyphs
     s = unidecode(s)
-
-    # 4) Lowercase
     s = s.lower()
-
-    # 5) Replace separators with nothing
     s = re.sub(r'[\s._\-]+', '', s)
-
-    # 6) Apply leet map (digits & common symbols -> letters)
     s = s.translate(LEET_MAP)
-
-    # 7) Collapse repeated letters (aaaa -> a) to reduce obfuscation attempts
     s = re.sub(r'(.)\1+', r'\1', s)
 
-    # final safe ASCII
     return s
 
 def fuzzy_substring_match(haystack: str, needle: str, max_dist: int = 1) -> bool:
-    """
-    Sliding-window fuzzy substring match using Levenshtein distance.
-    Returns True if any substring of haystack of length ~len(needle) is within max_dist.
-    We test lengths len(needle)-1, len(needle), len(needle)+1 to allow small insert/delete obfuscation.
-    """
     if not haystack or not needle:
         return False
 
@@ -14175,47 +14193,11 @@ def fuzzy_substring_match(haystack: str, needle: str, max_dist: int = 1) -> bool
     return False
 
 def similar(a: str, b: str) -> bool:
-    # Use Levenshtein + sequence matcher on normalized ascii forms
     an = normalize_username(a)
     bn = normalize_username(b)
     dist = levenshtein(an, bn)
     ratio = SequenceMatcher(None, an, bn).ratio()
     return dist <= 2 or ratio > 0.8
-
-def is_profane(username: str) -> bool:
-    """
-    Profanity check that:
-    - normalizes username to ascii form
-    - checks direct substring matches against profanity set
-    - checks fuzzy substring matches (sliding-window Levenshtein) for short edit distances
-    """
-    if not username:
-        return False
-
-    # ensure the profanity list is loaded (depends on library)
-    try:
-        profanity.load_censor_words()
-        badset = {str(w).lower() for w in profanity.CENSOR_WORDSET}
-    except Exception:
-        # If profanity package is not available, fall back to an empty set (or provide your own list)
-        badset = set()
-
-    username_norm = normalize_username(username)
-
-    # quick wins: exact substring of any bad word
-    for bad_word in badset:
-        if len(bad_word) < 3:
-            continue
-        bw = bad_word.lower()
-        if bw in username_norm:
-            return True
-        # fuzzy substring: allow small edits/leet obfuscation:
-        # use max_dist = 1 for short words, maybe 2 for longer
-        max_dist = 1 if len(bw) <= 5 else 2
-        if fuzzy_substring_match(username_norm, bw, max_dist=max_dist):
-            return True
-
-    return False
 
 # --- MAIN VALIDATION ---
 def is_username_invalid(username: str, reserved_names=None, protected_users=None):
@@ -14226,25 +14208,22 @@ def is_username_invalid(username: str, reserved_names=None, protected_users=None
         tuple: (exists, protected, reason)
             - exists: bool, True if the username already exists in DB
             - protected: bool, True if the username is reserved/protected
-            - reason: str or None, reason why invalid (e.g., "Profanity", "Reserved name")
+            - reason: str or None, reason why invalid
     """
     if reserved_names is None:
         reserved_names = RESERVED_NAMES
 
     username_norm = normalize_username(username)
 
-    # --- PROFANITY CHECK ---
-    if is_profane(username):
-        return False, True, "Profanity"
-
     # --- RESERVED NAMES ---
     for reserved in reserved_names:
         reserved_norm = normalize_username(reserved)
         if username_norm == reserved_norm:
             return False, True, "Reserved name"
-        # prefix-style reserved (e.g. admin123) should be blocked; check on normalized forms
+
         if username_norm.startswith(reserved_norm):
             return False, True, "Reserved prefix"
+
         if similar(username_norm, reserved_norm):
             return False, True, "Reserved similarity"
 
@@ -14263,12 +14242,11 @@ def is_username_invalid(username: str, reserved_names=None, protected_users=None
     return user_exists, False, None
 
 def validate_username(username: str, protected_users=None):
-    # forward protected_users into the deeper call
     exists, protected, reason = is_username_invalid(username, protected_users=protected_users)
+
     if protected or exists:
         return {"exists": exists, "protected": protected, "reason": reason}
 
-    # --- DATABASE CHECK (redundant with earlier but kept for backward compatibility) ---
     if User.query.filter_by(username=username).first():
         return {"exists": True, "protected": False, "reason": "Exists"}
 
