@@ -3106,6 +3106,54 @@ def delete_user_and_data(user):
         # Delete user colors
         UserColor.query.filter_by(user_id=user_to_delete.id).delete()
 
+        # Delete users boards lists and cards
+
+        # Get board ids owned by the user
+        board_ids = [b.id for b in Board.query.filter_by(user_id=user_to_delete.id).all()]
+
+        if board_ids:
+            # Get list ids
+            list_ids = [l.id for l in List.query.filter(List.board_id.in_(board_ids)).all()]
+
+            # Get card ids
+            card_ids = []
+            if list_ids:
+                card_ids = [c.id for c in Card.query.filter(Card.list_id.in_(list_ids)).all()]
+
+            if card_ids:
+                # Delete card activities
+                CardActivity.query.filter(CardActivity.card_id.in_(card_ids)).delete(synchronize_session=False)
+
+                # Delete card members
+                CardMember.query.filter(CardMember.card_id.in_(card_ids)).delete(synchronize_session=False)
+
+                # Delete card background uploads
+                CardBackgroundUpload.query.filter(
+                    CardBackgroundUpload.card_id.in_(card_ids)
+                ).delete(synchronize_session=False)
+
+            # Delete cards
+            if list_ids:
+                Card.query.filter(Card.list_id.in_(list_ids)).delete(synchronize_session=False)
+
+            # Delete lists
+            List.query.filter(List.board_id.in_(board_ids)).delete(synchronize_session=False)
+
+            # Delete board background uploads
+            BoardBackgroundUpload.query.filter(
+                BoardBackgroundUpload.board_id.in_(board_ids)
+            ).delete(synchronize_session=False)
+
+            # Delete board shares
+            BoardShare.query.filter(
+                (BoardShare.board_id.in_(board_ids)) |
+                (BoardShare.user_id == user_to_delete.id) |
+                (BoardShare.invited_by == user_to_delete.id)
+            ).delete(synchronize_session=False)
+
+            # Delete boards
+            Board.query.filter(Board.id.in_(board_ids)).delete(synchronize_session=False)
+            
         # Delete uploads
         Upload.query.filter_by(user_id=user_to_delete.id).delete()
 
