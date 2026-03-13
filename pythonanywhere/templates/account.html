@@ -884,6 +884,7 @@
 
     formEmail.addEventListener('submit', async e =>{
       e.preventDefault(); const email = $('#new-email').value.trim();
+      if (email == "") alert("Please enter a valid email!"); return;
       try{
         const res = await fetch('/account/update_email', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
         if (res.ok){ alert('Verification sent — follow the email'); } else { const j = await res.json().catch(()=>({})); alert(j.error||'Failed to update email'); }
