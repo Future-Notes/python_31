@@ -108,6 +108,7 @@
       align-items: center;
       gap: 0.6rem;
       text-decoration: none;
+      flex-shrink: 0;
     }
 
     .nav-logo img {
@@ -142,6 +143,41 @@
       font-weight: 600;
     }
     .nav-lang:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* Mobile nav fixes */
+    @media (max-width: 640px) {
+
+      /* Tighten the two remaining buttons */
+      .nav-actions .btn,
+      .nav-actions .btn-secondary,
+      .nav-actions a.btn,
+      .nav-actions a.btn-secondary {
+        padding: 0.45rem 0.75rem;
+        font-size: 0.78rem;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .nav-support {
+        display: none !important;
+      }
+      nav {
+        padding: 0px 0px 0px 0px;
+      }
+    }
+
+    /* On the very smallest phones, drop the logo wordmark too */
+    @media (max-width: 400px) {
+      .nav-logo span {
+        display: none;
+      }
+      .hero-eyebrow {
+        display: none;
+      }
+      nav {
+        padding: 0 1.25rem;
+      }
+    }
 
     /* ── BUTTONS ── */
     .btn, .btn-secondary, a.btn, a.btn-secondary {
@@ -385,10 +421,8 @@
 
     @media (min-width: 1024px) {
       .features-grid { grid-template-columns: 1fr 1fr 1fr 1fr; }
-      /* Row 1: Notes spans 2, Tasks spans 2 */
       .features-grid .feature-card:nth-child(1) { grid-column: span 2; }
       .features-grid .feature-card:nth-child(2) { grid-column: span 2; }
-      /* Row 2: Calendar spans 1, Kanban spans 3 */
       .features-grid .feature-card:nth-child(3) { grid-column: span 1; }
       .features-grid .feature-card:nth-child(4) { grid-column: span 3; }
     }
@@ -533,12 +567,7 @@
       .groups-layout { grid-template-columns: 1fr 1fr; }
     }
 
-    .group-card-mock {
-      background: var(--hdr-color);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
+    .group-card-mock { overflow: hidden; }
 
     .mock-header {
       background: var(--btn-color);
@@ -638,10 +667,16 @@
       font-weight: 300;
     }
 
-    /* ── STORAGE STRIP ── */
-    #storage {
-      padding: 3.5rem 1.5rem;
+    .group-card-mock .mock-laptop { display: block; width: 100%; height: auto; }
+    .group-card-mock .mock-phone { display: none; }
+
+    @media (max-width: 767px) {
+      .group-card-mock .mock-laptop { display: none; }
+      .group-card-mock .mock-phone { display: block; width: 100%; height: auto; }
     }
+
+    /* ── STORAGE STRIP ── */
+    #storage { padding: 3.5rem 1.5rem; }
 
     .storage-strip {
       background: var(--hdr-color);
@@ -655,10 +690,7 @@
     }
 
     @media (min-width: 640px) {
-      .storage-strip {
-        flex-direction: row;
-        align-items: center;
-      }
+      .storage-strip { flex-direction: row; align-items: center; }
     }
 
     .storage-icon {
@@ -683,22 +715,13 @@
       display: block;
       margin-bottom: 0.25rem;
     }
-    .storage-text span {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 300;
-    }
-
+    .storage-text span { font-size: 0.85rem; color: var(--text-secondary); font-weight: 300; }
     .storage-strip .btn { margin-left: auto; flex-shrink: 0; }
 
     /* ── CONTACT ── */
     #contact { background: var(--ctr-color); }
 
-    .contact-layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 2.5rem;
-    }
+    .contact-layout { display: grid; grid-template-columns: 1fr; gap: 2.5rem; }
 
     @media (min-width: 768px) {
       .contact-layout { grid-template-columns: 1fr 1.5fr; }
@@ -713,9 +736,7 @@
       padding: 1.75rem;
     }
 
-    .form-group {
-      margin-bottom: 1rem;
-    }
+    .form-group { margin-bottom: 1rem; }
 
     .form-group label {
       display: block;
@@ -761,11 +782,7 @@
       transition: all 0.2s;
     }
 
-    .form-submit:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none !important;
-    }
+    .form-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
 
     .spinner {
       width: 14px;
@@ -818,73 +835,26 @@
     }
 
     @media (min-width: 640px) {
-      .footer-inner {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-      }
+      .footer-inner { flex-direction: row; align-items: center; justify-content: space-between; }
     }
 
-    .footer-logo {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      text-decoration: none;
-    }
+    .footer-logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
+    .footer-logo img { width: 26px; height: 26px; border-radius: 6px; }
+    .footer-logo span { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text-secondary); }
 
-    .footer-logo img {
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-    }
-
-    .footer-logo span {
-      font-family: var(--font-display);
-      font-weight: 700;
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.5rem;
-      list-style: none;
-    }
-
-    .footer-links a {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
+    .footer-links { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; list-style: none; }
+    .footer-links a { font-size: 0.8rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
     .footer-links a:hover { color: var(--accent); }
 
-    .footer-copy {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
+    .footer-copy { font-size: 0.75rem; color: var(--text-muted); }
 
     /* ── SCROLL REVEAL ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
 
     /* ── ANIMATIONS ── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 6px; }
@@ -892,7 +862,6 @@
     ::-webkit-scrollbar-thumb { background: var(--btn-color); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-    /* ── SELECTION ── */
     ::selection { background: var(--accent-dim); color: var(--accent); }
   </style>
 </head>
@@ -906,7 +875,7 @@
     </a>
     <div class="nav-actions">
       <a href="/?lang=en" class="nav-lang" title="Switch to English">EN</a>
-      <a href="/help" class="btn-secondary">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
+      <a href="/help" class="btn-secondary nav-support">Support <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.65rem;"></i></a>
       <a href="/login_page" class="btn-secondary">Inloggen</a>
       <a href="/signup_page" class="btn">Registreren</a>
     </div>
@@ -922,9 +891,9 @@
         <i class="fa-solid fa-circle" style="font-size:0.45rem;"></i>
         Alles-in-één productiviteitsapp
       </div>
-      <h1>Helder denken.<br><em>Vrij werken.</em></h1>
+      <h1>Overzicht in je hoofd.<br><em>Rust in je werk.</em></h1>
       <p class="hero-sub">
-        Notities, taken, kanban en agenda — één geïntegreerde werkruimte die niet in de weg staat.
+        Notities, taken, kanban en agenda — alles in één heldere werkruimte.
       </p>
       <div class="hero-cta">
         <a href="/signup_page" class="btn btn-lg">Gratis starten</a>
@@ -947,16 +916,17 @@
     <div class="section-inner">
       <p class="section-label">Jouw tools</p>
       <h2>Alles wat je nodig hebt,<br>maar niks meer.</h2>
-      <p class="section-desc">Vier nauw samenwerkende tools. Gebruik er één, gebruik ze alle vier, of combineer ze hoe je dat ook maar wilt</p>
+      <p class="section-desc">Vier tools die naadloos samenwerken. Gebruik er één, of combineer ze allemaal — precies zoals jij wilt.</p>
 
       <div class="features-grid reveal">
 
-        <!-- Notes — row 1, span 2 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-note-sticky"></i></div>
           <div class="feature-title">Notities</div>
           <p class="feature-desc">
-            Je krachtigste tool. Schrijf met volledige opmaak, voeg bestanden toe, organiseer met mappen, tags en pins. Gebruik de krachtige zoekfunctie om je notities altijd terug te vinden. Deel elke notitie openbaar – de lezer hoeft niet in te loggen.
+            Je krachtigste tool. Schrijf met volledige opmaak, voeg bestanden toe en organiseer met mappen, tags en pins. 
+            Dankzij de zoekfunctie vind je elke notitie direct terug.
+            Deel elke notitie openbaar – de lezer hoeft niet in te loggen.
           </p>
           <div class="feature-tags">
             <span class="ftag">Opmaak</span>
@@ -968,47 +938,44 @@
           </div>
         </div>
 
-        <!-- Tasks — row 1, span 2 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-list-check"></i></div>
           <div class="feature-title">Todo</div>
           <p class="feature-desc">
-            Ruthlessly minimal. Just your to-dos — clear, focused, and optionally linked to notes or calendar entries. Capture what needs doing without the overhead of a full project system, then check it off and move on.
+            Radicaal minimalistisch. Alleen je taken — helder, gefocust en optioneel gekoppeld aan notities of agenda-items. Noteer wat gedaan moet worden, vink het af en ga verder.
           </p>
           <div class="feature-tags">
-            <span class="ftag">Link to notes</span>
-            <span class="ftag">Link to calendar</span>
+            <span class="ftag">Koppel notities</span>
+            <span class="ftag">Koppel agenda</span>
           </div>
         </div>
 
-        <!-- Calendar — row 2, span 1 -->
         <div class="feature-card">
           <div class="feature-icon" style="color: #f0a500; background: rgba(240,165,0,0.1); border-color: rgba(240,165,0,0.2);"><i class="fa-solid fa-calendar-days"></i></div>
-          <div class="feature-title">Calendar <span class="feature-badge"><i class="fa-solid fa-bolt"></i> New</span></div>
+          <div class="feature-title">Agenda <span class="feature-badge"><i class="fa-solid fa-bolt"></i> Nieuw</span></div>
           <p class="feature-desc">
-            Brings your tasks and notes into a time view. Syncs with Google Calendar. Drag and resize appointments directly on the grid.
+            Brengt je taken en notities samen in één tijdsoverzicht. Synchroniseert met Google Calendar. Versleep afspraken en pas ze direct aan in de kalender.
           </p>
           <div class="feature-tags">
             <span class="ftag">Google sync</span>
-            <span class="ftag">Linked tasks</span>
-            <span class="ftag">Drag & resize</span>
+            <span class="ftag">Koppel taken</span>
+            <span class="ftag">Slepen om te wijzigen</span>
           </div>
         </div>
 
-        <!-- Kanban — row 2, span 3 -->
         <div class="feature-card">
           <div class="feature-icon"><i class="fa-solid fa-table-columns"></i></div>
           <div class="feature-title">Kanban</div>
           <p class="feature-desc">
-            Visual project management built around the way work actually flows. Drag cards between lists, assign members, set due dates, and attach notes directly to cards. Boards can be shared with fine-grained read/write permissions — send invite links directly to email so collaborators can join without an account. Whether you're running a solo project or coordinating a team, Kanban gives you a clear, living picture of everything in flight.
+            Visueel projectbeheer, gebaseerd op hoe werk écht verloopt. Sleep kaarten tussen lijsten, wijs leden toe, stel deadlines in en koppel notities direct aan kaarten. Borden kunnen gedeeld worden met gedetailleerde lees- en schrijfrechten. Stuur uitnodigingslinks direct naar e-mail zodat mensen ook zonder account kunnen deelnemen. Of je nu alleen werkt of met een team — kanban geeft een helder overzicht van al het werk dat gaande is.
           </p>
           <div class="feature-tags">
             <span class="ftag">Drag & drop</span>
-            <span class="ftag">Members</span>
-            <span class="ftag">Due dates</span>
-            <span class="ftag">Permissions</span>
-            <span class="ftag">Share links</span>
-            <span class="ftag">Card notes</span>
+            <span class="ftag">Wijs taken toe</span>
+            <span class="ftag">Deadlines</span>
+            <span class="ftag">Machtigingen</span>
+            <span class="ftag">Delen met link</span>
+            <span class="ftag">Kaartnotities</span>
           </div>
         </div>
 
@@ -1024,7 +991,7 @@
       <p class="section-label">Slim verbonden</p>
       <h2>Tools die met<br>elkaar praten.</h2>
       <p class="section-desc" style="margin: 0 auto 0; text-align:center;">
-        Wijs een bordkaart toe met een deadline en er wordt automatisch een taak én een agendaafspraak aangemaakt. Gebruik zoveel integratie als je wilt. Of helemaal geen.
+        Geef een bordkaart een deadline en er wordt automatisch een taak én agenda-afspraak aangemaakt. Gebruik zoveel integratie als je wilt. Of helemaal geen.
       </p>
       <div class="integration-visual reveal">
         <div class="int-node">
@@ -1087,20 +1054,21 @@
           </ul>
         </div>
         <div class="group-card-mock reveal">
-          <img src="/static/card-background.png">
+          <img src="/static/laptop.png" class="mock-laptop">
+          <img src="/static/mobile-black.png" class="mock-phone">
         </div>
       </div>
     </div>
   </section>
 
   <!-- STORAGE STRIP -->
-  <section id="storage" style="padding: 0 1.5rem 4rem;">
+  <section id="storage" style="padding: 4rem 1.5rem 4rem;">
     <div class="section-inner">
       <div class="storage-strip reveal">
         <div class="storage-icon"><i class="fa-solid fa-hard-drive"></i></div>
         <div class="storage-text">
           <strong>Gratis opslag, met ruimte om te groeien</strong>
-          <span>Elk account start met opslag inbegrepen. Nodig een vriend uit — jullie krijgen allebei meer. Tot 3 referrals per dag.</span>
+          <span>Elk account krijgt standaard opslagruimte. Nodig een vriend uit — jullie krijgen allebei meer.</span>
         </div>
         <a href="/signup_page" class="btn">Gratis starten</a>
       </div>
@@ -1117,7 +1085,7 @@
           <p class="section-label">Contact</p>
           <h2>Neem<br>contact op.</h2>
           <p class="section-desc" style="margin-bottom: 1.5rem;">
-            Een vraag, suggestie of gewoon gedag zeggen? We reageren zo snel mogelijk.
+            Een vraag, suggestie of gewoon even hallo zeggen? We reageren zo snel mogelijk.
           </p>
           <a href="https://3wpydgsh.status.cron-job.org/" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="font-size: 0.8rem;">
             <i class="fa-solid fa-circle" style="font-size:0.5rem; color: #4dff9a;"></i>
@@ -1164,6 +1132,12 @@
   </footer>
 
   <script>
+    function resolveLang() {
+      const path = window.location.pathname;
+      const segments = path.replace(/^\/+|\/+$/g, "").split("/");
+      return segments[0] === "nl" ? "nl" : "en";
+    }
+
     const reveals = document.querySelectorAll('.reveal');
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry, i) => {
@@ -1181,6 +1155,7 @@
       const msg = document.getElementById('formMsg');
       const email = document.getElementById('email').value.trim();
       const message = document.getElementById('message').value.trim();
+      const lang = resolveLang();
 
       btn.disabled = true;
       btn.classList.add('loading');
@@ -1191,19 +1166,20 @@
         const response = await fetch('/contact', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, message })
+          body: JSON.stringify({ email, message, lang })
         });
 
         if (response.ok) {
           msg.className = 'form-msg success';
-          msg.textContent = '✓ Bericht verstuurd. We nemen snel contact op.';
+          msg.textContent = '✓ Bericht verstuurd! We proberen zo snel mogelijk te reageren.';
+          msg.style.display = 'block';
           document.getElementById('contactForm').reset();
         } else {
           throw new Error('Server error');
         }
       } catch {
         msg.className = 'form-msg error';
-        msg.textContent = 'Er ging iets mis. Probeer het opnieuw of bekijk de statuspagina.';
+        msg.textContent = 'Oeps! Er ging iets fout. Probeer het later opnieuw.';
       } finally {
         btn.disabled = false;
         btn.classList.remove('loading');
