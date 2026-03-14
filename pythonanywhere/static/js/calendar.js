@@ -495,7 +495,10 @@
     return `RRULE:${parts.join(";")}`;
   }
 
+  // FIX: also reset the simplified dropdown so re-opening a modal never
+  // shows stale recurrence state from a previously edited event.
   function clearRecurrenceUI() {
+    document.getElementById("recurrence-simple").value = "";
     document.getElementById("recurrence-freq").value = "";
     document.getElementById("recurrence-interval").value = 1;
     document.getElementById("recurrence-end-type").value = "never";
@@ -543,16 +546,31 @@
     updateRRulePreview();
   }
 
-  // FIX: use recurrence_rule (eventsLoader field) not rrule (FC internal field)
+  // FIX: Dispatch a synthetic 'change' event on recurrence-simple so the
+  // existing listener keeps recurrence-freq and weekly-weekdays visibility
+  // in sync, then let prefillRecurrenceFromRRule fill all granular fields.
   function showRecurrenceForEdit(rruleString) {
+    const simpleEl = document.getElementById("recurrence-simple");
+    const advEl    = document.getElementById("recurrence-advanced");
+
     if (!rruleString) {
-      document.getElementById("recurrence-simple").value = "";
-      document.getElementById("recurrence-advanced").style.display = "none";
+      simpleEl.value = "";
+      advEl.style.display = "none";
+      clearRecurrenceUI();
       return;
     }
+
     const parts = parseRRule(rruleString);
-    document.getElementById("recurrence-simple").value = parts.FREQ || "";
-    document.getElementById("recurrence-advanced").style.display = "block";
+    const freq  = parts.FREQ || "";
+
+    // Set the simplified dropdown …
+    simpleEl.value = freq;
+
+    // … then fire a synthetic 'change' so the existing listener also updates
+    // recurrence-freq and weekly-weekdays visibility in one place.
+    simpleEl.dispatchEvent(new Event("change"));
+
+    // Now fill in all the granular advanced fields (interval, BYDAY, UNTIL/COUNT).
     prefillRecurrenceFromRRule(rruleString);
   }
 
@@ -603,11 +621,19 @@
     document.getElementById("appt-all-day").checked = !!info.event.allDay;
     document.getElementById("appt-start").value = formatISOLocalInput(info.event.start);
 
+    // FIX: FC all-day end is exclusive (end = day after last day).
+    // Subtract 1 day so the modal shows the inclusive last day.
     let endValue = info.event.end;
-    if (info.event.allDay && !endValue && info.event.start) {
-      const tmp = new Date(info.event.start);
-      tmp.setDate(tmp.getDate() + 1);
-      endValue = tmp.toISOString();
+    if (info.event.allDay) {
+      if (endValue) {
+        // Exclusive end → inclusive display: subtract 1 day
+        const d = new Date(endValue);
+        d.setDate(d.getDate() - 1);
+        endValue = d.toISOString();
+      } else if (info.event.start) {
+        // No end set → single-day event; show same day as start
+        endValue = new Date(info.event.start).toISOString();
+      }
     }
     document.getElementById("appt-end").value = formatISOLocalInput(endValue);
 
@@ -650,14 +676,21 @@
 
     if (isAllDay) {
       const s = new Date(startStr + "T00:00:00");
-      let e;
+      let eDisplay;
       if (endStr && /^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
-        e = new Date(endStr + "T00:00:00");
+        // FC drag-select gives an exclusive end date (day after last selected day).
+        // Subtract 1 day so the modal shows the inclusive last day.
+        const eExclusive = new Date(endStr + "T00:00:00");
+        eDisplay = new Date(eExclusive.getTime() - 24 * 3600 * 1000);
+      } else if (endStr) {
+        // Full ISO timestamp supplied (e.g. start + 1 h from handleDateClick).
+        eDisplay = new Date(endStr);
       } else {
-        e = new Date(s.getTime() + 24 * 3600 * 1000);
+        // Fallback: same day, 1 hour later.
+        eDisplay = new Date(s.getTime() + 60 * 60 * 1000);
       }
       document.getElementById("appt-start").value = formatISOLocalInput(s.toISOString());
-      document.getElementById("appt-end").value = formatISOLocalInput(e.toISOString());
+      document.getElementById("appt-end").value = formatISOLocalInput(eDisplay.toISOString());
     } else {
       document.getElementById("appt-start").value = formatISOLocalInput(selectionInfo.startStr);
       document.getElementById("appt-end").value = formatISOLocalInput(selectionInfo.endStr);
@@ -684,14 +717,26 @@
     const rrule = buildRRuleFromUI();
     const color = colorVal || null;
 
-    // For all-day: send date-only strings to avoid UTC shifting
+    // For timed events: convert local datetime string to UTC ISO.
+    // For all-day start: take date portion as-is (no UTC shift).
     function toPayloadDate(localStr, isAllDayEvent) {
       if (!localStr) return null;
       return isAllDayEvent ? localStr.slice(0, 10) : new Date(localStr).toISOString();
     }
 
     const newStart = toPayloadDate(startLocal, allDay);
-    const newEnd = toPayloadDate(endLocal, allDay);
+
+    // FIX: the modal shows the inclusive end for all-day events.
+    // FullCalendar / iCal use an exclusive end, so add 1 day before saving.
+    let newEnd;
+    if (allDay && endLocal) {
+      const pad = n => String(n).padStart(2, '0');
+      const d = new Date(endLocal + ":00"); // ensure valid parse of "YYYY-MM-DDTHH:MM"
+      d.setDate(d.getDate() + 1);
+      newEnd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    } else {
+      newEnd = toPayloadDate(endLocal, allDay);
+    }
 
     const recurrenceEndDate = (() => {
       if (document.getElementById("recurrence-end-type").value !== "until") return null;
@@ -823,20 +868,74 @@
             endField = endVal ? new Date(endVal) : null;
           }
 
+          // Normalise whichever field name the backend uses for the recurrence rule.
+          const recurrenceRule = a.recurrence_rule || a.rrule || a.rrule_string || a.recurrence || null;
+
+          // Build the rrule string for FC's rrule plugin.
+          // The plugin REQUIRES a DTSTART to know where the series begins.
+          // Without it, FC generates occurrences but skips the original anchor date.
+          // We embed DTSTART derived from the event's own start field.
+          let fcRRule = undefined;
+          if (recurrenceRule) {
+            // Derive a DTSTART string from startField
+            let dtstart = null;
+            if (isAllDay) {
+              // startField is already "YYYY-MM-DD"; format as all-day DTSTART
+              const ds = typeof startField === 'string' ? startField
+                : (startField instanceof Date
+                    ? startField.toISOString().slice(0, 10)
+                    : null);
+              if (ds) dtstart = `DTSTART;VALUE=DATE:${ds.replace(/-/g, '')}`;
+            } else {
+              const dt = startField instanceof Date ? startField : new Date(startField);
+              if (!isNaN(dt)) {
+                const pad = n => String(n).padStart(2, '0');
+                dtstart = `DTSTART:${dt.getUTCFullYear()}${pad(dt.getUTCMonth()+1)}${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}${pad(dt.getUTCMinutes())}${pad(dt.getUTCSeconds())}Z`;
+              }
+            }
+            // Ensure the rule body starts with RRULE:
+            const ruleBody = recurrenceRule.startsWith('RRULE:')
+              ? recurrenceRule
+              : `RRULE:${recurrenceRule}`;
+            fcRRule = dtstart ? `${dtstart}\n${ruleBody}` : ruleBody;
+          }
+
+          let eventDuration;
+          if (fcRRule && startField && endField) {
+            const s = startField instanceof Date ? startField
+              : new Date(isAllDay ? startField + 'T00:00:00' : startField);
+            const e = endField instanceof Date ? endField
+              : new Date(isAllDay ? endField + 'T00:00:00' : endField);
+            const diffMs = e - s;
+            if (!isNaN(diffMs) && diffMs > 0) {
+              if (isAllDay) {
+                eventDuration = { days: Math.round(diffMs / 86400000) || 1 };
+              } else {
+                const totalMins = Math.round(diffMs / 60000);
+                const pad = n => String(n).padStart(2, '0');
+                eventDuration = `${pad(Math.floor(totalMins / 60))}:${pad(totalMins % 60)}`;
+              }
+            }
+          }
+
           return {
             id: a.id, title: a.title,
-            start: startField, end: endField,
+            // Do NOT set start/end when the rrule plugin is active — DTSTART
+            // inside fcRRule is the sole anchor. Mixing both suppresses occurrence #1.
+            start: fcRRule ? undefined : startField,
+            end:   fcRRule ? undefined : endField,
+            duration: fcRRule ? eventDuration : undefined,
             allDay: isAllDay,
             backgroundColor: a.color || (window.userColors && window.userColors.btn),
+            rrule: fcRRule,
             extendedProps: {
               db_id: a.db_id != null ? a.db_id : a.id,
               description: a.description,
               notes: a.notes || [],
               calendar_id: a.calendar_id,
-              recurrence_rule: a.recurrence_rule || null,  // ← canonical field name
+              recurrence_rule: recurrenceRule,  // raw value used by our own handlers
               google_event_id: a.google_event_id
-            },
-            rrule: a.rrule || undefined
+            }
           };
         });
 
@@ -981,12 +1080,11 @@
 
     function handleDateClick(info) {
       if (info.allDay) {
-        const startStr = info.dateStr;
-        const tmp = new Date(startStr + "T00:00:00");
-        tmp.setDate(tmp.getDate() + 1);
-        const pad = n => String(n).padStart(2, '0');
-        const endStr = `${tmp.getFullYear()}-${pad(tmp.getMonth() + 1)}-${pad(tmp.getDate())}`;
-        onDateSelect({ startStr, endStr, allDay: true });
+        // FIX: pass start + 1 hour as end (same day) so the modal shows a
+        // sensible end time and the user can easily drag it to a timed event.
+        const startDt = new Date(info.dateStr + "T00:00:00");
+        const endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
+        onDateSelect({ startStr: info.dateStr, endStr: endDt.toISOString(), allDay: true });
       } else {
         const start = info.date;
         const end = new Date(start.getTime() + 60 * 60 * 1000);

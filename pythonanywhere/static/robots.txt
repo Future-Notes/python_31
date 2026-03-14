@@ -7,6 +7,5 @@ Disallow: /setup
 Disallow: /mutations_page
 Disallow: /checks_page
 Disallow: /sw.js
-Disallow: /static/
 
 Sitemap: https://bosbes.eu.pythonanywhere.com/sitemap.xml
