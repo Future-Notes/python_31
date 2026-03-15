@@ -4826,6 +4826,14 @@ def page_not_found(error):
     # Default behavior for other 404 errors
     return render_template('404.html'), 404
 
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    directory = os.path.join(app.root_path, 'static')
+    response = make_response(send_from_directory(directory, filename))
+    # 1 jaar cache (31.536.000 seconden)
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+
 # Function to generate unique error codes (or use predefined ones)
 def generate_error_code():
     return f"ERR-{random.randint(1000, 9999)}"
