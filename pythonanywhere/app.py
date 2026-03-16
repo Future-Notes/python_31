@@ -15233,7 +15233,7 @@ def undo_reset():
 
 
 @app.route('/login', methods=['POST'])
-@limiter.limit("8 per hour")
+@limiter.limit("30 per hour")
 def login():
     data = request.get_json(silent=True) or {}
 
