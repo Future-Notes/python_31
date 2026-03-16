@@ -1612,6 +1612,14 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
             db.session.add(lk)
             db.session.commit()
 
+    # --- reset de rate limiter voor deze gebruiker/IP ---
+    try:
+        from flask_limiter.util import get_remote_address
+        limiter.reset(get_remote_address())
+    except Exception:
+        # fallback: log error maar laat login gewoon slagen
+        app.logger.warning(f"Rate limit reset failed for user {user_id} / IP {ip}")
+
     return raw_token, session.id
 
 def remove_upload_if_orphan(upload_id):
@@ -9427,9 +9435,15 @@ def get_contact_email_nl():
 @app.route('/contact', methods=['POST'])
 @limiter.limit("1 per minute, 10 per hour, 15 per day")
 def contact():
-    data = request.json
-    email = data['email']
-    message = data['message']
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+    email = data.get("email")
+    message = data.get("message")
+
+    if not email or not message:
+        return jsonify({"error": "Email and message required"}), 400
+    
     lang = data.get("lang", "en")  # default English
     
     if email in {"noreplyfuturenotes@gmail.com", "nathanvcappellen@solcon.nl"}:
@@ -15227,7 +15241,7 @@ def undo_reset():
 
 
 @app.route('/login', methods=['POST'])
-@limiter.limit("8 per hour")
+@limiter.limit("30 per hour")
 def login():
     data = request.get_json(silent=True) or {}
 
