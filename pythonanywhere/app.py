@@ -9425,12 +9425,15 @@ def get_contact_email_nl():
         """
 
 @app.route('/contact', methods=['POST'])
-@limiter.limit("1 per minute, 10 per hour")
+@limiter.limit("1 per minute, 10 per hour, 15 per day")
 def contact():
     data = request.json
     email = data['email']
     message = data['message']
     lang = data.get("lang", "en")  # default English
+    
+    if email in {"noreplyfuturenotes@gmail.com", "nathanvcappellen@solcon.nl"}:
+        return jsonify({"message":"Email not allowed!"}), 400
 
     # First clean with bleach
     message = bleach.clean(message)
