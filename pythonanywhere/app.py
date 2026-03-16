@@ -9427,9 +9427,15 @@ def get_contact_email_nl():
 @app.route('/contact', methods=['POST'])
 @limiter.limit("1 per minute, 10 per hour, 15 per day")
 def contact():
-    data = request.json
-    email = data['email']
-    message = data['message']
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+    email = data.get("email")
+    message = data.get("message")
+
+    if not email or not message:
+        return jsonify({"error": "Email and message required"}), 400
+    
     lang = data.get("lang", "en")  # default English
     
     if email in {"noreplyfuturenotes@gmail.com", "nathanvcappellen@solcon.nl"}:
