@@ -14457,6 +14457,13 @@ def signup():
     result = validate_username(username)
 
     if result["exists"] or result["protected"]:
+        log_security_event(
+            event_type="signup_attempt",
+            outcome="rejected_username_taken_or_protected",
+            attempted_username=username,
+            ip_address=user_ip,
+            meta={"reason": "exists_or_protected"}
+        )
         return jsonify({"error": "Invalid username"}), 400
 
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
@@ -14468,6 +14475,12 @@ def signup():
         .first()
 
     if banned_ip:
+        log_security_event(
+            event_type="signup_attempt",
+            outcome="rejected_banned_ip",
+            attempted_username=username,
+            ip_address=user_ip
+        )
         return jsonify({"error": "Please get unbanned first!"}), 403
 
     # Create signup session
@@ -14482,6 +14495,14 @@ def signup():
 
     db.session.add(signup_session)
     db.session.commit()
+
+    log_security_event(
+        event_type="signup_session_created",
+        outcome="success",
+        attempted_username=username,
+        ip_address=user_ip,
+        meta={"signup_session_id": session_id}
+    )
 
     resp = jsonify({"redirect": "/signup/email"})
 
@@ -14559,6 +14580,13 @@ def verify_email_via_link():
     email = request.args.get('email')
     
     if not code or not email:
+        # missing params
+        log_security_event(
+            event_type="verify_email",
+            outcome="missing_parameters",
+            ip_address=request.remote_addr,
+            meta={"params": {"code": bool(code), "email": bool(email)}}
+        )
         # Render error page for missing parameters
         return f"""
         <!DOCTYPE html>
@@ -14602,6 +14630,12 @@ def verify_email_via_link():
     ).first()
 
     if not signup_session:
+        log_security_event(
+            event_type="verify_email",
+            outcome="invalid_or_expired_link",
+            ip_address=request.remote_addr,
+            meta={"code": code, "email": email}
+        )
         # Render error page for invalid/expired link
         return f"""
         <!DOCTYPE html>
@@ -14637,6 +14671,14 @@ def verify_email_via_link():
         </body>
         </html>
         """, 400
+
+    log_security_event(
+        event_type="verify_email",
+        outcome="verified",
+        attempted_username=signup_session.username,
+        ip_address=signup_session.user_ip,
+        meta={"signup_session_id": signup_session.id}
+    )
 
     # Render success page with auto-redirect
     return f"""
@@ -14750,6 +14792,9 @@ def complete_signup_internal(signup_session):
     try:
         skip_email = False if signup_session.email else True
 
+        log_security_event(event_type="signup_complete_attempt", outcome="started",
+                   attempted_username=signup_session.username, ip_address=signup_session.user_ip)
+
         # Create user
         user = User(
             username=signup_session.username,
@@ -14785,6 +14830,10 @@ def complete_signup_internal(signup_session):
         # Redeem referral
         _redeem_referral_for_user(user.id, signup_session)
 
+        # on success (after user created)
+        log_security_event(event_type="signup_complete", outcome="success",
+                        user_id=user.id, attempted_username=user.username, ip_address=signup_session.user_ip)
+
         return {
             "session_key": session_key,
             "lasting_key": lasting_key,
@@ -14792,6 +14841,10 @@ def complete_signup_internal(signup_session):
         }
 
     except IntegrityError:
+        # on IntegrityError (username taken)
+        log_security_event(event_type="signup_complete", outcome="failed_integrity_error",
+                        attempted_username=signup_session.username, ip_address=signup_session.user_ip,
+                        meta={"error": "integrity_error"})
         db.session.rollback()
         raise Exception("Account creation failed (username might be taken)")
     except Exception as e:
@@ -15066,6 +15119,9 @@ def reset_password():
     # Mark reset token as used
     reset_token.used = True
 
+    log_security_event(event_type="password_reset", outcome="success",
+                   user_id=user.id, ip_address=user_ip, meta={"undo_token_id": undo_token.id})
+
     # Create undo token (valid 3 days)
     undo_token = ResetUndoToken(
         user_id=user.id,
@@ -15144,6 +15200,9 @@ def undo_reset():
     undo_token.used = True
 
     db.session.commit()
+
+    log_security_event(event_type="password_reset_undo", outcome="used",
+                   user_id=user.id, ip_address=request.remote_addr, meta={"undo_token_id": undo_token.id})
 
     html = """<!DOCTYPE html>
 <html lang="en">
@@ -15407,11 +15466,17 @@ def undo_reset():
 def login():
     data = request.get_json(silent=True) or {}
 
+    username = data.get('username')  # may be None, that's fine
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()
+
     # 1) lasting_key auto-login (cookie)
     lk_cookie = request.cookies.get('lasting_key')
     if lk_cookie:
         lk_record = verify_lasting_token(lk_cookie)
         if not lk_record:
+            log_security_event(event_type="lasting_key_auth", outcome="invalid_token",
+                   attempted_username=None, ip_address=user_ip, meta={"presented_cookie": True})
             resp = make_response(jsonify({"error": "Invalid or expired lasting key!"}), 401)
             # drop cookie client-side
             resp.delete_cookie("lasting_key")
@@ -15419,6 +15484,8 @@ def login():
 
         user = User.query.get(lk_record.user_id)
         if not user:
+            log_security_event(event_type="login", outcome="invalid_credentials",
+                   attempted_username=None, ip_address=user_ip, meta={"reason": "bad_credentials"})
             # orphaned lasting key — revoke and remove cookie
             db.session.delete(lk_record)
             db.session.commit()
@@ -15427,6 +15494,8 @@ def login():
             return resp
 
         if user.suspended:
+            log_security_event(event_type="login", outcome="suspended_account",
+                   user_id=user.id, attempted_username=None, ip_address=user_ip)
             # revoke the lasting key
             db.session.delete(lk_record)
             db.session.commit()
@@ -15444,6 +15513,8 @@ def login():
                 new_ip = True
 
         if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
+            log_security_event(event_type="login_2fa", outcome="2fa_required", user_id=user.id,
+                   attempted_username=username, ip_address=user_ip)
             # create login token for 2FA; keep the original cookie intact for now
             login_token = secrets.token_urlsafe(32)
             login_tokens[login_token] = {
@@ -15472,6 +15543,10 @@ def login():
         # rotate lasting key: issue a new lasting token bound to this session, remove the old one
         device_info = request.headers.get('User-Agent', None)
         new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
+
+        log_security_event(event_type="login", outcome="success",
+                   user_id=user.id, attempted_username=username, ip_address=user_ip,
+                   session_id=session_id, meta={"rotated_lasting_key_id": new_lk.id if new_lk else None})
 
         # remove old lasting key record (prevents reuse)
         try:
@@ -15754,6 +15829,8 @@ def login_2fa():
 
     tmeta = login_tokens.get(token)
     if not tmeta or tmeta['expires_at'] < datetime.now(timezone.utc):
+        log_security_event(event_type="login_2fa", outcome="invalid_or_expired_token",
+                   attempted_username=None, ip_address=request.remote_addr, meta={"token": token})
         # cleanup if expired/invalid
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
@@ -15768,6 +15845,8 @@ def login_2fa():
     # rate limiting attempts
     attempts = login_2fa_attempts.get(token, 0)
     if attempts >= 5:
+        log_security_event(event_type="login_2fa", outcome="too_many_attempts",
+                   user_id=user.id, attempted_username=user.username)
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Too many attempts"}), 429
@@ -15804,6 +15883,10 @@ def login_2fa():
     if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
         db.session.commit()
+
+    log_security_event(event_type="login_2fa", outcome="success",
+                   user_id=user.id, attempted_username=user.username, ip_address=user_ip,
+                   session_id=session_id)
 
     payload = {
         "message": "Login successful!",
