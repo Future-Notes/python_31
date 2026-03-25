@@ -155,7 +155,6 @@
                 const res = await fetch("/test-session", { method: "GET" });
                 if (res.status === 200) {
                     hideModal();  // user’s good
-                    fetchNotes();
                     return true;
                 }
                 if (res.status === 403) {
