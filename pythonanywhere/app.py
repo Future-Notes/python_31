@@ -9,7 +9,7 @@ from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, fun
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
-from sqlalchemy import JSON, create_engine, inspect, and_
+from sqlalchemy import JSON, create_engine, inspect, and_, Index
 from pywebpush import webpush, WebPushException
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
@@ -53,7 +53,6 @@ from googleapiclient.errors import HttpError
 import requests
 import cohere
 # verify_file_content.py
-from file_check import verify_file_content_hardened
 import io
 import pyotp
 import qrcode
@@ -539,6 +538,50 @@ class Session(db.Model):
 
     user = db.relationship("User")
 
+class AuditLog(db.Model):
+    __tablename__ = "audit_log"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # If action is tied to a known user; nullable because many failures reference unknown usernames
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Useful when username was attempted but user didn't exist
+    attempted_username = db.Column(db.String(80), nullable=True, index=True)
+
+    # event type like: login_failed, login_success, lasting_key_invalid, lasting_key_created,
+    # signup_attempt, signup_success, signup_failed, verify_email_invalid, password_reset_requested,
+    # password_reset_completed, password_reset_undo, 2fa_required, 2fa_failed, 2fa_success, etc.
+    event_type = db.Column(db.String(50), nullable=False, index=True)
+
+    # More human-friendly outcome: "invalid_credentials", "suspended", "token_expired", "success", etc.
+    outcome = db.Column(db.String(80), nullable=False, index=True)
+
+    # IP (store as string, supports IPv6). Consider normalization/truncation if needed.
+    ip_address = db.Column(db.String(45), nullable=True, index=True)
+
+    # Raw user-agent (truncated); consider parsing to summary separately
+    user_agent = db.Column(db.String(1000), nullable=True)
+    user_agent_summary = db.Column(db.String(200), nullable=True)
+
+    # Optional FK to session.id (if you created a session) or lasting_key.id (if relevant)
+    session_id = db.Column(db.Integer, db.ForeignKey("session.id", ondelete="SET NULL"), nullable=True, index=True)
+    lasting_key_id = db.Column(db.Integer, db.ForeignKey("lasting_key.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Optional freeform metadata (JSON/text). Use JSONB if Postgres to query later, else Text.
+    meta = db.Column(db.Text, nullable=True)  # or db.Column(db.Text, nullable=True) if not Postgres
+
+    # who created the log record (system)
+    created_by = db.Column(db.String(80), nullable=True)
+
+    # indexes for fast lookups (already indexed by columns above, but explicit if desired)
+    __table_args__ = (
+        Index("ix_audit_log_event_time", "event_type", "created_at"),
+    )
+
+    user = db.relationship("User", backref=db.backref("audit_logs", lazy="dynamic"))
+
 class PermissionEnum(enum.Enum):
     read = "read"
     edit = "edit"
@@ -610,6 +653,7 @@ class Card(db.Model):
     completed = db.Column(db.Boolean, default=False)
     background_color = db.Column(db.String(7), nullable=True, default=None)
     due_date = db.Column(db.DateTime, nullable=True)
+    start_date = db.Column(db.DateTime, nullable=True)
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -2961,6 +3005,68 @@ def delete_profile_pictures(username):
         except Exception as e:
             print(f"Failed to delete {picture}: {e}")
 
+def _hash_sensitive(value: str) -> str:
+    """HMAC-like simple hash for tokens — don't store raw tokens. Uses app SECRET_KEY as salt."""
+    if not value:
+        return None
+    secret = current_app.config.get("SECRET_KEY", "")
+    return hashlib.sha256((value + secret).encode("utf-8")).hexdigest()
+
+def _shorten_ua(ua: str, maxlen=1000):
+    if not ua:
+        return None
+    return ua[:maxlen]
+
+def log_security_event(
+    event_type: str,
+    outcome: str,
+    user_id: int = None,
+    attempted_username: str = None,
+    ip_address: str = None,
+    user_agent: str = None,
+    session_id: int = None,
+    lasting_key_id: int = None,
+    token: str = None,
+    meta: dict = None,
+    created_by: str = "system"
+):
+    """Create an AuditLog entry. DO NOT store plaintext tokens/passwords.
+       If token is supplied, we store only a hash under meta['token_hash'].
+    """
+    try:
+        ip_address = ip_address or (request.headers.get('X-Forwarded-For') or request.remote_addr or None)
+        if ip_address and isinstance(ip_address, str):
+            ip_address = ip_address.split(",")[0].strip()
+
+        entry = AuditLog(
+            created_at=datetime.utcnow(),
+            user_id=user_id,
+            attempted_username=(attempted_username[:80] if attempted_username else None),
+            event_type=event_type,
+            outcome=outcome,
+            ip_address=ip_address,
+            user_agent=_shorten_ua(user_agent or request.headers.get('User-Agent', None)),
+            session_id=session_id,
+            lasting_key_id=lasting_key_id,
+            meta=meta or {},
+            created_by=created_by
+        )
+
+        if token:
+            # store only token hash
+            entry.meta = entry.meta or {}
+            entry.meta['token_hash'] = _hash_sensitive(token)
+
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as e:
+        # never raise logging errors to user flow; keep best-effort and write to app logger
+        current_app.logger.exception("Failed to write audit log: %s", str(e))
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
 def sync_profile_pics_files_db():
     """ Syncs the profile pictures in the database with the actual files for all users. """
     # Get all users from the database
@@ -4193,6 +4299,78 @@ def admin_storage_overview():
 
     return jsonify(result), 200
 
+def verify_file_content_hardened(file_path: str, mimetype: str) -> bool:
+    """
+    Local-only file verification.
+    Returns True if file is SAFE, False if suspicious.
+    """
+
+    try:
+        # 1. Basic MIME allowlist
+        if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith("image/"):
+            print("mimetype error")
+            return False
+
+        # 2. Magic byte validation
+        if not _matches_magic_bytes(file_path, mimetype):
+            print("magic bytes error")
+            return False
+
+        # 3. Extension consistency
+        if not _extension_matches(file_path, mimetype):
+            print("extension error")
+            return False
+
+        # 4. Heuristic scan (very lightweight)
+        if _contains_suspicious_patterns(file_path):
+            print("heuristic scan error")
+            return False
+
+        return True
+
+    except Exception as e:
+        print(e)
+        return False
+
+def _matches_magic_bytes(file_path: str, mimetype: str) -> bool:
+    MAGIC_MAP = {
+        "image/png": [b"\x89PNG\r\n\x1a\n"],
+        "image/jpeg": [b"\xff\xd8\xff"],
+        "image/gif": [b"GIF87a", b"GIF89a"],
+        "application/pdf": [b"%PDF"],
+        "application/zip": [b"PK\x03\x04"],
+    }
+
+    expected = MAGIC_MAP.get(mimetype)
+    if not expected:
+        return True  # unknown types allowed but not verified
+
+    with open(file_path, "rb") as f:
+        header = f.read(16)
+
+    return any(header.startswith(sig) for sig in expected)
+
+def _extension_matches(file_path: str, mimetype: str) -> bool:
+    return True
+
+def _contains_suspicious_patterns(file_path: str) -> bool:
+    suspicious_signatures = [
+        b"<?php",
+        b"<script",
+        b"powershell",
+        b"cmd.exe",
+        b"/bin/sh",
+        b"eval(",
+        b"base64_decode",
+    ]
+
+    try:
+        with open(file_path, "rb") as f:
+            chunk = f.read(4096).lower()
+            return any(sig in chunk for sig in suspicious_signatures)
+    except Exception:
+        return True
+
 
 def verify_file_content(file_path: str, mimetype: str) -> bool:
     """
@@ -4256,50 +4434,11 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
         file_sha256 = _sha256(tmp_name)
 
         # Attempt VirusTotal fast hash lookup
-        vt_known_and_clean = False
-        vt_unknown = False
-        try:
-            if not VT_API_KEY:
-                raise EnvironmentError("VT_API_KEY is not set.")
-            with vt.Client(VT_API_KEY) as client:
-                try:
-                    file_obj = client.get_object(f"/files/{file_sha256}")
-                    vt_known_and_clean = _vt_stats_clean(file_obj.last_analysis_stats)
-                except vt.APIError as e:
-                    if e.code == "NotFoundError":
-                        vt_unknown = True
-                    else:
-                        # unexpected VT error — fail closed (cleanup tmp file)
-                        os.remove(tmp_name)
-                        raise
-        except Exception as e:
-            # Any error communicating with VT -> fail closed (do not accept the upload)
-            try:
-                os.remove(tmp_name)
-            except Exception:
-                pass
-            return True, f"VirusTotal error: {str(e)}"
+        is_safe = verify_file_content_hardened(tmp_name, mimetype)
 
-        # If VT known and malicious -> reject immediately
-        if vt_known_and_clean is False and not vt_unknown:
-            # That means known and NOT clean (malicious/suspicious)
-            try:
-                os.remove(tmp_name)
-            except Exception:
-                pass
-            if user:
-                try:
-                    user.malicious_violations = (user.malicious_violations or 0) + 1
-                    if user.malicious_violations > 3:
-                        user.banned = True
-                    db.session.add(user)
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
-            return False, "Uploaded file is malicious according to VirusTotal."
-
-        # At this point either VT known & clean OR VT unknown (we will accept in both cases).
-        # Proceed to store the file in a best-effort order: Dropbox, Mega, else local.
+        if not is_safe:
+            os.remove(tmp_name)
+            return False, "File failed security checks."
 
         storage_backend = "local"
         stored_path = None
@@ -4360,12 +4499,8 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
         # --- Create DB record ---
         try:
             # If VT was unknown then mark as pending; if known and clean, mark verified
-            if vt_unknown:
-                verification_status = "pending"
-                pending_verification = True
-            else:
-                verification_status = "verified"
-                pending_verification = False
+            verification_status = "verified"
+            pending_verification = False
 
             upload = Upload(
                 user_id=user.id,
@@ -6003,14 +6138,19 @@ def api_get_boards():
     )
     out = []
     for b in boards:
-        # If you want to include permission in listing:
-        if b.user_id == user_id:
-            perm = 'owner'
-        else:
-            share = BoardShare.query.filter_by(board_id=b.id, user_id=user_id).first()
-            perm = share.permission.value if share else None
-        out.append({"id": b.id, "title": b.title, "created_at": b.created_at.isoformat(), "permission": perm})
-    out = [{"id": b.id, "title": b.title, "created_at": b.created_at.isoformat()} for b in boards]
+        # Count cards in this board
+        lists = List.query.filter_by(board_id=b.id).all()
+        list_ids = [l.id for l in lists]
+        cards_count = 0
+        if list_ids:
+            cards_count = Card.query.filter(Card.list_id.in_(list_ids)).count()
+        
+        out.append({
+            "id": b.id,
+            "title": b.title,
+            "created_at": b.created_at.isoformat(),
+            "cards_count": cards_count
+        })
     return jsonify(out)
 
 @app.route('/api/boards', methods=['POST'])
@@ -6183,29 +6323,25 @@ def api_get_lists():
     board_id = request.args.get('board_id', type=int)
     if board_id is None:
         return jsonify({"error": "board_id required as query param"}), 400
-
+ 
     allowed, reason = require_board_permission(board_id, user_id, need_edit=False)
     if not allowed:
         return jsonify({"error": "Board not found or access denied"}), 404
     board = Board.query.get(board_id)
-
-    # determine board background image url if present
+ 
     board_bg = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
     board_background_image_url = None
     if board_bg:
         upload = Upload.query.filter_by(id=board_bg.upload_id, deleted=False).first()
         if upload:
             board_background_image_url = get_upload_url(upload)
-
-    # fetch all lists for board (do not filter by user_id)
+ 
     lists = List.query.filter_by(board_id=board_id).order_by(List.id).all()
     list_ids = [l.id for l in lists]
-
-    # fetch all cards for those lists (do not restrict by Card.user_id)
+ 
     cards = Card.query.filter(Card.list_id.in_(list_ids)).order_by(Card.position).all()
     card_ids = [c.id for c in cards]
-
-    # fetch all card asignees for that card, including their user info (user_id, username, profile_pic_url, etc.)
+ 
     assignees_map = {}
     if card_ids:
         rows = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id.in_(card_ids)).all()
@@ -6217,21 +6353,17 @@ def api_get_lists():
                 "assigned_at": _iso_z(getattr(cm, 'asigned_at', None))
             }
             assignees_map.setdefault(cm.card_id, []).append(info)
-
-    # fetch all card background uploads in one query
+ 
     card_bg_map = {}
     if card_ids:
         card_bgs = CardBackgroundUpload.query.filter(CardBackgroundUpload.card_id.in_(card_ids)).all()
         upload_ids = [bg.upload_id for bg in card_bgs]
         uploads = {u.id: u for u in Upload.query.filter(Upload.id.in_(upload_ids), Upload.deleted==False).all()}
-
-        # map card_id -> background url
         for bg in card_bgs:
             u = uploads.get(bg.upload_id)
             if u:
                 card_bg_map[bg.card_id] = get_upload_url(u)
-
-    # build output
+ 
     out = []
     for l in lists:
         l_cards = [c for c in cards if c.list_id == l.id]
@@ -6249,13 +6381,14 @@ def api_get_lists():
                     "completed": c.completed,
                     "color": c.background_color,
                     "background_image_url": card_bg_map.get(c.id),
+                    "start_date": c.start_date.isoformat() if c.start_date else None,  # ← NEW
                     "due_date": c.due_date.isoformat() if c.due_date else None,
                     "assignees": assignees_map.get(c.id, [])
                 }
                 for c in l_cards
             ]
         })
-
+ 
     return jsonify({
         "board_color": board.background_color,
         "board_background_image_url": board_background_image_url,
@@ -6422,28 +6555,22 @@ def api_get_card_info(card_id):
     card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
-
-    # permission check on the board owning this card
+ 
     list_obj = List.query.get(card.list_id)
     if not list_obj:
         return jsonify({"error": "Card/list not found"}), 404
-
+ 
     allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=False)
     if not allowed:
         return jsonify({"error": "Card not found or access denied"}), 404
-
-    # Determine background image for the card
+ 
     card_bg = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
     card_background_image_url = None
     if card_bg:
         upload = Upload.query.filter_by(id=card_bg.upload_id, deleted=False).first()
         if upload:
             card_background_image_url = get_upload_url(upload)
-
-    if card.due_date:
-        due_date_iso = card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-    # fetch assignees (with user info)
+ 
     assignees = []
     card_members = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id == card.id).all()
     for cm, u in card_members:
@@ -6453,7 +6580,7 @@ def api_get_card_info(card_id):
             "profile_picture": u.profile_picture,
             "assigned_at": _iso_z(getattr(cm, 'asigned_at', None))
         })
-
+ 
     return jsonify({
         "id": card.id,
         "title": card.title,
@@ -6462,7 +6589,8 @@ def api_get_card_info(card_id):
         "completed": card.completed,
         "color": card.background_color,
         "background_image_url": card_background_image_url,
-        "due_date": due_date_iso if card.due_date else None,
+        "start_date": card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.start_date else None,  # ← NEW
+        "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None,
         "assignees": assignees
     })
 
@@ -6808,26 +6936,33 @@ def api_create_card():
     description = payload.get('description') or ''
     if not title or list_id is None:
         return jsonify({"error": "title and list_id required"}), 400
-
+ 
     list_obj = List.query.get(list_id)
     if not list_obj:
         return jsonify({"error": "List not found"}), 404
-
+ 
     allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
     if not allowed:
         return jsonify({"error": "List not found or permission denied"}), 404
-
+ 
     max_pos = db.session.query(db.func.max(Card.position)).filter_by(list_id=list_id).scalar()
     position = ((max_pos or 0) + 1000)
     card = Card(user_id=user_id, list_id=list_id, title=title, description=description, position=position)
-
+ 
+    # optional start_date  ← NEW
+    if 'start_date' in payload:
+        try:
+            card.start_date = _parse_iso_to_utc_naive(payload.get('start_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+ 
     # optional due_date
     if 'due_date' in payload:
         try:
             card.due_date = _parse_iso_to_utc_naive(payload.get('due_date'))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-
+ 
     db.session.add(card)
     db.session.commit()
     return jsonify({
@@ -6835,6 +6970,7 @@ def api_create_card():
         "title": card.title,
         "description": card.description or "",
         "position": card.position,
+        "start_date": card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.start_date else None,  # ← NEW
         "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
     }), 201
 
@@ -6885,60 +7021,80 @@ def api_update_card(card_id):
     card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
-
+ 
     list_obj = List.query.get(card.list_id)
     if not list_obj:
         return jsonify({"error": "Card/list not found"}), 404
-
+ 
     allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
     if not allowed:
         return jsonify({"error": "Card not found or permission denied"}), 404
-
+ 
     payload = request.get_json() or {}
-
+ 
     title_changed = False
     description_changed = False
+    start_date_changed = False  # ← NEW
     due_date_changed = False
-
+ 
     if 'title' in payload and payload['title'] != card.title:
         card.title = payload['title']
         title_changed = True
-
+ 
     if 'description' in payload and payload['description'] != card.description:
         card.description = payload['description']
         description_changed = True
-
+ 
+    # ── start_date handling ────────────────────────────────────────── NEW ──
+    if 'start_date' in payload:
+        try:
+            new_start = _parse_iso_to_utc_naive(payload.get('start_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+ 
+        if (card.start_date is None and new_start is not None) or \
+           (card.start_date is not None and new_start is None) or \
+           (card.start_date is not None and new_start is not None and card.start_date != new_start):
+            start_date_changed = True
+            card.start_date = new_start
+    # ─────────────────────────────────────────────────────────────────────────
+ 
     if 'due_date' in payload:
-        # payload may contain null to clear
         try:
             new_due = _parse_iso_to_utc_naive(payload.get('due_date'))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-
-        # Compare naive datetimes (or None)
+ 
         if (card.due_date is None and new_due is not None) or \
            (card.due_date is not None and new_due is None) or \
            (card.due_date is not None and new_due is not None and card.due_date != new_due):
             due_date_changed = True
-            old = card.due_date
             card.due_date = new_due
-
+ 
     if title_changed:
         insert_card_activity(user_id, card.id, f"Card title updated to '{card.title}'")
     if description_changed:
         insert_card_activity(user_id, card.id, "Card description updated")
+    # ── NEW activity logging ─────────────────────────────────────────────────
+    if start_date_changed:
+        if card.start_date:
+            insert_card_activity(user_id, card.id, f"Card start date set to {card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        else:
+            insert_card_activity(user_id, card.id, "Card start date cleared")
+    # ─────────────────────────────────────────────────────────────────────────
     if due_date_changed:
         if card.due_date:
             insert_card_activity(user_id, card.id, f"Card due date set to {card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')}")
         else:
             insert_card_activity(user_id, card.id, "Card due date cleared")
-
+ 
     db.session.commit()
-
+ 
     return jsonify({
         "id": card.id,
         "title": card.title,
         "description": card.description or "",
+        "start_date": card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.start_date else None,  # ← NEW
         "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
     })
 
@@ -14277,9 +14433,6 @@ def validate_username(username: str, protected_users=None):
 
     return {"exists": False, "protected": False, "reason": None}
 
-# Authentication
-
-# app.py
 @app.route('/signup', methods=['POST'])
 @limiter.limit("30/hour", override_defaults=True)
 def signup():
@@ -14288,6 +14441,18 @@ def signup():
 
     username = data["username"]
 
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()
+
+    log_security_event(
+        event_type="signup_attempt",
+        outcome="started",
+        attempted_username=username,
+        ip_address=user_ip,
+        user_agent=request.headers.get('User-Agent'),
+        meta={"step": "initial_validation"}
+    )
+
     # FULL validation
     result = validate_username(username)
 
@@ -14295,9 +14460,6 @@ def signup():
         return jsonify({"error": "Invalid username"}), 400
 
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_ip = user_ip.split(',')[0].strip()
 
     cleanup_expired_signup_sessions()
 

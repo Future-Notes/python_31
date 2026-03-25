@@ -740,6 +740,7 @@
         pointer-events: auto;
         margin: 6px;
         z-index: 2;
+        background: var(--btn-color);
         }
         .card-avatars {
         position: absolute;      /* absolute so it doesn't take inline space in card-main */
@@ -902,6 +903,74 @@
         .member-row:hover { background: rgba(255,255,255,0.03); }
         .member-row .member-checkbox { margin-left:auto; margin-right:4px; }
         .members-dropdown .dd-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+        .members-dropdown {
+            position: absolute;
+            z-index: 1500;
+            background: var(--bg-color);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 6px;
+            min-width: 220px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+
+        .members-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        .member-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 10px;
+            border-radius: 7px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.12s;
+        }
+
+        .member-row:hover  { background: rgba(255,255,255,0.08); }
+        .member-row:focus  { outline: 2px solid rgba(255,255,255,0.3); outline-offset: -2px; }
+
+        .member-name {
+            flex: 1;
+            font-size: 14px;
+            color: #e0e0e0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* SVG tick styles */
+        .tick-box {
+            fill: transparent;
+            stroke: rgba(255,255,255,0.25);
+            stroke-width: 1.5;
+            transition: fill 0.12s, stroke 0.12s;
+        }
+
+        .tick-mark {
+            fill: none;
+            stroke: transparent;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: stroke 0.12s;
+        }
+
+        /* selected state flips both */
+        .member-row.is-selected .tick-box {
+            fill: var(--btn-color);
+            stroke: var(--ctr-color);
+        }
+
+        .member-row.is-selected .tick-mark {
+            stroke: #fff;
+        }
     </style>
 
     <!-- SortableJS CDN (drag & drop) -->
@@ -1053,6 +1122,45 @@
 let currentBoardId = null;
 let globalBoardBackgroundUrl = null
 let boardsCache = []; // list of boards
+
+// ─── Image cache ─────────────────────────────────────────────────────────────
+const CACHE_NAME   = 'bg-images-v1';
+const _imgMemCache = new Map(); // url → objectURL (current session)
+
+async function getCachedImageUrl(url) {
+    if (!url) return null;
+    if (_imgMemCache.has(url)) return _imgMemCache.get(url);
+    try {
+        const cache = await caches.open(CACHE_NAME);
+        let resp    = await cache.match(url);
+        if (!resp) {
+            resp = await fetch(url);
+            if (resp.ok) await cache.put(url, resp.clone());
+        }
+        const objectUrl = URL.createObjectURL(await resp.blob());
+        _imgMemCache.set(url, objectUrl);
+        console.log("Using cached image url: " + objectUrl);
+        return objectUrl;
+    } catch {
+        return url; // graceful fallback to original URL
+    }
+}
+
+async function invalidateCachedImageUrl(url) {
+    if (!url) return;
+    const objectUrl = _imgMemCache.get(url);
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); _imgMemCache.delete(url); }
+    const cache = await caches.open(CACHE_NAME).catch(() => null);
+    if (cache) await cache.delete(url).catch(() => {});
+    console.log("Cached background image deleted!");
+}
+
+function applyBgImageCached(el, url) {
+    getCachedImageUrl(url).then(cachedUrl => {
+        el.style.background = `url('${cachedUrl}') center/cover no-repeat`;
+    });
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
     // Ensure fetch sends cookies
@@ -1474,40 +1582,44 @@ function dueDateLabelForDisplay(dateObj) {
     };
 }
 
+function updateCardDueBadge(cardEl, dueIso) {
+    const startIso = cardEl?.dataset?.startIso || null;
+    updateCardDateBadge(cardEl, startIso, dueIso);
+}
+
 // Update or create the small due-date badge inside a board card DOM element.
 // cardEl: DOM element (.card); dueIso: timezone-aware ISO string (e.g. "2026-03-01T11:00:00.000Z") OR null/empty to remove.
-function updateCardDueBadge(cardEl, dueIso) {
+function updateCardDateBadge(cardEl, startIso, dueIso) {
     if (!cardEl) return;
-    // remove or update
+
     const existing = cardEl.querySelector('.card-due-badge');
 
-    if (!dueIso) {
+    const startInfo = parseCardDateMeta(startIso);
+    const dueInfo = parseCardDateMeta(dueIso);
+
+    const badgeText = buildCardDateBadgeText(startInfo, dueInfo);
+
+    if (!badgeText) {
         if (existing) existing.remove();
+        delete cardEl.dataset.startIso;
         delete cardEl.dataset.dueIso;
         return;
     }
 
-    const parsed = parseServerIsoToDate(dueIso);
-    if (!parsed) {
-        if (existing) existing.remove();
-        delete cardEl.dataset.dueIso;
-        return;
-    }
+    const cls = getCardDateBadgeClass(startInfo, dueInfo);
+    const title = getCardDateBadgeTitle(startInfo, dueInfo);
 
-    const { label, cls } = dueDateLabelForDisplay(parsed);
     if (existing) {
-        existing.textContent = label;
+        existing.textContent = badgeText;
         existing.className = 'card-due-badge ' + cls;
-        existing.title = parsed.toLocaleString();
+        existing.title = title;
     } else {
         const badge = document.createElement('div');
         badge.className = 'card-due-badge ' + cls;
-        badge.textContent = label;
-        badge.title = parsed.toLocaleString();
-        // clicking the badge could open modal to edit — keep behavior similar to your modal label:
+        badge.textContent = badgeText;
+        badge.title = title;
         badge.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            // open modal to edit this card's due date
             if (typeof openCardModal === 'function') {
                 openCardModal(parseInt(cardEl.dataset.cardId, 10));
             }
@@ -1515,8 +1627,78 @@ function updateCardDueBadge(cardEl, dueIso) {
         cardEl.appendChild(badge);
     }
 
-    // store canonical ISO on element for sorting/inspection
-    cardEl.dataset.dueIso = parsed.toISOString();
+    if (startInfo?.date) cardEl.dataset.startIso = startInfo.date.toISOString();
+    else delete cardEl.dataset.startIso;
+
+    if (dueInfo?.date) cardEl.dataset.dueIso = dueInfo.date.toISOString();
+    else delete cardEl.dataset.dueIso;
+}
+
+function parseCardDateMeta(iso) {
+    if (!iso) return null;
+    const date = parseServerIsoToDate(iso);
+    if (!date) return null;
+    const hasTime = /[T ]\d{2}:\d{2}/.test(iso);
+    return { date, hasTime };
+}
+
+function formatCardDate(date, { compact = false, hasTime = false } = {}) {
+    if (!date) return '';
+
+    if (compact) {
+        return date.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+
+    const datePart = date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+
+    if (!hasTime) return datePart;
+
+    const timePart = date.toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+
+    return `${datePart} ${timePart}`;
+}
+
+function buildCardDateBadgeText(startInfo, dueInfo) {
+    const hasStart = !!startInfo?.date;
+    const hasDue = !!dueInfo?.date;
+
+    if (hasStart && hasDue) {
+        return `${formatCardDate(startInfo.date, { compact: true })} - ${formatCardDate(dueInfo.date, { compact: true })}`;
+    }
+
+    if (hasStart) {
+        return `Start: ${formatCardDate(startInfo.date, { hasTime: startInfo.hasTime })}`;
+    }
+
+    if (hasDue) {
+        return `Due: ${formatCardDate(dueInfo.date, { hasTime: dueInfo.hasTime })}`;
+    }
+
+    return null;
+}
+
+function getCardDateBadgeClass(startInfo, dueInfo) {
+    if (dueInfo?.date) {
+        return dueDateLabelForDisplay(dueInfo.date).cls;
+    }
+    return 'card-due-badge--start-only';
+}
+
+function getCardDateBadgeTitle(startInfo, dueInfo) {
+    const parts = [];
+    if (startInfo?.date) parts.push(`Start: ${startInfo.date.toLocaleString()}`);
+    if (dueInfo?.date) parts.push(`Due: ${dueInfo.date.toLocaleString()}`);
+    return parts.join('\n');
 }
 
 /* START PAGE: fetch boards and render as cards */
@@ -2481,17 +2663,104 @@ function ensureAssigneePopupBehavior(container, assignees) {
   window.addEventListener('scroll', positionPopup, true);
 }
 
+function parseCardDateMeta(isoString) {
+    if (!isoString) return null;
+
+    const date = parseServerIsoToDate(isoString);
+    if (!date) return null;
+
+    // `T` or a space indicates a datetime, not just a date
+    const hasTime = /[T ]\d{2}:\d{2}/.test(isoString);
+
+    return { date, hasTime };
+}
+
+function formatCardDate(date, { hasTime = false, compact = false } = {}) {
+    if (!date) return '';
+
+    // Compact mode: "Mar 24"
+    if (compact) {
+        return date.toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+
+    // Normal mode: "Mar 24, 2026"
+    const datePart = date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+
+    if (!hasTime) return datePart;
+
+    const timePart = date.toLocaleTimeString(undefined, {
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+
+    return `${datePart} ${timePart}`;
+}
+
+function buildCardDateBadgeText(startInfo, dueInfo) {
+    const hasStart = !!startInfo?.date;
+    const hasDue = !!dueInfo?.date;
+
+    // BOTH → compact range (no year, no time)
+    if (hasStart && hasDue) {
+        const sameMonth = startInfo.date.getMonth() === dueInfo.date.getMonth() &&
+                        startInfo.date.getFullYear() === dueInfo.date.getFullYear();
+
+        if (sameMonth) {
+            const month = startInfo.date.toLocaleDateString(undefined, { month: 'short' });
+            return `${month} ${startInfo.date.getDate()}–${dueInfo.date.getDate()}`;
+        }
+
+        return `${formatCardDate(startInfo.date, { compact: true })} - ${formatCardDate(dueInfo.date, { compact: true })}`;
+    }
+
+    // ONLY START
+    if (hasStart) {
+        const startText = formatCardDate(startInfo.date, {
+            hasTime: startInfo.hasTime
+        });
+        return `Start: ${startText}`;
+    }
+
+    // ONLY DUE
+    if (hasDue) {
+        const dueText = formatCardDate(dueInfo.date, {
+            hasTime: dueInfo.hasTime
+        });
+        return `Due: ${dueText}`;
+    }
+
+    return null;
+}
+
 // Create a DOM node for a card. If isTemp is true, the card will be styled as temporary.
 // If background_image_url is provided, it takes precedence over background_color.
-function createCardElement({ id, title = '', description = '', isTemp = false, completed = false, background_color = null, background_image_url = null, due_date = null, assignees = [] }) {
+function createCardElement({
+    id,
+    title = '',
+    description = '',
+    isTemp = false,
+    completed = false,
+    background_color = null,
+    background_image_url = null,
+    start_date = null,
+    due_date = null,
+    assignees = []
+}) {
     const cardEl = document.createElement('div');
     cardEl.className = 'card';
     cardEl.dataset.cardId = id;
-    cardEl.style.position = cardEl.style.position || 'relative'; // ensure positioning for absolute children
+    cardEl.style.position = cardEl.style.position || 'relative';
 
     // Apply background: image takes precedence
     if (background_image_url) {
-        cardEl.style.background = `url('${background_image_url}') center/cover no-repeat`;
+        applyBgImageCached(cardEl, background_image_url);   // ← was inline url()
     } else if (background_color) {
         cardEl.style.background = background_color;
     }
@@ -2520,26 +2789,7 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
       </div>
     `;
 
-    // If due_date provided, parse and display
-    // --- Due date badge (bottom-left system) ---
-    let hasDue = false;
-    if (due_date) {
-        const parsed = parseServerIsoToDate(due_date);
-        if (parsed) {
-            const { label, cls } = dueDateLabelForDisplay(parsed);
-
-            const badge = document.createElement('div');
-            badge.className = 'card-due-badge ' + cls;
-            badge.textContent = label;
-            badge.title = parsed.toLocaleString();
-
-            cardEl.appendChild(badge);
-
-            // store canonical ISO for later sorting / updating
-            cardEl.dataset.dueIso = parsed.toISOString();
-            hasDue = true;
-        }
-    }
+    updateCardDateBadge(cardEl, start_date, due_date);
 
     // Insert avatar container somewhere appropriate, e.g. inside card-main or footer
     // Insert avatar container somewhere appropriate
@@ -2554,13 +2804,13 @@ function createCardElement({ id, title = '', description = '', isTemp = false, c
     // render assignees (unchanged API)
     renderAssignees(avatarsContainer, assignees);
 
-    // If both a due date and assignees are present, reserve bottom space so nothing overlaps
-    if (hasDue && Array.isArray(assignees) && assignees.length > 0) {
-        // add a class which the CSS will turn into padding-bottom
+    const startInfo = parseCardDateMeta(start_date);
+    const dueInfo = parseCardDateMeta(due_date);
+    const hasDateBadge = !!(startInfo?.date || dueInfo?.date);
+
+    if (hasDateBadge && Array.isArray(assignees) && assignees.length > 0) {
         cardEl.classList.add('card--reserve-bottom');
         avatarsContainer.classList.add('card--move-up');
-        // optionally expose exact reserve size for cases where avatar size varies:
-        // cardEl.style.setProperty('--card-reserve-bottom', '48px');
     }
 
     // Make attach handlers same as before
@@ -2680,15 +2930,11 @@ async function loadLists(boardId) {
 
         if (boardEl) {
             if (boardBackgroundUrl) {
-                // use background-image when there is an image
-                boardEl.style.background = `url('${boardBackgroundUrl}') center/cover no-repeat`;
-                // color contrast on title: use default (white or black) or leave as-is
-                if (boardTitleEl) boardTitleEl.style.color = ''; // default contrast for images
+                applyBgImageCached(boardEl, boardBackgroundUrl);   // ← was inline url()
+                if (boardTitleEl) boardTitleEl.style.color = '';
             } else if (boardColor) {
-                // just a color background
                 boardEl.style.background = boardColor;
             } else {
-                // reset to default
                 boardEl.style.background = '';
                 if (boardTitleEl) boardTitleEl.style.color = '';
             }
@@ -3061,6 +3307,7 @@ async function loadLists(boardId) {
                     completed: !!c.completed,
                     background_color: c.color,
                     background_image_url: c.background_image_url,
+                    start_date: c.start_date,   // add this
                     due_date: c.due_date,
                     assignees: c.assignees || []
                 });
@@ -3448,6 +3695,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                             <div id="card-modal-due-container" class="bm-section" style="margin-left:8px; display:flex; align-items:center;"></div>
                             <!-- Hidden keeper for the ISO due_date value (timezone-aware ISO string produced by toISOString()) -->
                             <input type="hidden" id="card-modal-due-hidden" value="">
+                            <input type="hidden" id="card-modal-start-hidden" value="">
                         </div>
 
                         <div class="card-modal-body">
@@ -3456,7 +3704,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                         </div>
 
                         <footer class="card-modal-footer">
-                            <button id="card-modal-save" class="btn">Save</button>
+                            <span id="card-modal-autosave-status" style="font-size:12px;opacity:0.55;font-style:italic;"></span>
                         </footer>
                     </div>
 
@@ -3475,17 +3723,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             </section>
 
             <!-- Inline datepicker menu (hidden until needed) -->
-            <div id="card-modal-due-menu" class="card-modal-due-menu" style="display:none; position:fixed; z-index:1300;">
-                <div class="card-modal-due-menu-inner">
-                    <label style="font-size:13px;margin-bottom:6px;display:block;">Select date & time</label>
-                    <input id="card-modal-datetime-input" type="datetime-local" style="width:93%;padding:8px;border-radius:6px;border:1px solid #333;background:var(--btn-color);color:#e0e0e0;">
-                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;">
-                        <button id="card-modal-due-cancel" class="btn ghost">Cancel</button>
-                        <button id="card-modal-due-remove" class="btn ghost">Remove</button>
-                        <button id="card-modal-due-save" class="btn">Save</button>
-                    </div>
-                </div>
-            </div>
+            <div id="card-modal-due-menu" class="card-modal-due-menu" style="display:none; position:fixed; z-index:1300;"></div>
         `;
 
         // Minimal styles (scoped)
@@ -3619,7 +3857,87 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
         // Close / cancel handlers
         modal.querySelector('.card-modal-backdrop').addEventListener('click', () => closeCardModal());
         modal.querySelector('#card-modal-cancel').addEventListener('click', () => closeCardModal());
-        modal.querySelector('#card-modal-save').addEventListener('click', () => saveCardModal());
+
+        // --- Auto-save: debounced on title + description input ---
+        function debounce(fn, delay) {
+            let timer;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn(...args), delay);
+            };
+        }
+
+        const statusEl = () => modal.querySelector('#card-modal-autosave-status');
+
+        function setAutosaveStatus(msg, isError = false) {
+            const el = statusEl();
+            if (!el) return;
+            el.textContent = msg;
+            el.style.color = isError ? '#ff6b6b' : '';
+        }
+
+        const autoSave = debounce(async () => {
+            const cardId = _cardModalState.cardId;
+            if (!cardId) return;
+
+            const titleEl = modal.querySelector('#card-modal-title');
+            const descEl  = modal.querySelector('#card-modal-desc');
+            const dueHidden = modal.querySelector('#card-modal-due-hidden');
+            const startHiddenEl = modal.querySelector('#card-modal-start-hidden');
+
+            const title = titleEl.value.trim();
+            const description = descEl.value.trim();
+
+            if (!title) {
+                setAutosaveStatus('Title cannot be empty', true);
+                return;
+            }
+
+            setAutosaveStatus('Saving…');
+
+            try {
+                const payload = { title, description };
+                if (dueHidden && dueHidden.value) payload.due_date = dueHidden.value;
+                else payload.due_date = null;
+                if (startHiddenEl && startHiddenEl.value) payload.start_date = startHiddenEl.value;
+                else payload.start_date = null;
+
+                const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, payload);
+                if (!res.ok) {
+                    const j = await res.json().catch(() => ({}));
+                    setAutosaveStatus(j.error || 'Save failed', true);
+                    return;
+                }
+
+                // Update the card element on the board
+                const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
+                if (cardEl) {
+                    const titleNode = cardEl.querySelector('.card-title-text');
+                    const descNode  = cardEl.querySelector('.card-desc-text');
+                    if (titleNode) titleNode.textContent = title;
+                    if (descNode)  descNode.textContent  = description;
+
+                    const dueIso = dueHidden && dueHidden.value ? dueHidden.value : null;
+                    const startIso = startHiddenEl && startHiddenEl.value ? startHiddenEl.value : null;
+
+                    if (typeof updateCardDateBadge === 'function') {
+                        updateCardDateBadge(cardEl, startIso, dueIso);
+                    } else if (typeof updateCardDueBadge === 'function') {
+                        updateCardDueBadge(cardEl, dueIso);
+                    }
+                }
+
+                setAutosaveStatus('Saved ✓');
+                setTimeout(() => setAutosaveStatus(''), 2000);
+
+            } catch (err) {
+                console.error(err);
+                setAutosaveStatus('Network error', true);
+            }
+        }, 800); // 800 ms debounce
+
+        modal.querySelector('#card-modal-title').addEventListener('input', autoSave);
+        modal.querySelector('#card-modal-desc').addEventListener('input', autoSave);
 
         // Add comment
         modal.querySelector('#card-add-comment').addEventListener('click', () => addCommentFromModal());
@@ -3638,189 +3956,332 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
 
         // Initialize Due Date UI handlers and helpers
         function initDueDateUI(modalEl) {
-            const addBtnContainer = modalEl.querySelector('#card-modal-action-buttons');
-            const dueContainer    = modalEl.querySelector('#card-modal-due-container');
-            const hiddenInput     = modalEl.querySelector('#card-modal-due-hidden');
-            const menu            = modalEl.querySelector('#card-modal-due-menu');
-            const datetimeInput   = modalEl.querySelector('#card-modal-datetime-input');
-            const btnSave         = modalEl.querySelector('#card-modal-due-save');
-            const btnRemove       = modalEl.querySelector('#card-modal-due-remove');
-            const btnCancel       = modalEl.querySelector('#card-modal-due-cancel');
+            const actionButtons  = modalEl.querySelector('#card-modal-action-buttons');
+            const dueContainer   = modalEl.querySelector('#card-modal-due-container');
+            const hiddenDueInput = modalEl.querySelector('#card-modal-due-hidden');
+            const menu           = modalEl.querySelector('#card-modal-due-menu');
+        
+            // Hidden input for start_date (created in HTML per step A above)
+            const hiddenStartInput = modalEl.querySelector('#card-modal-start-hidden');
+        
+            // ── Build the dates panel HTML inside the menu shell ──────────────────────
+            menu.innerHTML = `
+                <div class="card-modal-due-menu-inner">
+                    <div class="dp-header">
+                        <span>Dates</span>
+                        <button type="button" class="dp-close btn ghost">✕</button>
+                    </div>
+        
+                    <div class="dp-row">
+                        <div class="dp-row-head">
+                            <input type="checkbox" id="dp-start-cb" class="dp-cb">
+                            <label for="dp-start-cb" class="dp-cb-label">Start date</label>
+                        </div>
+                        <div class="dp-fields" id="dp-start-fields">
+                            <input type="date" id="dp-start-date" class="dp-input">
+                        </div>
+                    </div>
+        
+                    <div class="dp-row" style="margin-top:12px;">
+                        <div class="dp-row-head">
+                            <input type="checkbox" id="dp-due-cb" class="dp-cb">
+                            <label for="dp-due-cb" class="dp-cb-label">Due date</label>
+                        </div>
+                        <div class="dp-fields" id="dp-due-fields">
+                            <input type="date"  id="dp-due-date" class="dp-input">
+                            <input type="time"  id="dp-due-time" class="dp-input dp-time">
+                        </div>
+                    </div>
+        
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+                        <button type="button" id="dp-cancel" class="btn ghost">Cancel</button>
+                        <button type="button" id="dp-save"   class="btn">Save</button>
+                    </div>
+                </div>
+            `;
+        
+            // ── Inject CSS once ────────────────────────────────────────────────────────
+            if (!document.getElementById('dp-styles')) {
+                const s = document.createElement('style');
+                s.id = 'dp-styles';
+                s.textContent = `
+                    .dp-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 14px;
+                    }
+                    .dp-header span { font-size:14px; font-weight:600; }
+                    .dp-close { padding:2px 8px; font-size:14px; }
+        
+                    .dp-row {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                    }
 
-            const dueBtnWrapper = document.createElement('div');
-            dueBtnWrapper.id = 'card-modal-due-btn-wrapper';
-            addBtnContainer.appendChild(dueBtnWrapper);   // appended AFTER membersWrapper
+                    .dp-row-head {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+        
+                    .dp-cb {
+                        width: 16px; height: 16px;
+                        cursor: pointer;
+                        accent-color: #4d96ff;
+                        flex-shrink: 0;
+                        margin: 0;
+                    }
+                    .dp-cb-label {
+                        font-size: 13px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        user-select: none;
+                    }
+        
+                    .dp-fields {
+                        display: flex;
+                        gap: 6px;
+                        margin-left: 24px;
+                        flex-wrap: wrap;
+                        align-items: center;
+                    }
+                    .dp-input {
+                        padding: 6px 8px;
+                        border-radius: 6px;
+                        border: 1px solid #444;
+                        background: var(--btn-color, #1e1e1e);
+                        color: #e0e0e0;
+                        font-size: 13px;
+                        box-sizing: border-box;
+                    }
+                    .dp-input[type="date"] { flex:1; min-width:110px; }
+                    .dp-input.dp-time      { width:90px; flex:none; }
+                    .dp-input:disabled     { opacity:0.35; cursor:not-allowed; }
+        
+                    /* Start-date chip shown inside dueContainer */
+                    .card-modal-start-label {
+                        font-size: 12px;
+                        padding: 4px 7px;
+                        border-radius: 6px;
+                        background: rgba(255,255,255,0.05);
+                        color: #b0b0b0;
+                        cursor: pointer;
+                        display: inline-flex;
+                        gap: 5px;
+                        align-items: center;
+                        border: 1px solid rgba(255,255,255,0.05);
+                    }
+                        .card-modal-date-pill {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                        padding: 6px 10px;
+                        border-radius: 8px;
+                        border: 1px solid rgba(255,255,255,0.08);
+                        background: rgba(255,255,255,0.05);
+                        color: #e0e0e0;
+                        font-size: 12px;
+                        cursor: pointer;
+                    }
 
-            // create Add due button  (now targets dueBtnWrapper, not addBtnContainer)
-            function renderAddButton() {
-                dueBtnWrapper.innerHTML = '';
-                const btn = document.createElement('button');
-                btn.id = 'card-modal-add-due';
-                btn.type = 'button';
-                btn.className = 'btn ghost';
-                btn.textContent = 'Add due date';
-                btn.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    openDueMenu(null);
-                });
-                dueBtnWrapper.appendChild(btn);
+                    .card-modal-date-pill.overdue {
+                        /* keep your existing due-state styling */
+                    }
+
+                    .card-modal-date-pill.due-soon {
+                        /* keep your existing due-state styling */
+                    }
+
+                    .card-modal-date-pill.upcoming {
+                        /* keep your existing due-state styling */
+                    }
+
+                    .card-modal-date-pill--start-only {
+                        opacity: 0.9;
+                    }
+                    .dp-row-head {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        flex-wrap: nowrap;
+                    }
+
+                    .dp-row-head .dp-cb {
+                        margin: 0;
+                        flex: 0 0 auto;
+                    }
+
+                    .dp-row-head .dp-cb-label {
+                        margin: 0;
+                    }
+                `;
+                document.head.appendChild(s);
             }
-
-            // render due label from hidden value  (targets dueBtnWrapper, not addBtnContainer)
-            function renderDueLabelFromHidden() {
+        
+            // ── Element refs ───────────────────────────────────────────────────────────
+            const startCb   = menu.querySelector('#dp-start-cb');
+            const dueCb     = menu.querySelector('#dp-due-cb');
+            const startDate = menu.querySelector('#dp-start-date');
+            const dueDate   = menu.querySelector('#dp-due-date');
+            const dueTime   = menu.querySelector('#dp-due-time');
+            const saveBtn   = menu.querySelector('#dp-save');
+            const cancelBtn = menu.querySelector('#dp-cancel');
+            const closeBtn  = menu.querySelector('.dp-close');
+        
+            // ── Sync disabled state ────────────────────────────────────────────────────
+            function syncDisabled() {
+                startDate.disabled = !startCb.checked;
+                dueDate.disabled   = !dueCb.checked;
+                dueTime.disabled   = !dueCb.checked;
+            }
+            startCb.addEventListener('change', syncDisabled);
+            dueCb.addEventListener('change', syncDisabled);
+    
+        
+            // ── Helpers ────────────────────────────────────────────────────────────────
+            function isoToDateVal(iso) {
+                if (!iso) return '';
+                const d = parseServerIsoToDate(iso);
+                if (!d) return '';
+                const p = n => String(n).padStart(2, '0');
+                return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+            }
+            function isoToTimeVal(iso) {
+                if (!iso) return '12:00';
+                const d = parseServerIsoToDate(iso);
+                if (!d) return '12:00';
+                const p = n => String(n).padStart(2, '0');
+                return `${p(d.getHours())}:${p(d.getMinutes())}`;
+            }
+        
+            // ── Render the Dates button + any date chips ───────────────────────────────
+            function renderDatesUI() {
                 dueContainer.innerHTML = '';
-                const val = hiddenInput.value;
-                if (!val) {
-                    renderAddButton();
-                    return;
-                }
-                const parsed = parseServerIsoToDate(val);
-                if (!parsed) {
-                    hiddenInput.value = '';
-                    renderAddButton();
-                    return;
-                }
-                // hide the "Add due date" button when a date is set
-                dueBtnWrapper.innerHTML = '';
 
-                const { label, cls } = dueDateLabelForDisplay(parsed);
-                const lbl = document.createElement('div');
-                lbl.className = 'card-modal-due-label ' + cls;
-                lbl.textContent = label;
-                lbl.title = parsed.toLocaleString() + ' (local)';
-                lbl.addEventListener('click', (ev) => {
+                const startInfo = parseCardDateMeta(hiddenStartInput.value);
+                const dueInfo = parseCardDateMeta(hiddenDueInput.value);
+
+                const badgeText = buildCardDateBadgeText(startInfo, dueInfo);
+                const badgeCls = getCardDateBadgeClass(startInfo, dueInfo);
+
+                const pill = document.createElement('button');
+                pill.type = 'button';
+                pill.className = `card-modal-date-pill ${badgeCls}`;
+                pill.textContent = badgeText || 'Dates';
+                pill.title = getCardDateBadgeTitle(startInfo, dueInfo) || 'Set dates';
+                pill.addEventListener('click', ev => {
                     ev.stopPropagation();
-                    openDueMenu(parsed.toISOString());
+                    openPanel();
                 });
-                dueContainer.appendChild(lbl);
+
+                dueContainer.appendChild(pill);
             }
-
-            // open the inline menu positioned near the add button or label
-            function openDueMenu(prefillIso) {
-                // prefill datetime-local input with local representation of prefillIso or now
-                let dt = null;
-                if (prefillIso) {
-                    dt = parseServerIsoToDate(prefillIso);
-                }
-                if (!dt) dt = new Date();
-
-                // convert Date -> "YYYY-MM-DDTHH:MM" string for datetime-local
-                function toDatetimeLocalValue(d) {
-                    const pad = (n) => String(n).padStart(2, '0');
-                    const year = d.getFullYear();
-                    const month = pad(d.getMonth() + 1);
-                    const day = pad(d.getDate());
-                    const hour = pad(d.getHours());
-                    const minute = pad(d.getMinutes());
-                    return `${year}-${month}-${day}T${hour}:${minute}`;
-                }
-                datetimeInput.value = toDatetimeLocalValue(dt);
-
-                // position menu near the action row/buttons or the label if present
-                const anchor = modalEl.querySelector('#card-modal-action-buttons') || modalEl.querySelector('#card-modal-due-container');
-                const rect = anchor.getBoundingClientRect();
-                const menuEl = menu;
-                menuEl.style.display = 'block';
-                // prefer positioning under anchor
+        
+            // ── Open the panel ─────────────────────────────────────────────────────────
+            function openPanel() {
+                const hasDue   = !!hiddenDueInput.value;
+                const hasStart = !!hiddenStartInput.value;
+        
+                // Checkboxes
+                startCb.checked = hasStart;
+                dueCb.checked   = hasDue;
+        
+                // Pre-fill date/time inputs
+                const todayStr = isoToDateVal(new Date().toISOString());
+                startDate.value = hasStart ? isoToDateVal(hiddenStartInput.value) : todayStr;
+                dueDate.value   = hasDue   ? isoToDateVal(hiddenDueInput.value)   : todayStr;
+                dueTime.value   = hasDue   ? isoToTimeVal(hiddenDueInput.value)   : '12:00';
+        
+                syncDisabled();
+        
+                // Position below the action-buttons row
+                const anchor = actionButtons;
+                const rect   = anchor.getBoundingClientRect();
+                menu.style.display = 'block';
                 const left = Math.min(window.innerWidth - 340, Math.max(8, rect.left));
-                const top = rect.bottom + 8;
-                menuEl.style.left = `${left}px`;
-                menuEl.style.top = `${top}px`;
-                // store reference to where to re-render on save
-                menuEl._anchor = anchor;
-                // focus input
-                setTimeout(() => datetimeInput.focus(), 20);
+                menu.style.left = `${left}px`;
+                menu.style.top  = `${rect.bottom + window.scrollY + 8}px`;
             }
-
-            function closeDueMenu() {
-                menu.style.display = 'none';
-            }
-
-            // Save pressed in date menu: store ISO into hidden input AND persist to server
-            btnSave.addEventListener('click', async (ev) => {
+        
+            function closePanel() { menu.style.display = 'none'; }
+        
+            closeBtn.addEventListener('click',  ev => { ev.stopPropagation(); closePanel(); });
+            cancelBtn.addEventListener('click', ev => { ev.stopPropagation(); closePanel(); });
+        
+            // ── Save ───────────────────────────────────────────────────────────────────
+            saveBtn.addEventListener('click', async ev => {
                 ev.stopPropagation();
-                const v = datetimeInput.value;
-                if (!v) { alert('Please pick a date & time'); return; }
-                const d = new Date(v);
-                if (isNaN(d.getTime())) { alert('Invalid date'); return; }
-                const iso = d.toISOString();
-
-                // Update local state immediately so UI feels instant
-                hiddenInput.value = iso;
-                _cardModalState.dueDateIso = iso;
-                closeDueMenu();
-                renderDueLabelFromHidden();
-
+                const cardId = _cardModalState.cardId;
+                if (!cardId) return;
+        
+                let newDueIso   = null;
+                let newStartIso = null;
+        
+                if (dueCb.checked && dueDate.value) {
+                    const [yr, mo, dy] = dueDate.value.split('-').map(Number);
+                    const [hr, min]    = (dueTime.value || '12:00').split(':').map(Number);
+                    newDueIso = new Date(yr, mo - 1, dy, hr, min).toISOString();
+                }
+                if (startCb.checked && startDate.value) {
+                    const [yr, mo, dy] = startDate.value.split('-').map(Number);
+                    newStartIso = new Date(yr, mo - 1, dy, 0, 0).toISOString();
+                }
+        
+                // Update hidden inputs & modal state
+                hiddenDueInput.value   = newDueIso   || '';
+                hiddenStartInput.value = newStartIso || '';
+                _cardModalState.dueDateIso   = newDueIso;
+                _cardModalState.startDateIso = newStartIso;
+        
+                closePanel();
+                renderDatesUI();
+        
                 // Persist to server
-                const cardId = _cardModalState.cardId;
-                if (!cardId) return;
                 try {
-                    const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { due_date: iso });
+                    const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, {
+                        due_date:   newDueIso,
+                        start_date: newStartIso
+                    });
                     if (!res.ok) {
                         const j = await res.json().catch(() => ({}));
-                        alert(j.error || 'Failed to save due date');
+                        alert(j.error || 'Failed to save dates');
                         return;
                     }
-                    // Update the card element on the board
+                    // Sync board card element due-date badge
                     const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
                     if (cardEl) {
-                        cardEl.dataset.dueIso = iso;
-                        if (typeof updateCardDueBadge === 'function') updateCardDueBadge(cardEl, iso);
+                        if (typeof updateCardDateBadge === 'function') {
+                            updateCardDateBadge(cardEl, newStartIso, newDueIso);
+                        }
                     }
                 } catch (err) {
                     console.error(err);
-                    alert('Network error while saving due date');
+                    alert('Network error while saving dates');
                 }
             });
-
-            // Remove clicked inside menu: clear and persist null to server
-            btnRemove.addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                hiddenInput.value = '';
-                _cardModalState.dueDateIso = null;
-                closeDueMenu();
-                renderDueLabelFromHidden();
-
-                const cardId = _cardModalState.cardId;
-                if (!cardId) return;
-                try {
-                    const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, { due_date: null });
-                    if (!res.ok) {
-                        const j = await res.json().catch(() => ({}));
-                        alert(j.error || 'Failed to remove due date');
-                        return;
-                    }
-                    const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
-                    if (cardEl) {
-                        delete cardEl.dataset.dueIso;
-                        if (typeof updateCardDueBadge === 'function') updateCardDueBadge(cardEl, null);
-                    }
-                } catch (err) {
-                    console.error(err);
-                    alert('Network error while removing due date');
-                }
-            });
-
-            btnCancel.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                closeDueMenu();
-            });
-
-            // click outside closes the menu
-            document.addEventListener('click', (ev) => {
+        
+            // ── Close on outside click ─────────────────────────────────────────────────
+            document.addEventListener('click', ev => {
                 if (!menu || menu.style.display === 'none') return;
-                if (!menu.contains(ev.target) && !modalEl.contains(ev.target)) {
-                    closeDueMenu();
+
+                const clickedInsideMenu = menu.contains(ev.target);
+                const clickedTrigger = dueContainer.contains(ev.target);
+
+                if (!clickedInsideMenu && !clickedTrigger) {
+                    closePanel();
                 }
             });
-
-            // initial render: if hidden has value we'll show label, else Add button
-            renderDueLabelFromHidden();
-
-            // expose utilities to other modal functions
-            modalEl._renderDueUI = renderDueLabelFromHidden;
-            modalEl._getDueHidden = () => hiddenInput;
-            modalEl._openDueMenu = openDueMenu;
+        
+            // ── Initial render ─────────────────────────────────────────────────────────
+            renderDatesUI();
+        
+            // Expose helpers used by refreshCardModal
+            modalEl._renderDueUI     = renderDatesUI;
+            modalEl._getDueHidden    = () => hiddenDueInput;
+            modalEl._getStartHidden  = () => hiddenStartInput;
+            modalEl._openDatesMenu   = openPanel;
         }
 
         function initAssigneesUI(modalEl) {
@@ -3968,32 +4429,66 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 dd.appendChild(list);
 
                 const selected = new Set(preselectedIds || []);
+
+                function makeTick() {
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('viewBox', '0 0 18 18');
+                    svg.setAttribute('width', '18');
+                    svg.setAttribute('height', '18');
+                    svg.style.flexShrink = '0';
+                    svg.style.pointerEvents = 'none'; // never intercepts clicks itself
+                    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    rect.setAttribute('x', '1'); rect.setAttribute('y', '1');
+                    rect.setAttribute('width', '16'); rect.setAttribute('height', '16');
+                    rect.setAttribute('rx', '4');
+                    rect.setAttribute('class', 'tick-box');
+                    svg.appendChild(rect);
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    path.setAttribute('d', 'M4 9 L7.5 12.5 L14 6');
+                    path.setAttribute('class', 'tick-mark');
+                    svg.appendChild(path);
+                    return svg;
+                }
+
                 members.forEach(m => {
-                const row = document.createElement('div');
-                row.className = 'member-row';
-                // avatar
-                const av = createAvatarEl({ username: m.username, profile_picture: m.profile_picture, size: 36, title: m.username });
-                row.appendChild(av);
-                // name
-                const name = document.createElement('div');
-                name.className = 'member-name';
-                name.textContent = m.username;
-                name.style.color = "#fff";
-                row.appendChild(name);
-                // checkbox
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.className = 'member-checkbox';
-                cb.checked = selected.has(m.user_id);
-                row.appendChild(cb);
+                    const row = document.createElement('div');
+                    row.className = 'member-row' + (selected.has(m.user_id) ? ' is-selected' : '');
+                    row.tabIndex = 0;
+                    row.setAttribute('role', 'checkbox');
+                    row.setAttribute('aria-checked', String(selected.has(m.user_id)));
 
-                row.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    cb.checked = !cb.checked;
-                    if (cb.checked) selected.add(m.user_id); else selected.delete(m.user_id);
-                });
+                    const av = createAvatarEl({ username: m.username, profile_picture: m.profile_picture, size: 32, title: m.username });
+                    av.style.pointerEvents = 'none';
+                    row.appendChild(av);
 
-                list.appendChild(row);
+                    const nameEl = document.createElement('div');
+                    nameEl.className = 'member-name';
+                    nameEl.style.pointerEvents = 'none';
+                    nameEl.textContent = m.username;
+                    row.appendChild(nameEl);
+
+                    const tick = makeTick();
+                    row.appendChild(tick);
+
+                    function toggle(ev) {
+                        ev.stopPropagation();
+                        if (selected.has(m.user_id)) {
+                            selected.delete(m.user_id);
+                            row.classList.remove('is-selected');
+                            row.setAttribute('aria-checked', 'false');
+                        } else {
+                            selected.add(m.user_id);
+                            row.classList.add('is-selected');
+                            row.setAttribute('aria-checked', 'true');
+                        }
+                    }
+
+                    row.addEventListener('click', toggle);
+                    row.addEventListener('keydown', ev => {
+                        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(ev); }
+                    });
+
+                    list.appendChild(row);
                 });
 
                 const actions = document.createElement('div');
@@ -4204,10 +4699,13 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 _cardModalState.cardBackgroundUrl = backgroundUrl || null;
                 if (typeof color !== 'undefined') _cardModalState.cardColor = color || null;
 
+                // Invalidate old cached entry so the new image is fetched fresh
+                if (backgroundUrl) invalidateCachedImageUrl(backgroundUrl);
+
                 const left = modalEl.querySelector('.card-modal-left');
                 if (left) {
                     if (_cardModalState.cardBackgroundUrl) {
-                        left.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                        applyBgImageCached(left, _cardModalState.cardBackgroundUrl);  // ← was inline url()
                     } else if (_cardModalState.cardColor) {
                         left.style.background = _cardModalState.cardColor;
                     } else {
@@ -4218,7 +4716,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
                 const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
                 if (cardEl) {
                     if (_cardModalState.cardBackgroundUrl) {
-                        cardEl.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                        applyBgImageCached(cardEl, _cardModalState.cardBackgroundUrl);  // ← was inline url()
                     } else if (_cardModalState.cardColor) {
                         cardEl.style.background = _cardModalState.cardColor;
                     } else {
@@ -4454,7 +4952,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             _cardModalState.cardBackgroundUrl = card.background_image_url || null;
 
             if (_cardModalState.cardBackgroundUrl) {
-                left.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                applyBgImageCached(left, _cardModalState.cardBackgroundUrl);  // ← was inline url()
             } else if (_cardModalState.cardColor) {
                 left.style.background = _cardModalState.cardColor;
             } else {
@@ -4471,7 +4969,7 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
             if (cardEl) {
                 if (_cardModalState.cardBackgroundUrl) {
-                    cardEl.style.background = `url('${_cardModalState.cardBackgroundUrl}') center/cover no-repeat`;
+                    applyBgImageCached(cardEl, _cardModalState.cardBackgroundUrl);  // ← was inline url()
                 } else if (_cardModalState.cardColor) {
                     cardEl.style.background = _cardModalState.cardColor;
                 } else {
@@ -4496,23 +4994,32 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             if (_cardModal && typeof _cardModal._refreshCardColorSwatches === 'function') _cardModal._refreshCardColorSwatches();
 
             // --- due date: initialize UI from server value ---
-            const hidden = _cardModal.querySelector('#card-modal-due-hidden');
-            // server returns c.due_date as ISO string or null. We will store a timezone-aware ISO in hidden.
+            const hiddenDue   = _cardModal.querySelector('#card-modal-due-hidden');
+            const hiddenStart = _cardModal.querySelector('#card-modal-start-hidden');
+ 
+            // Due date
             if (card.due_date) {
                 const parsed = parseServerIsoToDate(card.due_date);
-                if (parsed) {
-                    // save timezone-aware ISO (UTC) string to hidden (so sending to server is safe)
-                    hidden.value = parsed.toISOString();
-                    _cardModalState.dueDateIso = hidden.value;
-                } else {
-                    hidden.value = '';
-                    _cardModalState.dueDateIso = null;
-                }
+                hiddenDue.value = parsed ? parsed.toISOString() : '';
+                _cardModalState.dueDateIso = hiddenDue.value || null;
             } else {
-                hidden.value = '';
+                hiddenDue.value = '';
                 _cardModalState.dueDateIso = null;
             }
-            // render due UI
+ 
+            // Start date  ← NEW
+            if (hiddenStart) {
+                if (card.start_date) {
+                    const parsed = parseServerIsoToDate(card.start_date);
+                    hiddenStart.value = parsed ? parsed.toISOString() : '';
+                    _cardModalState.startDateIso = hiddenStart.value || null;
+                } else {
+                    hiddenStart.value = '';
+                    _cardModalState.startDateIso = null;
+                }
+            }
+ 
+            // Re-render the dates UI
             if (_cardModal && typeof _cardModal._renderDueUI === 'function') _cardModal._renderDueUI();
 
             titleEl.focus();
@@ -4710,69 +5217,6 @@ function inlineEditCard(cardId, currentTitle, currentDesc, boardId) {
             alert('Network error while adding comment');
         } finally {
             addBtn.disabled = false;
-        }
-    }
-
-    // Save card (title + description)
-    async function saveCardModal() {
-        const cardId = _cardModalState.cardId;
-        if (!cardId) return;
-        const titleEl = _cardModal.querySelector('#card-modal-title');
-        const descEl = _cardModal.querySelector('#card-modal-desc');
-        const dueHidden = _cardModal.querySelector('#card-modal-due-hidden');
-        const title = titleEl.value.trim();
-        const description = descEl.value.trim();
-
-        if (!title) {
-            alert('Title cannot be empty');
-            titleEl.focus();
-            return;
-        }
-        const btn = _cardModal.querySelector('#card-modal-save');
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
-        try {
-            const payload = { title, description };
-            // include due_date in payload; server accepts ISO string or null
-            if (dueHidden && dueHidden.value) payload.due_date = dueHidden.value;
-            else payload.due_date = null;
-
-            const res = await apiPATCH(`/api/cards/${encodeURIComponent(cardId)}`, payload);
-            if (!res.ok) {
-                const j = await res.json();
-                alert(j.error || 'Failed to save card');
-                return;
-            }
-            // update any card DOM elements on the page (title text)
-            const cardEl = document.querySelector(`.card[data-card-id="${cardId}"]`);
-            if (cardEl) {
-                const titleNode = cardEl.querySelector('.card-title-text');
-                if (titleNode) titleNode.textContent = title;
-                const descNode = cardEl.querySelector('.card-desc-text');
-                if (descNode) descNode.textContent = description;
-                // existing snippet in saveCardModal after successful patch...
-                const dueIso = dueHidden && dueHidden.value ? dueHidden.value : null;
-                if (cardEl) {
-                    // set dataset for possible further UI
-                    if (dueIso) {
-                        cardEl.dataset.dueIso = new Date(dueIso).toISOString();
-                    } else {
-                        delete cardEl.dataset.dueIso;
-                    }
-
-                    // --- NEW: update/insert the badge immediately so UI reflects change without full refresh ---
-                    if (typeof updateCardDueBadge === 'function') {
-                        updateCardDueBadge(cardEl, dueIso);
-                    }
-                }
-            }
-            closeCardModal();
-        } catch (err) {
-            console.error(err);
-            alert('Network error while saving card');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Save';
         }
     }
 
@@ -5362,7 +5806,9 @@ function initBoardActionsMenu() {
             globalBoardBackgroundUrl = attachBody.url || null;
 
             if (boardArea && globalBoardBackgroundUrl) {
-                boardArea.style.background = `url('${globalBoardBackgroundUrl}') center/cover no-repeat`;
+                // Invalidate so the freshly uploaded image bypasses any stale cache entry
+                await invalidateCachedImageUrl(globalBoardBackgroundUrl);
+                applyBgImageCached(boardArea, globalBoardBackgroundUrl);  // ← was inline url()
             }
 
             uploadBtn.textContent = 'Change background image';
