@@ -550,6 +550,13 @@
   <footer>&copy; Future Notes</footer>
 
   <script>
+    function flagImg(code) {
+        if (!code || code.length !== 2) {
+            return `<svg class="session-flag" style="width:20px;height:14px;margin-right:6px;vertical-align:middle;opacity:0.3;" viewBox="0 0 20 14" fill="none"><rect width="20" height="14" rx="2" fill="#334155"/><line x1="4" y1="4" x2="16" y2="10" stroke="#64748b" stroke-width="1.5"/><line x1="4" y1="10" x2="16" y2="4" stroke="#64748b" stroke-width="1.5"/></svg>`;
+        }
+        const lower = code.toLowerCase();
+        return `<img class="session-flag" src="https://flagcdn.com/20x15/${lower}.png" width="20" height="15" alt="${code}" onerror="this.style.opacity='0.2'" />`;
+    }
     /* =============================================
        CUSTOM SELECT COMPONENT
        ============================================= */
@@ -986,7 +993,7 @@
       uaDiv.append(uaMain, uaFull);
       const ipDiv = document.createElement('div'); ipDiv.className='session-meta';
       const ipMain = document.createElement('div'); ipMain.className='badge'; ipMain.textContent = safe(s.ip_address);
-      const ipSub = document.createElement('div'); ipSub.className='muted'; ipSub.textContent = `${iso2Flag(s.country_code)} ${safe(s.country_name)}`;
+      const ipSub = document.createElement('div'); ipSub.className='muted'; ipSub.innerHTML = `${flagImg(s.country_code)} ${safe(s.country_name)}`;
       ipDiv.append(ipMain, ipSub);
       const footer = document.createElement('div'); footer.className='session-row';
       const fp = document.createElement('div'); fp.className='muted'; fp.textContent = `FP: ${safe(s.fingerprint)}`;

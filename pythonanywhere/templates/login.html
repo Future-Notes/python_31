@@ -13,6 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://openfpcdn.io/fingerprintjs/v4"></script>
     <script src="/static/js/loader.js"></script>
     <script src="/static/js/check.js"></script>
     <style>
@@ -559,268 +560,220 @@
     </div>
 
     <script>
-        document.addEventListener("DOMContentLoaded", async () => {
+    (async () => {
+        const fpPromise = FingerprintJS.load();
+
+        const fp = await fpPromise;
+        const result = await fp.get();
+
+        // visitorId is the stable fingerprint
+        localStorage.setItem("device_fp", result.visitorId);
+    })();
+    </script>
+
+    <script>
+document.addEventListener("DOMContentLoaded", async () => {
     if (!window.__fetchPatched) {
         const _f = window.fetch;
+
         window.fetch = (url, opts = {}) => {
             opts = opts || {};
-            if (!opts.credentials) opts.credentials = 'include';
+            if (!opts.credentials) opts.credentials = "include";
+
+            const fp = localStorage.getItem("device_fp");
+            opts.headers = opts.headers || {};
+
+            // add fingerprint header
+            if (fp) {
+                opts.headers["X-Device-Fingerprint"] = fp;
+            }
+
             return _f(url, opts);
         };
+
         window.__fetchPatched = true;
     }
 
-    function getCookie(name) {
-        const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
-        return v ? v.pop() : '';
-    }
-    function deleteCookie(name) {
-        document.cookie = name + "=; Max-Age=0; path=/; SameSite=Strict";
-    }
-
-    const query = window.location.search;
-    if (query) {
-        const link = document.getElementById("signup-link");
-        if (link) link.href = "/signup_page" + query;
-    }
-
-    const params = new URLSearchParams(query);
-    if (params.get("warning") === "true") {
-        document.getElementById("warning-message").classList.add("visible");
-    }
-    if (params.get("suspended") === "true") {
-        document.getElementById("ban-message").classList.add("visible");
-    }
-
+    const params = new URLSearchParams(window.location.search);
     const redirectUrl = params.get("redirect") || "/index";
 
-    const backdrop  = document.getElementById('twofa-modal-backdrop');
-    const codeInput = document.getElementById('twofa-code-input');
-    const submitBtn = document.getElementById('twofa-submit-btn');
-    const cancelBtn = document.getElementById('twofa-cancel-btn');
-    const backupBtn = document.getElementById('twofa-use-backup');
-    const errorBox  = document.getElementById('twofa-error');
+    const backdrop  = document.getElementById("twofa-modal-backdrop");
+    const codeInput = document.getElementById("twofa-code-input");
+    const submitBtn = document.getElementById("twofa-submit-btn");
+    const cancelBtn = document.getElementById("twofa-cancel-btn");
+    const backupBtn = document.getElementById("twofa-use-backup");
+    const errorBox  = document.getElementById("twofa-error");
+    const loginForm = document.getElementById("login-form");
 
     let currentLoginToken = null;
-    let currentKeepLogin  = false;
-    let currentRedirect   = '/index';
+    let currentRedirect = redirectUrl;
 
     function showError(msg) {
         if (!errorBox) return;
-        errorBox.style.display = msg ? 'block' : 'none';
-        errorBox.textContent = msg || '';
+        errorBox.style.display = msg ? "block" : "none";
+        errorBox.textContent = msg || "";
     }
 
-    function escHandler(e){ if (e.key === 'Escape') hideTwoFAModal(); }
+    function escHandler(e) {
+        if (e.key === "Escape") hideTwoFAModal();
+    }
 
-    function showTwoFAModal(login_token, keep_login=false, redirect='/index') {
-        currentLoginToken = login_token;
-        currentKeepLogin  = Boolean(keep_login);
-        currentRedirect   = redirect || '/index';
-        showError('');
-        if (codeInput) codeInput.value = '';
+    function showTwoFAModal(loginToken, redirect = "/index") {
+        currentLoginToken = loginToken;
+        currentRedirect = redirect || "/index";
+        showError("");
+
+        if (codeInput) codeInput.value = "";
         if (backdrop) {
-            backdrop.style.display = 'flex';
-            backdrop.setAttribute('aria-hidden', 'false');
+            backdrop.style.display = "flex";
+            backdrop.setAttribute("aria-hidden", "false");
         }
-        setTimeout(()=>{ try { codeInput && codeInput.focus(); } catch(e){} }, 50);
-        window.addEventListener('keydown', escHandler);
+
+        setTimeout(() => {
+            try { codeInput && codeInput.focus(); } catch (e) {}
+        }, 50);
+
+        window.addEventListener("keydown", escHandler);
     }
 
     function hideTwoFAModal() {
         if (backdrop) {
-            backdrop.style.display = 'none';
-            backdrop.setAttribute('aria-hidden', 'true');
+            backdrop.style.display = "none";
+            backdrop.setAttribute("aria-hidden", "true");
         }
         currentLoginToken = null;
-        window.removeEventListener('keydown', escHandler);
-        showError('');
+        window.removeEventListener("keydown", escHandler);
+        showError("");
     }
 
-    async function submitCode(code) {
-        if (!currentLoginToken) {
-            showError('Missing login session. Please try logging in again.');
-            return;
-        }
-        showError('');
-        submitBtn.disabled = true;
-        const prevTxt = submitBtn.textContent;
-        submitBtn.textContent = 'Verifying…';
-
-        try {
-            const res = await fetch('/login/2fa', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ login_token: currentLoginToken, code, keep_login: currentKeepLogin })
-            });
-            const j = await res.json().catch(()=>({}));
-            if (res.ok) {
-                deleteCookie('pending_login_token');
-                try { sessionStorage.setItem('current_user_id', j.user_id); } catch(e){}
-                window.location.href = currentRedirect || j.startpage || '/index';
-            } else {
-                showError(j.error || 'Invalid code');
-                submitBtn.disabled = false;
-                submitBtn.textContent = prevTxt || 'Verify';
-            }
-        } catch (err) {
-            showError('Network error — try again.');
-            submitBtn.disabled = false;
-            submitBtn.textContent = prevTxt || 'Verify';
-        }
-    }
-
-    try {
-        if (submitBtn) submitBtn.addEventListener('click', () => {
-            const code = codeInput.value.trim();
-            if (!code) { showError('Please enter the code.'); return; }
-            submitCode(code);
-        });
-        if (cancelBtn) cancelBtn.addEventListener('click', () => hideTwoFAModal());
-        if (backupBtn) backupBtn.addEventListener('click', () => {
-            const code = prompt('Enter a backup code:');
-            if (code) submitCode(code.trim());
-        });
-        if (codeInput) codeInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') submitBtn && submitBtn.click();
-        });
-    } catch (e) {}
-
-    window.__showTwoFAModal = showTwoFAModal;
-
-    async function waitForPendingCookie(timeoutMs=1000, interval=100) {
-        const start = Date.now();
-        while ((Date.now() - start) < timeoutMs) {
-            const tok = getCookie('pending_login_token');
-            if (tok) return tok;
-            await new Promise(res => setTimeout(res, interval));
-        }
-        return null;
-    }
-
-    async function fastPath() {
-        let r = await fetch("/test-session", { method: "GET" });
-        if (r.status === 200) {
-            const info = await r.json().catch(()=>({ startpage: redirectUrl }));
-            try { sessionStorage.setItem("current_user_id", info.user_id); } catch(e){}
-            window.location.href = params.get("redirect") || info.startpage || "/index";
+    async function checkSession() {
+        const r = await fetch("/session", { method: "GET" });
+        if (r.ok) {
+            const data = await r.json().catch(() => ({}));
+            window.location.href = data.startpage || "/index";
             return true;
         }
         if (r.status === 403) {
             window.location.href = "/login_page?suspended=true";
             return true;
         }
-
-        r = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({})
-        });
-        let data;
-        try { data = await r.json(); } catch(e) { data = {}; }
-
-        if (r.ok && data && data.user_id) {
-            try { sessionStorage.setItem("current_user_id", data.user_id); } catch(e){}
-            window.location.href = redirectUrl || data.startpage || "/index";
-            return true;
-        }
-
-        if (r.ok && data && data["2fa_required"]) {
-            const onLoginPage = window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1;
-            if (onLoginPage) {
-                if (data.login_token) {
-                    window.__showTwoFAModal(data.login_token, false, redirectUrl);
-                    return true;
-                }
-                const pending = getCookie('pending_login_token') || await waitForPendingCookie(1000, 100);
-                if (pending) {
-                    deleteCookie('pending_login_token');
-                    window.__showTwoFAModal(pending, false, redirectUrl);
-                    return true;
-                }
-                try {
-                    const warn = document.getElementById('warning-message');
-                    if (warn) {
-                        warn.textContent = "Two-factor login started — please refresh the page to continue.";
-                        warn.classList.add('visible');
-                    } else { alert("Two-factor login started — please refresh the page to continue."); }
-                } catch(e) {}
-                return true;
-            } else {
-                window.location.href = '/login_page' + (params.get('redirect') ? '?redirect=' + encodeURIComponent(params.get('redirect')) : '');
-                return true;
-            }
-        }
-
-        const pending = getCookie('pending_login_token');
-        if (pending && (window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1)) {
-            deleteCookie('pending_login_token');
-            window.__showTwoFAModal(pending, false, redirectUrl);
-            return true;
-        }
         return false;
     }
 
-    await fastPath();
-
-    const pendingOnLoad = getCookie('pending_login_token');
-    if (pendingOnLoad && (window.location.pathname.indexOf('/login_page') !== -1 || window.location.pathname.indexOf('/login') !== -1)) {
-        deleteCookie('pending_login_token');
-        window.__showTwoFAModal(pendingOnLoad, false, redirectUrl);
-    }
-
-    document.getElementById("login-form").addEventListener("submit", async e => {
-        e.preventDefault();
-        const user = document.getElementById("username").value.trim();
-        const pass = document.getElementById("password").value;
-        const keep = document.getElementById("remember-me").checked;
-        if (!user || !pass) {
-            alert("Please enter both username and password.", "error");
+    async function submitCode(code) {
+        if (!currentLoginToken) {
+            showError("Missing login session. Please try logging in again.");
             return;
         }
 
-        const params = new URLSearchParams(window.location.search);
-        const redirectUrlLocal = params.get("redirect") || "/index";
+        showError("");
+        submitBtn.disabled = true;
+        const prevTxt = submitBtn.textContent;
+        submitBtn.textContent = "Verifying…";
 
-        const res = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: user, password: pass, keep_login: keep })
-        });
+        try {
+            const res = await fetch("/login/2fa", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    login_token: currentLoginToken,
+                    code: code
+                })
+            });
 
-        let data;
-        try { data = await res.json(); } catch(e) { data = {}; }
+            const j = await res.json().catch(() => ({}));
 
-        if (res.ok) {
-            if (data["2fa_required"]) {
-                if (data.login_token) {
-                    window.__showTwoFAModal(data.login_token, keep, redirectUrlLocal);
-                } else {
-                    const p = getCookie('pending_login_token') || await waitForPendingCookie(1000, 100);
-                    if (p) {
-                        deleteCookie('pending_login_token');
-                        window.__showTwoFAModal(p, keep, redirectUrlLocal);
-                    } else {
-                        const warn = document.getElementById('warning-message');
-                        if (warn) {
-                            warn.textContent = "Two-factor login started — please refresh the page to continue.";
-                            warn.classList.add('visible');
-                        } else { alert("Two-factor login started — please refresh the page to continue."); }
-                    }
-                }
-            } else {
-                try { sessionStorage.setItem("current_user_id", data.user_id); } catch(e){}
-                window.location.href = redirectUrlLocal || data.startpage || "/index";
+            if (res.ok) {
+                try { sessionStorage.setItem("current_user_id", j.user_id); } catch (e) {}
+                window.location.href = j.startpage || currentRedirect || "/index";
+                return;
             }
-        } else if (res.status === 403 && data.error === "Account is suspended") {
-            document.getElementById("ban-message").classList.add("visible");
-        } else {
-            alert(data.error || "Login failed", "error");
-        }
-    });
 
-}); // DOMContentLoaded
-    </script>
+            showError(j.error || "Invalid code");
+        } catch (err) {
+            showError("Network error — try again.");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = prevTxt || "Verify";
+        }
+    }
+
+    try {
+        if (submitBtn) {
+            submitBtn.addEventListener("click", () => {
+                const code = codeInput.value.trim();
+                if (!code) {
+                    showError("Please enter the code.");
+                    return;
+                }
+                submitCode(code);
+            });
+        }
+
+        if (cancelBtn) cancelBtn.addEventListener("click", hideTwoFAModal);
+
+        if (backupBtn) {
+            backupBtn.addEventListener("click", () => {
+                const code = prompt("Enter a backup code:");
+                if (code) submitCode(code.trim());
+            });
+        }
+
+        if (codeInput) {
+            codeInput.addEventListener("keyup", (e) => {
+                if (e.key === "Enter") submitBtn && submitBtn.click();
+            });
+        }
+    } catch (e) {}
+
+    window.__showTwoFAModal = showTwoFAModal;
+
+    await checkSession();
+
+    if (loginForm) {
+        loginForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const user = document.getElementById("username").value.trim();
+            const pass = document.getElementById("password").value;
+            const keep = document.getElementById("remember-me").checked;
+
+            if (!user || !pass) {
+                alert("Please enter both username and password.");
+                return;
+            }
+
+            const res = await fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    username: user,
+                    password: pass,
+                    keep_login: keep
+                })
+            });
+
+            const data = await res.json().catch(() => ({}));
+
+            if (res.ok && data["2fa_required"]) {
+                if (!data.login_token) {
+                    showError("2FA was required, but no login token was returned.");
+                    return;
+                }
+                showTwoFAModal(data.login_token, redirectUrl);
+                return;
+            }
+
+            if (res.ok) {
+                try { sessionStorage.setItem("current_user_id", data.user_id); } catch (e) {}
+                window.location.href = data.startpage || redirectUrl || "/index";
+                return;
+            }
+
+            alert(data.error || "Login failed");
+        });
+    }
+});
+</script>
 </body>
 </html>
