@@ -4300,6 +4300,62 @@ def admin_storage_overview():
 
     return jsonify(result), 200
 
+def start_2fa_challenge(user, keep_login=False, revoke_lk_id=None):
+    login_token = secrets.token_urlsafe(32)
+    login_tokens[login_token] = {
+        "user_id": user.id,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "ip": get_client_ip(),
+        "keep_login": bool(keep_login),
+        "revoke_lk_id": revoke_lk_id,
+    }
+    login_2fa_attempts[login_token] = 0
+    return jsonify({
+        "2fa_required": True,
+        "login_token": login_token,
+        "message": "2FA required",
+    }), 200
+
+def issue_login_response(user, keep_login=False):
+    session_key, session_id = create_session(user.id)
+
+    user_ip = get_client_ip()
+    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
+        db.session.commit()
+
+    payload = {
+        "message": "Login successful!",
+        "user_id": user.id,
+        "startpage": user.startpage,
+    }
+
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie(
+        "session_key", session_key,
+        httponly=True,
+        secure=not _is_local_request(),
+        samesite="Strict",
+        max_age=60 * 60 * 24,
+    )
+
+    if keep_login:
+        device_info = request.headers.get("User-Agent")
+        new_token, _ = create_lasting_key_for_user(
+            user.id,
+            device_info=device_info,
+            session_id=session_id,
+        )
+        resp.set_cookie(
+            "lasting_key", new_token,
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
+            max_age=60 * 60 * 24 * 30,
+        )
+
+    return resp
+
 def verify_file_content_hardened(file_path: str, mimetype: str) -> bool:
     """
     Local-only file verification.
@@ -15507,32 +15563,22 @@ def undo_reset():
     return resp
 
 
-@app.route('/login', methods=['POST'])
+@app.route("/login", methods=["POST"])
 @limiter.limit("30 per hour")
 def login():
     data = request.get_json(silent=True) or {}
+    user_ip = get_client_ip()
 
-    username = data.get('username')  # may be None, that's fine
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_ip = user_ip.split(',')[0].strip()
-
-    # 1) lasting_key auto-login (cookie)
-    lk_cookie = request.cookies.get('lasting_key')
+    lk_cookie = request.cookies.get("lasting_key")
     if lk_cookie:
         lk_record = verify_lasting_token(lk_cookie)
         if not lk_record:
-            log_security_event(event_type="lasting_key_auth", outcome="invalid_token",
-                   attempted_username=None, ip_address=user_ip, meta={"presented_cookie": True})
             resp = make_response(jsonify({"error": "Invalid or expired lasting key!"}), 401)
-            # drop cookie client-side
             resp.delete_cookie("lasting_key")
             return resp
 
         user = User.query.get(lk_record.user_id)
         if not user:
-            log_security_event(event_type="login", outcome="invalid_credentials",
-                   attempted_username=None, ip_address=user_ip, meta={"reason": "bad_credentials"})
-            # orphaned lasting key — revoke and remove cookie
             db.session.delete(lk_record)
             db.session.commit()
             resp = make_response(jsonify({"error": "Invalid lasting key!"}), 401)
@@ -15540,100 +15586,35 @@ def login():
             return resp
 
         if user.suspended:
-            log_security_event(event_type="login", outcome="suspended_account",
-                   user_id=user.id, attempted_username=None, ip_address=user_ip)
-            # revoke the lasting key
             db.session.delete(lk_record)
             db.session.commit()
-            resp = make_response(jsonify({"error": "You are suspended!"}), 403)
+            resp = make_response(jsonify({"error": "Account is suspended"}), 403)
             resp.delete_cookie("lasting_key")
             resp.delete_cookie("session_key")
             return resp
 
-        # 2FA checks (same as before)
         user_has_2fa = bool(user.twofa_enabled)
-        new_ip = False
-        if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
-            user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-            if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-                new_ip = True
+        new_ip = (
+            user_has_2fa
+            and REQUIRE_2FA_ON_NEW_IP
+            and not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first()
+        )
 
         if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
-            log_security_event(event_type="login_2fa", outcome="2fa_required", user_id=user.id,
-                   attempted_username=username, ip_address=user_ip)
-            # create login token for 2FA; keep the original cookie intact for now
-            login_token = secrets.token_urlsafe(32)
-            login_tokens[login_token] = {
-                "user_id": user.id,
-                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-                "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
-            }
-            login_2fa_attempts[login_token] = 0
+            return start_2fa_challenge(user, keep_login=True, revoke_lk_id=lk_record.id)
 
-            resp = make_response(jsonify({
-                "2fa_required": True,
-                "message": "2FA required"
-            }), 200)
-            resp.set_cookie(
-                "pending_login_token", login_token,
-                httponly=False,
-                secure=not _is_local_request(),
-                samesite="Strict",
-                max_age=60*5
-            )
-            return resp
-
-        # No 2FA required -> issue session_key
-        session_key, session_id = create_session(user.id)
-
-        # rotate lasting key: issue a new lasting token bound to this session, remove the old one
-        device_info = request.headers.get('User-Agent', None)
-        new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
-
-        log_security_event(event_type="login", outcome="success",
-                   user_id=user.id, attempted_username=username, ip_address=user_ip,
-                   session_id=session_id, meta={"rotated_lasting_key_id": new_lk.id if new_lk else None})
-
-        # remove old lasting key record (prevents reuse)
+        resp = issue_login_response(user, keep_login=True)
         try:
             db.session.delete(lk_record)
             db.session.commit()
         except Exception:
             db.session.rollback()
-
-        # log IP if new
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-            db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-            db.session.commit()
-
-        payload = {
-            "message": "Login successful!",
-            "session_key": session_key,
-            "user_id": user.id,
-            "startpage": user.startpage
-        }
-        resp = make_response(jsonify(payload), 200)
-        resp.set_cookie(
-            "session_key", session_key,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24
-        )
-        # set rotated lasting key cookie: httponly True (more secure)
-        resp.set_cookie(
-            "lasting_key", new_token,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24*30
-        )
         return resp
 
-    # 2) username/password login (unchanged flow except lasting-key creation)
-    username = data.get('username')
-    password = data.get('password')
+    username = data.get("username")
+    password = data.get("password")
+    keep_login = bool(data.get("keep_login"))
+
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
@@ -15643,67 +15624,42 @@ def login():
     if user.suspended:
         return jsonify({"error": "Account is suspended"}), 403
 
-    # 2FA check
     user_has_2fa = bool(user.twofa_enabled)
-    new_ip = False
-    if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-            new_ip = True
+    new_ip = (
+        user_has_2fa
+        and REQUIRE_2FA_ON_NEW_IP
+        and not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first()
+    )
 
     if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
-        login_token = secrets.token_urlsafe(32)
-        login_tokens[login_token] = {
-            "user_id": user.id,
-            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-            "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
-        }
-        login_2fa_attempts[login_token] = 0
-        return jsonify({
-            "2fa_required": True,
-            "login_token": login_token,
-            "message": "2FA code required"
-        }), 200
+        return start_2fa_challenge(user, keep_login=keep_login)
 
-    # Issue session
-    session_key, session_id = create_session(user.id)
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-        db.session.commit()
+    return issue_login_response(user, keep_login=keep_login)
 
-    payload = {
-        "message": "Login successful!",
-        "session_key": session_key,
+@app.route("/session", methods=["GET"])
+def session_status():
+    session_key = request.cookies.get("session_key")
+    if not session_key:
+        return jsonify({"authenticated": False}), 401
+
+    ok, result = validate_session_key(session_key)
+    if not ok:
+        resp = make_response(jsonify({"error": result}), 401)
+        resp.delete_cookie("session_key")
+        return resp
+
+    user_id = result["user_id"]
+    user = User.query.get(user_id)
+    if not user or user.suspended:
+        resp = make_response(jsonify({"error": "Invalid session"}), 401)
+        resp.delete_cookie("session_key")
+        return resp
+
+    return jsonify({
+        "authenticated": True,
         "user_id": user.id,
-        "startpage": user.startpage
-    }
-
-    # Lasting key if requested -> always create a *new* record (don't reuse)
-    if data.get('keep_login'):
-        device_info = request.headers.get('User-Agent', None)
-        new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
-        payload["lasting_key"] = None  # don't return in JSON; cookie will contain it
-    else:
-        new_token = None
-
-    resp = make_response(jsonify(payload), 200)
-    resp.set_cookie(
-        "session_key", session_key,
-        httponly=True,
-        secure=not _is_local_request(),
-        samesite="Strict",
-        max_age=60*60*24
-    )
-    if new_token:
-        resp.set_cookie(
-            "lasting_key", new_token,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24*30
-        )
-    return resp
+        "startpage": user.startpage,
+    }), 200
 
 @app.route('/2fa/setup', methods=['POST'])
 @require_session_key
@@ -15862,57 +15818,47 @@ def twofa_backup_regenerate():
     # TODO: log the regeneration event (audit)
     return jsonify({"backup_codes": new_plain}), 200
 
-@app.route('/login/2fa', methods=['POST'])
+@app.route("/login/2fa", methods=["POST"])
 @limiter.limit("8 per hour")
 def login_2fa():
-    data = request.get_json() or {}
-    token = data.get('login_token')
-    code = (data.get('code') or "").strip()
-    keep_login = bool(data.get('keep_login'))
+    data = request.get_json(silent=True) or {}
+    token = data.get("login_token")
+    code = (data.get("code") or "").strip()
 
     if not token or not code:
         return jsonify({"error": "Missing token or code"}), 400
 
     tmeta = login_tokens.get(token)
-    if not tmeta or tmeta['expires_at'] < datetime.now(timezone.utc):
-        log_security_event(event_type="login_2fa", outcome="invalid_or_expired_token",
-                   attempted_username=None, ip_address=request.remote_addr, meta={"token": token})
-        # cleanup if expired/invalid
+    if not tmeta or tmeta["expires_at"] < datetime.now(timezone.utc):
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Invalid or expired login token"}), 400
 
-    user = User.query.get(tmeta['user_id'])
+    if get_client_ip() != tmeta.get("ip"):
+        return jsonify({"error": "Login token used from a different IP"}), 403
+
+    user = User.query.get(tmeta["user_id"])
     if not user:
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Invalid token"}), 400
 
-    # rate limiting attempts
     attempts = login_2fa_attempts.get(token, 0)
     if attempts >= 5:
-        log_security_event(event_type="login_2fa", outcome="too_many_attempts",
-                   user_id=user.id, attempted_username=user.username)
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Too many attempts"}), 429
 
-    # verify TOTP (and backup codes fallback)
-    secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
     verified = False
-    if secret:
-        totp = pyotp.TOTP(secret)
-        if totp.verify(code, valid_window=1):
-            verified = True
+    secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
+    if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+        verified = True
 
-    # fallback: check backup codes (hashed)
     if not verified and user.backup_codes_hash:
-        import hashlib
         hashed_codes = user.backup_codes_hash.split(",")
         code_hash = hashlib.sha256(code.encode()).hexdigest()
         if code_hash in hashed_codes:
             verified = True
-            # remove the used code and persist
             hashed_codes.remove(code_hash)
             user.backup_codes_hash = ",".join(hashed_codes) if hashed_codes else None
             db.session.commit()
@@ -15921,59 +15867,20 @@ def login_2fa():
         login_2fa_attempts[token] = attempts + 1
         return jsonify({"error": "Invalid 2FA code"}), 400
 
-    # Verified: issue session_key and optionally lasting_key and persist IP
-    session_key, session_id = create_session(user.id)
+    resp = issue_login_response(user, keep_login=bool(tmeta.get("keep_login")))
 
-    # persist IP
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-        db.session.commit()
+    revoke_lk_id = tmeta.get("revoke_lk_id")
+    if revoke_lk_id:
+        try:
+            old_lk = LastingKey.query.get(revoke_lk_id)  # replace with your model name if different
+            if old_lk:
+                db.session.delete(old_lk)
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
 
-    log_security_event(event_type="login_2fa", outcome="success",
-                   user_id=user.id, attempted_username=user.username, ip_address=user_ip,
-                   session_id=session_id)
-
-    payload = {
-        "message": "Login successful!",
-        "session_key": session_key,
-        "user_id": user.id,
-        "startpage": user.startpage
-    }
-
-    resp = make_response(jsonify(payload), 200)
-    resp.set_cookie("session_key", session_key, httponly=True, secure=not _is_local_request(), samesite="Strict", max_age=60*60*24)
-
-    # If client asked to keep login -> rotate lasting key (revoke old cookie, create new one)
-    if keep_login:
-        device_info = request.headers.get('User-Agent', None)
-
-        # Revoke any existing lasting_key cookie presented by client (prevents reuse)
-        old_lk = request.cookies.get('lasting_key')
-        if old_lk:
-            try:
-                revoke_lasting_token(old_lk)
-            except Exception:
-                # don't fail login if revoke has a problem — rollback and continue
-                db.session.rollback()
-
-        # create a brand new lasting key record + raw token for cookie
-        new_token, _new_lk_record = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
-
-        # set lasting_key cookie (HttpOnly)
-        resp.set_cookie(
-            "lasting_key", new_token,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24*30
-        )
-        # note: we intentionally do not include the raw token in JSON payload
-
-    # final cleanup of the ephemeral 2FA login token and attempts
     login_tokens.pop(token, None)
     login_2fa_attempts.pop(token, None)
-
     return resp
 
 @app.route('/2fa/status', methods=['GET'])
