@@ -13,6 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://openfpcdn.io/fingerprintjs/v4"></script>
     <script src="/static/js/loader.js"></script>
     <script src="/static/js/check.js"></script>
     <style>
@@ -559,14 +560,37 @@
     </div>
 
     <script>
+    (async () => {
+        const fpPromise = FingerprintJS.load();
+
+        const fp = await fpPromise;
+        const result = await fp.get();
+
+        // visitorId is the stable fingerprint
+        localStorage.setItem("device_fp", result.visitorId);
+    })();
+    </script>
+
+    <script>
 document.addEventListener("DOMContentLoaded", async () => {
     if (!window.__fetchPatched) {
         const _f = window.fetch;
+
         window.fetch = (url, opts = {}) => {
             opts = opts || {};
             if (!opts.credentials) opts.credentials = "include";
+
+            const fp = localStorage.getItem("device_fp");
+            opts.headers = opts.headers || {};
+
+            // add fingerprint header
+            if (fp) {
+                opts.headers["X-Device-Fingerprint"] = fp;
+            }
+
             return _f(url, opts);
         };
+
         window.__fetchPatched = true;
     }
 

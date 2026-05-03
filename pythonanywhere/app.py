@@ -10290,9 +10290,12 @@ geo_cache: dict[str, tuple[str, str]] = {}
 
 def lookup_country(ip):
     try:
+        if ip in ["127.0.0.1", "localhost"]:
+            return "NL", "Netherlands"
+
         r = reader.country(ip)
         return r.country.iso_code, r.country.name
-    except:
+    except Exception:
         return None
 
 # --- GET /account/sessions

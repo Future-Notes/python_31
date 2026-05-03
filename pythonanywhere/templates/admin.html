@@ -2238,7 +2238,6 @@
         tableBody.innerHTML = "";
         const currentUserId = sessionStorage.getItem("current_user_id");
         users.forEach((user) => {
-            if (user.id == currentUserId) return;
             let violationClass = "";
             if (user.malicious_violations >= 8) violationClass = "violations-high";
             else if (user.malicious_violations >= 5) violationClass = "violations-medium";
