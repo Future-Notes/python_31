@@ -154,6 +154,7 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config['CRON_SECRET'] = os.getenv("CRON_SECRET")
 app.config["RATELIMIT_HEADERS_ENABLED"] = True
 app.config["SESSION_EXPIRY_HOURS"] = 24
 app.config["SLIDING_SESSION_EXPIRY_MINUTES"] = 30
@@ -10243,7 +10244,18 @@ def lookup_country(ip):
 @require_session_key
 def list_sessions():
     user_id = g.user_id
-    db_sessions = Session.query.filter_by(user_id=user_id, revoked=False).order_by(Session.last_active.desc()).all()
+    now = datetime.utcnow()
+
+    db_sessions = (
+        Session.query
+        .filter(
+            Session.user_id == user_id,
+            Session.revoked == False,
+            Session.expires_at > now
+        )
+        .order_by(Session.last_active.desc())
+        .all()
+    )
 
     current = get_current_db_session()
     current_id = current.id if current else None
@@ -10261,8 +10273,8 @@ def list_sessions():
             "created_at": s.created_at.isoformat() + "Z",
             "last_active": s.last_active.isoformat() + "Z",
             "ip_address": s.ip_address,
-            "country_code": country_code,   # ISO2 for flag
-            "country_name": country_name,   # full name for display
+            "country_code": country_code,
+            "country_name": country_name,
             "user_agent_simplified": simplify_user_agent(s.user_agent),
             "user_agent": (s.user_agent if s.user_agent else None),
             "fingerprint": s.fingerprint,
@@ -10271,6 +10283,40 @@ def list_sessions():
         })
 
     return jsonify({"sessions": out}), 200
+
+@app.route("/cron/cleanup/sessions", methods=["POST", "GET"])
+def cleanup_sessions():
+    # simple protection
+    provided = request.headers.get("X-Cron-Secret") or request.args.get("key")
+    if provided != app.config["CRON_SECRET"]:
+        return jsonify({"error": "unauthorized"}), 401
+
+    now = datetime.utcnow()
+
+    try:
+        # delete expired sessions
+        expired_sessions = Session.query.filter(Session.expires_at < now).all()
+        expired_ids = [s.id for s in expired_sessions]
+
+        # delete lasting keys linked to expired sessions
+        if expired_ids:
+            LastingKey.query.filter(LastingKey.session_id.in_(expired_ids)).delete(synchronize_session=False)
+
+        # delete the sessions
+        deleted_sessions = len(expired_sessions)
+        for s in expired_sessions:
+            db.session.delete(s)
+
+        db.session.commit()
+
+        return jsonify({
+            "deleted_sessions": deleted_sessions,
+            "timestamp": now.isoformat() + "Z"
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "cleanup_failed"}), 500
 
 # --- POST /account/sessions/<id>/revoke  (revoke a single session)
 @app.route("/account/sessions/<int:session_id>/revoke", methods=["POST"])
