@@ -2167,8 +2167,7 @@ def maybe_send_security_email(user, **kwargs):
 
 def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False):
     now = datetime.utcnow()
-
-    decay_risk(user)
+    
     user.risk_score = (user.risk_score or 0) + score
     user.risk_last_updated = now
 
@@ -2846,6 +2845,8 @@ def validate_session_key(raw_token=None):
 
     if user.locked_until and user.locked_until > now:
         return False, "Account temporarily locked due to suspicious activity"
+
+    decay_risk(user)
 
     score, reasons, details = calculate_risk_score(user, session_obj, request)
     if score > 0:
