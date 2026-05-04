@@ -1846,7 +1846,7 @@ def apply_security_headers(response):
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.googletagmanager.com https://openfpcdn.io https://stackpath.bootstrapcdn.com https://code.jquery.com; "
         "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://stackpath.bootstrapcdn.com; "
-        "img-src 'self' data: https:; "
+        "img-src 'self' data: https: blob:; "
         "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
         "connect-src 'self' https://*.google-analytics.com https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
         "object-src 'none'; "
