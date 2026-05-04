@@ -34,7 +34,7 @@ import subprocess
 import shutil
 import hashlib
 import smtplib
-from urllib.parse import quote_plus
+from urllib.parse import urlparse
 from email.mime.text import MIMEText
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from email.mime.multipart import MIMEMultipart
@@ -1660,10 +1660,10 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
     # --- reset de rate limiter voor deze gebruiker/IP ---
     try:
         from flask_limiter.util import get_remote_address
-        limiter.reset(get_remote_address())
-    except Exception:
+        limiter.reset()
+    except Exception as e:
         # fallback: log error maar laat login gewoon slagen
-        app.logger.warning(f"Rate limit reset failed for user {user_id} / IP {ip}")
+        app.logger.warning(f"Rate limit reset failed for user {user_id} / IP {ip} with reason {e}")
 
     return raw_token, session.id
 
@@ -1826,6 +1826,35 @@ def _extract_text_from_cohere_response(response) -> str:
 @app.before_request
 def ensure_secrets_loaded():
     load_secrets()
+
+@app.after_request
+def apply_security_headers(response):
+    # Clickjacking protection
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # MIME sniffing protection
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Referrer leakage control
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # HTTPS enforcement (only if you're actually using HTTPS)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Basic CSP (tighten this later)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.googletagmanager.com https://openfpcdn.io https://stackpath.bootstrapcdn.com https://code.jquery.com; "
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://stackpath.bootstrapcdn.com; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        "connect-src 'self' https://*.google-analytics.com https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'self';"
+    )
+
+    return response
 
 import ipaddress
 
@@ -4300,7 +4329,7 @@ def admin_storage_overview():
 
     return jsonify(result), 200
 
-def start_2fa_challenge(user, keep_login=False, revoke_lk_id=None):
+def start_2fa_challenge(user, keep_login=False, revoke_lk_id=None, redirect=None):
     login_token = secrets.token_urlsafe(32)
     login_tokens[login_token] = {
         "user_id": user.id,
@@ -4308,6 +4337,7 @@ def start_2fa_challenge(user, keep_login=False, revoke_lk_id=None):
         "ip": get_client_ip(),
         "keep_login": bool(keep_login),
         "revoke_lk_id": revoke_lk_id,
+        "redirect": redirect,
     }
     login_2fa_attempts[login_token] = 0
     return jsonify({
@@ -4316,7 +4346,20 @@ def start_2fa_challenge(user, keep_login=False, revoke_lk_id=None):
         "message": "2FA required",
     }), 200
 
-def issue_login_response(user, keep_login=False):
+def is_safe_redirect_url(target):
+    if not target:
+        return False
+
+    # Allow relative URLs like /index or /dashboard
+    parsed = urlparse(target)
+    if not parsed.netloc:
+        return target.startswith("/") and not target.startswith("//")
+
+    # Allow absolute URLs only if they stay on the same host
+    ref = urlparse(request.host_url)
+    return parsed.scheme in ("http", "https") and parsed.netloc == ref.netloc
+
+def issue_login_response(user, keep_login=False, redirect_override=None):
     session_key, session_id = create_session(user.id)
 
     user_ip = get_client_ip()
@@ -4324,10 +4367,25 @@ def issue_login_response(user, keep_login=False):
         db.session.add(IpAddres(user_id=user.id, ip=user_ip))
         db.session.commit()
 
+    data = request.get_json(silent=True) or {}
+
+    redirect_url = (
+        redirect_override
+        or request.args.get("redirect")
+        or data.get("redirect")
+    )
+
+    if redirect_url and is_safe_redirect_url(redirect_url):
+        startpage = redirect_url
+    elif user.startpage:
+        startpage = user.startpage
+    else:
+        startpage = "/index"
+
     payload = {
         "message": "Login successful!",
         "user_id": user.id,
-        "startpage": user.startpage,
+        "startpage": startpage,
     }
 
     resp = make_response(jsonify(payload), 200)
@@ -15572,6 +15630,8 @@ def login():
     data = request.get_json(silent=True) or {}
     user_ip = get_client_ip()
 
+    redirect_url = data.get("redirect") or request.args.get("redirect")
+
     lk_cookie = request.cookies.get("lasting_key")
     if lk_cookie:
         lk_record = verify_lasting_token(lk_cookie)
@@ -15604,7 +15664,7 @@ def login():
         )
 
         if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
-            return start_2fa_challenge(user, keep_login=True, revoke_lk_id=lk_record.id)
+            return start_2fa_challenge(user, keep_login=keep_login, redirect=redirect_url)
 
         resp = issue_login_response(user, keep_login=True)
         try:
@@ -15635,7 +15695,7 @@ def login():
     )
 
     if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
-        return start_2fa_challenge(user, keep_login=keep_login)
+        return start_2fa_challenge(user, keep_login=keep_login, redirect=redirect_url)
 
     return issue_login_response(user, keep_login=keep_login)
 
@@ -15870,7 +15930,14 @@ def login_2fa():
         login_2fa_attempts[token] = attempts + 1
         return jsonify({"error": "Invalid 2FA code"}), 400
 
-    resp = issue_login_response(user, keep_login=bool(tmeta.get("keep_login")))
+    redirect_url = tmeta.get("redirect")
+    redirect_url = data.get("redirect") or redirect_url
+
+    resp = issue_login_response(
+        user,
+        keep_login=bool(tmeta.get("keep_login")),
+        redirect_override=redirect_url
+    )
 
     revoke_lk_id = tmeta.get("revoke_lk_id")
     if revoke_lk_id:

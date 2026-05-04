@@ -677,7 +677,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     login_token: currentLoginToken,
-                    code: code
+                    code: code,
+                    redirect: currentRedirect
                 })
             });
 
@@ -743,13 +744,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 return;
             }
 
+            const params = new URLSearchParams(window.location.search);
+            const redirectUrl = params.get("redirect") || "";
+
             const res = await fetch("/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     username: user,
                     password: pass,
-                    keep_login: keep
+                    keep_login: keep,
+                    redirect: redirectUrl
                 })
             });
 
