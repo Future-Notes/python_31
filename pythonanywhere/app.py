@@ -2167,7 +2167,7 @@ def maybe_send_security_email(user, **kwargs):
 
 def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False):
     now = datetime.utcnow()
-    
+
     user.risk_score = (user.risk_score or 0) + score
     user.risk_last_updated = now
 
@@ -2193,6 +2193,7 @@ def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False
             meta=meta,
             created_by="system",
         )
+        send_notification(user.id, "Security notification", f"We detected a suspicious login on your account. Reason: {reason} We recommend changing your password.", "/account_page")
     except Exception:
         pass
 
@@ -2204,6 +2205,8 @@ def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False
         _revoke_all_sessions(user.id, revoke_lasting_keys=True)
         action = "lock"
 
+        send_notification(user.id, "Security notification", f"You were recently temporarily locked out of your account because of suspicious activity. Reason: {reason}. Please change your password", "/account_page")
+
         maybe_send_security_email(
             user,
             subject="Future Notes - Account temporarily locked",
@@ -2212,6 +2215,8 @@ def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False
                 <p>We detected suspicious activity on your account.</p>
                 <p><strong>Reason:</strong> {reason}</p>
                 <p>Your active sessions were revoked and the account was temporarily locked.</p>
+                <p>Your account unlocks at: {user.locked_until}</p>
+                <b>When your account unlocks, you must change your password to continue using Future Notes</b>
             """,
             buttons=[{
                 "text": "Review account",
@@ -2226,6 +2231,8 @@ def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False
         _revoke_all_sessions(user.id, revoke_lasting_keys=False)
         action = "revoke_sessions"
 
+        send_notification(user.id, "Security notification", f"You were recently logged out of your account because of suspicious activity. Reason: {reason}. We recommend changing your password", "/account_page")
+
         maybe_send_security_email(
             user,
             subject="Future Notes - New sign-in risk detected",
@@ -2234,6 +2241,7 @@ def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False
                 <p>We detected suspicious activity on your account.</p>
                 <p><strong>Reason:</strong> {reason}</p>
                 <p>Your active sessions were signed out.</p>
+                <b>We strongly recommend you change your password</b>
             """,
             buttons=[{
                 "text": "Sign in again",
