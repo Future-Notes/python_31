@@ -1173,56 +1173,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__fetchPatched = true;
     }
 
-    // Ping to check session
-    async function validateSession() {
-        try {
-            const res = await fetch("/test-session", { method: "GET" });
-            if (res.status === 200) {
-                updateStorageCounter();
-                loadUserProfile();
-                let currentUserId = (await res.json()).user_id;
-                sessionStorage.setItem('current_user_id', currentUserId);
-                return true;
-            }
-            if (res.status === 403) {
-                window.location.href = '/login_page?suspended=true';
-                return false;
-            }
-            return false;
-        } catch (err) {
-            return false;
-        }
-    }
-
-    // Try auto-login
-    async function attemptAutoLogin() {
-        try {
-            const res = await fetch("/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({}),
-                credentials: 'include'
-            });
-            if (res.ok) {
-                updateStorageCounter();
-                loadUserProfile();
-                return true;
-            }
-            // redirect to login page
-            window.location.href = '/login_page?suspend=true';
-            return false;
-        } catch (err) {
-            // redirect
-            window.location.href = '/login_page?suspend=true';
-            return false;
-        }
-    }
-
-    const ok = await validateSession();
-    if (!ok) {
-        await attemptAutoLogin();
-    }
-
     // if URL contains a hash like #board-123 -> load that board immediately
     const hashMatch = location.hash.match(/^#board-(\d+)$/);
     if (hashMatch) {
