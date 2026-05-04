@@ -1173,6 +1173,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.__fetchPatched = true;
     }
 
+    loadUserProfile();
+    updateStorageCounter();
+
     // if URL contains a hash like #board-123 -> load that board immediately
     const hashMatch = location.hash.match(/^#board-(\d+)$/);
     if (hashMatch) {
