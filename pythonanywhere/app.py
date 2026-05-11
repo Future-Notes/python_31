@@ -1,5 +1,5 @@
 # ------------------------------Imports--------------------------------
-from flask import Flask, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for, send_file
+from flask import Flask, has_request_context, request, jsonify, g, render_template, make_response, session, send_from_directory, current_app, abort, redirect, url_for, send_file
 from flask_compress import Compress
 from flask.json.provider import DefaultJSONProvider
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -9,7 +9,7 @@ from sqlalchemy import CheckConstraint, desc, event, text, MetaData, select, fun
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm.attributes import get_history
 from sqlalchemy.pool import NullPool
-from sqlalchemy import JSON, create_engine, inspect, and_
+from sqlalchemy import JSON, create_engine, inspect, and_, Index
 from pywebpush import webpush, WebPushException
 from flask_bcrypt import Bcrypt                                 
 from flask_cors import CORS                                    
@@ -34,7 +34,7 @@ import subprocess
 import shutil
 import hashlib
 import smtplib
-from urllib.parse import quote_plus
+from urllib.parse import urlparse
 from email.mime.text import MIMEText
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from email.mime.multipart import MIMEMultipart
@@ -53,7 +53,6 @@ from googleapiclient.errors import HttpError
 import requests
 import cohere
 # verify_file_content.py
-from file_check import verify_file_content_hardened
 import io
 import pyotp
 import qrcode
@@ -81,6 +80,7 @@ from sqlalchemy.orm import joinedload
 import vt
 import hmac
 import geoip2.database
+from geoip2.errors import AddressNotFoundError
 import user_agents
 from better_profanity import profanity
 import unicodedata
@@ -155,6 +155,7 @@ app.config['MEGA_PASSWORD'] = os.getenv("MEGA_PASSWORD")
 app.config['VAPID_CLAIMS'] = {
     'sub': 'https://bosbes.eu.pythonanywhere.com'
 }
+app.config['CRON_SECRET'] = os.getenv("CRON_SECRET")
 app.config["RATELIMIT_HEADERS_ENABLED"] = True
 app.config["SESSION_EXPIRY_HOURS"] = 24
 app.config["SLIDING_SESSION_EXPIRY_MINUTES"] = 30
@@ -434,17 +435,29 @@ def slugify(s):
     return s[:200]
 
 class User(db.Model):
-    __tablename__ = 'user'
+    __tablename__ = "user"
+
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     email = db.Column(db.String(200), nullable=True)
+
     lasting_keys = db.relationship(
         "LastingKey",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="dynamic"
+        lazy="dynamic",
     )
+
+    # auth/risk state
+    failed_attempts = db.Column(db.Integer, default=0, nullable=False)
+    risk_score = db.Column(db.Integer, default=0, nullable=False)
+    risk_strikes = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime, nullable=True)
+    lock_reason = db.Column(db.String(255), nullable=True)
+    last_security_email_at = db.Column(db.DateTime, nullable=True)
+    risk_last_updated = db.Column(db.DateTime, nullable=True)
+
     profile_picture = db.Column(db.String(200), nullable=True)
     allows_sharing = db.Column(db.Boolean, default=True)
     role = db.Column(db.String(20), nullable=False, default="user")
@@ -455,89 +468,113 @@ class User(db.Model):
     has_unlimited_storage = db.Column(db.Boolean, default=False, nullable=False)
     malicious_violations = db.Column(db.Integer, nullable=True)
 
-    # 2FA fields
     twofa_enabled = db.Column(db.Boolean, default=False)
-    twofa_secret = db.Column(db.Text, nullable=True)  # encrypted string
-    # hashed backup codes (optional)
+    twofa_secret = db.Column(db.Text, nullable=True)
     backup_codes_hash = db.Column(db.Text, nullable=True)
 
-    base_storage_mb = db.Column(db.Integer, default=10)  # default 10 MB, adjust as you like
-    storage_used_bytes = db.Column(db.BigInteger, default=0)  # tracks current usage
-    
-    # existing relationships
+    base_storage_mb = db.Column(db.Integer, default=10)
+    storage_used_bytes = db.Column(db.BigInteger, default=0)
+
     colors = db.relationship(
         "UserColor",
         uselist=False,
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    notifications = db.relationship('Notification', back_populates='user')
-    push_subscriptions = db.relationship('PushSubscription', back_populates='user', lazy='dynamic')
-    
-    # new relationship to FingerPrint
+    notifications = db.relationship("Notification", back_populates="user")
+    push_subscriptions = db.relationship("PushSubscription", back_populates="user", lazy="dynamic")
+
     fingerprints = db.relationship(
         "FingerPrint",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="dynamic"
+        lazy="dynamic",
     )
 
     __table_args__ = (
         CheckConstraint(role.in_(["user", "admin"]), name="check_role_valid"),
     )
 
+
 class LastingKey(db.Model):
     __tablename__ = "lasting_key"
+
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False)
-    # keyed HMAC SHA256 hex digest of the token (not reversible)
     token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=True)
-    device_info = db.Column(db.String(255), nullable=True)  # optional
+    device_info = db.Column(db.String(255), nullable=True)
     session_id = db.Column(
         db.Integer,
         db.ForeignKey("session.id", ondelete="SET NULL"),
         nullable=True,
-        index=True
+        index=True,
     )
 
-    # Optionally add a relationship if you want:
     session = db.relationship("Session", backref=db.backref("lasting_keys", lazy="dynamic"))
-
     user = db.relationship("User", back_populates="lasting_keys")
+
 
 class Session(db.Model):
     __tablename__ = "session"
 
     id = db.Column(db.Integer, primary_key=True)
-
-    user_id = db.Column(
-        db.Integer,
-        db.ForeignKey("user.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
-    )
-
-    token_hash = db.Column(
-        db.String(64),  # SHA256 hex digest
-        nullable=False,
-        unique=True,
-        index=True
-    )
-
-    ip_address = db.Column(db.String(45), nullable=False)  # supports IPv6
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    ip_address = db.Column(db.String(45), nullable=False)
     user_agent = db.Column(db.String(1000), nullable=True)
     user_agent_summary = db.Column(db.String(100), nullable=True)
     fingerprint = db.Column(db.String(255), nullable=True)
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)
     last_active = db.Column(db.DateTime, nullable=False)
-
     revoked = db.Column(db.Boolean, default=False, nullable=False)
 
     user = db.relationship("User")
+
+class AuditLog(db.Model):
+    __tablename__ = "audit_log"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    attempted_username = db.Column(db.String(80), nullable=True, index=True)
+    event_type = db.Column(db.String(50), nullable=False, index=True)
+    outcome = db.Column(db.String(80), nullable=False, index=True)
+
+    ip_address = db.Column(db.String(45), nullable=True, index=True)
+    user_agent = db.Column(db.String(1000), nullable=True)
+    user_agent_summary = db.Column(db.String(200), nullable=True)
+
+    session_id = db.Column(
+        db.Integer,
+        db.ForeignKey("session.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    lasting_key_id = db.Column(
+        db.Integer,
+        db.ForeignKey("lasting_key.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    meta = db.Column(db.Text, nullable=True)
+    created_by = db.Column(db.String(80), nullable=True)
+
+    __table_args__ = (
+        Index("ix_audit_log_event_time", "event_type", "created_at"),
+    )
+
+    user = db.relationship("User", backref=db.backref("audit_logs", lazy="dynamic"))
 
 class PermissionEnum(enum.Enum):
     read = "read"
@@ -610,6 +647,7 @@ class Card(db.Model):
     completed = db.Column(db.Boolean, default=False)
     background_color = db.Column(db.String(7), nullable=True, default=None)
     due_date = db.Column(db.DateTime, nullable=True)
+    start_date = db.Column(db.DateTime, nullable=True)
 
     list = db.relationship("List", backref=db.backref("cards", lazy="dynamic"))
 
@@ -1615,10 +1653,10 @@ def create_session(user_id: int, link_lasting_key_raw: str = None):
     # --- reset de rate limiter voor deze gebruiker/IP ---
     try:
         from flask_limiter.util import get_remote_address
-        limiter.reset(get_remote_address())
-    except Exception:
+        limiter.reset()
+    except Exception as e:
         # fallback: log error maar laat login gewoon slagen
-        app.logger.warning(f"Rate limit reset failed for user {user_id} / IP {ip}")
+        app.logger.warning(f"Rate limit reset failed for user {user_id} / IP {ip} with reason {e}")
 
     return raw_token, session.id
 
@@ -1782,6 +1820,35 @@ def _extract_text_from_cohere_response(response) -> str:
 def ensure_secrets_loaded():
     load_secrets()
 
+@app.after_request
+def apply_security_headers(response):
+    # Clickjacking protection
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # MIME sniffing protection
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Referrer leakage control
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # HTTPS enforcement (only if you're actually using HTTPS)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # Basic CSP (tighten this later)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.googletagmanager.com https://openfpcdn.io https://stackpath.bootstrapcdn.com https://code.jquery.com; "
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://stackpath.bootstrapcdn.com; "
+        "img-src 'self' data: https: blob:; "
+        "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        "connect-src 'self' https://*.google-analytics.com https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'self';"
+    )
+
+    return response
+
 import ipaddress
 
 def _is_local_request():
@@ -1931,6 +1998,262 @@ def sync_calendars(user_id, full_sync=False):
     db.session.commit()
     return True, "\n".join(results)
 
+def _country_code_for_ip(ip):
+    if not ip:
+        return None
+    try:
+        rec = reader.country(ip)
+        return (rec.country.iso_code or "").upper() or None
+    except (AddressNotFoundError, ValueError, OSError):
+        return None
+
+
+def impossible_travel_detected(
+    user_id,
+    current_ip,
+    *,
+    current_session_id=None,
+    current_time=None,
+    min_minutes=None,
+):
+    current_time = current_time or datetime.utcnow()
+    min_minutes = min_minutes if min_minutes is not None else app.config.get("IMPOSSIBLE_TRAVEL_WINDOW_MINUTES", 90)
+
+    current_country = _country_code_for_ip(current_ip)
+    if not current_country:
+        return False, {"reason": "current_country_unknown", "current_ip": current_ip}
+
+    q = Session.query.filter_by(user_id=user_id, revoked=False)
+    if current_session_id is not None:
+        q = q.filter(Session.id != current_session_id)
+
+    previous = q.order_by(Session.last_active.desc()).first()
+    if not previous:
+        return False, {"reason": "no_previous_session", "current_country": current_country}
+
+    previous_country = _country_code_for_ip(previous.ip_address)
+    if not previous_country:
+        return False, {
+            "reason": "previous_country_unknown",
+            "current_country": current_country,
+            "previous_ip": previous.ip_address,
+        }
+
+    elapsed_minutes = max(0.0, (current_time - previous.last_active).total_seconds() / 60.0)
+
+    suspicious = previous_country != current_country and elapsed_minutes < min_minutes
+    return suspicious, {
+        "current_country": current_country,
+        "previous_country": previous_country,
+        "elapsed_minutes": elapsed_minutes,
+        "previous_session_id": previous.id,
+        "previous_ip": previous.ip_address,
+    }
+
+
+def calculate_risk_score(user, db_session, request_obj):
+    score = 0
+    reasons = []
+    details = {}
+
+    ip = get_client_ip()
+    ua = request_obj.headers.get("User-Agent") or ""
+    fp = request_obj.headers.get("X-Device-Fingerprint")
+
+    if db_session.ip_address != ip:
+        score += 25
+        reasons.append("ip_changed")
+
+    if not IpAddres.query.filter_by(user_id=user.id, ip=ip).first():
+        score += 15
+        reasons.append("new_ip")
+
+    if db_session.user_agent != ua:
+        score += 20
+        reasons.append("user_agent_changed")
+
+    if db_session.fingerprint and fp and db_session.fingerprint != fp:
+        score += 35
+        reasons.append("fingerprint_mismatch")
+
+    if db_session.fingerprint and not fp:
+        score += 10
+        reasons.append("fingerprint_missing")
+
+    travel, travel_meta = impossible_travel_detected(
+        user.id,
+        ip,
+        current_session_id=db_session.id,
+    )
+    if travel:
+        score += 60
+        reasons.append("impossible_travel")
+        details["impossible_travel"] = travel_meta
+
+    return score, reasons, details
+
+
+def _revoke_all_sessions(user_id, *, revoke_lasting_keys=True):
+    Session.query.filter_by(user_id=user_id).update({"revoked": True}, synchronize_session=False)
+    if revoke_lasting_keys:
+        LastingKey.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+
+
+def decay_risk(user):
+    now = datetime.utcnow()
+    last = user.risk_last_updated
+    if not last:
+        return
+
+    minutes = (now - last).total_seconds() / 60.0
+    decay = int(minutes * 2)
+    user.risk_score = max(0, (user.risk_score or 0) - decay)
+    user.risk_last_updated = now
+
+
+def send_security_email(
+    user,
+    *,
+    subject,
+    title,
+    content_html,
+    content_text=None,
+    buttons=None,
+    event_type="security_alert",
+    meta=None,
+):
+    email = (user.email or "").strip()
+    if not email:
+        return False
+
+    headers = {
+        "X-Account-Id": str(user.id),
+        "X-Security-Event": event_type,
+    }
+    if meta:
+        for k, v in meta.items():
+            headers[f"X-Security-{k}"] = str(v)
+
+    try:
+        send_email(
+            to_address=email,
+            subject=subject,
+            title=title,
+            content_html=content_html,
+            content_text=content_text,
+            buttons=buttons or [],
+            logo_url=app.config.get("LOGO_URL"),
+            unsubscribe_url="#",
+            reply_to=app.config.get("SUPPORT_EMAIL"),
+            headers=headers,
+        )
+        return True
+    except Exception:
+        app.logger.exception("Failed to send security email for user_id=%s", user.id)
+        return False
+
+
+def maybe_send_security_email(user, **kwargs):
+    now = datetime.utcnow()
+    last = user.last_security_email_at
+    if last and now - last < timedelta(minutes=30):
+        return False
+
+    ok = send_security_email(user, **kwargs)
+    if ok:
+        user.last_security_email_at = now
+    return ok
+
+
+def apply_risk_event(user, *, score, reason, details=None, revoke_sessions=False):
+    now = datetime.utcnow()
+
+    user.risk_score = (user.risk_score or 0) + score
+    user.risk_last_updated = now
+
+    suspicious_event = score >= 30 or revoke_sessions
+    if suspicious_event:
+        user.risk_strikes = (user.risk_strikes or 0) + 1
+
+    meta = {
+        "score": score,
+        "reason": reason,
+        "details": details or {},
+        "risk_score": user.risk_score,
+        "risk_strikes": user.risk_strikes,
+    }
+
+    try:
+        log_security_event(
+            event_type="risk_event",
+            outcome="flagged",
+            user_id=user.id,
+            ip_address=get_client_ip(),
+            user_agent=request.headers.get("User-Agent"),
+            meta=meta,
+            created_by="system",
+        )
+        send_notification(user.id, "Security notification", f"We detected a suspicious login on your account. Reason: {reason} We recommend changing your password.", "/account_page")
+    except Exception:
+        pass
+
+    action = "flag"
+
+    if user.risk_score >= 100 or user.risk_strikes >= 3:
+        user.locked_until = now + timedelta(minutes=30)
+        user.lock_reason = reason
+        _revoke_all_sessions(user.id, revoke_lasting_keys=True)
+        action = "lock"
+
+        send_notification(user.id, "Security notification", f"You were recently temporarily locked out of your account because of suspicious activity. Reason: {reason}. Please change your password", "/account_page")
+
+        maybe_send_security_email(
+            user,
+            subject="Future Notes - Account temporarily locked",
+            title="Account temporarily locked",
+            content_html=f"""
+                <p>We detected suspicious activity on your account.</p>
+                <p><strong>Reason:</strong> {reason}</p>
+                <p>Your active sessions were revoked and the account was temporarily locked.</p>
+                <p>Your account unlocks at: {user.locked_until}</p>
+                <b>When your account unlocks, you must change your password to continue using Future Notes</b>
+            """,
+            buttons=[{
+                "text": "Review account",
+                "href": f"{request.host_url.rstrip('/')}/login_page",
+                "color": "#424242",
+            }],
+            event_type="account_locked",
+            meta={"reason": reason},
+        )
+
+    elif user.risk_score >= 60 or revoke_sessions:
+        _revoke_all_sessions(user.id, revoke_lasting_keys=False)
+        action = "revoke_sessions"
+
+        send_notification(user.id, "Security notification", f"You were recently logged out of your account because of suspicious activity. Reason: {reason}. We recommend changing your password", "/account_page")
+
+        maybe_send_security_email(
+            user,
+            subject="Future Notes - New sign-in risk detected",
+            title="Security notice",
+            content_html=f"""
+                <p>We detected suspicious activity on your account.</p>
+                <p><strong>Reason:</strong> {reason}</p>
+                <p>Your active sessions were signed out.</p>
+                <b>We strongly recommend you change your password</b>
+            """,
+            buttons=[{
+                "text": "Sign in again",
+                "href": f"{request.host_url.rstrip('/')}/login_page",
+                "color": "#424242",
+            }],
+            event_type="session_revoked",
+            meta={"reason": reason},
+        )
+
+    db.session.commit()
+    return action
 
 def push_local_changes(service, mapping, sync_start):
     """
@@ -2495,104 +2818,105 @@ def validate_session_key(raw_token=None):
         return False, "Invalid or missing session API key"
 
     token_hash = _hash_session_token(raw_token)
-    session = Session.query.filter_by(token_hash=token_hash).first()
-    if not session or session.revoked:
+    session_obj = Session.query.filter_by(token_hash=token_hash).first()
+    if not session_obj or session_obj.revoked:
         return False, "Invalid or missing session API key"
 
     now = datetime.utcnow()
 
-    # Absolute expiration
-    if session.expires_at < now:
-        db.session.delete(session)
+    if session_obj.expires_at < now:
+        db.session.delete(session_obj)
         db.session.commit()
         return False, "Session expired. Please log in again."
 
-    # Sliding expiration
     sliding_minutes = app.config.get("SLIDING_SESSION_EXPIRY_MINUTES", 30)
-    if session.last_active + timedelta(minutes=sliding_minutes) < now:
-        db.session.delete(session)
+    if session_obj.last_active + timedelta(minutes=sliding_minutes) < now:
+        db.session.delete(session_obj)
         db.session.commit()
         return False, "Session expired due to inactivity. Please log in again."
 
-    user = User.query.get(session.user_id)
+    user = User.query.get(session_obj.user_id)
     if not user:
-        db.session.delete(session)
+        db.session.delete(session_obj)
         db.session.commit()
         return False, "Invalid session"
 
     if user.suspended:
-        db.session.delete(session)
+        db.session.delete(session_obj)
         db.session.commit()
         return False, "You have been suspended for violating the TOS"
 
-    # 🔒 DEVICE BINDING ENFORCEMENT
-    current_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    current_ua = request.headers.get("User-Agent")
-    current_fp = request.headers.get("X-Device-Fingerprint")
+    if user.locked_until and user.locked_until <= now:
+        user.locked_until = None
+        user.lock_reason = None
+        db.session.commit()
 
-    if session.ip_address != current_ip:
-        return False, "Session IP mismatch"
+    if user.locked_until and user.locked_until > now:
+        return False, "Account temporarily locked due to suspicious activity"
 
-    if session.user_agent != current_ua:
-        return False, "Session user-agent mismatch"
+    decay_risk(user)
 
-    if session.fingerprint and session.fingerprint != current_fp:
-        return False, "Session fingerprint mismatch"
+    score, reasons, details = calculate_risk_score(user, session_obj, request)
+    if score > 0:
+        action = apply_risk_event(
+            user,
+            score=score,
+            reason=",".join(reasons) or "unknown",
+            details=details,
+        )
+        if action in ("lock", "revoke_sessions"):
+            return False, "Account temporarily locked due to suspicious activity"
 
-    # Update last active for sliding session
-    session.last_active = now
+    session_obj.last_active = now
     db.session.commit()
 
     return True, {"user_id": user.id}
 
-# --- helper: get_session_by_raw_token (if not already present) ---
+
 def get_session_by_raw_token(raw_token):
     if not raw_token:
         return None
+
     token_hash = _hash_session_token(raw_token)
-    session = Session.query.filter_by(token_hash=token_hash).first()
-    if not session or session.revoked:
+    session_obj = Session.query.filter_by(token_hash=token_hash).first()
+    if not session_obj or session_obj.revoked:
         return None
 
     now = datetime.utcnow()
-    if session.expires_at and session.expires_at < now:
+    if session_obj.expires_at and session_obj.expires_at < now:
         try:
-            db.session.delete(session)
+            db.session.delete(session_obj)
             db.session.commit()
         except Exception:
             db.session.rollback()
         return None
 
-    # ensure linked user exists
-    if not User.query.get(session.user_id):
+    if not User.query.get(session_obj.user_id):
         try:
-            db.session.delete(session)
+            db.session.delete(session_obj)
             db.session.commit()
         except Exception:
             db.session.rollback()
         return None
 
-    return session
+    return session_obj
 
-# --- helper: get_current_db_session() for convenience inside endpoints ---
+
 def get_current_db_session():
-    raw = request.cookies.get('session_key')
+    raw = request.cookies.get("session_key")
     if not raw:
         return None
     return get_session_by_raw_token(raw)
 
-# --- small helper to produce a friendly "user agent" string ---
+
 def simplify_user_agent(ua_string: str) -> str:
-    """Returns a human-readable summary from a raw User-Agent string."""
     if not ua_string:
         return "Unknown"
 
     ua = user_agents.parse(ua_string)
-
     browser = ua.browser.family or "Other browser"
     os = ua.os.family or "Unknown OS"
 
-    # Collapse generic 'Other' values
     if browser == "Other":
         browser = "Other browser"
     if os == "Other":
@@ -2619,25 +2943,19 @@ def allowed_file(filename):
 def require_session_key(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # Validate session
         valid, resp = validate_session_key()
         if not valid:
             code = 403 if "suspended" in resp else 401
             return jsonify({"error": resp}), code
 
-        # Set user in g
         g.user_id = resp["user_id"]
 
-        # Apply slightly stricter global limit for all authenticated users
-        # Example: 1500 per day, 400 per hour
         key = str(g.user_id)
         limit_str = "1500 per day, 400 per hour"
         try:
-            # Use RouteLimit as a context manager
             with limiter.limit(limit_str, key_func=lambda: key):
                 return func(*args, **kwargs)
         except RateLimitExceeded:
-            # Friendly, localized 429 could go here
             return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
 
     return wrapper
@@ -2960,6 +3278,76 @@ def delete_profile_pictures(username):
             os.remove(picture)
         except Exception as e:
             print(f"Failed to delete {picture}: {e}")
+
+def _hash_sensitive(value: str) -> str:
+    """HMAC-like simple hash for tokens — don't store raw tokens. Uses app SECRET_KEY as salt."""
+    if not value:
+        return None
+    secret = current_app.config.get("SECRET_KEY", "")
+    return hashlib.sha256((value + secret).encode("utf-8")).hexdigest()
+
+def _shorten_ua(ua: str, maxlen=1000):
+    if not ua:
+        return None
+    return ua[:maxlen]
+
+def _safe_meta(meta, token=None):
+    payload = {}
+    if isinstance(meta, dict):
+        payload.update(meta)
+    elif meta is not None:
+        payload["value"] = str(meta)
+
+    if token:
+        payload["token_hash"] = _hash_sensitive(token)
+
+    return json.dumps(payload, default=str) if payload else None
+
+
+def log_security_event(
+    event_type: str,
+    outcome: str,
+    user_id: int = None,
+    attempted_username: str = None,
+    ip_address: str = None,
+    user_agent: str = None,
+    session_id: int = None,
+    lasting_key_id: int = None,
+    token: str = None,
+    meta: dict = None,
+    created_by: str = "system",
+):
+    """Create an AuditLog entry. Do not store plaintext tokens/passwords."""
+    try:
+        if has_request_context():
+            ip_address = ip_address or (request.headers.get("X-Forwarded-For") or request.remote_addr or None)
+            if ip_address and isinstance(ip_address, str):
+                ip_address = ip_address.split(",")[0].strip()
+            user_agent = user_agent or request.headers.get("User-Agent")
+
+        entry = AuditLog(
+            created_at=datetime.utcnow(),
+            user_id=user_id,
+            attempted_username=(attempted_username[:80] if attempted_username else None),
+            event_type=event_type,
+            outcome=outcome,
+            ip_address=ip_address,
+            user_agent=_shorten_ua(user_agent) if user_agent else None,
+            user_agent_summary=simplify_user_agent(user_agent) if user_agent else None,
+            session_id=session_id,
+            lasting_key_id=lasting_key_id,
+            meta=_safe_meta(meta, token=token),
+            created_by=created_by,
+        )
+
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as e:
+        current_app.logger.exception("Failed to write audit log: %s", str(e))
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
 def sync_profile_pics_files_db():
     """ Syncs the profile pictures in the database with the actual files for all users. """
@@ -4193,6 +4581,163 @@ def admin_storage_overview():
 
     return jsonify(result), 200
 
+def start_2fa_challenge(user, keep_login=False, revoke_lk_id=None, redirect=None):
+    login_token = secrets.token_urlsafe(32)
+    login_tokens[login_token] = {
+        "user_id": user.id,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "ip": get_client_ip(),
+        "keep_login": bool(keep_login),
+        "revoke_lk_id": revoke_lk_id,
+        "redirect": redirect,
+    }
+    login_2fa_attempts[login_token] = 0
+    return jsonify({
+        "2fa_required": True,
+        "login_token": login_token,
+        "message": "2FA required",
+    }), 200
+
+def is_safe_redirect_url(target):
+    if not target:
+        return False
+
+    # Allow relative URLs like /index or /dashboard
+    parsed = urlparse(target)
+    if not parsed.netloc:
+        return target.startswith("/") and not target.startswith("//")
+
+    # Allow absolute URLs only if they stay on the same host
+    ref = urlparse(request.host_url)
+    return parsed.scheme in ("http", "https") and parsed.netloc == ref.netloc
+
+def issue_login_response(user, keep_login=False, redirect_override=None):
+    session_key, session_id = create_session(user.id)
+
+    user_ip = get_client_ip()
+    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
+        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
+        db.session.commit()
+
+    data = request.get_json(silent=True) or {}
+
+    redirect_url = (
+        redirect_override
+        or request.args.get("redirect")
+        or data.get("redirect")
+    )
+
+    if redirect_url and is_safe_redirect_url(redirect_url):
+        startpage = redirect_url
+    elif user.startpage:
+        startpage = user.startpage
+    else:
+        startpage = "/index"
+
+    payload = {
+        "message": "Login successful!",
+        "user_id": user.id,
+        "startpage": startpage,
+    }
+
+    resp = make_response(jsonify(payload), 200)
+    resp.set_cookie(
+        "session_key", session_key,
+        httponly=True,
+        secure=not _is_local_request(),
+        samesite="Strict",
+        max_age=60 * 60 * 24,
+    )
+
+    if keep_login:
+        device_info = request.headers.get("User-Agent")
+        new_token, _ = create_lasting_key_for_user(
+            user.id,
+            device_info=device_info,
+            session_id=session_id,
+        )
+        resp.set_cookie(
+            "lasting_key", new_token,
+            httponly=True,
+            secure=not _is_local_request(),
+            samesite="Strict",
+            max_age=60 * 60 * 24 * 30,
+        )
+
+    return resp
+
+def verify_file_content_hardened(file_path: str, mimetype: str) -> bool:
+    """
+    Local-only file verification.
+    Returns True if file is SAFE, False if suspicious.
+    """
+
+    try:
+        # 1. Basic MIME allowlist
+        if mimetype not in ALLOWED_MIMETYPES and not mimetype.startswith("image/"):
+            print("mimetype error")
+            return False
+
+        # 2. Magic byte validation
+        if not _matches_magic_bytes(file_path, mimetype):
+            print("magic bytes error")
+            return False
+
+        # 3. Extension consistency
+        if not _extension_matches(file_path, mimetype):
+            print("extension error")
+            return False
+
+        # 4. Heuristic scan (very lightweight)
+        if _contains_suspicious_patterns(file_path):
+            print("heuristic scan error")
+            return False
+
+        return True
+
+    except Exception as e:
+        print(e)
+        return False
+
+def _matches_magic_bytes(file_path: str, mimetype: str) -> bool:
+    MAGIC_MAP = {
+        "image/png": [b"\x89PNG\r\n\x1a\n"],
+        "image/jpeg": [b"\xff\xd8\xff"],
+        "image/gif": [b"GIF87a", b"GIF89a"],
+        "application/pdf": [b"%PDF"],
+        "application/zip": [b"PK\x03\x04"],
+    }
+
+    expected = MAGIC_MAP.get(mimetype)
+    if not expected:
+        return True  # unknown types allowed but not verified
+
+    with open(file_path, "rb") as f:
+        header = f.read(16)
+
+    return any(header.startswith(sig) for sig in expected)
+
+def _extension_matches(file_path: str, mimetype: str) -> bool:
+    return True
+
+def _contains_suspicious_patterns(file_path: str) -> bool:
+    suspicious_signatures = [
+        b"<?php",
+        b"<script",
+        b"powershell",
+        b"cmd.exe",
+        b"/bin/sh",
+        b"eval(",
+        b"base64_decode",
+    ]
+
+    try:
+        with open(file_path, "rb") as f:
+            chunk = f.read(4096).lower()
+            return any(sig in chunk for sig in suspicious_signatures)
+    except Exception:
+        return True
+
 
 def verify_file_content(file_path: str, mimetype: str) -> bool:
     """
@@ -4256,50 +4801,11 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
         file_sha256 = _sha256(tmp_name)
 
         # Attempt VirusTotal fast hash lookup
-        vt_known_and_clean = False
-        vt_unknown = False
-        try:
-            if not VT_API_KEY:
-                raise EnvironmentError("VT_API_KEY is not set.")
-            with vt.Client(VT_API_KEY) as client:
-                try:
-                    file_obj = client.get_object(f"/files/{file_sha256}")
-                    vt_known_and_clean = _vt_stats_clean(file_obj.last_analysis_stats)
-                except vt.APIError as e:
-                    if e.code == "NotFoundError":
-                        vt_unknown = True
-                    else:
-                        # unexpected VT error — fail closed (cleanup tmp file)
-                        os.remove(tmp_name)
-                        raise
-        except Exception as e:
-            # Any error communicating with VT -> fail closed (do not accept the upload)
-            try:
-                os.remove(tmp_name)
-            except Exception:
-                pass
-            return True, f"VirusTotal error: {str(e)}"
+        is_safe = verify_file_content_hardened(tmp_name, mimetype)
 
-        # If VT known and malicious -> reject immediately
-        if vt_known_and_clean is False and not vt_unknown:
-            # That means known and NOT clean (malicious/suspicious)
-            try:
-                os.remove(tmp_name)
-            except Exception:
-                pass
-            if user:
-                try:
-                    user.malicious_violations = (user.malicious_violations or 0) + 1
-                    if user.malicious_violations > 3:
-                        user.banned = True
-                    db.session.add(user)
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
-            return False, "Uploaded file is malicious according to VirusTotal."
-
-        # At this point either VT known & clean OR VT unknown (we will accept in both cases).
-        # Proceed to store the file in a best-effort order: Dropbox, Mega, else local.
+        if not is_safe:
+            os.remove(tmp_name)
+            return False, "File failed security checks."
 
         storage_backend = "local"
         stored_path = None
@@ -4360,12 +4866,8 @@ def verify_and_record_upload(file: FileStorage, user, max_size_bytes=MAX_UPLOAD_
         # --- Create DB record ---
         try:
             # If VT was unknown then mark as pending; if known and clean, mark verified
-            if vt_unknown:
-                verification_status = "pending"
-                pending_verification = True
-            else:
-                verification_status = "verified"
-                pending_verification = False
+            verification_status = "verified"
+            pending_verification = False
 
             upload = Upload(
                 user_id=user.id,
@@ -5415,6 +5917,35 @@ def shared_folder_contents(token, folder_id):
         "notes": note_list,
     }), 200
 
+@app.route("/dev/simulate_risk", methods=["GET"])
+@require_session_key
+def simulate_risk():
+    if not app.config.get("DEBUG"):
+        return jsonify({"error": "disabled"}), 403
+
+    user = User.query.get(g.user_id)
+    if not user:
+        return jsonify({"error": "no user"}), 404
+
+    data = request.get_json(silent=True) or {}
+    score = int(data.get("score", 100))
+    reason = data.get("reason", "manual_simulation")
+
+    action = apply_risk_event(
+        user,
+        score=score,
+        reason=reason,
+        details={"simulated": True},
+        revoke_sessions=bool(data.get("revoke", True)),
+    )
+
+    return jsonify({
+        "message": "risk simulated",
+        "action": action,
+        "risk_score": user.risk_score,
+        "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+    }), 200
+
 @app.route('/s/<token>/visit', methods=['POST'])
 @get_user_from_session
 @limiter.limit("100 per hour", override_defaults=True)
@@ -6003,14 +6534,19 @@ def api_get_boards():
     )
     out = []
     for b in boards:
-        # If you want to include permission in listing:
-        if b.user_id == user_id:
-            perm = 'owner'
-        else:
-            share = BoardShare.query.filter_by(board_id=b.id, user_id=user_id).first()
-            perm = share.permission.value if share else None
-        out.append({"id": b.id, "title": b.title, "created_at": b.created_at.isoformat(), "permission": perm})
-    out = [{"id": b.id, "title": b.title, "created_at": b.created_at.isoformat()} for b in boards]
+        # Count cards in this board
+        lists = List.query.filter_by(board_id=b.id).all()
+        list_ids = [l.id for l in lists]
+        cards_count = 0
+        if list_ids:
+            cards_count = Card.query.filter(Card.list_id.in_(list_ids)).count()
+        
+        out.append({
+            "id": b.id,
+            "title": b.title,
+            "created_at": b.created_at.isoformat(),
+            "cards_count": cards_count
+        })
     return jsonify(out)
 
 @app.route('/api/boards', methods=['POST'])
@@ -6183,29 +6719,25 @@ def api_get_lists():
     board_id = request.args.get('board_id', type=int)
     if board_id is None:
         return jsonify({"error": "board_id required as query param"}), 400
-
+ 
     allowed, reason = require_board_permission(board_id, user_id, need_edit=False)
     if not allowed:
         return jsonify({"error": "Board not found or access denied"}), 404
     board = Board.query.get(board_id)
-
-    # determine board background image url if present
+ 
     board_bg = BoardBackgroundUpload.query.filter_by(board_id=board.id).first()
     board_background_image_url = None
     if board_bg:
         upload = Upload.query.filter_by(id=board_bg.upload_id, deleted=False).first()
         if upload:
             board_background_image_url = get_upload_url(upload)
-
-    # fetch all lists for board (do not filter by user_id)
+ 
     lists = List.query.filter_by(board_id=board_id).order_by(List.id).all()
     list_ids = [l.id for l in lists]
-
-    # fetch all cards for those lists (do not restrict by Card.user_id)
+ 
     cards = Card.query.filter(Card.list_id.in_(list_ids)).order_by(Card.position).all()
     card_ids = [c.id for c in cards]
-
-    # fetch all card asignees for that card, including their user info (user_id, username, profile_pic_url, etc.)
+ 
     assignees_map = {}
     if card_ids:
         rows = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id.in_(card_ids)).all()
@@ -6217,21 +6749,17 @@ def api_get_lists():
                 "assigned_at": _iso_z(getattr(cm, 'asigned_at', None))
             }
             assignees_map.setdefault(cm.card_id, []).append(info)
-
-    # fetch all card background uploads in one query
+ 
     card_bg_map = {}
     if card_ids:
         card_bgs = CardBackgroundUpload.query.filter(CardBackgroundUpload.card_id.in_(card_ids)).all()
         upload_ids = [bg.upload_id for bg in card_bgs]
         uploads = {u.id: u for u in Upload.query.filter(Upload.id.in_(upload_ids), Upload.deleted==False).all()}
-
-        # map card_id -> background url
         for bg in card_bgs:
             u = uploads.get(bg.upload_id)
             if u:
                 card_bg_map[bg.card_id] = get_upload_url(u)
-
-    # build output
+ 
     out = []
     for l in lists:
         l_cards = [c for c in cards if c.list_id == l.id]
@@ -6249,13 +6777,14 @@ def api_get_lists():
                     "completed": c.completed,
                     "color": c.background_color,
                     "background_image_url": card_bg_map.get(c.id),
+                    "start_date": c.start_date.isoformat() if c.start_date else None,  # ← NEW
                     "due_date": c.due_date.isoformat() if c.due_date else None,
                     "assignees": assignees_map.get(c.id, [])
                 }
                 for c in l_cards
             ]
         })
-
+ 
     return jsonify({
         "board_color": board.background_color,
         "board_background_image_url": board_background_image_url,
@@ -6422,28 +6951,22 @@ def api_get_card_info(card_id):
     card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
-
-    # permission check on the board owning this card
+ 
     list_obj = List.query.get(card.list_id)
     if not list_obj:
         return jsonify({"error": "Card/list not found"}), 404
-
+ 
     allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=False)
     if not allowed:
         return jsonify({"error": "Card not found or access denied"}), 404
-
-    # Determine background image for the card
+ 
     card_bg = CardBackgroundUpload.query.filter_by(card_id=card.id).first()
     card_background_image_url = None
     if card_bg:
         upload = Upload.query.filter_by(id=card_bg.upload_id, deleted=False).first()
         if upload:
             card_background_image_url = get_upload_url(upload)
-
-    if card.due_date:
-        due_date_iso = card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-    # fetch assignees (with user info)
+ 
     assignees = []
     card_members = db.session.query(CardMember, User).join(User, User.id == CardMember.user_id).filter(CardMember.card_id == card.id).all()
     for cm, u in card_members:
@@ -6453,7 +6976,7 @@ def api_get_card_info(card_id):
             "profile_picture": u.profile_picture,
             "assigned_at": _iso_z(getattr(cm, 'asigned_at', None))
         })
-
+ 
     return jsonify({
         "id": card.id,
         "title": card.title,
@@ -6462,7 +6985,8 @@ def api_get_card_info(card_id):
         "completed": card.completed,
         "color": card.background_color,
         "background_image_url": card_background_image_url,
-        "due_date": due_date_iso if card.due_date else None,
+        "start_date": card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.start_date else None,  # ← NEW
+        "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None,
         "assignees": assignees
     })
 
@@ -6808,26 +7332,33 @@ def api_create_card():
     description = payload.get('description') or ''
     if not title or list_id is None:
         return jsonify({"error": "title and list_id required"}), 400
-
+ 
     list_obj = List.query.get(list_id)
     if not list_obj:
         return jsonify({"error": "List not found"}), 404
-
+ 
     allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
     if not allowed:
         return jsonify({"error": "List not found or permission denied"}), 404
-
+ 
     max_pos = db.session.query(db.func.max(Card.position)).filter_by(list_id=list_id).scalar()
     position = ((max_pos or 0) + 1000)
     card = Card(user_id=user_id, list_id=list_id, title=title, description=description, position=position)
-
+ 
+    # optional start_date  ← NEW
+    if 'start_date' in payload:
+        try:
+            card.start_date = _parse_iso_to_utc_naive(payload.get('start_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+ 
     # optional due_date
     if 'due_date' in payload:
         try:
             card.due_date = _parse_iso_to_utc_naive(payload.get('due_date'))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-
+ 
     db.session.add(card)
     db.session.commit()
     return jsonify({
@@ -6835,6 +7366,7 @@ def api_create_card():
         "title": card.title,
         "description": card.description or "",
         "position": card.position,
+        "start_date": card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.start_date else None,  # ← NEW
         "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
     }), 201
 
@@ -6885,60 +7417,80 @@ def api_update_card(card_id):
     card = Card.query.get(card_id)
     if not card:
         return jsonify({"error": "Card not found"}), 404
-
+ 
     list_obj = List.query.get(card.list_id)
     if not list_obj:
         return jsonify({"error": "Card/list not found"}), 404
-
+ 
     allowed, reason = require_board_permission(list_obj.board_id, user_id, need_edit=True)
     if not allowed:
         return jsonify({"error": "Card not found or permission denied"}), 404
-
+ 
     payload = request.get_json() or {}
-
+ 
     title_changed = False
     description_changed = False
+    start_date_changed = False  # ← NEW
     due_date_changed = False
-
+ 
     if 'title' in payload and payload['title'] != card.title:
         card.title = payload['title']
         title_changed = True
-
+ 
     if 'description' in payload and payload['description'] != card.description:
         card.description = payload['description']
         description_changed = True
-
+ 
+    # ── start_date handling ────────────────────────────────────────── NEW ──
+    if 'start_date' in payload:
+        try:
+            new_start = _parse_iso_to_utc_naive(payload.get('start_date'))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+ 
+        if (card.start_date is None and new_start is not None) or \
+           (card.start_date is not None and new_start is None) or \
+           (card.start_date is not None and new_start is not None and card.start_date != new_start):
+            start_date_changed = True
+            card.start_date = new_start
+    # ─────────────────────────────────────────────────────────────────────────
+ 
     if 'due_date' in payload:
-        # payload may contain null to clear
         try:
             new_due = _parse_iso_to_utc_naive(payload.get('due_date'))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-
-        # Compare naive datetimes (or None)
+ 
         if (card.due_date is None and new_due is not None) or \
            (card.due_date is not None and new_due is None) or \
            (card.due_date is not None and new_due is not None and card.due_date != new_due):
             due_date_changed = True
-            old = card.due_date
             card.due_date = new_due
-
+ 
     if title_changed:
         insert_card_activity(user_id, card.id, f"Card title updated to '{card.title}'")
     if description_changed:
         insert_card_activity(user_id, card.id, "Card description updated")
+    # ── NEW activity logging ─────────────────────────────────────────────────
+    if start_date_changed:
+        if card.start_date:
+            insert_card_activity(user_id, card.id, f"Card start date set to {card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+        else:
+            insert_card_activity(user_id, card.id, "Card start date cleared")
+    # ─────────────────────────────────────────────────────────────────────────
     if due_date_changed:
         if card.due_date:
             insert_card_activity(user_id, card.id, f"Card due date set to {card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ')}")
         else:
             insert_card_activity(user_id, card.id, "Card due date cleared")
-
+ 
     db.session.commit()
-
+ 
     return jsonify({
         "id": card.id,
         "title": card.title,
         "description": card.description or "",
+        "start_date": card.start_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.start_date else None,  # ← NEW
         "due_date": card.due_date.strftime('%Y-%m-%dT%H:%M:%SZ') if card.due_date else None
     })
 
@@ -10077,9 +10629,12 @@ geo_cache: dict[str, tuple[str, str]] = {}
 
 def lookup_country(ip):
     try:
+        if ip in ["127.0.0.1", "localhost"]:
+            return "NL", "Netherlands"
+
         r = reader.country(ip)
         return r.country.iso_code, r.country.name
-    except:
+    except Exception:
         return None
 
 # --- GET /account/sessions
@@ -10087,7 +10642,18 @@ def lookup_country(ip):
 @require_session_key
 def list_sessions():
     user_id = g.user_id
-    db_sessions = Session.query.filter_by(user_id=user_id, revoked=False).order_by(Session.last_active.desc()).all()
+    now = datetime.utcnow()
+
+    db_sessions = (
+        Session.query
+        .filter(
+            Session.user_id == user_id,
+            Session.revoked == False,
+            Session.expires_at > now
+        )
+        .order_by(Session.last_active.desc())
+        .all()
+    )
 
     current = get_current_db_session()
     current_id = current.id if current else None
@@ -10105,8 +10671,8 @@ def list_sessions():
             "created_at": s.created_at.isoformat() + "Z",
             "last_active": s.last_active.isoformat() + "Z",
             "ip_address": s.ip_address,
-            "country_code": country_code,   # ISO2 for flag
-            "country_name": country_name,   # full name for display
+            "country_code": country_code,
+            "country_name": country_name,
             "user_agent_simplified": simplify_user_agent(s.user_agent),
             "user_agent": (s.user_agent if s.user_agent else None),
             "fingerprint": s.fingerprint,
@@ -10115,6 +10681,40 @@ def list_sessions():
         })
 
     return jsonify({"sessions": out}), 200
+
+@app.route("/cron/cleanup/sessions", methods=["POST", "GET"])
+def cleanup_sessions():
+    # simple protection
+    provided = request.headers.get("X-Cron-Secret") or request.args.get("key")
+    if provided != app.config["CRON_SECRET"]:
+        return jsonify({"error": "unauthorized"}), 401
+
+    now = datetime.utcnow()
+
+    try:
+        # delete expired sessions
+        expired_sessions = Session.query.filter(Session.expires_at < now).all()
+        expired_ids = [s.id for s in expired_sessions]
+
+        # delete lasting keys linked to expired sessions
+        if expired_ids:
+            LastingKey.query.filter(LastingKey.session_id.in_(expired_ids)).delete(synchronize_session=False)
+
+        # delete the sessions
+        deleted_sessions = len(expired_sessions)
+        for s in expired_sessions:
+            db.session.delete(s)
+
+        db.session.commit()
+
+        return jsonify({
+            "deleted_sessions": deleted_sessions,
+            "timestamp": now.isoformat() + "Z"
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "cleanup_failed"}), 500
 
 # --- POST /account/sessions/<id>/revoke  (revoke a single session)
 @app.route("/account/sessions/<int:session_id>/revoke", methods=["POST"])
@@ -14277,9 +14877,6 @@ def validate_username(username: str, protected_users=None):
 
     return {"exists": False, "protected": False, "reason": None}
 
-# Authentication
-
-# app.py
 @app.route('/signup', methods=['POST'])
 @limiter.limit("30/hour", override_defaults=True)
 def signup():
@@ -14288,16 +14885,32 @@ def signup():
 
     username = data["username"]
 
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    user_ip = user_ip.split(',')[0].strip()
+
+    log_security_event(
+        event_type="signup_attempt",
+        outcome="started",
+        attempted_username=username,
+        ip_address=user_ip,
+        user_agent=request.headers.get('User-Agent'),
+        meta={"step": "initial_validation"}
+    )
+
     # FULL validation
     result = validate_username(username)
 
     if result["exists"] or result["protected"]:
+        log_security_event(
+            event_type="signup_attempt",
+            outcome="rejected_username_taken_or_protected",
+            attempted_username=username,
+            ip_address=user_ip,
+            meta={"reason": "exists_or_protected"}
+        )
         return jsonify({"error": "Invalid username"}), 400
 
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
-
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    user_ip = user_ip.split(',')[0].strip()
 
     cleanup_expired_signup_sessions()
 
@@ -14306,6 +14919,12 @@ def signup():
         .first()
 
     if banned_ip:
+        log_security_event(
+            event_type="signup_attempt",
+            outcome="rejected_banned_ip",
+            attempted_username=username,
+            ip_address=user_ip
+        )
         return jsonify({"error": "Please get unbanned first!"}), 403
 
     # Create signup session
@@ -14320,6 +14939,14 @@ def signup():
 
     db.session.add(signup_session)
     db.session.commit()
+
+    log_security_event(
+        event_type="signup_session_created",
+        outcome="success",
+        attempted_username=username,
+        ip_address=user_ip,
+        meta={"signup_session_id": session_id}
+    )
 
     resp = jsonify({"redirect": "/signup/email"})
 
@@ -14397,6 +15024,13 @@ def verify_email_via_link():
     email = request.args.get('email')
     
     if not code or not email:
+        # missing params
+        log_security_event(
+            event_type="verify_email",
+            outcome="missing_parameters",
+            ip_address=request.remote_addr,
+            meta={"params": {"code": bool(code), "email": bool(email)}}
+        )
         # Render error page for missing parameters
         return f"""
         <!DOCTYPE html>
@@ -14440,6 +15074,12 @@ def verify_email_via_link():
     ).first()
 
     if not signup_session:
+        log_security_event(
+            event_type="verify_email",
+            outcome="invalid_or_expired_link",
+            ip_address=request.remote_addr,
+            meta={"code": code, "email": email}
+        )
         # Render error page for invalid/expired link
         return f"""
         <!DOCTYPE html>
@@ -14475,6 +15115,14 @@ def verify_email_via_link():
         </body>
         </html>
         """, 400
+
+    log_security_event(
+        event_type="verify_email",
+        outcome="verified",
+        attempted_username=signup_session.username,
+        ip_address=signup_session.user_ip,
+        meta={"signup_session_id": signup_session.id}
+    )
 
     # Render success page with auto-redirect
     return f"""
@@ -14588,6 +15236,9 @@ def complete_signup_internal(signup_session):
     try:
         skip_email = False if signup_session.email else True
 
+        log_security_event(event_type="signup_complete_attempt", outcome="started",
+                   attempted_username=signup_session.username, ip_address=signup_session.user_ip)
+
         # Create user
         user = User(
             username=signup_session.username,
@@ -14623,6 +15274,10 @@ def complete_signup_internal(signup_session):
         # Redeem referral
         _redeem_referral_for_user(user.id, signup_session)
 
+        # on success (after user created)
+        log_security_event(event_type="signup_complete", outcome="success",
+                        user_id=user.id, attempted_username=user.username, ip_address=signup_session.user_ip)
+
         return {
             "session_key": session_key,
             "lasting_key": lasting_key,
@@ -14630,6 +15285,10 @@ def complete_signup_internal(signup_session):
         }
 
     except IntegrityError:
+        # on IntegrityError (username taken)
+        log_security_event(event_type="signup_complete", outcome="failed_integrity_error",
+                        attempted_username=signup_session.username, ip_address=signup_session.user_ip,
+                        meta={"error": "integrity_error"})
         db.session.rollback()
         raise Exception("Account creation failed (username might be taken)")
     except Exception as e:
@@ -14904,6 +15563,9 @@ def reset_password():
     # Mark reset token as used
     reset_token.used = True
 
+    log_security_event(event_type="password_reset", outcome="success",
+                   user_id=user.id, ip_address=user_ip, meta={"undo_token_id": undo_token.id})
+
     # Create undo token (valid 3 days)
     undo_token = ResetUndoToken(
         user_id=user.id,
@@ -14982,6 +15644,9 @@ def undo_reset():
     undo_token.used = True
 
     db.session.commit()
+
+    log_security_event(event_type="password_reset_undo", outcome="used",
+                   user_id=user.id, ip_address=request.remote_addr, meta={"undo_token_id": undo_token.id})
 
     html = """<!DOCTYPE html>
 <html lang="en">
@@ -15240,187 +15905,136 @@ def undo_reset():
     return resp
 
 
-@app.route('/login', methods=['POST'])
+@app.route("/login", methods=["POST"])
 @limiter.limit("30 per hour")
 def login():
     data = request.get_json(silent=True) or {}
+    redirect_url = data.get("redirect") or request.args.get("redirect")
+    keep_login = bool(data.get("keep_login"))
 
-    # 1) lasting_key auto-login (cookie)
-    lk_cookie = request.cookies.get('lasting_key')
+    lk_cookie = request.cookies.get("lasting_key")
     if lk_cookie:
         lk_record = verify_lasting_token(lk_cookie)
         if not lk_record:
-            resp = make_response(jsonify({"error": "Invalid or expired lasting key!"}), 401)
-            # drop cookie client-side
+            resp = make_response(jsonify({"error": "Invalid or expired trusted-device token!"}), 401)
             resp.delete_cookie("lasting_key")
             return resp
 
         user = User.query.get(lk_record.user_id)
         if not user:
-            # orphaned lasting key — revoke and remove cookie
             db.session.delete(lk_record)
             db.session.commit()
-            resp = make_response(jsonify({"error": "Invalid lasting key!"}), 401)
+            resp = make_response(jsonify({"error": "Invalid trusted-device token!"}), 401)
             resp.delete_cookie("lasting_key")
             return resp
 
+        now = datetime.utcnow()
+        if user.locked_until and user.locked_until <= now:
+            user.locked_until = None
+            user.lock_reason = None
+            db.session.commit()
+
+        if user.locked_until and user.locked_until > now:
+            return jsonify({
+                "error": "Account temporarily locked",
+                "locked_until": user.locked_until.isoformat(),
+            }), 403
+
         if user.suspended:
-            # revoke the lasting key
             db.session.delete(lk_record)
             db.session.commit()
-            resp = make_response(jsonify({"error": "You are suspended!"}), 403)
+            resp = make_response(jsonify({"error": "Account is suspended"}), 403)
             resp.delete_cookie("lasting_key")
             resp.delete_cookie("session_key")
             return resp
 
-        # 2FA checks (same as before)
-        user_has_2fa = bool(user.twofa_enabled)
-        new_ip = False
-        if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
-            user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-            if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-                new_ip = True
+        return issue_login_response(user, keep_login=True)
 
-        if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
-            # create login token for 2FA; keep the original cookie intact for now
-            login_token = secrets.token_urlsafe(32)
-            login_tokens[login_token] = {
-                "user_id": user.id,
-                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-                "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
-            }
-            login_2fa_attempts[login_token] = 0
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
 
-            resp = make_response(jsonify({
-                "2fa_required": True,
-                "message": "2FA required"
-            }), 200)
-            resp.set_cookie(
-                "pending_login_token", login_token,
-                httponly=False,
-                secure=not _is_local_request(),
-                samesite="Strict",
-                max_age=60*5
-            )
-            return resp
-
-        # No 2FA required -> issue session_key
-        session_key, session_id = create_session(user.id)
-
-        # rotate lasting key: issue a new lasting token bound to this session, remove the old one
-        device_info = request.headers.get('User-Agent', None)
-        new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
-
-        # remove old lasting key record (prevents reuse)
-        try:
-            db.session.delete(lk_record)
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-
-        # log IP if new
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-            db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-            db.session.commit()
-
-        payload = {
-            "message": "Login successful!",
-            "session_key": session_key,
-            "user_id": user.id,
-            "startpage": user.startpage
-        }
-        resp = make_response(jsonify(payload), 200)
-        resp.set_cookie(
-            "session_key", session_key,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24
-        )
-        # set rotated lasting key cookie: httponly True (more secure)
-        resp.set_cookie(
-            "lasting_key", new_token,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24*30
-        )
-        return resp
-
-    # 2) username/password login (unchanged flow except lasting-key creation)
-    username = data.get('username')
-    password = data.get('password')
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
     user = User.query.filter_by(username=username).first()
+
     if not user or not bcrypt.check_password_hash(user.password, password):
+        if user:
+            user.failed_attempts = (user.failed_attempts or 0) + 1
+
+            if user.failed_attempts >= 15:
+                user.locked_until = datetime.utcnow() + timedelta(days=1)
+                user.lock_reason = "Too many failed login attempts"
+            elif user.failed_attempts >= 10:
+                user.locked_until = datetime.utcnow() + timedelta(hours=2)
+                user.lock_reason = "Too many failed login attempts"
+            elif user.failed_attempts >= 5:
+                user.locked_until = datetime.utcnow() + timedelta(minutes=15)
+                user.lock_reason = "Too many failed login attempts"
+
+            db.session.commit()
+
+            if user.failed_attempts >= 5:
+                try:
+                    log_security_event(
+                        event_type="login_failed",
+                        outcome="failed",
+                        user_id=user.id,
+                        attempted_username=username,
+                        meta={"failed_attempts": user.failed_attempts},
+                        created_by="system",
+                    )
+                except Exception:
+                    pass
+
         return jsonify({"error": "Invalid credentials"}), 400
+
     if user.suspended:
         return jsonify({"error": "Account is suspended"}), 403
 
-    # 2FA check
-    user_has_2fa = bool(user.twofa_enabled)
-    new_ip = False
-    if user_has_2fa and REQUIRE_2FA_ON_NEW_IP:
-        user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-        if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-            new_ip = True
+    now = datetime.utcnow()
+    if user.locked_until and user.locked_until <= now:
+        user.locked_until = None
+        user.lock_reason = None
 
-    if user_has_2fa and (REQUIRE_2FA_ALWAYS or new_ip):
-        login_token = secrets.token_urlsafe(32)
-        login_tokens[login_token] = {
-            "user_id": user.id,
-            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
-            "ip": request.headers.get('X-Forwarded-For', request.remote_addr)
-        }
-        login_2fa_attempts[login_token] = 0
+    if user.locked_until and user.locked_until > now:
         return jsonify({
-            "2fa_required": True,
-            "login_token": login_token,
-            "message": "2FA code required"
-        }), 200
+            "error": "Account temporarily locked",
+            "locked_until": user.locked_until.isoformat(),
+        }), 403
 
-    # Issue session
-    session_key, session_id = create_session(user.id)
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-        db.session.commit()
+    user.failed_attempts = 0
+    db.session.commit()
 
-    payload = {
-        "message": "Login successful!",
-        "session_key": session_key,
+    if user.twofa_enabled:
+        return start_2fa_challenge(user, keep_login=keep_login, redirect=redirect_url)
+
+    return issue_login_response(user, keep_login=keep_login)
+
+@app.route("/session", methods=["GET"])
+def session_status():
+    session_key = request.cookies.get("session_key")
+    if not session_key:
+        return jsonify({"authenticated": False}), 401
+
+    ok, result = validate_session_key(session_key)
+    if not ok:
+        resp = make_response(jsonify({"error": result}), 401)
+        resp.delete_cookie("session_key")
+        return resp
+
+    user_id = result["user_id"]
+    user = User.query.get(user_id)
+    if not user or user.suspended:
+        resp = make_response(jsonify({"error": "Invalid session"}), 401)
+        resp.delete_cookie("session_key")
+        return resp
+
+    return jsonify({
+        "authenticated": True,
         "user_id": user.id,
-        "startpage": user.startpage
-    }
-
-    # Lasting key if requested -> always create a *new* record (don't reuse)
-    if data.get('keep_login'):
-        device_info = request.headers.get('User-Agent', None)
-        new_token, new_lk = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
-        payload["lasting_key"] = None  # don't return in JSON; cookie will contain it
-    else:
-        new_token = None
-
-    resp = make_response(jsonify(payload), 200)
-    resp.set_cookie(
-        "session_key", session_key,
-        httponly=True,
-        secure=not _is_local_request(),
-        samesite="Strict",
-        max_age=60*60*24
-    )
-    if new_token:
-        resp.set_cookie(
-            "lasting_key", new_token,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24*30
-        )
-    return resp
+        "startpage": user.startpage,
+    }), 200
 
 @app.route('/2fa/setup', methods=['POST'])
 @require_session_key
@@ -15579,53 +16193,60 @@ def twofa_backup_regenerate():
     # TODO: log the regeneration event (audit)
     return jsonify({"backup_codes": new_plain}), 200
 
-@app.route('/login/2fa', methods=['POST'])
+@app.route("/login/2fa", methods=["POST"])
 @limiter.limit("8 per hour")
 def login_2fa():
-    data = request.get_json() or {}
-    token = data.get('login_token')
-    code = (data.get('code') or "").strip()
-    keep_login = bool(data.get('keep_login'))
+    data = request.get_json(silent=True) or {}
+    token = data.get("login_token")
+    code = (data.get("code") or "").strip()
 
     if not token or not code:
         return jsonify({"error": "Missing token or code"}), 400
 
     tmeta = login_tokens.get(token)
-    if not tmeta or tmeta['expires_at'] < datetime.now(timezone.utc):
-        # cleanup if expired/invalid
+    if not tmeta or tmeta["expires_at"] < datetime.now(timezone.utc):
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Invalid or expired login token"}), 400
 
-    user = User.query.get(tmeta['user_id'])
+    user = User.query.get(tmeta["user_id"])
     if not user:
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Invalid token"}), 400
 
-    # rate limiting attempts
+    now = datetime.utcnow()
+    if user.locked_until and user.locked_until <= now:
+        user.locked_until = None
+        user.lock_reason = None
+        db.session.commit()
+
+    if user.locked_until and user.locked_until > now:
+        login_tokens.pop(token, None)
+        login_2fa_attempts.pop(token, None)
+        return jsonify({"error": "Account temporarily locked"}), 403
+
+    if user.suspended:
+        login_tokens.pop(token, None)
+        login_2fa_attempts.pop(token, None)
+        return jsonify({"error": "Account is suspended"}), 403
+
     attempts = login_2fa_attempts.get(token, 0)
     if attempts >= 5:
         login_tokens.pop(token, None)
         login_2fa_attempts.pop(token, None)
         return jsonify({"error": "Too many attempts"}), 429
 
-    # verify TOTP (and backup codes fallback)
-    secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
     verified = False
-    if secret:
-        totp = pyotp.TOTP(secret)
-        if totp.verify(code, valid_window=1):
-            verified = True
+    secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
+    if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+        verified = True
 
-    # fallback: check backup codes (hashed)
     if not verified and user.backup_codes_hash:
-        import hashlib
         hashed_codes = user.backup_codes_hash.split(",")
         code_hash = hashlib.sha256(code.encode()).hexdigest()
         if code_hash in hashed_codes:
             verified = True
-            # remove the used code and persist
             hashed_codes.remove(code_hash)
             user.backup_codes_hash = ",".join(hashed_codes) if hashed_codes else None
             db.session.commit()
@@ -15634,55 +16255,26 @@ def login_2fa():
         login_2fa_attempts[token] = attempts + 1
         return jsonify({"error": "Invalid 2FA code"}), 400
 
-    # Verified: issue session_key and optionally lasting_key and persist IP
-    session_key, session_id = create_session(user.id)
+    redirect_url = data.get("redirect") or tmeta.get("redirect")
 
-    # persist IP
-    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
-    if not IpAddres.query.filter_by(user_id=user.id, ip=user_ip).first():
-        db.session.add(IpAddres(user_id=user.id, ip=user_ip))
-        db.session.commit()
+    resp = issue_login_response(
+        user,
+        keep_login=bool(tmeta.get("keep_login")),
+        redirect_override=redirect_url,
+    )
 
-    payload = {
-        "message": "Login successful!",
-        "session_key": session_key,
-        "user_id": user.id,
-        "startpage": user.startpage
-    }
+    revoke_lk_id = tmeta.get("revoke_lk_id")
+    if revoke_lk_id:
+        try:
+            old_lk = LastingKey.query.get(revoke_lk_id)
+            if old_lk:
+                db.session.delete(old_lk)
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
 
-    resp = make_response(jsonify(payload), 200)
-    resp.set_cookie("session_key", session_key, httponly=True, secure=not _is_local_request(), samesite="Strict", max_age=60*60*24)
-
-    # If client asked to keep login -> rotate lasting key (revoke old cookie, create new one)
-    if keep_login:
-        device_info = request.headers.get('User-Agent', None)
-
-        # Revoke any existing lasting_key cookie presented by client (prevents reuse)
-        old_lk = request.cookies.get('lasting_key')
-        if old_lk:
-            try:
-                revoke_lasting_token(old_lk)
-            except Exception:
-                # don't fail login if revoke has a problem — rollback and continue
-                db.session.rollback()
-
-        # create a brand new lasting key record + raw token for cookie
-        new_token, _new_lk_record = create_lasting_key_for_user(user.id, device_info=device_info, session_id=session_id)
-
-        # set lasting_key cookie (HttpOnly)
-        resp.set_cookie(
-            "lasting_key", new_token,
-            httponly=True,
-            secure=not _is_local_request(),
-            samesite="Strict",
-            max_age=60*60*24*30
-        )
-        # note: we intentionally do not include the raw token in JSON payload
-
-    # final cleanup of the ephemeral 2FA login token and attempts
     login_tokens.pop(token, None)
     login_2fa_attempts.pop(token, None)
-
     return resp
 
 @app.route('/2fa/status', methods=['GET'])

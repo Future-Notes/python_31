@@ -149,53 +149,7 @@
                 window.__fetchPatched = true;
             }
 
-            // ping a lightweight endpoint to check session
-            async function validateSession() {
-                try {
-                const res = await fetch("/test-session", { method: "GET" });
-                if (res.status === 200) {
-                    hideModal();  // user’s good
-                    fetchNotes();
-                    return true;
-                }
-                if (res.status === 403) {
-                    // banned
-                    window.location.href = '/login_page?suspended=true';
-                    return false;
-                }
-                // 401 or anything else → try auto-login
-                return false;
-                } catch (err) {
-                return false;
-                }
-            }
-
-            // try auto-login via lasting_key cookie on the backend
-            async function attemptAutoLogin() {
-                try {
-                const res = await fetch("/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({})  // backend reads HTTP‐only cookie
-                });
-                if (res.ok) {
-                    console.log("Auto-login successful");
-                    fetchTables();
-                    return true;
-                }
-                // clear any stale lasting_key server‑side—cookie remains but backend will reject next time
-                showModal();
-                return false;
-                } catch (err) {
-                showModal();
-                return false;
-                }
-            }
-            
-        const ok = await validateSession();
-        if (!ok) {
-            await attemptAutoLogin();
-        }
+          await fetchTables();
         });
 
         function showModal() {
