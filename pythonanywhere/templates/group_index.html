@@ -2901,54 +2901,9 @@
                 window.__fetchPatched = true;
             }
 
-            // Ping to check session
-            async function validateSession() {
-                try {
-                    const res = await fetch("/test-session", { method: "GET" });
-                    if (res.status === 200) {
-                        hideModal();
-                        initGroupsUI();
-                        updateStorageCounter();
-                        return true;
-                    }
-                    if (res.status === 403) {
-                        window.location.href = '/login_page?suspended=true';
-                        return false;
-                    }
-                    return false;
-                } catch (err) {
-                    return false;
-                }
-            }
-
-            // Try auto-login
-            async function attemptAutoLogin() {
-                try {
-                    const res = await fetch("/login", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({})
-                    });
-                    if (res.ok) {
-                        hideModal();
-                        initGroupsUI();
-                        updateStorageCounter();
-                        return true;
-                    }
-                    showModal();
-                    return false;
-                } catch (err) {
-                    showModal();
-                    return false;
-                }
-            }
-            
-            const ok = await validateSession();
-            if (!ok) {
-                await attemptAutoLogin();
-            }
-
-            // Load user profile picture
+            hideModal();
+            initGroupsUI();
+            updateStorageCounter();
             loadUserProfile();
             initEditorEventListeners();
         });
