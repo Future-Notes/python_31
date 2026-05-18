@@ -2663,6 +2663,34 @@ def handle_setting():
     value = check(key, default)
     return jsonify({"key": key, "value": value})
 
+@app.route('/security', methods=['GET'])
+def security_page():
+    return render_template("security.html")
+
+@app.after_request
+def inject_console_warning(response):
+    if response.content_type.startswith('text/html'):
+        script = """
+<script>
+(function() {
+  var s = {
+    stop:  'color:#ef4444;font-size:48px;font-weight:800;text-shadow:1px 1px 0 #7f1d1d',
+    warn:  'color:#f59e0b;font-size:13px;font-family:monospace;line-height:2',
+    info:  'color:#94a3b8;font-size:13px;font-family:monospace;line-height:2',
+    link:  'color:#06b6d4;font-size:13px;font-family:monospace;text-decoration:underline',
+    muted: 'color:#475569;font-size:12px;font-family:monospace',
+  };
+  console.log('%c⛔ STOP!', s.stop);
+  console.log('%c⚠  Dit is een feature voor ontwikkelaars.', s.warn);
+  console.log('%c   Als iemand je vroeg hier iets te plakken,\n   proberen ze je account over te nemen.', s.info);
+  console.log('%cℹ  bosbes.eu.pythonanywhere.com/security', s.link);
+  console.log('%c   Weet je wat je doet? Ga je gang.', s.muted);
+})();
+</script>"""
+        data = response.get_data(as_text=True)
+        response.set_data(data.replace('</body>', script + '\n</body>', 1))
+    return response
+
 def parse_flow_tags(text):
     """Extracts project, branch, and impact tags from todo text.
     Returns: {project_id: int, branch_id: int, impact: int}
