@@ -2682,7 +2682,8 @@ def inject_console_warning(response):
   };
   console.log('%c⛔ STOP!', s.stop);
   console.log('%c⚠  Dit is een feature voor ontwikkelaars.', s.warn);
-  console.log('%c   Als iemand je vroeg hier iets te plakken,\n   proberen ze je account over te nemen.', s.info);
+  console.log('%c   Als iemand je vroeg hier iets te plakken,', s.info);
+  console.log('%c   proberen ze je account over te nemen.', s.info);
   console.log('%cℹ  bosbes.eu.pythonanywhere.com/security', s.link);
   console.log('%c   Weet je wat je doet? Ga je gang.', s.muted);
 })();
