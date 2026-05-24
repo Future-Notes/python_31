@@ -788,6 +788,33 @@ class SignupSession(db.Model):
     verification_code = db.Column(db.String(6))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
+class AppSignupSession(db.Model):
+    __tablename__ = "app_signup_session"
+
+    id = db.Column(db.String(36), primary_key=True)
+
+    username = db.Column(db.String(80), nullable=False)
+    hashed_password = db.Column(db.String(120), nullable=False)
+    user_ip = db.Column(db.String(45), nullable=True)
+
+    email = db.Column(db.String(120), nullable=True)
+
+    verification_code_hash = db.Column(db.String(64), nullable=True)
+    verification_code_sent_at = db.Column(db.DateTime, nullable=True)
+    verification_code_expires_at = db.Column(db.DateTime, nullable=True)
+    verification_attempts = db.Column(db.Integer, default=0, nullable=False)
+
+    device_id = db.Column(db.String(128), nullable=True)
+    device_name = db.Column(db.String(120), nullable=True)
+    device_model = db.Column(db.String(120), nullable=True)
+    device_platform = db.Column(db.String(60), nullable=True)
+    app_version = db.Column(db.String(40), nullable=True)
+    os_version = db.Column(db.String(80), nullable=True)
+    user_agent = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
 class PushSubscription(db.Model):
     __tablename__ = 'push_subscriptions'
 
@@ -1390,6 +1417,47 @@ def _extract_app_device_data(data: dict) -> dict:
         "ip_address": get_client_ip(),
     }
     return {k: v for k, v in payload.items() if v is not None and v != ""}
+
+def _clean_ip() -> str | None:
+    user_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if not user_ip:
+        return None
+    return user_ip.split(",")[0].strip()
+
+
+def _extract_app_device_data_signup(data: dict) -> dict:
+    return {
+        "device_id": (data.get("device_id") or "").strip() or None,
+        "device_name": (data.get("device_name") or "").strip() or None,
+        "device_model": (data.get("device_model") or "").strip() or None,
+        "device_platform": (data.get("device_platform") or "").strip() or None,
+        "app_version": (data.get("app_version") or "").strip() or None,
+        "os_version": (data.get("os_version") or "").strip() or None,
+        "user_agent": request.headers.get("User-Agent"),
+    }
+
+
+def _generate_verification_code() -> str:
+    return "".join(secrets.choice("0123456789") for _ in range(6))
+
+
+def _hash_verification_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def cleanup_expired_app_signup_sessions():
+    now = datetime.utcnow()
+    expired = AppSignupSession.query.filter(
+        (
+            (AppSignupSession.completed_at.isnot(None)) |
+            (AppSignupSession.created_at < now - timedelta(hours=1))
+        )
+    ).all()
+
+    for session in expired:
+        db.session.delete(session)
+
+    db.session.commit()
 
 
 def _device_meta_json(device_data: dict) -> str:
@@ -15348,6 +15416,248 @@ def create_user_from_signup_session(signup_session, skip_email=False):
         db.session.rollback()
         app.logger.error(f"Signup error: {str(e)}")
         raise Exception("Account creation failed")
+
+def create_user_from_app_signup_session(signup_session):
+    try:
+        user = User(
+            username=signup_session.username,
+            password=signup_session.hashed_password,
+            email=signup_session.email
+        )
+        db.session.add(user)
+        db.session.commit()
+
+        ip_record = IpAddres(user_id=user.id, ip=signup_session.user_ip)
+        db.session.add(ip_record)
+        db.session.commit()
+
+        create_default_calendar(user.id)
+        ensure_user_colors(user.id)
+        initialize_user_storage(user.id)
+
+        send_notification(
+            user.id,
+            "Welcome!",
+            "Thank you for creating an account on Future Notes! Your app account is ready.",
+            "/help"
+        )
+
+        return user
+
+    except IntegrityError:
+        db.session.rollback()
+        raise Exception("Account creation failed (username might be taken)")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"App signup error: {str(e)}")
+        raise Exception("Account creation failed")
+
+@app.route("/app/signup/start", methods=["POST"])
+@limiter.limit("30/hour", override_defaults=True)
+def app_signup_start():
+    data = request.get_json(silent=True) or {}
+
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
+    user_ip = _clean_ip()
+
+    log_security_event(
+        event_type="app_signup_attempt",
+        outcome="started",
+        attempted_username=username,
+        ip_address=user_ip,
+        user_agent=request.headers.get("User-Agent"),
+        meta={"step": "username_password"}
+    )
+
+    result = validate_username(username)
+    if result["exists"] or result["protected"]:
+        log_security_event(
+            event_type="app_signup_attempt",
+            outcome="rejected_username_taken_or_protected",
+            attempted_username=username,
+            ip_address=user_ip,
+            meta={"reason": "exists_or_protected"}
+        )
+        return jsonify({"error": "Invalid username"}), 400
+
+    cleanup_expired_app_signup_sessions()
+
+    banned_ip = IpAddres.query.join(User)\
+        .filter(IpAddres.ip == user_ip, User.suspended.is_(True))\
+        .first()
+
+    if banned_ip:
+        log_security_event(
+            event_type="app_signup_attempt",
+            outcome="rejected_banned_ip",
+            attempted_username=username,
+            ip_address=user_ip
+        )
+        return jsonify({"error": "Please get unbanned first!"}), 403
+
+    device_data = _extract_app_device_data_signup(data)
+    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    session_id = str(uuid.uuid4())
+    signup_session = AppSignupSession(
+        id=session_id,
+        username=username,
+        hashed_password=hashed_password,
+        user_ip=user_ip,
+        device_id=device_data.get("device_id"),
+        device_name=device_data.get("device_name"),
+        device_model=device_data.get("device_model"),
+        device_platform=device_data.get("device_platform"),
+        app_version=device_data.get("app_version"),
+        os_version=device_data.get("os_version"),
+        user_agent=device_data.get("user_agent"),
+    )
+
+    db.session.add(signup_session)
+    db.session.commit()
+
+    log_security_event(
+        event_type="app_signup_session_created",
+        outcome="success",
+        attempted_username=username,
+        ip_address=user_ip,
+        meta={"signup_session_id": session_id}
+    )
+
+    return jsonify({
+        "message": "Signup session created",
+        "signup_session_id": session_id,
+        "next_step": "email"
+    }), 200
+
+@app.route("/app/signup/send_verification", methods=["POST"])
+@limiter.limit("10 per hour", override_defaults=True)
+def app_send_verification_email():
+    data = request.get_json(silent=True) or {}
+
+    session_id = (data.get("signup_session_id") or "").strip()
+    email = (data.get("email") or "").strip()
+
+    if not session_id:
+        return jsonify({"error": "Session expired"}), 400
+
+    signup_session = AppSignupSession.query.get(session_id)
+    if not signup_session:
+        return jsonify({"error": "Invalid session"}), 400
+
+    if not email or not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({"error": "Invalid email format"}), 400
+
+    if signup_session.completed_at is not None:
+        return jsonify({"error": "Session already completed"}), 400
+
+    code = _generate_verification_code()
+    code_hash = _hash_verification_code(code)
+
+    signup_session.email = email
+    signup_session.verification_code_hash = code_hash
+    signup_session.verification_code_sent_at = datetime.utcnow()
+    signup_session.verification_code_expires_at = datetime.utcnow() + timedelta(minutes=15)
+    signup_session.verification_attempts = 0
+
+    db.session.commit()
+
+    try:
+        send_email(
+            to_address=email,
+            subject="Future Notes - Email Verification",
+            content_html=f"""
+                <p>Your verification code is:</p>
+                <p><strong style="font-size: 1.5em;">{code}</strong></p>
+                <p>This code expires in 15 minutes.</p>
+            """,
+            buttons=[],
+            logo_url=app.config["LOGO_URL"],
+            unsubscribe_url="#"
+        )
+        return jsonify({"message": "Verification code sent"}), 200
+    except Exception as e:
+        app.logger.error(f"App signup email send failed: {str(e)}")
+        return jsonify({"error": "Failed to send verification email"}), 500
+
+@app.route("/app/signup/complete", methods=["POST"])
+@limiter.limit("10 per hour", override_defaults=True)
+def app_complete_signup():
+    data = request.get_json(silent=True) or {}
+
+    session_id = (data.get("signup_session_id") or "").strip()
+    verification_code = (data.get("verification_code") or "").strip()
+
+    if not session_id:
+        return jsonify({"error": "Session expired"}), 400
+
+    signup_session = AppSignupSession.query.get(session_id)
+    if not signup_session:
+        return jsonify({"error": "Invalid session"}), 400
+
+    if signup_session.completed_at is not None:
+        return jsonify({"error": "Session already completed"}), 400
+
+    if not signup_session.email:
+        return jsonify({"error": "Email not set"}), 400
+
+    if not verification_code:
+        return jsonify({"error": "Verification code required"}), 400
+
+    now = datetime.utcnow()
+    if signup_session.verification_code_expires_at and signup_session.verification_code_expires_at < now:
+        db.session.delete(signup_session)
+        db.session.commit()
+        return jsonify({"error": "Verification code expired"}), 400
+
+    if not signup_session.verification_code_hash:
+        return jsonify({"error": "Verification code not sent"}), 400
+
+    if _hash_verification_code(verification_code) != signup_session.verification_code_hash:
+        signup_session.verification_attempts += 1
+        db.session.commit()
+
+        if signup_session.verification_attempts >= 5:
+            db.session.delete(signup_session)
+            db.session.commit()
+            return jsonify({"error": "Too many attempts"}), 429
+
+        return jsonify({"error": "Invalid verification code"}), 400
+
+    try:
+        user = create_user_from_app_signup_session(signup_session)
+
+        signup_session.completed_at = datetime.utcnow()
+        db.session.delete(signup_session)
+        db.session.commit()
+
+        # Reuse your app login token helper here.
+        # This should return the same response format as /app/login.
+        device_data = {
+            "device_id": signup_session.device_id,
+            "device_name": signup_session.device_name,
+            "device_model": signup_session.device_model,
+            "device_platform": signup_session.device_platform,
+            "app_version": signup_session.app_version,
+            "os_version": signup_session.os_version,
+            "user_agent": signup_session.user_agent,
+        }
+
+        return _issue_app_login_response(
+            user=user,
+            keep_login=True,
+            device_data=device_data,
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"App signup completion failed: {str(e)}")
+        return jsonify({"error": "Account creation failed"}), 500
 
 # Email verification endpoint
 @app.route('/signup/verify_email')
