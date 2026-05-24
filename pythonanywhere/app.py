@@ -88,6 +88,7 @@ from unidecode import unidecode
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_limiter.errors import RateLimitExceeded
+from typing import Optional
 # ------------------------------Global variables--------------------------------
 class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
@@ -190,7 +191,7 @@ try:
 except Exception as e:
     mega_account = None
 DROPBOX_UPLOAD_FOLDER = "/uploads"  # root folder in Dropbox
-REQUIRE_2FA_ALWAYS = False
+REQUIRE_2FA_ALWAYS = True
 REQUIRE_2FA_ON_NEW_IP = True
 RANDOM_REQUIRE_2FA = True
 
@@ -263,6 +264,9 @@ TOKEN_EXPIRATION = 3600  # seconds (1 hour)
 games = {}
 BOARD_SIZE = 10
 CORRECT_PIN = "1234"
+APP_ACCESS_TOKEN_TTL_SECONDS = 15 * 60
+APP_REFRESH_TOKEN_TTL_DAYS = 30
+APP_2FA_LOGIN_TOKEN_TTL_MINUTES = 10
 app.secret_key = os.urandom(24)
 _pending_mutations = {}
 excluded_tables = {
@@ -533,6 +537,82 @@ class Session(db.Model):
 
     user = db.relationship("User")
 
+class AppAuthSession(db.Model):
+    __tablename__ = "app_auth_session"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        nullable=False,
+        index=True,
+    )
+
+    # Store only a hash of the refresh token
+    refresh_token_hash = db.Column(
+        db.String(64),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    # Device binding / metadata
+    device_id = db.Column(db.String(128), nullable=True, index=True)
+    device_name = db.Column(db.String(120), nullable=True)
+    device_model = db.Column(db.String(120), nullable=True)
+    device_platform = db.Column(db.String(60), nullable=True)
+    app_version = db.Column(db.String(40), nullable=True)
+    os_version = db.Column(db.String(80), nullable=True)
+    user_agent = db.Column(db.Text, nullable=True)
+    ip_address = db.Column(db.String(64), nullable=True)
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+    revoke_reason = db.Column(db.String(255), nullable=True)
+
+
+class AppLoginChallenge(db.Model):
+    __tablename__ = "app_login_challenge"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Temporary token used for app 2FA completion
+    login_token_hash = db.Column(
+        db.String(64),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        nullable=False,
+        index=True,
+    )
+
+    keep_login = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Store the same metadata so the eventual refresh token can be bound
+    device_id = db.Column(db.String(128), nullable=True, index=True)
+    device_name = db.Column(db.String(120), nullable=True)
+    device_model = db.Column(db.String(120), nullable=True)
+    device_platform = db.Column(db.String(60), nullable=True)
+    app_version = db.Column(db.String(40), nullable=True)
+    os_version = db.Column(db.String(80), nullable=True)
+    user_agent = db.Column(db.Text, nullable=True)
+    ip_address = db.Column(db.String(64), nullable=True)
+    metadata_json = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    used_at = db.Column(db.DateTime, nullable=True, index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+
 class AuditLog(db.Model):
     __tablename__ = "audit_log"
 
@@ -707,6 +787,33 @@ class SignupSession(db.Model):
     email = db.Column(db.String(120))
     verification_code = db.Column(db.String(6))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+class AppSignupSession(db.Model):
+    __tablename__ = "app_signup_session"
+
+    id = db.Column(db.String(36), primary_key=True)
+
+    username = db.Column(db.String(80), nullable=False)
+    hashed_password = db.Column(db.String(120), nullable=False)
+    user_ip = db.Column(db.String(45), nullable=True)
+
+    email = db.Column(db.String(120), nullable=True)
+
+    verification_code_hash = db.Column(db.String(64), nullable=True)
+    verification_code_sent_at = db.Column(db.DateTime, nullable=True)
+    verification_code_expires_at = db.Column(db.DateTime, nullable=True)
+    verification_attempts = db.Column(db.Integer, default=0, nullable=False)
+
+    device_id = db.Column(db.String(128), nullable=True)
+    device_name = db.Column(db.String(120), nullable=True)
+    device_model = db.Column(db.String(120), nullable=True)
+    device_platform = db.Column(db.String(60), nullable=True)
+    app_version = db.Column(db.String(40), nullable=True)
+    os_version = db.Column(db.String(80), nullable=True)
+    user_agent = db.Column(db.Text, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
 class PushSubscription(db.Model):
     __tablename__ = 'push_subscriptions'
@@ -1272,6 +1379,272 @@ def parse_oauth_state(state: str) -> dict:
         return json.loads(raw.decode('utf-8'))
     except Exception:
         return {}
+    
+def utcnow() -> datetime:
+    return datetime.utcnow()
+
+
+def sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _app_access_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(
+        current_app.config["SECRET_KEY"],
+        salt="futurenotes-app-access-token",
+    )
+
+
+def create_app_access_token(user_id: int, session_id: Optional[int] = None) -> str:
+    payload = {
+        "kind": "app_access",
+        "sub": user_id,
+        "sid": session_id,
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+    }
+    return _app_access_serializer().dumps(payload)
+
+
+def _extract_app_device_data(data: dict) -> dict:
+    payload = {
+        "device_id": (data.get("device_id") or "").strip() or None,
+        "device_name": (data.get("device_name") or "").strip() or None,
+        "device_model": (data.get("device_model") or "").strip() or None,
+        "device_platform": (data.get("device_platform") or "").strip() or None,
+        "app_version": (data.get("app_version") or "").strip() or None,
+        "os_version": (data.get("os_version") or "").strip() or None,
+        "user_agent": request.headers.get("User-Agent"),
+        "ip_address": get_client_ip(),
+    }
+    return {k: v for k, v in payload.items() if v is not None and v != ""}
+
+def _clean_ip() -> str | None:
+    user_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if not user_ip:
+        return None
+    return user_ip.split(",")[0].strip()
+
+
+def _extract_app_device_data_signup(data: dict) -> dict:
+    return {
+        "device_id": (data.get("device_id") or "").strip() or None,
+        "device_name": (data.get("device_name") or "").strip() or None,
+        "device_model": (data.get("device_model") or "").strip() or None,
+        "device_platform": (data.get("device_platform") or "").strip() or None,
+        "app_version": (data.get("app_version") or "").strip() or None,
+        "os_version": (data.get("os_version") or "").strip() or None,
+        "user_agent": request.headers.get("User-Agent"),
+    }
+
+
+def _generate_verification_code() -> str:
+    return "".join(secrets.choice("0123456789") for _ in range(6))
+
+
+def _hash_verification_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def cleanup_expired_app_signup_sessions():
+    now = datetime.utcnow()
+    expired = AppSignupSession.query.filter(
+        (
+            (AppSignupSession.completed_at.isnot(None)) |
+            (AppSignupSession.created_at < now - timedelta(hours=1))
+        )
+    ).all()
+
+    for session in expired:
+        db.session.delete(session)
+
+    db.session.commit()
+
+
+def _device_meta_json(device_data: dict) -> str:
+    return json.dumps(device_data, separators=(",", ":"))
+
+
+def _clear_expired_lock(user: User) -> None:
+    now = utcnow()
+    if user.locked_until and user.locked_until <= now:
+        user.locked_until = None
+        user.lock_reason = None
+
+
+def _register_failed_app_login(user: User, attempted_username: str) -> None:
+    user.failed_attempts = (user.failed_attempts or 0) + 1
+
+    if user.failed_attempts >= 15:
+        user.locked_until = utcnow() + timedelta(days=1)
+        user.lock_reason = "Too many failed login attempts"
+    elif user.failed_attempts >= 10:
+        user.locked_until = utcnow() + timedelta(hours=2)
+        user.lock_reason = "Too many failed login attempts"
+    elif user.failed_attempts >= 5:
+        user.locked_until = utcnow() + timedelta(minutes=15)
+        user.lock_reason = "Too many failed login attempts"
+
+    db.session.commit()
+
+    if user.failed_attempts >= 5:
+        try:
+            log_security_event(
+                event_type="login_failed",
+                outcome="failed",
+                user_id=user.id,
+                attempted_username=attempted_username,
+                meta={"failed_attempts": user.failed_attempts},
+                created_by="system",
+            )
+        except Exception:
+            pass
+
+
+def _create_refresh_session(user: User, device_data: dict) -> tuple[str, AppAuthSession]:
+    raw_refresh_token = secrets.token_urlsafe(48)
+
+    session = AppAuthSession(
+        user_id=user.id,
+        refresh_token_hash=sha256_hex(raw_refresh_token),
+        device_id=device_data.get("device_id"),
+        device_name=device_data.get("device_name"),
+        device_model=device_data.get("device_model"),
+        device_platform=device_data.get("device_platform"),
+        app_version=device_data.get("app_version"),
+        os_version=device_data.get("os_version"),
+        user_agent=device_data.get("user_agent"),
+        ip_address=device_data.get("ip_address"),
+        metadata_json=_device_meta_json(device_data),
+        created_at=utcnow(),
+        expires_at=utcnow() + timedelta(days=APP_REFRESH_TOKEN_TTL_DAYS),
+    )
+
+    db.session.add(session)
+    db.session.commit()
+    return raw_refresh_token, session
+
+
+def _issue_app_login_response(
+    user: User,
+    keep_login: bool = False,
+    refresh_session: Optional[AppAuthSession] = None,
+    device_data: Optional[dict] = None,
+):
+    """
+    Returns:
+      - access token always
+      - refresh token only when keep_login=True and this is a fresh username/password or 2FA success login
+      - if refresh_session is provided, only issues a new access token
+    """
+    now = utcnow()
+    refresh_token = None
+    session_id = None
+
+    if refresh_session is not None:
+        session_id = refresh_session.id
+        refresh_session.last_used_at = now
+        db.session.commit()
+
+    elif keep_login:
+        device_data = device_data or {}
+        refresh_token, refresh_session = _create_refresh_session(user, device_data)
+        session_id = refresh_session.id
+
+    access_token = create_app_access_token(user.id, session_id=session_id)
+
+    payload = {
+        "message": "Login successful!",
+        "user_id": user.id,
+        "token_type": "Bearer",
+        "access_token": access_token,
+        "expires_in": APP_ACCESS_TOKEN_TTL_SECONDS,
+    }
+
+    if refresh_token is not None and refresh_session is not None:
+        payload["refresh_token"] = refresh_token
+        payload["refresh_expires_at"] = refresh_session.expires_at.isoformat()
+        payload["refresh_expires_in"] = int((refresh_session.expires_at - now).total_seconds())
+
+    return jsonify(payload), 200
+
+
+def _start_app_2fa_challenge(user: User, keep_login: bool, device_data: dict):
+    login_token = secrets.token_urlsafe(32)
+    challenge = AppLoginChallenge(
+        user_id=user.id,
+        login_token_hash=sha256_hex(login_token),
+        keep_login=keep_login,
+        device_id=device_data.get("device_id"),
+        device_name=device_data.get("device_name"),
+        device_model=device_data.get("device_model"),
+        device_platform=device_data.get("device_platform"),
+        app_version=device_data.get("app_version"),
+        os_version=device_data.get("os_version"),
+        user_agent=device_data.get("user_agent"),
+        ip_address=device_data.get("ip_address"),
+        metadata_json=_device_meta_json(device_data),
+        created_at=utcnow(),
+        expires_at=utcnow() + timedelta(minutes=APP_2FA_LOGIN_TOKEN_TTL_MINUTES),
+        attempts=0,
+    )
+    db.session.add(challenge)
+    db.session.commit()
+
+    return jsonify({
+        "requires_2fa": True,
+        "login_token": login_token,
+        "message": "Two-factor authentication required",
+        "expires_at": challenge.expires_at.isoformat(),
+    }), 200
+
+
+def _validate_and_consume_app_refresh_token(refresh_token: str, device_id: Optional[str]):
+    token_hash = sha256_hex(refresh_token)
+
+    session = AppAuthSession.query.filter_by(
+        refresh_token_hash=token_hash,
+        revoked_at=None,
+    ).first()
+
+    if not session:
+        return None, (jsonify({"error": "Invalid or expired refresh token"}), 401)
+
+    now = utcnow()
+    if session.expires_at <= now:
+        session.revoked_at = now
+        session.revoke_reason = "Expired"
+        db.session.commit()
+        return None, (jsonify({"error": "Invalid or expired refresh token"}), 401)
+
+    # Strict binding if a device_id exists in storage.
+    if session.device_id:
+        if not device_id or session.device_id != device_id:
+            return None, (jsonify({"error": "Refresh token does not match this device"}), 401)
+
+    user = User.query.get(session.user_id)
+    if not user:
+        session.revoked_at = now
+        session.revoke_reason = "User missing"
+        db.session.commit()
+        return None, (jsonify({"error": "Invalid refresh token"}), 401)
+
+    _clear_expired_lock(user)
+
+    if user.locked_until and user.locked_until > now:
+        return None, (jsonify({
+            "error": "Account temporarily locked",
+            "locked_until": user.locked_until.isoformat(),
+        }), 403)
+
+    if user.suspended:
+        session.revoked_at = now
+        session.revoke_reason = "User suspended"
+        db.session.commit()
+        return None, (jsonify({"error": "Account is suspended"}), 403)
+
+    session.last_used_at = now
+    db.session.commit()
+    return (user, session), None
 
 def resolve_local_calendar(user, calendar_id):
     """
@@ -15044,6 +15417,248 @@ def create_user_from_signup_session(signup_session, skip_email=False):
         app.logger.error(f"Signup error: {str(e)}")
         raise Exception("Account creation failed")
 
+def create_user_from_app_signup_session(signup_session):
+    try:
+        user = User(
+            username=signup_session.username,
+            password=signup_session.hashed_password,
+            email=signup_session.email
+        )
+        db.session.add(user)
+        db.session.commit()
+
+        ip_record = IpAddres(user_id=user.id, ip=signup_session.user_ip)
+        db.session.add(ip_record)
+        db.session.commit()
+
+        create_default_calendar(user.id)
+        ensure_user_colors(user.id)
+        initialize_user_storage(user.id)
+
+        send_notification(
+            user.id,
+            "Welcome!",
+            "Thank you for creating an account on Future Notes! Your app account is ready.",
+            "/help"
+        )
+
+        return user
+
+    except IntegrityError:
+        db.session.rollback()
+        raise Exception("Account creation failed (username might be taken)")
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"App signup error: {str(e)}")
+        raise Exception("Account creation failed")
+
+@app.route("/app/signup/start", methods=["POST"])
+@limiter.limit("30/hour", override_defaults=True)
+def app_signup_start():
+    data = request.get_json(silent=True) or {}
+
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
+    user_ip = _clean_ip()
+
+    log_security_event(
+        event_type="app_signup_attempt",
+        outcome="started",
+        attempted_username=username,
+        ip_address=user_ip,
+        user_agent=request.headers.get("User-Agent"),
+        meta={"step": "username_password"}
+    )
+
+    result = validate_username(username)
+    if result["exists"] or result["protected"]:
+        log_security_event(
+            event_type="app_signup_attempt",
+            outcome="rejected_username_taken_or_protected",
+            attempted_username=username,
+            ip_address=user_ip,
+            meta={"reason": "exists_or_protected"}
+        )
+        return jsonify({"error": "Invalid username"}), 400
+
+    cleanup_expired_app_signup_sessions()
+
+    banned_ip = IpAddres.query.join(User)\
+        .filter(IpAddres.ip == user_ip, User.suspended.is_(True))\
+        .first()
+
+    if banned_ip:
+        log_security_event(
+            event_type="app_signup_attempt",
+            outcome="rejected_banned_ip",
+            attempted_username=username,
+            ip_address=user_ip
+        )
+        return jsonify({"error": "Please get unbanned first!"}), 403
+
+    device_data = _extract_app_device_data_signup(data)
+    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    session_id = str(uuid.uuid4())
+    signup_session = AppSignupSession(
+        id=session_id,
+        username=username,
+        hashed_password=hashed_password,
+        user_ip=user_ip,
+        device_id=device_data.get("device_id"),
+        device_name=device_data.get("device_name"),
+        device_model=device_data.get("device_model"),
+        device_platform=device_data.get("device_platform"),
+        app_version=device_data.get("app_version"),
+        os_version=device_data.get("os_version"),
+        user_agent=device_data.get("user_agent"),
+    )
+
+    db.session.add(signup_session)
+    db.session.commit()
+
+    log_security_event(
+        event_type="app_signup_session_created",
+        outcome="success",
+        attempted_username=username,
+        ip_address=user_ip,
+        meta={"signup_session_id": session_id}
+    )
+
+    return jsonify({
+        "message": "Signup session created",
+        "signup_session_id": session_id,
+        "next_step": "email"
+    }), 200
+
+@app.route("/app/signup/send_verification", methods=["POST"])
+@limiter.limit("10 per hour", override_defaults=True)
+def app_send_verification_email():
+    data = request.get_json(silent=True) or {}
+
+    session_id = (data.get("signup_session_id") or "").strip()
+    email = (data.get("email") or "").strip()
+
+    if not session_id:
+        return jsonify({"error": "Session expired"}), 400
+
+    signup_session = AppSignupSession.query.get(session_id)
+    if not signup_session:
+        return jsonify({"error": "Invalid session"}), 400
+
+    if not email or not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({"error": "Invalid email format"}), 400
+
+    if signup_session.completed_at is not None:
+        return jsonify({"error": "Session already completed"}), 400
+
+    code = _generate_verification_code()
+    code_hash = _hash_verification_code(code)
+
+    signup_session.email = email
+    signup_session.verification_code_hash = code_hash
+    signup_session.verification_code_sent_at = datetime.utcnow()
+    signup_session.verification_code_expires_at = datetime.utcnow() + timedelta(minutes=15)
+    signup_session.verification_attempts = 0
+
+    db.session.commit()
+
+    try:
+        send_email(
+            to_address=email,
+            subject="Future Notes - Email Verification",
+            content_html=f"""
+                <p>Your verification code is:</p>
+                <p><strong style="font-size: 1.5em;">{code}</strong></p>
+                <p>This code expires in 15 minutes.</p>
+            """,
+            buttons=[],
+            logo_url=app.config["LOGO_URL"],
+            unsubscribe_url="#"
+        )
+        return jsonify({"message": "Verification code sent"}), 200
+    except Exception as e:
+        app.logger.error(f"App signup email send failed: {str(e)}")
+        return jsonify({"error": "Failed to send verification email"}), 500
+
+@app.route("/app/signup/complete", methods=["POST"])
+@limiter.limit("10 per hour", override_defaults=True)
+def app_complete_signup():
+    data = request.get_json(silent=True) or {}
+
+    session_id = (data.get("signup_session_id") or "").strip()
+    verification_code = (data.get("verification_code") or "").strip()
+
+    if not session_id:
+        return jsonify({"error": "Session expired"}), 400
+
+    signup_session = AppSignupSession.query.get(session_id)
+    if not signup_session:
+        return jsonify({"error": "Invalid session"}), 400
+
+    if signup_session.completed_at is not None:
+        return jsonify({"error": "Session already completed"}), 400
+
+    if not signup_session.email:
+        return jsonify({"error": "Email not set"}), 400
+
+    if not verification_code:
+        return jsonify({"error": "Verification code required"}), 400
+
+    now = datetime.utcnow()
+    if signup_session.verification_code_expires_at and signup_session.verification_code_expires_at < now:
+        db.session.delete(signup_session)
+        db.session.commit()
+        return jsonify({"error": "Verification code expired"}), 400
+
+    if not signup_session.verification_code_hash:
+        return jsonify({"error": "Verification code not sent"}), 400
+
+    if _hash_verification_code(verification_code) != signup_session.verification_code_hash:
+        signup_session.verification_attempts += 1
+        db.session.commit()
+
+        if signup_session.verification_attempts >= 5:
+            db.session.delete(signup_session)
+            db.session.commit()
+            return jsonify({"error": "Too many attempts"}), 429
+
+        return jsonify({"error": "Invalid verification code"}), 400
+
+    try:
+        user = create_user_from_app_signup_session(signup_session)
+
+        signup_session.completed_at = datetime.utcnow()
+        db.session.delete(signup_session)
+        db.session.commit()
+
+        # Reuse your app login token helper here.
+        # This should return the same response format as /app/login.
+        device_data = {
+            "device_id": signup_session.device_id,
+            "device_name": signup_session.device_name,
+            "device_model": signup_session.device_model,
+            "device_platform": signup_session.device_platform,
+            "app_version": signup_session.app_version,
+            "os_version": signup_session.os_version,
+            "user_agent": signup_session.user_agent,
+        }
+
+        return _issue_app_login_response(
+            user=user,
+            keep_login=True,
+            device_data=device_data,
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"App signup completion failed: {str(e)}")
+        return jsonify({"error": "Account creation failed"}), 500
+
 # Email verification endpoint
 @app.route('/signup/verify_email')
 @limiter.limit("10 per hour")
@@ -16305,6 +16920,157 @@ def login_2fa():
     login_tokens.pop(token, None)
     login_2fa_attempts.pop(token, None)
     return resp
+
+# --- APP ROUTES ---
+
+@app.route("/app/login", methods=["POST"])
+@limiter.limit("30 per hour")
+def app_login():
+    data = request.get_json(silent=True) or {}
+
+    refresh_token = (data.get("refresh_token") or "").strip()
+    device_id = (data.get("device_id") or "").strip() or None
+
+    # Refresh-token login: only return a new short-lived access token.
+    if refresh_token:
+        result, error_response = _validate_and_consume_app_refresh_token(
+            refresh_token=refresh_token,
+            device_id=device_id,
+        )
+        if error_response:
+            return error_response
+
+        user, session = result
+        return _issue_app_login_response(
+            user=user,
+            keep_login=False,
+            refresh_session=session,
+        )
+
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    keep_login = bool(data.get("keep_login"))
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
+    user = User.query.filter_by(username=username).first()
+
+    if not user or not bcrypt.check_password_hash(user.password, password):
+        if user:
+            _register_failed_app_login(user, attempted_username=username)
+        return jsonify({"error": "Invalid credentials"}), 400
+
+    if user.suspended:
+        return jsonify({"error": "Account is suspended"}), 403
+
+    _clear_expired_lock(user)
+
+    if user.locked_until and user.locked_until > utcnow():
+        return jsonify({
+            "error": "Account temporarily locked",
+            "locked_until": user.locked_until.isoformat(),
+        }), 403
+
+    user.failed_attempts = 0
+    db.session.commit()
+
+    device_data = _extract_app_device_data(data)
+
+    if user.twofa_enabled:
+        return _start_app_2fa_challenge(
+            user=user,
+            keep_login=keep_login,
+            device_data=device_data,
+        )
+
+    return _issue_app_login_response(
+        user=user,
+        keep_login=keep_login,
+        device_data=device_data,
+    )
+
+@app.route("/app/login/2fa", methods=["POST"])
+@limiter.limit("8 per hour")
+def app_login_2fa():
+    data = request.get_json(silent=True) or {}
+
+    token = (data.get("login_token") or "").strip()
+    code = (data.get("code") or "").strip()
+
+    if not token or not code:
+        return jsonify({"error": "Missing token or code"}), 400
+
+    token_hash = sha256_hex(token)
+
+    challenge = AppLoginChallenge.query.filter_by(
+        login_token_hash=token_hash,
+        used_at=None,
+    ).first()
+
+    if not challenge:
+        return jsonify({"error": "Invalid or expired login token"}), 400
+
+    now = utcnow()
+    if challenge.expires_at <= now:
+        db.session.delete(challenge)
+        db.session.commit()
+        return jsonify({"error": "Invalid or expired login token"}), 400
+
+    user = User.query.get(challenge.user_id)
+    if not user:
+        db.session.delete(challenge)
+        db.session.commit()
+        return jsonify({"error": "Invalid token"}), 400
+
+    _clear_expired_lock(user)
+
+    if user.locked_until and user.locked_until > now:
+        db.session.delete(challenge)
+        db.session.commit()
+        return jsonify({"error": "Account temporarily locked"}), 403
+
+    if user.suspended:
+        db.session.delete(challenge)
+        db.session.commit()
+        return jsonify({"error": "Account is suspended"}), 403
+
+    if challenge.attempts >= 5:
+        db.session.delete(challenge)
+        db.session.commit()
+        return jsonify({"error": "Too many attempts"}), 429
+
+    verified = False
+    secret = decrypt_secret(user.twofa_secret) if user.twofa_secret else None
+
+    if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+        verified = True
+
+    if not verified and user.backup_codes_hash:
+        hashed_codes = user.backup_codes_hash.split(",")
+        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+        if code_hash in hashed_codes:
+            verified = True
+            hashed_codes.remove(code_hash)
+            user.backup_codes_hash = ",".join(hashed_codes) if hashed_codes else None
+            db.session.commit()
+
+    if not verified:
+        challenge.attempts += 1
+        db.session.commit()
+        return jsonify({"error": "Invalid 2FA code"}), 400
+
+    challenge.used_at = now
+    db.session.commit()
+
+    device_data = json.loads(challenge.metadata_json) if challenge.metadata_json else {}
+
+    return _issue_app_login_response(
+        user=user,
+        keep_login=challenge.keep_login,
+        device_data=device_data,
+    )
 
 @app.route('/2fa/status', methods=['GET'])
 @require_session_key
